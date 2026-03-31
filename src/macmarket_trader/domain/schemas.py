@@ -8,6 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from macmarket_trader.domain.enums import Direction, EventSourceType, OrderStatus, RegimeType, SetupType
+from macmarket_trader.domain.time import utc_now
 
 
 class Bar(BaseModel):
@@ -51,6 +52,12 @@ class RegimeState(BaseModel):
     version: str = "regime-v1"
 
 
+class RegimeContext(BaseModel):
+    market_regime: RegimeType
+    volatility_regime: str
+    breadth_state: str
+
+
 class TechnicalContext(BaseModel):
     prior_day_high: float
     prior_day_low: float
@@ -76,6 +83,48 @@ class TradeSetup(BaseModel):
     setup_engine_version: str = "setup-v1"
 
 
+class CatalystMetadata(BaseModel):
+    type: str
+    novelty: str
+    source_quality: str
+    event_timestamp: datetime
+
+
+class EntryMetadata(BaseModel):
+    setup_type: SetupType
+    zone_low: float
+    zone_high: float
+    trigger_text: str
+
+
+class InvalidationMetadata(BaseModel):
+    price: float
+    reason: str
+
+
+class TargetsMetadata(BaseModel):
+    target_1: float
+    target_2: float
+    trailing_rule: str
+
+
+class TimeStopMetadata(BaseModel):
+    max_holding_days: int = Field(ge=1, le=5)
+    reason: str
+
+
+class SizingMetadata(BaseModel):
+    risk_dollars: float
+    stop_distance: float
+    shares: int
+
+
+class QualityMetadata(BaseModel):
+    expected_rr: float
+    confidence: float = Field(ge=0.0, le=1.0)
+    risk_score: float = Field(ge=0.0, le=1.0)
+
+
 class EvidenceBundle(BaseModel):
     event_id: str
     source_type: EventSourceType
@@ -84,20 +133,44 @@ class EvidenceBundle(BaseModel):
     setup_engine_version: str
     risk_engine_version: str
     explanatory_notes: list[str]
+    headlines: list[str] = Field(default_factory=list)
+    filings: list[str] = Field(default_factory=list)
+    technical_context_refs: list[str] = Field(default_factory=list)
+    historical_analog_refs: list[str] = Field(default_factory=list)
+
+
+class ConstraintCheck(BaseModel):
+    name: str
+    passed: bool
+    details: str
+
+
+class ConstraintReport(BaseModel):
+    checks: list[ConstraintCheck]
+    risk_based_share_cap: int
+    notional_share_cap: int
+    explicit_share_cap: int | None = None
+    final_share_count: int
 
 
 class TradeRecommendation(BaseModel):
     recommendation_id: str = Field(default_factory=lambda: f"rec_{uuid4().hex[:12]}")
     symbol: str
+    side: Direction
+    thesis: str
     event: NewsEvent | MacroEvent | CorporateEvent
-    regime: RegimeState
+    catalyst: CatalystMetadata
+    regime_context: RegimeContext
     technical_context: TechnicalContext
-    setup: TradeSetup
-    stop_distance: float
-    risk_dollars: float
-    shares: int
+    entry: EntryMetadata
+    invalidation: InvalidationMetadata
+    targets: TargetsMetadata
+    time_stop: TimeStopMetadata
+    sizing: SizingMetadata
+    quality: QualityMetadata
     approved: bool
     rejection_reason: str | None = None
+    constraints: ConstraintReport
     evidence: EvidenceBundle
 
 
@@ -112,14 +185,15 @@ class OrderIntent(BaseModel):
 
 class OrderRecord(OrderIntent):
     status: OrderStatus = OrderStatus.CREATED
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    filled_shares: int = 0
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class FillRecord(BaseModel):
     order_id: str
     fill_price: float
     filled_shares: int
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class PortfolioSnapshot(BaseModel):
@@ -130,7 +204,7 @@ class PortfolioSnapshot(BaseModel):
 
 class AuditRecord(BaseModel):
     recommendation_id: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     payload: dict[str, object]
 
 
@@ -153,4 +227,5 @@ class ReplayRunResponse(BaseModel):
     recommendations: list[TradeRecommendation]
     orders: list[OrderRecord]
     fills: list[FillRecord]
+    final_portfolio: PortfolioSnapshot
     summary_metrics: dict[str, float]

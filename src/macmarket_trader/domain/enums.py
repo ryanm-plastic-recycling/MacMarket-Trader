@@ -29,5 +29,6 @@ class RegimeType(str, Enum):
 class OrderStatus(str, Enum):
     CREATED = "created"
     SUBMITTED = "submitted"
+    PARTIALLY_FILLED = "partially_filled"
     FILLED = "filled"
     CANCELLED = "cancelled"

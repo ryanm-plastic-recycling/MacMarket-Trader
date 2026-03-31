@@ -17,6 +17,10 @@ dependencies = [
   "sqlalchemy>=2.0,<3.0",
 ]
 
+
+[project.scripts]
+macmarket-trader = "macmarket_trader.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",

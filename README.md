@@ -389,22 +389,30 @@ Adjust values in `.env` as needed.
 ### 5. Optional: initialize the local database
 
 ```bash
-python -c "from macmarket_trader.storage.db import init_db; init_db()"
+macmarket-trader init-db
 ```
 
-### 6. Run the test suite
+### 6. Run local CLI checks
+
+```bash
+macmarket-trader health
+macmarket-trader generate-sample-recommendation
+macmarket-trader run-sample-replay
+```
+
+### 7. Run the test suite
 
 ```bash
 pytest -q
 ```
 
-### 7. Start the API server
+### 8. Start the API server
 
 ```bash
 uvicorn macmarket_trader.api.main:app --reload
 ```
 
-### 8. Open the local API docs
+### 9. Open the local API docs
 
 - Swagger UI: `http://127.0.0.1:8000/docs`
 - ReDoc: `http://127.0.0.1:8000/redoc`

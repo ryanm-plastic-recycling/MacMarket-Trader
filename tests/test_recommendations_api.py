@@ -26,6 +26,8 @@ def test_recommendations_generate_contract() -> None:
     )
     assert response.status_code == 200
     payload = response.json()
-    assert "setup" in payload
-    assert "evidence" in payload
-    assert payload["setup"]["entry_zone_low"] < payload["setup"]["target_2"]
+    assert payload["thesis"]
+    assert payload["catalyst"]["type"]
+    assert payload["entry"]["zone_low"] < payload["targets"]["target_2"]
+    assert payload["constraints"]["final_share_count"] == payload["sizing"]["shares"]
+    assert payload["evidence"]["headlines"] == []

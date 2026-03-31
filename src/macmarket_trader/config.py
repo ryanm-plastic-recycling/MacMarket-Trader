@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     risk_dollars_per_trade: float = 1000.0
     max_portfolio_heat: float = 0.06
     max_position_notional: float = 0.20
+    audit_persistence_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 

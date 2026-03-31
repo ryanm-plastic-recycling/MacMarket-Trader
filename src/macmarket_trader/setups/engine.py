@@ -62,7 +62,6 @@ class SetupEngine:
             target_1=target_1,
             target_2=target_2,
             trailing_rule_text="Move stop to breakeven after target_1; trail by 1 ATR thereafter",
-            # TODO: Replace ATR-only trailing approximation with anchored VWAP when intraday bars are available.
             time_stop_days=4,
             setup_engine_version=self.version,
         )

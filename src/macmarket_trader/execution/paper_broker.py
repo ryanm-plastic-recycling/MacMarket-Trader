@@ -13,4 +13,4 @@ class PaperBroker:
     def execute(self, intent: OrderIntent) -> tuple[OrderRecord, FillRecord]:
         record = OrderRecord(**intent.model_dump())
         submitted = self.oms.submit(record)
-        return self.oms.fill(submitted.order_id, submitted.limit_price)
+        return self.oms.final_fill(submitted.order_id, submitted.limit_price)
