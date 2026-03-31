@@ -1,51 +1,201 @@
-"""SQLAlchemy repositories for recommendation and order audit writes."""
+"""SQLAlchemy repositories for audit and app state persistence."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from macmarket_trader.domain.models import OrderModel, RecommendationModel
-from macmarket_trader.domain.schemas import OrderRecord, TradeRecommendation
+from macmarket_trader.domain.enums import AppRole, ApprovalStatus
+from macmarket_trader.domain.models import (
+    AppUserModel,
+    AuditLogModel,
+    EmailDeliveryLogModel,
+    FillModel,
+    OrderModel,
+    RecommendationEvidenceModel,
+    RecommendationModel,
+    ReplayRunModel,
+    ReplayStepModel,
+    UserApprovalRequestModel,
+)
+from macmarket_trader.domain.schemas import FillRecord, OrderRecord, PortfolioSnapshot, TradeRecommendation
 
 SessionFactory = Callable[[], Session]
 
 
 class RecommendationRepository:
-    """Persistence helper for recommendation payloads."""
-
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
     def create(self, recommendation: TradeRecommendation) -> RecommendationModel:
         payload = recommendation.model_dump(mode="json")
-        row = RecommendationModel(symbol=recommendation.symbol, payload=payload)
         with self.session_factory() as session:
+            row = RecommendationModel(
+                recommendation_id=recommendation.recommendation_id,
+                symbol=recommendation.symbol,
+                payload=payload,
+            )
             session.add(row)
+            session.flush()
+            session.add(RecommendationEvidenceModel(recommendation_id=row.id, payload=recommendation.evidence.model_dump(mode="json")))
+            session.add(AuditLogModel(recommendation_id=recommendation.recommendation_id, payload=payload))
             session.commit()
             session.refresh(row)
-        return row
+            return row
 
 
 class OrderRepository:
-    """Persistence helper for order records."""
-
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
     def create(self, order: OrderRecord, notes: str = "") -> OrderModel:
-        row = OrderModel(
-            recommendation_id=order.recommendation_id,
-            symbol=order.symbol,
-            status=order.status.value,
-            side=order.side.value,
-            shares=order.shares,
-            limit_price=order.limit_price,
-            notes=notes,
-        )
         with self.session_factory() as session:
+            row = OrderModel(
+                order_id=order.order_id,
+                recommendation_id=order.recommendation_id,
+                symbol=order.symbol,
+                status=order.status.value,
+                side=order.side.value,
+                shares=order.shares,
+                limit_price=order.limit_price,
+                notes=notes,
+            )
             session.add(row)
             session.commit()
             session.refresh(row)
-        return row
+            return row
+
+
+class FillRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def create(self, fill: FillRecord) -> FillModel:
+        with self.session_factory() as session:
+            row = FillModel(
+                order_id=fill.order_id,
+                fill_price=fill.fill_price,
+                filled_shares=fill.filled_shares,
+                timestamp=fill.timestamp,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+
+class ReplayRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def create_run(
+        self,
+        *,
+        symbol: str,
+        recommendation_count: int,
+        approved_count: int,
+        fill_count: int,
+        ending_heat: float,
+        ending_open_notional: float,
+    ) -> ReplayRunModel:
+        with self.session_factory() as session:
+            row = ReplayRunModel(
+                symbol=symbol,
+                recommendation_count=recommendation_count,
+                approved_count=approved_count,
+                fill_count=fill_count,
+                ending_heat=ending_heat,
+                ending_open_notional=ending_open_notional,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def create_step(self, replay_run_id: int, step_index: int, recommendation_id: str, approved: bool, snapshot: PortfolioSnapshot) -> ReplayStepModel:
+        with self.session_factory() as session:
+            row = ReplayStepModel(
+                replay_run_id=replay_run_id,
+                step_index=step_index,
+                recommendation_id=recommendation_id,
+                approved=approved,
+                portfolio_snapshot=snapshot.model_dump(mode="json"),
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+
+class UserRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def upsert_from_auth(self, external_auth_user_id: str, email: str, display_name: str) -> AppUserModel:
+        with self.session_factory() as session:
+            user = session.execute(
+                select(AppUserModel).where(AppUserModel.external_auth_user_id == external_auth_user_id)
+            ).scalar_one_or_none()
+            if user is None:
+                user = AppUserModel(
+                    external_auth_user_id=external_auth_user_id,
+                    email=email,
+                    display_name=display_name,
+                    approval_status=ApprovalStatus.PENDING.value,
+                    app_role=AppRole.USER.value,
+                )
+                session.add(user)
+                session.flush()
+                session.add(UserApprovalRequestModel(app_user_id=user.id, status=ApprovalStatus.PENDING.value, note="signup"))
+            else:
+                user.email = email
+                user.display_name = display_name
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def get_by_external_id(self, external_auth_user_id: str) -> AppUserModel | None:
+        with self.session_factory() as session:
+            return session.execute(
+                select(AppUserModel).where(AppUserModel.external_auth_user_id == external_auth_user_id)
+            ).scalar_one_or_none()
+
+    def list_by_status(self, status: ApprovalStatus) -> list[AppUserModel]:
+        with self.session_factory() as session:
+            return list(session.execute(select(AppUserModel).where(AppUserModel.approval_status == status.value)).scalars())
+
+    def set_approval_status(self, *, user_id: int, status: ApprovalStatus, approved_by: str, note: str) -> AppUserModel:
+        from macmarket_trader.domain.time import utc_now
+
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                raise ValueError("User not found")
+            user.approval_status = status.value
+            user.approved_by = approved_by
+            user.approved_at = utc_now() if status == ApprovalStatus.APPROVED else None
+            session.add(UserApprovalRequestModel(app_user_id=user.id, status=status.value, note=note))
+            session.commit()
+            session.refresh(user)
+            return user
+
+
+class EmailLogRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def create(self, app_user_id: int | None, template_name: str, destination: str, status: str, provider_message_id: str | None = None) -> EmailDeliveryLogModel:
+        with self.session_factory() as session:
+            row = EmailDeliveryLogModel(
+                app_user_id=app_user_id,
+                template_name=template_name,
+                destination=destination,
+                status=status,
+                provider_message_id=provider_message_id,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row

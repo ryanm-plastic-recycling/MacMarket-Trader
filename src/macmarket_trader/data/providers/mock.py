@@ -1,14 +1,22 @@
-"""Mock deterministic provider for local research/testing."""
+"""Mock deterministic providers for local research/testing."""
 
+from __future__ import annotations
+
+from datetime import datetime
 from statistics import mean
 
-from macmarket_trader.data.providers.base import MarketDataProvider
+from macmarket_trader.data.providers.base import (
+    AuthProvider,
+    EmailMessage,
+    EmailProvider,
+    MacroCalendarProvider,
+    MarketDataProvider,
+    NewsProvider,
+)
 from macmarket_trader.domain.schemas import Bar, TechnicalContext
 
 
 class MockMarketDataProvider(MarketDataProvider):
-    """Builds technical context from daily bars with simple ATR approximation."""
-
     def build_technical_context(self, bars: list[Bar]) -> TechnicalContext:
         if len(bars) < 2:
             msg = "At least two bars are required to build technical context"
@@ -28,3 +36,28 @@ class MockMarketDataProvider(MarketDataProvider):
             event_day_range=event_day.high - event_day.low,
             rel_volume=event_day.rel_volume,
         )
+
+
+class MockNewsProvider(NewsProvider):
+    def fetch_latest(self, symbol: str, since: datetime | None = None) -> list[dict[str, object]]:
+        return [{"symbol": symbol, "headline": "Mock headline", "since": since.isoformat() if since else None}]
+
+
+class MockMacroCalendarProvider(MacroCalendarProvider):
+    def upcoming_events(self, from_ts: datetime, to_ts: datetime) -> list[dict[str, object]]:
+        return [{"event": "FOMC", "from": from_ts.isoformat(), "to": to_ts.isoformat()}]
+
+
+class ConsoleEmailProvider(EmailProvider):
+    def send(self, message: EmailMessage) -> str:
+        print(f"[console-email] to={message.to_email} template={message.template_name} subject={message.subject}")
+        return "console-local"
+
+
+class MockAuthProvider(AuthProvider):
+    def verify_token(self, token: str) -> dict[str, object]:
+        if token == "admin-token":
+            return {"sub": "clerk_admin", "email": "admin@example.com", "name": "Admin", "role": "admin", "mfa": True}
+        if token == "user-token":
+            return {"sub": "clerk_user", "email": "user@example.com", "name": "User", "role": "user", "mfa": False}
+        raise ValueError("Invalid auth token")

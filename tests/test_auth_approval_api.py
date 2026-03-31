@@ -1,0 +1,68 @@
+from fastapi.testclient import TestClient
+
+from macmarket_trader.api.main import app
+from macmarket_trader.storage.db import init_db
+
+
+client = TestClient(app)
+
+
+def setup_module() -> None:
+    init_db()
+
+
+def test_unauthenticated_access_denied() -> None:
+    resp = client.get('/user/dashboard')
+    assert resp.status_code == 401
+
+
+def test_pending_user_blocked_then_admin_approves() -> None:
+    pending = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert pending.status_code == 403
+
+    # bootstrap admin user and MFA by calling /me then upgrading DB state through endpoint precondition
+    client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+
+    from macmarket_trader.storage.db import SessionLocal
+    from macmarket_trader.domain.models import AppUserModel
+    from sqlalchemy import select
+
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.mfa_enabled = True
+        target = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        target_id = target.id
+        session.commit()
+
+    approve = client.post(
+        f'/admin/users/{target_id}/approve',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'user_id': target_id, 'note': 'approved for desk access'},
+    )
+    assert approve.status_code == 200
+
+    ok = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert ok.status_code == 200
+
+
+def test_admin_can_reject_user() -> None:
+    from macmarket_trader.storage.db import SessionLocal
+    from macmarket_trader.domain.models import AppUserModel
+    from sqlalchemy import select
+
+    with SessionLocal() as session:
+        session.execute(select(AppUserModel)).scalars().all()
+        target = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        target.approval_status = 'pending'
+        target_id = target.id
+        session.commit()
+
+    reject = client.post(
+        f'/admin/users/{target_id}/reject',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'user_id': target_id, 'note': 'risk policy mismatch'},
+    )
+    assert reject.status_code == 200
+    denied = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert denied.status_code == 403

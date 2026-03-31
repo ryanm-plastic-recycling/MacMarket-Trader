@@ -11,6 +11,7 @@ from macmarket_trader.domain.schemas import (
     CorporateEvent,
     EntryMetadata,
     EvidenceBundle,
+    FillRecord,
     InvalidationMetadata,
     MacroEvent,
     NewsEvent,
@@ -29,7 +30,7 @@ from macmarket_trader.regime.engine import RegimeEngine
 from macmarket_trader.risk.engine import RiskEngine
 from macmarket_trader.setups.engine import SetupEngine
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import OrderRepository, RecommendationRepository
+from macmarket_trader.storage.repositories import FillRepository, OrderRepository, RecommendationRepository
 
 
 class RecommendationService:
@@ -40,6 +41,7 @@ class RecommendationService:
         persist_audit: bool | None = None,
         recommendation_repository: RecommendationRepository | None = None,
         order_repository: OrderRepository | None = None,
+        fill_repository: FillRepository | None = None,
     ) -> None:
         self.provider = MockMarketDataProvider()
         self.extractor = MockEventExtractor()
@@ -50,6 +52,7 @@ class RecommendationService:
         self.persist_audit = settings.audit_persistence_enabled if persist_audit is None else persist_audit
         self.recommendation_repository = recommendation_repository or RecommendationRepository(SessionLocal)
         self.order_repository = order_repository or OrderRepository(SessionLocal)
+        self.fill_repository = fill_repository or FillRepository(SessionLocal)
 
     def generate(
         self,
@@ -161,6 +164,10 @@ class RecommendationService:
     def persist_order(self, order: OrderRecord, notes: str = "") -> None:
         if self.persist_audit:
             self.order_repository.create(order, notes=notes)
+
+    def persist_fill(self, fill: FillRecord) -> None:
+        if self.persist_audit:
+            self.fill_repository.create(fill)
 
     @staticmethod
     def _build_thesis(summary: str, setup_type: str, regime: str) -> str:

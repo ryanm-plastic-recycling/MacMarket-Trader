@@ -1,28 +1,30 @@
 # Architecture Overview
 
-MacMarket-Trader is designed around deterministic research/live parity.
+MacMarket-Trader is a deterministic, event-driven research and paper-execution platform for U.S. large-cap equities and liquid sector ETFs.
+
+## Deterministic constraints
+
+- LLMs are restricted to extraction, classification, summarization, and explanation.
+- Trade existence, entries, invalidation, targets, sizing, and routing remain deterministic.
+- Paper execution only in v1.
 
 ## Pipeline
 
-1. **Ingestion + Extraction**
-   - Input can be structured event JSON or raw event text.
-   - LLM extractor (mock in v1 scaffold) classifies and structures event metadata.
-2. **Regime Classification**
-   - Uses deterministic daily-bar context (trend/volatility/participation proxies).
-3. **Setup Construction**
-   - Generates one of: event continuation, pullback continuation, failed event/fade.
-   - Uses daily structure anchors: prior day high/low, 20-day high/low, ATR(14), event-day range.
-4. **Risk + Sizing**
-   - Position sizing: `floor(risk_dollars / stop_distance)`
-   - Applies max portfolio heat and max position notional checks.
-5. **Execution Intent + Paper OMS**
-   - Produces deterministic order intent and records state transitions/fills.
-6. **Audit + Replay**
-   - Every recommendation has evidence and version markers.
-   - Replay and API call the same setup/risk engines.
+1. Raw ingest (`raw_ingest_events`) and normalization (`normalized_events`, `event_entities`).
+2. Regime + setup + risk engines produce deterministic recommendations.
+3. Recommendation, evidence, order, fill, audit, portfolio, and replay state persist to SQL.
+4. Replay reuses the live recommendation path and advances portfolio state per approved fill.
+5. Frontend (Next.js + Clerk) calls FastAPI backend; backend enforces app-level approval and roles from local DB.
 
-## Design constraints
+## Storage direction
 
-- LLM never decides entry/stop/targets/sizing/order routing.
-- No fixed-percentage exits; all exits derive from market structure context.
-- Interfaces are provider-based for future real broker/data integrations.
+- PostgreSQL-first runtime target.
+- SQLite allowed for unit tests.
+- Alembic migration scaffolding included.
+
+## Core tables
+
+- ingest/normalization: `raw_ingest_events`, `normalized_events`, `event_entities`, `daily_bars`, `macro_calendar_events`
+- provider ops: `provider_cursors`, `provider_health`
+- trading/audit: `recommendations`, `recommendation_evidence`, `orders`, `fills`, `portfolio_snapshots`, `replay_runs`, `replay_steps`, `audit_logs`
+- product/admin: `app_users`, `user_approval_requests`, `email_delivery_logs`

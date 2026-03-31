@@ -32,3 +32,16 @@ class OrderStatus(str, Enum):
     PARTIALLY_FILLED = "partially_filled"
     FILLED = "filled"
     CANCELLED = "cancelled"
+
+
+class ApprovalStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    SUSPENDED = "suspended"
+
+
+class AppRole(str, Enum):
+    USER = "user"
+    ANALYST = "analyst"
+    ADMIN = "admin"
