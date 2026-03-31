@@ -1,0 +1,31 @@
+from datetime import date, timedelta
+
+from fastapi.testclient import TestClient
+
+from macmarket_trader.api.main import app
+
+
+def test_recommendations_generate_contract() -> None:
+    base = date(2026, 1, 1)
+    bars = [
+        {
+            "date": (base + timedelta(days=i)).isoformat(),
+            "open": 100 + i,
+            "high": 101 + i,
+            "low": 99 + i,
+            "close": 100.5 + i,
+            "volume": 1_000_000 + i * 10_000,
+            "rel_volume": 1.1,
+        }
+        for i in range(25)
+    ]
+    client = TestClient(app)
+    response = client.post(
+        "/recommendations/generate",
+        json={"symbol": "AAPL", "event_text": "Earnings beat with strong guidance", "bars": bars},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert "setup" in payload
+    assert "evidence" in payload
+    assert payload["setup"]["entry_zone_low"] < payload["setup"]["target_2"]
