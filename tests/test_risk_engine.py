@@ -70,3 +70,17 @@ def test_risk_engine_rejects_portfolio_heat() -> None:
     assert shares > 0
     assert not approved
     assert reason == "Portfolio heat limit exceeded"
+
+
+def test_risk_engine_downsizes_instead_of_rejecting_when_notional_cap_tighter() -> None:
+    shares, _, approved, reason, report = RiskEngine().size_position(
+        setup=_setup(),
+        risk_dollars=10_000,
+        portfolio=PortfolioSnapshot(equity=100_000),
+        max_portfolio_heat=0.2,
+        max_position_notional=0.01,
+    )
+    assert approved
+    assert reason is None
+    assert shares == 10
+    assert report.risk_based_share_cap > report.notional_share_cap

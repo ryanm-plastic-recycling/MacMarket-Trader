@@ -63,7 +63,8 @@ class RiskEngine:
 
         shares = min(caps)
 
-        projected_heat = portfolio.current_heat + (risk_dollars / max(portfolio.equity, 1.0))
+        realized_risk_dollars = shares * stop_distance
+        projected_heat = portfolio.current_heat + (realized_risk_dollars / max(portfolio.equity, 1.0))
         heat_ok = projected_heat <= max_portfolio_heat
         checks.append(
             ConstraintCheck(

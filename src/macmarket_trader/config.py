@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     max_position_notional: float = 0.20
     audit_persistence_enabled: bool = True
 
+    # auth/email/provider config
+    auth_provider: str = "mock"
+    clerk_jwt_issuer: str = ""
+    clerk_jwks_url: str = ""
+    require_mfa_for_admin: bool = True
+    enforce_global_mfa: bool = False
+    email_provider: str = "console"
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 

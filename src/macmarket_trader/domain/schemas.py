@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from macmarket_trader.domain.enums import Direction, EventSourceType, OrderStatus, RegimeType, SetupType
+from macmarket_trader.domain.enums import AppRole, ApprovalStatus, Direction, EventSourceType, OrderStatus, RegimeType, SetupType
 from macmarket_trader.domain.time import utc_now
 
 
@@ -223,9 +223,35 @@ class ReplayRunRequest(BaseModel):
     portfolio: PortfolioSnapshot | None = None
 
 
+
+
+class ReplaySummaryMetrics(BaseModel):
+    recommendation_count: float
+    approved_count: float
+    fill_count: float
+    ending_heat: float
+    ending_open_notional: float
+
+
+class AppUser(BaseModel):
+    external_auth_user_id: str
+    email: str
+    display_name: str
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING
+    app_role: AppRole = AppRole.USER
+    mfa_enabled: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+    approved_at: datetime | None = None
+    approved_by: str | None = None
+
+
+class ApprovalActionRequest(BaseModel):
+    user_id: int
+    note: str = ""
+
 class ReplayRunResponse(BaseModel):
     recommendations: list[TradeRecommendation]
     orders: list[OrderRecord]
     fills: list[FillRecord]
     final_portfolio: PortfolioSnapshot
-    summary_metrics: dict[str, float]
+    summary_metrics: ReplaySummaryMetrics
