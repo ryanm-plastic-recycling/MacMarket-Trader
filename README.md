@@ -55,12 +55,47 @@ Those are handled by deterministic engines with full audit trails.
 - social sentiment as a primary signal
 - public consumer app features
 - generic LLM trade generation
-- static percentage exits like “take profit at 5%” without structure-based support
+- static percentage exits like "take profit at 5%" without structure-based support
 - UI-heavy work before engine credibility exists
 
-## What the system must produce
+## Current repository status
 
-Every recommendation must be structured like this:
+This repository is a **working scaffold**, not a finished trading product.
+
+### Implemented now
+
+- FastAPI service with:
+  - `GET /health`
+  - `POST /recommendations/generate`
+  - `POST /replay/run`
+- typed Pydantic contracts for bars, events, regimes, setups, recommendations, orders, fills, replay requests, and audit payloads
+- deterministic mock event extractor
+- deterministic mock market data provider
+- deterministic regime engine
+- deterministic setup engine
+- deterministic risk engine
+- in-memory OMS and paper broker adapter
+- replay engine using the same recommendation pipeline as the API
+- unit and API contract tests
+- SQLite-ready SQLAlchemy models for recommendation and order persistence
+
+### Not implemented yet
+
+- real market/news/broker vendors
+- point-in-time raw event store
+- normalized feature store
+- persistent audit trail wiring
+- stateful portfolio ledger in replay/live paths
+- sector/factor/correlation caps
+- macro blackout windows
+- calibration and historical analog scoring
+- production-grade OMS controls
+- operator dashboard / frontend
+- auth, tenancy, billing, or any public SaaS features
+
+## What the system must eventually produce
+
+Every recommendation should move toward this structure:
 
 ```json
 {
@@ -86,7 +121,7 @@ Every recommendation must be structured like this:
   },
   "invalidation": {
     "price": 886.80,
-    "reason": "below event support and 14D ATR buffer"
+    "reason": "below event support and volatility buffer"
   },
   "targets": {
     "target_1": 925.50,
@@ -264,19 +299,19 @@ Required artifacts:
 
 ## Repository philosophy
 
-The new repository is intentionally narrow.
+The repository stays intentionally narrow until the engine is credible.
 
-### What is in scope now
+### In scope now
 
 - Python backend only
 - typed domain models
 - deterministic engines
 - mock and paper adapters
 - unit tests and contract tests
-- CLI and JSON API
+- JSON API
 - audit-first data model
 
-### What is out of scope now
+### Out of scope now
 
 - React dashboard
 - admin portal
@@ -286,8 +321,9 @@ The new repository is intentionally narrow.
 - crypto
 - indicator showcase pages
 - legacy strategy playgrounds
+- public product polish before model credibility
 
-## Proposed repository layout
+## Repository layout
 
 ```text
 macmarket-trader/
@@ -296,7 +332,6 @@ macmarket-trader/
   .env.example
   src/macmarket_trader/
     api/
-    config/
     data/
     domain/
     llm/
@@ -307,76 +342,121 @@ macmarket-trader/
     execution/
     replay/
     audit/
-    utils/
+    storage/
   tests/
   docs/
   scripts/
   experimental/
 ```
 
-## Initial data contracts
+## Quickstart
 
-The initial codebase should define typed contracts for:
-- `NewsEvent`
-- `MacroEvent`
-- `CorporateEvent`
-- `Bar`
-- `RegimeState`
-- `TechnicalContext`
-- `TradeSetup`
-- `TradeRecommendation`
-- `OrderIntent`
-- `OrderRecord`
-- `FillRecord`
-- `PortfolioSnapshot`
-- `BacktestRun`
-- `AuditRecord`
+### Prerequisites
 
-## Initial development phases
+- Python 3.12 or newer
+- `git`
+- a Unix-like shell for the commands below, or equivalent PowerShell commands on Windows
 
-### Phase 0 — clean scaffold
-- repository skeleton
-- typed config
-- logging
-- linting / testing / formatting
-- mock providers
-- paper broker interface
+### 1. Clone the repository
 
-### Phase 1 — domain model and contracts
-- event taxonomy
-- regime state model
-- recommendation schema
-- audit schema
-- deterministic risk formulas
+```bash
+git clone <YOUR_REPO_URL>
+cd MacMarket-Trader
+```
 
-### Phase 2 — recommendation engine
-- event classification interface
-- daily-structure setup logic
-- non-generic entry / stop / target calculation
-- recommendation explanation generator
+### 2. Create and activate a virtual environment
 
-### Phase 3 — replay and paper OMS
-- replay runner
-- paper execution ledger
-- position lifecycle
-- attribution reports
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-### Phase 4 — real vendor integrations
-- replace mock providers with vetted market/news/broker adapters
-- preserve the same interfaces
-- keep research/live parity
+### 3. Install dependencies
 
-## Success criteria for v1
+```bash
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+```
 
-MacMarket-Trader v1 is successful only if it can do all of the following:
+### 4. Configure environment
 
-1. generate recommendations with explicit thesis, entry, stop, and targets
-2. explain why the trade exists in the current regime
-3. reject low-quality trades instead of forcing output
-4. size risk deterministically
-5. replay the same logic historically without lookahead bias
-6. store every decision with evidence and provenance
-7. produce paper-trade attribution by setup and regime
+```bash
+cp .env.example .env
+```
+
+Adjust values in `.env` as needed.
+
+### 5. Optional: initialize the local database
+
+```bash
+python -c "from macmarket_trader.storage.db import init_db; init_db()"
+```
+
+### 6. Run the test suite
+
+```bash
+pytest -q
+```
+
+### 7. Start the API server
+
+```bash
+uvicorn macmarket_trader.api.main:app --reload
+```
+
+### 8. Open the local API docs
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+
+## Example API usage
+
+### Health check
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+### Generate a recommendation
+
+```bash
+curl -X POST http://127.0.0.1:8000/recommendations/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "event_text": "Earnings beat with strong guidance",
+    "bars": [
+      {"date": "2026-01-01", "open": 100, "high": 101, "low": 99, "close": 100.5, "volume": 1000000, "rel_volume": 1.1},
+      {"date": "2026-01-02", "open": 101, "high": 102, "low": 100, "close": 101.5, "volume": 1010000, "rel_volume": 1.1},
+      {"date": "2026-01-03", "open": 102, "high": 103, "low": 101, "close": 102.5, "volume": 1020000, "rel_volume": 1.1},
+      {"date": "2026-01-04", "open": 103, "high": 104, "low": 102, "close": 103.5, "volume": 1030000, "rel_volume": 1.1},
+      {"date": "2026-01-05", "open": 104, "high": 105, "low": 103, "close": 104.5, "volume": 1040000, "rel_volume": 1.1},
+      {"date": "2026-01-06", "open": 105, "high": 106, "low": 104, "close": 105.5, "volume": 1050000, "rel_volume": 1.1}
+    ]
+  }'
+```
+
+## Development standards
+
+- strict typing
+- deterministic core logic
+- mockable provider interfaces
+- replay/live parity
+- UTC-aware timestamps
+- test-first changes for engines and contracts
+- no hidden LLM decisioning in order generation
+
+## Immediate next milestone
+
+The next milestone is **not** a dashboard.
+
+The next milestone is to align the current scaffold to the target contract by adding:
+- richer recommendation schema
+- persistent audit storage
+- stateful replay portfolio updates
+- improved risk sizing that scales to notional constraints
+- expanded OMS states and replay attribution
+- CLI entry points for local research runs
 
 ## Legacy code policy
 
