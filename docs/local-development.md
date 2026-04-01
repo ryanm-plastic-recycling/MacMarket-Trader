@@ -20,7 +20,7 @@ npm run dev
 ## Test suite
 
 ```bash
-pytest
+pytest -q
 ```
 
 ## Frontend runtime/API routing

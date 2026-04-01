@@ -11,6 +11,11 @@ Canonical deployment scripts live in `scripts/`.
 
 Root-level batch files are thin wrappers only.
 
+## Canonical directories
+
+- Repository clone: `C:\Dashboard\MacMarket-Trader\repo`
+- Live runtime: `C:\Dashboard\MacMarket-Trader\live`
+
 ## Ports
 
 - Frontend: `9500`

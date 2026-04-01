@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from macmarket_trader.domain.enums import AppRole, ApprovalStatus
 from macmarket_trader.domain.models import (
     AppUserModel,
     AuditLogModel,
+    DailyBarModel,
     EmailDeliveryLogModel,
     FillModel,
     OrderModel,
@@ -45,6 +47,15 @@ class RecommendationRepository:
             session.refresh(row)
             return row
 
+    def list_recent(self, limit: int = 200) -> list[RecommendationModel]:
+        with self.session_factory() as session:
+            stmt = select(RecommendationModel).order_by(RecommendationModel.created_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
+
+    def get_by_id(self, recommendation_id: int) -> RecommendationModel | None:
+        with self.session_factory() as session:
+            return session.get(RecommendationModel, recommendation_id)
+
 
 class OrderRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -66,6 +77,37 @@ class OrderRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def list_with_fills(self, limit: int = 200) -> list[dict[str, object]]:
+        with self.session_factory() as session:
+            orders = list(session.execute(select(OrderModel).order_by(OrderModel.created_at.desc()).limit(limit)).scalars())
+            if not orders:
+                return []
+            fills = list(session.execute(select(FillModel)).scalars())
+            fills_by_order: dict[str, list[FillModel]] = {}
+            for fill in fills:
+                fills_by_order.setdefault(fill.order_id, []).append(fill)
+
+            output: list[dict[str, object]] = []
+            for order in orders:
+                order_fills = sorted(fills_by_order.get(order.order_id, []), key=lambda item: item.timestamp)
+                output.append(
+                    {
+                        "order_id": order.order_id,
+                        "recommendation_id": order.recommendation_id,
+                        "symbol": order.symbol,
+                        "status": order.status,
+                        "side": order.side,
+                        "shares": order.shares,
+                        "limit_price": order.limit_price,
+                        "created_at": order.created_at,
+                        "fills": [
+                            {"fill_price": fill.fill_price, "filled_shares": fill.filled_shares, "timestamp": fill.timestamp}
+                            for fill in order_fills
+                        ],
+                    }
+                )
+            return output
 
 
 class FillRepository:
@@ -136,6 +178,16 @@ class ReplayRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def list_runs(self, limit: int = 200) -> list[ReplayRunModel]:
+        with self.session_factory() as session:
+            stmt = select(ReplayRunModel).order_by(ReplayRunModel.created_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
+
+    def list_steps_for_run(self, replay_run_id: int) -> list[ReplayStepModel]:
+        with self.session_factory() as session:
+            stmt = select(ReplayStepModel).where(ReplayStepModel.replay_run_id == replay_run_id).order_by(ReplayStepModel.step_index.asc())
+            return list(session.execute(stmt).scalars())
 
 
 class UserRepository:
@@ -218,3 +270,32 @@ class EmailLogRepository:
             session.commit()
             session.refresh(row)
             return row
+
+
+class DailyBarRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def list_for_symbol(self, symbol: str, lookback_days: int = 180) -> list[DailyBarModel]:
+        since = datetime.now(tz=timezone.utc) - timedelta(days=lookback_days)
+        with self.session_factory() as session:
+            stmt = (
+                select(DailyBarModel)
+                .where(DailyBarModel.symbol == symbol.upper(), DailyBarModel.bar_date >= since)
+                .order_by(DailyBarModel.bar_date.asc())
+            )
+            return list(session.execute(stmt).scalars())
+
+
+class DashboardRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def summary_counts(self) -> dict[str, int]:
+        with self.session_factory() as session:
+            return {
+                "recommendations": int(session.scalar(select(func.count(RecommendationModel.id))) or 0),
+                "replay_runs": int(session.scalar(select(func.count(ReplayRunModel.id))) or 0),
+                "orders": int(session.scalar(select(func.count(OrderModel.id))) or 0),
+                "fills": int(session.scalar(select(func.count(FillModel.id))) or 0),
+            }

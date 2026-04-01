@@ -2,7 +2,7 @@ export type HacoChartRequest = {
   symbol: string;
   timeframe: string;
   include_heikin_ashi: boolean;
-  bars: Array<{
+  bars?: Array<{
     date: string;
     open: number;
     high: number;
@@ -27,6 +27,8 @@ export type HacoChartPayload = {
     latest_flip_bars_ago: number | null;
     current_hacolt_direction: string;
   };
+  data_source: string;
+  fallback_mode: boolean;
 };
 
 export async function fetchHacoChart(request: HacoChartRequest): Promise<HacoChartPayload> {
