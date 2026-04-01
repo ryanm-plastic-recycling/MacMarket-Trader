@@ -29,14 +29,11 @@ export type HacoChartPayload = {
   };
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:9510";
-
-export async function fetchHacoChart(token: string, request: HacoChartRequest): Promise<HacoChartPayload> {
-  const response = await fetch(`${API_BASE_URL}/charts/haco`, {
+export async function fetchHacoChart(request: HacoChartRequest): Promise<HacoChartPayload> {
+  const response = await fetch("/api/charts/haco", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(request),
     cache: "no-store",

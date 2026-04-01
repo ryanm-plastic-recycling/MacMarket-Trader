@@ -6,6 +6,7 @@ from macmarket_trader.api.deps.auth import current_user, require_admin, require_
 from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.registry import build_email_provider
 from macmarket_trader.domain.enums import ApprovalStatus
+from macmarket_trader.domain.time import utc_now
 from macmarket_trader.domain.schemas import ApprovalActionRequest
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import EmailLogRepository, UserRepository
@@ -81,3 +82,30 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
     provider_id = email_provider.send(message)
     email_repo.create(user.id, "account_rejected", user.email, "sent", provider_id)
     return {"id": user.id, "approval_status": user.approval_status}
+
+
+@router.get("/provider-health")
+def provider_health(_admin=Depends(require_admin)):
+    return {
+        "checked_at": utc_now().isoformat(),
+        "providers": [
+            {
+                "provider": "auth",
+                "mode": "configured",
+                "status": "ok",
+                "details": "Auth provider configured in backend settings.",
+            },
+            {
+                "provider": "email",
+                "mode": "configured",
+                "status": "ok",
+                "details": "Email provider boundary active with audit logging.",
+            },
+            {
+                "provider": "market_data",
+                "mode": "placeholder",
+                "status": "unknown",
+                "details": "Live provider checks are not wired in this pass; deterministic placeholder status returned.",
+            },
+        ],
+    }

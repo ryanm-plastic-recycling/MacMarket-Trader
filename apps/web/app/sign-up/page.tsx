@@ -1,5 +1,9 @@
-import { ConsolePage } from "@/components/console-page";
+import { SignUp } from "@clerk/nextjs";
 
 export default function Page() {
-  return <ConsolePage title="sign-up" subtitle="Operator console view." />;
+  return (
+    <main style={{ display: "grid", placeItems: "center", minHeight: "100vh", padding: 24 }}>
+      <SignUp routing="path" path="/sign-up" signInUrl="/sign-in" forceRedirectUrl="/dashboard" />
+    </main>
+  );
 }

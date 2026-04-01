@@ -1,5 +1,6 @@
 """Application configuration models."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +24,8 @@ class Settings(BaseSettings):
     require_mfa_for_admin: bool = True
     enforce_global_mfa: bool = False
     email_provider: str = "console"
+    cors_allowed_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:9500", "http://localhost:9500"])
+
     resend_api_key: str = ""
     resend_from_email: str = "noreply@macmarket-trader.local"
 

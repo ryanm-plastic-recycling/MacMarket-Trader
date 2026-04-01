@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 
-function mockBars() {
+function sampleBars() {
   const out = [];
   const base = new Date("2026-01-01");
   for (let i = 0; i < 120; i += 1) {
@@ -17,18 +17,22 @@ function mockBars() {
   return out;
 }
 
-export function HacoWorkspace({ token }: { token: string }) {
+export function HacoWorkspace() {
   const [symbol, setSymbol] = useState("AAPL");
   const [timeframe, setTimeframe] = useState("1D");
   const [data, setData] = useState<HacoChartPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
     setLoading(true);
+    setError(null);
     try {
-      const payload = await fetchHacoChart(token, { symbol, timeframe, include_heikin_ashi: true, bars: mockBars() });
+      const payload = await fetchHacoChart({ symbol, timeframe, include_heikin_ashi: true, bars: sampleBars() });
       setData(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load HACO workspace.");
     } finally {
       setLoading(false);
     }
@@ -36,7 +40,7 @@ export function HacoWorkspace({ token }: { token: string }) {
 
   useEffect(() => {
     if (!chartRef.current || !data) return;
-    const chart: IChartApi = createChart(chartRef.current, { height: 420, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" }, grid: { vertLines: { color: "#1f2a36" }, horzLines: { color: "#1f2a36" } } });
+    const chart: IChartApi = createChart(chartRef.current, { height: 480, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" }, grid: { vertLines: { color: "#1f2a36" }, horzLines: { color: "#1f2a36" } } });
     const candleSeries: ISeriesApi<"Candlestick"> = chart.addCandlestickSeries();
     const candles: CandlestickData<Time>[] = data.candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
     candleSeries.setData(candles);
@@ -67,36 +71,49 @@ export function HacoWorkspace({ token }: { token: string }) {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} style={{ background: "#0e151d", color: "#d9e2ef", border: "1px solid #2b3642", padding: "8px 10px" }} />
-        <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} style={{ background: "#0e151d", color: "#d9e2ef", border: "1px solid #2b3642", padding: "8px 10px" }}>
-          <option value="1D">1D</option><option value="4H">4H</option><option value="1H">1H</option>
-        </select>
-        <button onClick={load} disabled={loading} style={{ background: "#2d6cdf", border: "none", color: "white", padding: "8px 12px" }}>{loading ? "Loading..." : "Load HACO"}</button>
+      <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
+        <h2 style={{ marginTop: 0 }}>HACO operator workspace</h2>
+        <p style={{ marginBottom: 0, color: "#9fb0c3" }}>Sample data mode: deterministic bars are used until live bar ingestion is connected for this view.</p>
       </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <label>
+          Symbol
+          <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} style={{ marginLeft: 8, background: "#0e151d", color: "#d9e2ef", border: "1px solid #2b3642", padding: "8px 10px" }} />
+        </label>
+        <label>
+          Timeframe
+          <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} style={{ marginLeft: 8, background: "#0e151d", color: "#d9e2ef", border: "1px solid #2b3642", padding: "8px 10px" }}>
+            <option value="1D">1D</option><option value="4H">4H</option><option value="1H">1H</option>
+          </select>
+        </label>
+        <button onClick={load} disabled={loading} style={{ background: "#2d6cdf", border: "none", color: "white", padding: "8px 12px" }}>{loading ? "Loading..." : "Run HACO analysis"}</button>
+      </div>
+
+      {error ? <div style={{ color: "#ff8b8b" }}>{error}</div> : null}
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
         <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-          <h3>Price chart + flips</h3>
+          <h3>Price chart + deterministic HACO buy/sell flips</h3>
           <div ref={chartRef} />
         </div>
         <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-          <h3>State summary</h3>
-          <div>HACO: {summary?.current_haco_state ?? "-"}</div>
+          <h3>Signal state summary</h3>
+          <div>HACO state: {summary?.current_haco_state ?? "-"}</div>
           <div>Latest flip: {summary?.latest_flip ?? "-"}</div>
-          <div>Flip recency: {summary?.latest_flip_bars_ago ?? "-"}</div>
-          <div>HACOLT: {summary?.current_hacolt_direction ?? "-"}</div>
+          <div>Flip recency (bars): {summary?.latest_flip_bars_ago ?? "-"}</div>
+          <div>HACOLT direction: {summary?.current_hacolt_direction ?? "-"}</div>
         </div>
       </div>
 
       <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-        <h3>HACO strip</h3>
+        <h3>HACO state strip (green/red)</h3>
         <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
           {data?.haco_strip.slice(-80).map((p) => <div key={p.time} title={p.time} style={{ width: 8, height: 22, background: p.state === "green" ? "#21c06e" : "#c64242" }} />)}
         </div>
       </div>
       <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-        <h3>HACOLT strip</h3>
+        <h3>HACOLT direction strip</h3>
         <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
           {data?.hacolt_strip.slice(-80).map((p) => <div key={p.time} title={p.time} style={{ width: 8, height: 14, background: p.direction === "up" ? "#4d8dff" : "#7a4dc1" }} />)}
         </div>
