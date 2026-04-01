@@ -92,3 +92,18 @@ def test_recommendation_and_replay_routes_require_approved_user() -> None:
         json={'symbol': 'AAPL', 'event_texts': ['one'], 'bars': _bars()},
     )
     assert replay_resp.status_code == 403
+
+
+def test_admin_provider_health() -> None:
+    client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.mfa_enabled = True
+        session.commit()
+
+    resp = client.get('/admin/provider-health', headers={'Authorization': 'Bearer admin-token'})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert 'providers' in payload
+    assert any(item['provider'] == 'auth' for item in payload['providers'])

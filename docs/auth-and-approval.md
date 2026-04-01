@@ -24,3 +24,11 @@ Frontend authentication is handled by Clerk; backend verifies bearer tokens usin
 
 - Admin MFA required by config (`require_mfa_for_admin=true`).
 - Non-admin MFA can be globally enforced later (`enforce_global_mfa`).
+
+
+## Frontend access flows
+
+- `/sign-in` and `/sign-up` use Clerk hosted UI components.
+- Authenticated users with `pending` approval are redirected to `/pending-approval`.
+- Authenticated users with rejected/suspended or insufficient-role access are redirected to `/access-denied`.
+- Frontend hosted paths no longer fall back to mock bearer tokens.
