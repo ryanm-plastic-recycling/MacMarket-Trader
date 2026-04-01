@@ -108,7 +108,7 @@ class HacoChartRequest(BaseModel):
     symbol: str
     timeframe: str = "1D"
     include_heikin_ashi: bool = True
-    bars: list[Bar]
+    bars: list[Bar] = Field(default_factory=list)
 
 
 class HacoChartExplanation(BaseModel):
@@ -127,6 +127,8 @@ class HacoChartPayload(BaseModel):
     haco_strip: list[HacoStatePoint]
     hacolt_strip: list[HacoltStatePoint]
     explanation: HacoChartExplanation
+    data_source: str = "request_bars"
+    fallback_mode: bool = False
 
 
 class TradeSetup(BaseModel):

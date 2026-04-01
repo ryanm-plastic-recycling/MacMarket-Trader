@@ -5,18 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 
-function sampleBars() {
-  const out = [];
-  const base = new Date("2026-01-01");
-  for (let i = 0; i < 120; i += 1) {
-    const t = new Date(base);
-    t.setDate(base.getDate() + i);
-    const px = 100 + i * 0.4 + Math.sin(i / 8) * 1.5;
-    out.push({ date: t.toISOString().slice(0, 10), open: px, high: px + 1.7, low: px - 1.2, close: px + 0.6, volume: 1000000 + i * 1000, rel_volume: 1.2 });
-  }
-  return out;
-}
-
 export function HacoWorkspace() {
   const [symbol, setSymbol] = useState("AAPL");
   const [timeframe, setTimeframe] = useState("1D");
@@ -29,7 +17,7 @@ export function HacoWorkspace() {
     setLoading(true);
     setError(null);
     try {
-      const payload = await fetchHacoChart({ symbol, timeframe, include_heikin_ashi: true, bars: sampleBars() });
+      const payload = await fetchHacoChart({ symbol, timeframe, include_heikin_ashi: true });
       setData(payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load HACO workspace.");
@@ -73,7 +61,9 @@ export function HacoWorkspace() {
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
         <h2 style={{ marginTop: 0 }}>HACO operator workspace</h2>
-        <p style={{ marginBottom: 0, color: "#9fb0c3" }}>Sample data mode: deterministic bars are used until live bar ingestion is connected for this view.</p>
+        <p style={{ marginBottom: 0, color: "#9fb0c3" }}>
+          Data source: {data?.data_source ?? "not loaded"} {data?.fallback_mode ? "(fallback mode enabled)" : ""}
+        </p>
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>

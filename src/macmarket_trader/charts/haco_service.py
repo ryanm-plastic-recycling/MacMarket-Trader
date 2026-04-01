@@ -16,7 +16,15 @@ from macmarket_trader.indicators.hacolt import compute_hacolt_direction
 
 
 class HacoChartService:
-    def build_payload(self, symbol: str, timeframe: str, bars: list[Bar], include_heikin_ashi: bool = True) -> HacoChartPayload:
+    def build_payload(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: list[Bar],
+        include_heikin_ashi: bool = True,
+        data_source: str = "request_bars",
+        fallback_mode: bool = False,
+    ) -> HacoChartPayload:
         opens = [bar.open for bar in bars]
         highs = [bar.high for bar in bars]
         lows = [bar.low for bar in bars]
@@ -90,4 +98,6 @@ class HacoChartService:
                 latest_flip_bars_ago=latest_flip_bars_ago,
                 current_hacolt_direction=current_hacolt_direction,
             ),
+            data_source=data_source,
+            fallback_mode=fallback_mode,
         )
