@@ -27,3 +27,12 @@ Do not remove or dilute the HACO/HACOLT policy.
 - Do not point browser code to localhost for hosted deployments.
 - Do not delete canonical architecture sections from the root README.
 - Do not add cosmetic UI work ahead of operator workflow value.
+1. Never replace the long-form README with a short scaffold summary.
+2. Never overwrite local `approval_status` or `app_role` from external auth claims.
+3. Keep Clerk sign-in/sign-up routes compatible with Clerk docs and middleware public-route requirements.
+4. Preserve HACO as both:
+   - a dedicated workspace
+   - a dashboard-integrated module
+5. Do not downgrade data-driven operator pages back into placeholders.
+6. Keep dependency changes intentional and keep lockfiles committed.
+7. Keep Windows dev path and live runtime path separate.
