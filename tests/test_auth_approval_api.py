@@ -10,6 +10,11 @@ from macmarket_trader.storage.db import SessionLocal, init_db
 
 client = TestClient(app)
 
+def _seed_mock_user(token: str) -> None:
+    """Create deterministic mock-auth user rows for isolated tests."""
+    resp = client.get('/user/me', headers={'Authorization': f'Bearer {token}'})
+    assert resp.status_code == 200
+
 
 def _bars() -> list[dict[str, object]]:
     base = date(2026, 1, 1)
@@ -37,6 +42,9 @@ def test_unauthenticated_access_denied() -> None:
 
 
 def test_pending_user_blocked_then_admin_approves() -> None:
+    _seed_mock_user('user-token')
+    _seed_mock_user('admin-token')
+
     pending = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
     assert pending.status_code == 403
 
@@ -62,6 +70,9 @@ def test_pending_user_blocked_then_admin_approves() -> None:
 
 
 def test_admin_can_reject_user() -> None:
+    _seed_mock_user('user-token')
+    _seed_mock_user('admin-token')
+
     with SessionLocal() as session:
         target = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
         target.approval_status = 'pending'
@@ -95,7 +106,7 @@ def test_recommendation_and_replay_routes_require_approved_user() -> None:
 
 
 def test_admin_provider_health() -> None:
-    client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+    _seed_mock_user('admin-token')
     with SessionLocal() as session:
         admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
         admin.app_role = 'admin'
