@@ -5,6 +5,7 @@ const links = [
   ["/recommendations", "Recommendations"],
   ["/replay-runs", "Replay runs"],
   ["/orders", "Orders"],
+  ["/charts/haco", "HACO charts"],
   ["/admin/pending-users", "Admin pending users"],
   ["/admin/provider-health", "Provider health"],
   ["/account", "Account"],

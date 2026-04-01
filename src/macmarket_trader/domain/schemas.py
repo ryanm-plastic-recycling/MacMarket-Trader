@@ -68,6 +68,67 @@ class TechnicalContext(BaseModel):
     rel_volume: float | None = None
 
 
+class IndicatorContext(BaseModel):
+    haco_state: str
+    haco_flip_recency_bars: int | None = None
+    hacolt_direction: str
+    agrees_with_recommendation: bool
+
+
+class ChartCandle(BaseModel):
+    time: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class HacoMarker(BaseModel):
+    time: date
+    marker_type: str
+    direction: str
+    price: float
+    text: str
+
+
+class HacoStatePoint(BaseModel):
+    time: date
+    value: int
+    state: str
+
+
+class HacoltStatePoint(BaseModel):
+    time: date
+    value: int
+    direction: str
+
+
+class HacoChartRequest(BaseModel):
+    symbol: str
+    timeframe: str = "1D"
+    include_heikin_ashi: bool = True
+    bars: list[Bar]
+
+
+class HacoChartExplanation(BaseModel):
+    current_haco_state: str
+    latest_flip: str
+    latest_flip_bars_ago: int | None = None
+    current_hacolt_direction: str
+
+
+class HacoChartPayload(BaseModel):
+    symbol: str
+    timeframe: str
+    candles: list[ChartCandle]
+    heikin_ashi_candles: list[ChartCandle] = Field(default_factory=list)
+    markers: list[HacoMarker]
+    haco_strip: list[HacoStatePoint]
+    hacolt_strip: list[HacoltStatePoint]
+    explanation: HacoChartExplanation
+
+
 class TradeSetup(BaseModel):
     setup_type: SetupType
     direction: Direction
@@ -163,6 +224,7 @@ class TradeRecommendation(BaseModel):
     catalyst: CatalystMetadata
     regime_context: RegimeContext
     technical_context: TechnicalContext
+    indicator_context: IndicatorContext | None = None
     entry: EntryMetadata
     invalidation: InvalidationMetadata
     targets: TargetsMetadata
