@@ -1,18 +1,26 @@
 # Auth and Approval Workflow
 
-Authentication is handled by Clerk in the frontend; backend trusts verified session tokens/JWT claims via auth provider middleware.
+Frontend authentication is handled by Clerk; backend verifies bearer tokens using the configured auth provider boundary.
 
 ## Workflow
 
 1. User signs up and verifies email in Clerk.
-2. Backend syncs user into `app_users` with `pending` approval status.
-3. Pending users can authenticate but cannot access approved product routes.
-4. Admin reviews pending users in `/admin/users/pending`.
-5. Admin approves/rejects via API endpoints.
-6. Approval/rejection transactional email is sent through email adapter.
-7. Approved users can access product routes.
+2. Backend verifies token, upserts local `app_users`, and persists role/MFA claims used for app policy checks.
+3. New users remain `pending` until admin action.
+4. Pending/rejected users are blocked from approved-product routes.
+5. Admin reviews `/admin/users/pending` and approves/rejects through admin endpoints.
+6. Approval/rejection sends transactional email via configured email provider and logs delivery.
+
+## Route policy
+
+- Public: `GET /health`
+- Approved-user required:
+  - `POST /recommendations/generate`
+  - `POST /replay/run`
+  - `GET /user/dashboard`
+- Admin-only: all `/admin/*` routes
 
 ## MFA policy
 
 - Admin MFA required by config (`require_mfa_for_admin=true`).
-- Non-admin MFA is available and global enforcement can be enabled later (`enforce_global_mfa`).
+- Non-admin MFA can be globally enforced later (`enforce_global_mfa`).

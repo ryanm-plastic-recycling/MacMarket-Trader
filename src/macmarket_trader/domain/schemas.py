@@ -154,6 +154,7 @@ class ConstraintReport(BaseModel):
 
 
 class TradeRecommendation(BaseModel):
+    outcome: str = "approved"
     recommendation_id: str = Field(default_factory=lambda: f"rec_{uuid4().hex[:12]}")
     symbol: str
     side: Direction

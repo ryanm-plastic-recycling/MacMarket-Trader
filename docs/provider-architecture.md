@@ -1,6 +1,6 @@
 # Provider Architecture
 
-MacMarket-Trader uses interface-first adapters so deterministic engines are not coupled to vendor SDKs.
+MacMarket-Trader keeps vendor SDKs behind interface boundaries so deterministic engines remain stable and testable.
 
 ## Provider interfaces
 
@@ -8,11 +8,23 @@ MacMarket-Trader uses interface-first adapters so deterministic engines are not 
 - `NewsProvider`
 - `MacroCalendarProvider`
 - `BrokerProvider` (paper-only in v1)
-- `EmailProvider` (Console + Resend adapters)
-- `AuthProvider` (Clerk token verification boundary)
+- `EmailProvider`
+- `AuthProvider`
 
-Mock providers remain default for local development and deterministic tests.
+## Factory selection
+
+Provider mode is selected from config:
+
+- `AUTH_PROVIDER=mock|clerk`
+- `EMAIL_PROVIDER=console|resend`
+
+Default local mode is `mock` + `console`.
+
+## Current adapters
+
+- Auth: `MockAuthProvider`, `ClerkAuthProvider`
+- Email: `ConsoleEmailProvider`, `ResendEmailProvider`
 
 ## Persistence support tables
 
-Provider health, cursors, raw ingest, normalized events, entities, and email logs are persisted in SQLAlchemy models and covered by Alembic migration scaffolding.
+Provider health, cursors, raw ingest, normalized events, entities, and email logs are persisted in SQLAlchemy models and migration scaffolding.

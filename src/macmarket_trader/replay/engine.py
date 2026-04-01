@@ -27,9 +27,11 @@ class ReplayEngine:
         orders = []
         fills = []
         approved = 0
+        step_snapshots: list[tuple[PortfolioSnapshot, PortfolioSnapshot]] = []
         portfolio_state = req.portfolio or PortfolioSnapshot()
 
-        for idx, text in enumerate(req.event_texts):
+        for text in req.event_texts:
+            pre_step_snapshot = portfolio_state.model_copy(deep=True)
             rec = self.service.generate(
                 symbol=req.symbol,
                 bars=req.bars,
@@ -52,27 +54,28 @@ class ReplayEngine:
                     position_notional=fill.fill_price * fill.filled_shares,
                 )
 
-            if self.service.persist_audit:
-                run_id = -1
-                if idx == len(req.event_texts) - 1:
-                    run = self.replay_repository.create_run(
-                        symbol=req.symbol,
-                        recommendation_count=len(recs),
-                        approved_count=approved,
-                        fill_count=len(fills),
-                        ending_heat=portfolio_state.current_heat,
-                        ending_open_notional=portfolio_state.open_positions_notional,
-                    )
-                    run_id = run.id
-                if run_id > 0:
-                    for step_index, step_rec in enumerate(recs):
-                        self.replay_repository.create_step(
-                            replay_run_id=run_id,
-                            step_index=step_index,
-                            recommendation_id=step_rec.recommendation_id,
-                            approved=step_rec.approved,
-                            snapshot=portfolio_state,
-                        )
+            post_step_snapshot = portfolio_state.model_copy(deep=True)
+            step_snapshots.append((pre_step_snapshot, post_step_snapshot))
+
+        if self.service.persist_audit:
+            run = self.replay_repository.create_run(
+                symbol=req.symbol,
+                recommendation_count=len(recs),
+                approved_count=approved,
+                fill_count=len(fills),
+                ending_heat=portfolio_state.current_heat,
+                ending_open_notional=portfolio_state.open_positions_notional,
+            )
+            for step_index, (step_rec, snapshots) in enumerate(zip(recs, step_snapshots, strict=True)):
+                pre_snapshot, post_snapshot = snapshots
+                self.replay_repository.create_step(
+                    replay_run_id=run.id,
+                    step_index=step_index,
+                    recommendation_id=step_rec.recommendation_id,
+                    approved=step_rec.approved,
+                    pre_step_snapshot=pre_snapshot,
+                    post_step_snapshot=post_snapshot,
+                )
 
         summary = ReplaySummaryMetrics(
             recommendation_count=float(len(recs)),

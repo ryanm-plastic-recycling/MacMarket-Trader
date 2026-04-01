@@ -114,14 +114,23 @@ class ReplayRepository:
             session.refresh(row)
             return row
 
-    def create_step(self, replay_run_id: int, step_index: int, recommendation_id: str, approved: bool, snapshot: PortfolioSnapshot) -> ReplayStepModel:
+    def create_step(
+        self,
+        replay_run_id: int,
+        step_index: int,
+        recommendation_id: str,
+        approved: bool,
+        pre_step_snapshot: PortfolioSnapshot,
+        post_step_snapshot: PortfolioSnapshot,
+    ) -> ReplayStepModel:
         with self.session_factory() as session:
             row = ReplayStepModel(
                 replay_run_id=replay_run_id,
                 step_index=step_index,
                 recommendation_id=recommendation_id,
                 approved=approved,
-                portfolio_snapshot=snapshot.model_dump(mode="json"),
+                pre_step_snapshot=pre_step_snapshot.model_dump(mode="json"),
+                post_step_snapshot=post_step_snapshot.model_dump(mode="json"),
             )
             session.add(row)
             session.commit()
@@ -133,7 +142,14 @@ class UserRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
-    def upsert_from_auth(self, external_auth_user_id: str, email: str, display_name: str) -> AppUserModel:
+    def upsert_from_auth(
+        self,
+        external_auth_user_id: str,
+        email: str,
+        display_name: str,
+        app_role: AppRole = AppRole.USER,
+        mfa_enabled: bool = False,
+    ) -> AppUserModel:
         with self.session_factory() as session:
             user = session.execute(
                 select(AppUserModel).where(AppUserModel.external_auth_user_id == external_auth_user_id)
@@ -144,7 +160,8 @@ class UserRepository:
                     email=email,
                     display_name=display_name,
                     approval_status=ApprovalStatus.PENDING.value,
-                    app_role=AppRole.USER.value,
+                    app_role=app_role.value,
+                    mfa_enabled=mfa_enabled,
                 )
                 session.add(user)
                 session.flush()
@@ -152,6 +169,8 @@ class UserRepository:
             else:
                 user.email = email
                 user.display_name = display_name
+                user.app_role = app_role.value
+                user.mfa_enabled = mfa_enabled
             session.commit()
             session.refresh(user)
             return user

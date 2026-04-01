@@ -163,7 +163,8 @@ class ReplayStepModel(Base):
     step_index: Mapped[int] = mapped_column(Integer)
     recommendation_id: Mapped[str] = mapped_column(String(64), index=True)
     approved: Mapped[bool] = mapped_column(Boolean)
-    portfolio_snapshot: Mapped[dict[str, object]] = mapped_column(JSON)
+    pre_step_snapshot: Mapped[dict[str, object]] = mapped_column(JSON)
+    post_step_snapshot: Mapped[dict[str, object]] = mapped_column(JSON)
 
 
 class AuditLogModel(Base):

@@ -19,9 +19,17 @@ class Settings(BaseSettings):
     auth_provider: str = "mock"
     clerk_jwt_issuer: str = ""
     clerk_jwks_url: str = ""
+    clerk_jwt_audience: str = ""
     require_mfa_for_admin: bool = True
     enforce_global_mfa: bool = False
     email_provider: str = "console"
+    resend_api_key: str = ""
+    resend_from_email: str = "noreply@macmarket-trader.local"
+
+    # deterministic recommendation quality gates
+    min_expected_rr: float = 1.4
+    max_event_continuation_volatility: float = 0.045
+    min_catalyst_source_quality_score: float = 0.0
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
