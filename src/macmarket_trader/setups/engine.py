@@ -20,8 +20,11 @@ class SetupEngine:
 
     def _event_continuation(self, tc: TechnicalContext) -> TradeSetup:
         entry_low = tc.prior_day_high
-        entry_high = tc.prior_day_high + 0.2 * tc.atr14
-        invalidation = tc.prior_day_low
+        entry_high = tc.prior_day_high + 0.25 * tc.atr14
+        structure_buffer = max(0.6 * tc.atr14, 0.35 * tc.event_day_range)
+        invalidation = entry_low - structure_buffer
+        target_1 = max(tc.recent_20d_high, entry_high + (1.2 * tc.event_day_range))
+        target_2 = max(target_1 + 0.8 * tc.atr14, entry_high + 2.4 * tc.atr14)
         return TradeSetup(
             setup_type=SetupType.EVENT_CONTINUATION,
             direction=Direction.LONG,
@@ -29,9 +32,9 @@ class SetupEngine:
             entry_zone_high=entry_high,
             trigger_text="Break and hold above prior-day high on strong participation",
             invalidation_price=invalidation,
-            invalidation_reason="Loss of prior-day low breaks continuation structure",
-            target_1=min(tc.recent_20d_high, entry_high + tc.event_day_range),
-            target_2=entry_high + 2.0 * tc.atr14,
+            invalidation_reason="Loss of event-continuation pivot with volatility buffer",
+            target_1=target_1,
+            target_2=target_2,
             trailing_rule_text="Trail below 2-day swing low after target_1 is touched",
             time_stop_days=3,
             setup_engine_version=self.version,

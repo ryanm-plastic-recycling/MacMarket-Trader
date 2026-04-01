@@ -67,7 +67,7 @@ Those are handled by deterministic engines with full audit trails.
 - static percentage exits like “take profit at 5%” without structure-based support
 - UI-heavy work before engine credibility exists
 
-## What the system must produce
+## Recommendation contract
 
 Every recommendation must be structured like this conceptually:
 
@@ -146,7 +146,7 @@ Recommendations are built from market structure and event context, using inputs 
 
 At launch, if intraday data is unavailable, the system uses a clearly labeled daily-structure approximation and does **not** pretend it has higher precision than the data supports.
 
-## Architecture
+## Point-in-time architecture
 
 ```text
 Raw data ingestion
@@ -469,9 +469,6 @@ The old MacMarket repository is a **reference archive**, not a base layer.
 By default, no old application code is carried into the new system.
 Only isolated, testable, non-core research utilities may be imported later under `experimental/` or re-homed into typed modules after review.
 
-## Current status
+## Implementation posture
 
-This repository is a ground-up rebuild.
-
-The first milestone is not a flashy dashboard.
-The first milestone is a credible recommendation pipeline with a serious operator console built on top of it.
+This repository remains a ground-up rebuild focused on deterministic decisioning, replay/live parity, and operator-grade tooling.

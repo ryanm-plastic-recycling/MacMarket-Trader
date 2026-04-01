@@ -28,3 +28,12 @@ MacMarket-Trader is a deterministic, event-driven research and paper-execution p
 - provider ops: `provider_cursors`, `provider_health`
 - trading/audit: `recommendations`, `recommendation_evidence`, `orders`, `fills`, `portfolio_snapshots`, `replay_runs`, `replay_steps`, `audit_logs`
 - product/admin: `app_users`, `user_approval_requests`, `email_delivery_logs`
+
+## HACO/HACOLT in current architecture
+
+HACO and HACOLT are integrated as deterministic indicator context and operator charting payloads. They are intentionally secondary to event/regime/risk approval logic.
+
+- Backend chart contract: `/charts/haco` (approved users only).
+- Recommendation context includes HACO state, flip recency, HACOLT direction, and side agreement.
+- Core recommendation approval remains quality-gated event/regime/risk logic.
+

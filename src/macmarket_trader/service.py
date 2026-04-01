@@ -12,6 +12,7 @@ from macmarket_trader.domain.schemas import (
     EntryMetadata,
     EvidenceBundle,
     FillRecord,
+    IndicatorContext,
     InvalidationMetadata,
     MacroEvent,
     NewsEvent,
@@ -26,6 +27,7 @@ from macmarket_trader.domain.schemas import (
     TradeRecommendation,
 )
 from macmarket_trader.llm.mock_extractor import MockEventExtractor
+from macmarket_trader.indicators import compute_haco_states, compute_hacolt_direction
 from macmarket_trader.regime.engine import RegimeEngine
 from macmarket_trader.risk.engine import RiskEngine
 from macmarket_trader.setups.engine import SetupEngine
@@ -75,9 +77,10 @@ class RecommendationService:
             max_position_notional=settings.max_position_notional,
         )
 
-        expected_rr = abs(setup.target_1 - ((setup.entry_zone_low + setup.entry_zone_high) / 2)) / max(
-            stop_distance, 0.01
-        )
+        entry_mid = (setup.entry_zone_low + setup.entry_zone_high) / 2
+        target_1_rr = abs(setup.target_1 - entry_mid) / max(stop_distance, 0.01)
+        target_2_rr = abs(setup.target_2 - entry_mid) / max(stop_distance, 0.01)
+        expected_rr = (0.6 * target_1_rr) + (0.4 * target_2_rr)
         confidence = min(max(0.45 + (structured_event.sentiment_score * 0.2), 0.05), 0.95)
         risk_score = min(1.0, max(0.0, 1.0 / max(expected_rr, 0.01)))
         source_quality = "primary" if structured_event.source_type != EventSourceType.NEWS else "secondary"
@@ -91,6 +94,17 @@ class RecommendationService:
         if not quality_passed:
             approved = False
             rejection_reason = "; ".join(quality_reasons)
+
+        closes = [bar.close for bar in bars]
+        haco_states = compute_haco_states(closes)
+        hacolt_states = compute_hacolt_direction(closes)
+        last_flip_idx = max((idx for idx, point in enumerate(haco_states) if point.flip), default=None)
+        flip_recency = (len(haco_states) - last_flip_idx - 1) if last_flip_idx is not None else None
+        latest_haco_state = haco_states[-1].state if haco_states else "neutral"
+        latest_hacolt_direction = hacolt_states[-1].direction if hacolt_states else "flat"
+        agrees_with_side = (latest_haco_state == "green" and setup.direction.value == "long") or (
+            latest_haco_state == "red" and setup.direction.value == "short"
+        )
 
         notes = [
             "LLM constrained to extraction/summarization/explanation only.",
@@ -118,6 +132,12 @@ class RecommendationService:
                 breadth_state="supportive" if regime.participation_score >= 1 else "fragile",
             ),
             technical_context=technical_context,
+            indicator_context=IndicatorContext(
+                haco_state=latest_haco_state,
+                haco_flip_recency_bars=flip_recency,
+                hacolt_direction=latest_hacolt_direction,
+                agrees_with_recommendation=agrees_with_side,
+            ),
             entry=EntryMetadata(
                 setup_type=setup.setup_type,
                 zone_low=setup.entry_zone_low,
