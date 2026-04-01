@@ -1,5 +1,8 @@
-import { ConsolePage } from "@/components/console-page";
-
 export default function Page() {
-  return <ConsolePage title="access-denied" subtitle="Operator console view." />;
+  return (
+    <section>
+      <h1>Access denied</h1>
+      <p>Your account is authenticated but does not have sufficient privileges for this page.</p>
+    </section>
+  );
 }

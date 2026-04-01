@@ -5,7 +5,7 @@ from __future__ import annotations
 from macmarket_trader.audit.engine import AuditEngine
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.mock import MockMarketDataProvider
-from macmarket_trader.domain.enums import EventSourceType
+from macmarket_trader.domain.enums import EventSourceType, SetupType
 from macmarket_trader.domain.schemas import (
     CatalystMetadata,
     CorporateEvent,
@@ -80,13 +80,28 @@ class RecommendationService:
         )
         confidence = min(max(0.45 + (structured_event.sentiment_score * 0.2), 0.05), 0.95)
         risk_score = min(1.0, max(0.0, 1.0 / max(expected_rr, 0.01)))
+        source_quality = "primary" if structured_event.source_type != EventSourceType.NEWS else "secondary"
+
+        quality_passed, quality_reasons = self._evaluate_quality_gates(
+            expected_rr=expected_rr,
+            volatility_score=regime.volatility_score,
+            setup_type=setup.setup_type,
+            source_quality=source_quality,
+        )
+        if not quality_passed:
+            approved = False
+            rejection_reason = "; ".join(quality_reasons)
+
         notes = [
             "LLM constrained to extraction/summarization/explanation only.",
             f"Setup selected: {setup.setup_type.value}",
             f"Regime classified as: {regime.regime.value}",
         ]
+        notes.extend([f"Quality gate: {reason}" for reason in quality_reasons])
 
+        outcome = "approved" if approved else "no_trade"
         rec = TradeRecommendation(
+            outcome=outcome,
             symbol=symbol,
             side=setup.direction,
             thesis=self._build_thesis(structured_event.summary, setup.setup_type.value, regime.regime.value),
@@ -94,7 +109,7 @@ class RecommendationService:
             catalyst=CatalystMetadata(
                 type=structured_event.source_type.value,
                 novelty="medium",
-                source_quality="primary" if structured_event.source_type != EventSourceType.NEWS else "secondary",
+                source_quality=source_quality,
                 event_timestamp=structured_event.source_timestamp,
             ),
             regime_context=RegimeContext(
@@ -122,7 +137,7 @@ class RecommendationService:
             sizing=SizingMetadata(
                 risk_dollars=settings.risk_dollars_per_trade,
                 stop_distance=stop_distance,
-                shares=shares,
+                shares=shares if approved else 0,
             ),
             quality=QualityMetadata(
                 expected_rr=expected_rr,
@@ -168,6 +183,47 @@ class RecommendationService:
     def persist_fill(self, fill: FillRecord) -> None:
         if self.persist_audit:
             self.fill_repository.create(fill)
+
+    @staticmethod
+    def _source_quality_score(source_quality: str) -> float:
+        return {
+            "primary": 1.0,
+            "secondary": 0.6,
+            "tertiary": 0.3,
+        }.get(source_quality, 0.0)
+
+    def _evaluate_quality_gates(
+        self,
+        *,
+        expected_rr: float,
+        volatility_score: float,
+        setup_type: SetupType,
+        source_quality: str,
+    ) -> tuple[bool, list[str]]:
+        reasons: list[str] = []
+
+        if expected_rr < settings.min_expected_rr:
+            reasons.append(
+                f"Expected RR {expected_rr:.2f} below threshold {settings.min_expected_rr:.2f}"
+            )
+
+        if (
+            setup_type == SetupType.EVENT_CONTINUATION
+            and volatility_score > settings.max_event_continuation_volatility
+        ):
+            reasons.append(
+                "Volatility regime too elevated for event continuation "
+                f"({volatility_score:.4f}>{settings.max_event_continuation_volatility:.4f})"
+            )
+
+        source_quality_score = self._source_quality_score(source_quality)
+        if source_quality_score < settings.min_catalyst_source_quality_score:
+            reasons.append(
+                "Catalyst source quality below configured threshold "
+                f"({source_quality_score:.2f}<{settings.min_catalyst_source_quality_score:.2f})"
+            )
+
+        return len(reasons) == 0, reasons
 
     @staticmethod
     def _build_thesis(summary: str, setup_type: str, regime: str) -> str:

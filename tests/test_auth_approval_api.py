@@ -1,10 +1,30 @@
+from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from macmarket_trader.api.main import app
-from macmarket_trader.storage.db import init_db
+from macmarket_trader.domain.models import AppUserModel
+from macmarket_trader.storage.db import SessionLocal, init_db
 
 
 client = TestClient(app)
+
+
+def _bars() -> list[dict[str, object]]:
+    base = date(2026, 1, 1)
+    return [
+        {
+            "date": (base + timedelta(days=i)).isoformat(),
+            "open": 100 + i,
+            "high": 101 + i,
+            "low": 99 + i,
+            "close": 100.5 + i,
+            "volume": 1_000_000 + i * 10_000,
+            "rel_volume": 1.1,
+        }
+        for i in range(25)
+    ]
 
 
 def setup_module() -> None:
@@ -20,12 +40,7 @@ def test_pending_user_blocked_then_admin_approves() -> None:
     pending = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
     assert pending.status_code == 403
 
-    # bootstrap admin user and MFA by calling /me then upgrading DB state through endpoint precondition
     client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
-
-    from macmarket_trader.storage.db import SessionLocal
-    from macmarket_trader.domain.models import AppUserModel
-    from sqlalchemy import select
 
     with SessionLocal() as session:
         admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
@@ -47,12 +62,7 @@ def test_pending_user_blocked_then_admin_approves() -> None:
 
 
 def test_admin_can_reject_user() -> None:
-    from macmarket_trader.storage.db import SessionLocal
-    from macmarket_trader.domain.models import AppUserModel
-    from sqlalchemy import select
-
     with SessionLocal() as session:
-        session.execute(select(AppUserModel)).scalars().all()
         target = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
         target.approval_status = 'pending'
         target_id = target.id
@@ -66,3 +76,19 @@ def test_admin_can_reject_user() -> None:
     assert reject.status_code == 200
     denied = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
     assert denied.status_code == 403
+
+
+def test_recommendation_and_replay_routes_require_approved_user() -> None:
+    rec_resp = client.post(
+        '/recommendations/generate',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'symbol': 'AAPL', 'event_text': 'earnings beat', 'bars': _bars()},
+    )
+    assert rec_resp.status_code == 403
+
+    replay_resp = client.post(
+        '/replay/run',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'symbol': 'AAPL', 'event_texts': ['one'], 'bars': _bars()},
+    )
+    assert replay_resp.status_code == 403

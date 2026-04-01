@@ -1,16 +1,39 @@
-# Windows Deployment
+# Windows Private-Alpha Deployment
 
-Scripts are under `scripts/` and assume host path `C:\Dashboard\MacMarket-Trader`.
+Canonical deployment scripts live in `scripts/`.
 
-## Files
+## Canonical scripts
 
-- `deploy_windows.bat`: pull/reset, mirror live dir, install deps, build frontend, run migrations/tests, start services.
-- `restart_windows.bat`: restart services on configured ports only.
-- `run_backend_dev_windows.bat`: local backend dev server.
-- `run_frontend_dev_windows.bat`: local frontend dev server.
+- `scripts/deploy_windows.bat`
+- `scripts/restart_windows.bat`
+- `scripts/run_backend_dev_windows.bat`
+- `scripts/run_frontend_dev_windows.bat`
+
+Root-level batch files are thin wrappers only.
 
 ## Ports
 
 - Frontend: `9500`
-- Backend API (when frontend exists): `9510`
-- Backend-only mode fallback: `9500`
+- Backend API: `9510`
+
+## Deploy flow (`scripts/deploy_windows.bat`)
+
+1. Stop listeners on ports `9500`/`9510`.
+2. Fetch/reset repo clone (`origin/main`).
+3. Mirror repo into live directory while preserving runtime state.
+4. Create/activate venv, install backend dependencies.
+5. Initialize DB and run backend tests.
+6. Install/build frontend if present.
+7. Start backend and frontend processes with logs.
+
+## Runtime state safety
+
+Deploy mirror excludes runtime state from destructive replacement, including:
+- `.env`
+- `logs/`
+- sqlite files (`*.sqlite`, `*.sqlite3`)
+- data/storage/upload directories (`data`, `storage`, `uploads`)
+
+## Fail-fast behavior
+
+Critical commands are guarded with `|| goto :fail` and deployment stops immediately on failure.

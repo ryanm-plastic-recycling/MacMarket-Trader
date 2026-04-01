@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
+from macmarket_trader.config import settings
 from macmarket_trader.domain.enums import Direction
 from macmarket_trader.domain.models import (
     AuditLogModel,
@@ -10,6 +11,7 @@ from macmarket_trader.domain.models import (
     RecommendationEvidenceModel,
     RecommendationModel,
     ReplayRunModel,
+    ReplayStepModel,
 )
 from macmarket_trader.domain.schemas import Bar, FillRecord, OrderRecord, PortfolioSnapshot, ReplayRunRequest
 from macmarket_trader.replay.engine import ReplayEngine
@@ -91,6 +93,7 @@ def test_order_fill_replay_persistence(tmp_path) -> None:
     service.persist_order(order, notes="unit-test")
     service.persist_fill(FillRecord(order_id=order.order_id, fill_price=100.0, filled_shares=10))
 
+    settings.min_expected_rr = 0.1
     replay = ReplayEngine(service=service, replay_repository=ReplayRepository(session_factory))
     replay.run(ReplayRunRequest(symbol="AAPL", event_texts=["a", "b"], bars=_bars(), portfolio=PortfolioSnapshot()))
 
@@ -98,3 +101,7 @@ def test_order_fill_replay_persistence(tmp_path) -> None:
         assert len(session.execute(select(OrderModel)).scalars().all()) >= 1
         assert len(session.execute(select(FillModel)).scalars().all()) >= 1
         assert len(session.execute(select(ReplayRunModel)).scalars().all()) >= 1
+        steps = session.execute(select(ReplayStepModel).order_by(ReplayStepModel.step_index)).scalars().all()
+        assert len(steps) == 2
+        assert steps[0].pre_step_snapshot != steps[0].post_step_snapshot
+        assert steps[1].pre_step_snapshot == steps[0].post_step_snapshot

@@ -1,5 +1,8 @@
-import { ConsolePage } from "@/components/console-page";
-
 export default function Page() {
-  return <ConsolePage title="pending-approval" subtitle="Operator console view." />;
+  return (
+    <section>
+      <h1>Pending approval</h1>
+      <p>Your identity is authenticated, but desk access remains pending admin approval.</p>
+    </section>
+  );
 }

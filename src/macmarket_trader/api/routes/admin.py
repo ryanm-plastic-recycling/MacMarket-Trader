@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
 from macmarket_trader.data.providers.base import EmailMessage
-from macmarket_trader.data.providers.mock import ConsoleEmailProvider
+from macmarket_trader.data.providers.registry import build_email_provider
 from macmarket_trader.domain.enums import ApprovalStatus
 from macmarket_trader.domain.schemas import ApprovalActionRequest
 from macmarket_trader.storage.db import SessionLocal
@@ -15,7 +15,7 @@ user_router = APIRouter(prefix="/user", tags=["user"])
 
 user_repo = UserRepository(SessionLocal)
 email_repo = EmailLogRepository(SessionLocal)
-email_provider = ConsoleEmailProvider()
+email_provider = build_email_provider()
 
 
 @user_router.get("/me")
