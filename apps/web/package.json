@@ -9,16 +9,20 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@clerk/nextjs": "^6.22.0",
+    "@clerk/nextjs": "6.22.0",
     "lightweight-charts": "4.2.3",
-    "next": "^15.3.1",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "next": "15.5.14",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.1.2",
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.8"
+    "@types/node": "22.0.0",
+    "@types/react": "19.1.2",
+    "typescript": "5.7.0",
+    "vitest": "2.1.8"
+  },
+  "engines": {
+    "node": "20.19.x",
+    "npm": "11.x"
   }
 }
