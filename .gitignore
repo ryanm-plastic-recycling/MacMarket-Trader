@@ -1,3 +1,6 @@
+# =========================
+# Python
+# =========================
 __pycache__/
 *.py[cod]
 *.so
@@ -9,5 +12,69 @@ __pycache__/
 .env
 .coverage
 htmlcov/
+*.log
+
+# Local DB
+*.db
+*.sqlite3
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# Lockfile (KEEP THIS — DO NOT IGNORE)
+# package-lock.json  <-- DO NOT ADD
+
+# Env files
+.env.local
+.env.development
+.env.production
+
+# =========================
+# Windows
+# =========================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# =========================
+# VS Code / IDE
+# =========================
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# =========================
+# OneDrive weirdness (important for you)
+# =========================
+*.tmp
+*.temp
+~$*
+
+# =========================
+# Logs / runtime
+# =========================
+logs/
+*.log
+
+# =========================
+# Build / deployment artifacts
+# =========================
+build/
+release/
+*.pid
+*.seed
+
+# =========================
+# OS junk
+# =========================
 .DS_Store
-macmarket_trader.db
