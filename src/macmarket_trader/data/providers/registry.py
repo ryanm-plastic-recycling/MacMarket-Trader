@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import AuthProvider, EmailProvider
+from macmarket_trader.data.providers.market_data import MarketDataService
 from macmarket_trader.data.providers.clerk import ClerkAuthProvider
 from macmarket_trader.data.providers.mock import ConsoleEmailProvider, MockAuthProvider
 from macmarket_trader.data.providers.resend import ResendEmailProvider
@@ -29,3 +30,13 @@ def build_email_provider() -> EmailProvider:
     if mode == "resend":
         return ResendEmailProvider(api_key=settings.resend_api_key, from_email=settings.resend_from_email)
     raise ValueError(f"Unsupported EMAIL_PROVIDER mode: {settings.email_provider}")
+
+
+_market_data_service: MarketDataService | None = None
+
+
+def build_market_data_service() -> MarketDataService:
+    global _market_data_service
+    if _market_data_service is None:
+        _market_data_service = MarketDataService()
+    return _market_data_service

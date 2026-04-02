@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 type ProviderHealth = {
-  providers: Array<{ provider: string; mode: string; status: string; details: string }>;
+  providers: Array<{ provider: string; mode: string; status: string; details: string; configured?: boolean; feed?: string; sample_symbol?: string; latency_ms?: number | null; last_success_at?: string | null }>;
   checked_at: string;
 };
 
@@ -41,6 +41,7 @@ export function ProviderHealthPanel() {
           <div key={p.provider} style={{ border: "1px solid #2b3642", background: "#111922", padding: 12 }}>
             <strong>{p.provider}</strong> — {p.status} ({p.mode})
             <div style={{ color: "#9fb0c3" }}>{p.details}</div>
+            {p.provider === "market_data" ? <div style={{ color: "#9fb0c3", marginTop: 4 }}>feed={p.feed ?? "-"}, configured={String(p.configured ?? false)}, sample={p.sample_symbol ?? "-"}, latency_ms={p.latency_ms ?? "-"}, last_success={p.last_success_at ?? "-"}</div> : null}
           </div>
         ))}
       </div>

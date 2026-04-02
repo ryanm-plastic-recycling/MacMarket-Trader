@@ -1,6 +1,6 @@
 """Application configuration models."""
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,17 @@ class Settings(BaseSettings):
 
     resend_api_key: str = ""
     resend_from_email: str = "noreply@macmarket-trader.local"
+
+    # market data provider config
+    market_data_provider: str = "fallback"
+    market_data_enabled: bool = False
+    alpaca_api_key_id: str = Field(default="", validation_alias=AliasChoices("APCA_API_KEY_ID", "APCA-API-KEY-ID"))
+    alpaca_api_secret_key: str = Field(default="", validation_alias=AliasChoices("APCA_API_SECRET_KEY", "APCA-API-SECRET-KEY"))
+    alpaca_market_data_base_url: str = "https://data.alpaca.markets"
+    alpaca_market_data_feed: str = "iex"
+    market_data_request_timeout_seconds: int = 8
+    market_data_latest_cache_ttl_seconds: int = 10
+    market_data_historical_cache_ttl_seconds: int = 120
 
     # deterministic recommendation quality gates
     min_expected_rr: float = 1.4

@@ -8,6 +8,21 @@
   - `cp .env.example .env`
   - `cp apps/web/.env.local.example apps/web/.env.local`
 
+
+## Market data provider (backend `.env`)
+
+MacMarket-Trader can run either in deterministic fallback mode or with Alpaca market data.
+
+- Fallback-only (default):
+  - `MARKET_DATA_PROVIDER=fallback`
+  - `MARKET_DATA_ENABLED=false`
+- Alpaca enabled:
+  - `MARKET_DATA_PROVIDER=alpaca`
+  - `MARKET_DATA_ENABLED=true`
+  - `APCA_API_KEY_ID` + `APCA_API_SECRET_KEY`
+
+See `docs/market-data.md` for complete env variables, feed selection (`iex`, `sip`, `delayed_sip`), TTL tuning, and UI health indicators.
+
 ## Backend (FastAPI)
 
 ```bash
