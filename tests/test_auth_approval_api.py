@@ -285,6 +285,62 @@ def test_existing_admin_user_remains_admin_after_login_sync() -> None:
     assert resp.json()['approval_status'] == 'approved'
 
 
+def test_template_email_claim_is_ignored_and_hydrated(monkeypatch) -> None:
+    from macmarket_trader.api.deps import auth as auth_deps
+    from macmarket_trader.data.providers.clerk_profile import ClerkHydratedIdentity
+
+    monkeypatch.setattr(auth_deps.settings, 'auth_provider', 'clerk')
+    monkeypatch.setattr(
+        auth_deps._auth_provider,
+        'verify_token',
+        lambda _token: {
+            'sub': 'clerk_template_email',
+            'email': '{{user.primary_email_address.email_address}}',
+            'name': '{{user.first_name}}',
+            'mfa': False,
+        },
+    )
+    monkeypatch.setattr(
+        auth_deps._clerk_profile_provider,
+        'fetch_identity',
+        lambda _external_id: ClerkHydratedIdentity(email='real.user@example.com', display_name='Real User'),
+    )
+
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer template-token'})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['email'] == 'real.user@example.com'
+    assert payload['display_name'] == 'Real User'
+
+
+def test_template_identity_claims_do_not_create_duplicate_blank_users(monkeypatch) -> None:
+    from macmarket_trader.api.deps import auth as auth_deps
+
+    monkeypatch.setattr(auth_deps.settings, 'auth_provider', 'clerk')
+    monkeypatch.setattr(
+        auth_deps._auth_provider,
+        'verify_token',
+        lambda _token: {
+            'sub': 'clerk_template_missing',
+            'email': '{{user.primary_email_address.email_address}}',
+            'name': '{{user.first_name}}',
+            'mfa': False,
+        },
+    )
+    monkeypatch.setattr(auth_deps._clerk_profile_provider, 'fetch_identity', lambda _external_id: None)
+
+    first = client.get('/user/me', headers={'Authorization': 'Bearer template-missing-token'})
+    second = client.get('/user/me', headers={'Authorization': 'Bearer template-missing-token'})
+    assert first.status_code == 401
+    assert second.status_code == 401
+
+    with SessionLocal() as session:
+        rows = list(
+            session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_template_missing')).scalars()
+        )
+    assert rows == []
+
+
 def test_user_me_includes_last_seen_metadata() -> None:
     _seed_mock_user('user-token')
     resp = client.get('/user/me', headers={'Authorization': 'Bearer user-token'})

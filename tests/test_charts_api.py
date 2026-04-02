@@ -75,6 +75,27 @@ def test_haco_flip_markers_align_to_canonical_bars() -> None:
     assert marker_times.issubset(candle_times)
 
 
+def test_haco_all_layers_share_identical_time_domain() -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+    response = client.post(
+        "/charts/haco",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbol": "AAPL", "timeframe": "1D", "include_heikin_ashi": True, "bars": _bars()},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    candle_by_index = {c["index"]: c["time"] for c in payload["candles"]}
+    haco_by_index = {point["index"]: point["time"] for point in payload["haco_strip"]}
+    hacolt_by_index = {point["index"]: point["time"] for point in payload["hacolt_strip"]}
+
+    assert haco_by_index == candle_by_index
+    assert hacolt_by_index == candle_by_index
+    for marker in payload["markers"]:
+        assert candle_by_index[marker["index"]] == marker["time"]
+
+
 def test_haco_chart_requires_auth() -> None:
     client = TestClient(app)
     response = client.post("/charts/haco", json={"symbol": "AAPL", "bars": _bars()})

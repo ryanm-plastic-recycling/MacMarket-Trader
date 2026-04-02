@@ -35,9 +35,23 @@ def _claim_string(claims: dict[str, Any], keys: list[str]) -> str:
     return ""
 
 
+def _is_template_placeholder(value: str) -> bool:
+    normalized = value.strip()
+    return normalized.startswith("{{") and normalized.endswith("}}")
+
+
+def _sanitize_identity_field(value: str) -> str:
+    normalized = value.strip()
+    if not normalized or _is_template_placeholder(normalized):
+        return ""
+    return normalized
+
+
 def _extract_identity(claims: dict[str, Any]) -> tuple[str, str]:
-    email = _claim_string(claims, ["email", "email_address", "primary_email_address"])
-    display_name = _claim_string(claims, ["name", "full_name", "display_name", "username", "given_name"])
+    email = _sanitize_identity_field(_claim_string(claims, ["email", "email_address", "primary_email_address"]))
+    display_name = _sanitize_identity_field(
+        _claim_string(claims, ["name", "full_name", "display_name", "username", "given_name"])
+    )
 
     # Clerk JWT claims are often sparse for email/name; backend fetch fills gaps.
     external_id = str(claims.get("sub", ""))
@@ -45,9 +59,9 @@ def _extract_identity(claims: dict[str, Any]) -> tuple[str, str]:
         hydrated = _clerk_profile_provider.fetch_identity(external_id)
         if hydrated is not None:
             if not email:
-                email = hydrated.email
+                email = _sanitize_identity_field(hydrated.email)
             if not display_name:
-                display_name = hydrated.display_name
+                display_name = _sanitize_identity_field(hydrated.display_name)
 
     return email, display_name
 

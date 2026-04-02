@@ -42,7 +42,7 @@ export default function Page() {
 
   useEffect(() => { void load(); }, []);
 
-  return <section style={{ display: "grid", gap: 12 }}>
+  return <section className="op-stack">
     <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{status}</StatusBadge>} />
     <Card title="Blotter mode">
       Generated from recommendation workflow bars sourced from: <strong>{dataSource}</strong>. This is paper-only execution for operator review.
@@ -59,7 +59,7 @@ export default function Page() {
       <Card title="Order table">
         <table className="op-table">
           <thead><tr><th>created_at</th><th>symbol</th><th>side</th><th>shares</th><th>limit/fill</th><th>broker status</th><th>fill count</th></tr></thead>
-          <tbody>{orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td>{o.side}</td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}</tbody>
+          <tbody>{orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td><StatusBadge tone={o.side === "buy" ? "good" : "warn"}>{o.side}</StatusBadge></td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}</tbody>
         </table>
       </Card>
       <Card title="Selected order detail">
@@ -70,6 +70,7 @@ export default function Page() {
           <div><strong>Shares:</strong> {selected.shares}</div>
           <div><strong>Limit:</strong> {selected.limit_price}</div>
           <div><strong>Status:</strong> {selected.status}</div>
+          <div><strong>Created at:</strong> {selected.created_at}</div>
           <div><strong>Fills:</strong></div>
           {selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}
         </div>}
