@@ -38,6 +38,14 @@ Do not remove or dilute the HACO/HACOLT policy.
 - Preserve the dedicated HACO page and dashboard HACO module.
 - Do not force HACO into unrelated workflows unless it materially supports the decision.
 
+- HACO is supporting context, not the flagship workflow. Recommendations -> Replay -> Paper Orders remain the product center.
+- Never use numeric bar indices as user-facing chart time axes when real timestamps are available.
+- Never silently mix provider-backed chart context with fallback-generated recommendation/replay/order workflows.
+- If a workflow is running on fallback data, label it explicitly.
+- Client-side fetch failures must degrade gracefully; do not let one nested API failure blank an otherwise usable console page.
+- Admin and account surfaces must prefer truthful identity/status presentation over thin placeholders.
+- Use lightweight inline progress/success/error feedback for actions; avoid modal interruption for routine operator tasks.
+- 
 ## Working style
 
 - Prefer small, bounded changes.
