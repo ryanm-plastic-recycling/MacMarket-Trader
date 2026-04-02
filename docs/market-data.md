@@ -48,3 +48,8 @@ Use these operator-console cues:
 - **Dashboard provider-health pane**: `Market data` shows `alpaca` when live, `fallback` when not.
 - **HACO workspace**: `Data source` and `(deterministic fallback active)` labeling make source mode explicit.
 - **Provider health page**: market-data card includes mode, feed, configured flag, sample symbol, latency, and last-success timestamp.
+
+## Operator-facing provider mode guidance
+
+- Provider health page now summarizes live vs fallback mode, latency, sample symbol, and last successful fetch.
+- If provider requests are rejected (for example 403), UI explains that fallback mode is active and advises checking key/plan permissions.

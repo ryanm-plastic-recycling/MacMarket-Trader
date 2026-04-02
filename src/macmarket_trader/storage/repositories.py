@@ -333,6 +333,11 @@ class InviteRepository:
             session.refresh(row)
             return row
 
+    def list_recent(self, limit: int = 100) -> list[AppInviteModel]:
+        with self.session_factory() as session:
+            stmt = select(AppInviteModel).order_by(AppInviteModel.created_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
+
 
 class DailyBarRepository:
     def __init__(self, session_factory: SessionFactory) -> None:

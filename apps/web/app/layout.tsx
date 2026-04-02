@@ -1,10 +1,12 @@
 import { ClerkProvider } from "@clerk/nextjs";
 
+import "./globals.css";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider>
       <html lang="en">
-        <body style={{ background: "#10151d", color: "#d7dee8", fontFamily: "Inter, Arial", margin: 0 }}>{children}</body>
+        <body>{children}</body>
       </html>
     </ClerkProvider>
   );

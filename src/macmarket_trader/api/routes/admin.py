@@ -8,7 +8,9 @@ from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus
 from macmarket_trader.domain.time import utc_now
-from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot
+from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest
+from macmarket_trader.execution.paper_broker import PaperBroker
+from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, RecommendationRepository, ReplayRepository, UserRepository
@@ -26,6 +28,8 @@ order_repo = OrderRepository(SessionLocal)
 email_provider = build_email_provider()
 market_data_service = build_market_data_service()
 recommendation_service = RecommendationService()
+replay_engine = ReplayEngine(service=recommendation_service)
+paper_broker = PaperBroker()
 
 
 def _demo_bars() -> list[Bar]:
@@ -182,6 +186,16 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
 @user_router.get("/replay-runs")
 def replay_runs(_user=Depends(require_approved_user)):
     rows = replay_repo.list_runs()
+    if not rows and settings.environment.lower() in {"dev", "local", "test"}:
+        replay_engine.run(
+            ReplayRunRequest(
+                symbol="AAPL",
+                event_texts=["Deterministic replay seed event one.", "Deterministic replay seed event two."],
+                bars=_demo_bars(),
+                portfolio=PortfolioSnapshot(),
+            )
+        )
+        rows = replay_repo.list_runs()
     return [
         {
             "id": row.id,
@@ -195,6 +209,31 @@ def replay_runs(_user=Depends(require_approved_user)):
         }
         for row in rows
     ]
+
+
+@user_router.post("/replay-runs")
+def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)):
+    symbol = str(req.get("symbol") or "AAPL").upper()
+    event_texts = req.get("event_texts")
+    if not isinstance(event_texts, list) or not event_texts:
+        event_texts = [
+            "Operator-triggered replay from recommendation context.",
+            "Deterministic follow-through check for replay flow.",
+        ]
+    response = replay_engine.run(
+        ReplayRunRequest(
+            symbol=symbol,
+            event_texts=[str(text) for text in event_texts],
+            bars=_demo_bars(),
+            portfolio=PortfolioSnapshot(),
+        )
+    )
+    latest_run = replay_repo.list_runs(limit=1)
+    return {
+        "id": latest_run[0].id if latest_run else None,
+        "symbol": symbol,
+        "summary_metrics": response.summary_metrics.model_dump(mode="json"),
+    }
 
 
 @user_router.get("/replay-runs/{run_id}/steps")
@@ -215,7 +254,41 @@ def replay_steps(run_id: int, _user=Depends(require_approved_user)):
 
 @user_router.get("/orders")
 def list_orders(_user=Depends(require_approved_user)):
-    return order_repo.list_with_fills()
+    orders = order_repo.list_with_fills()
+    if not orders and settings.environment.lower() in {"dev", "local", "test"}:
+        rec = recommendation_service.generate(
+            symbol="AAPL",
+            bars=_demo_bars(),
+            event_text="Deterministic paper-order seed for operator blotter readiness.",
+            event=None,
+            portfolio=PortfolioSnapshot(),
+        )
+        if rec.approved:
+            intent = recommendation_service.to_order_intent(rec)
+            order, fill = paper_broker.execute(intent)
+            recommendation_service.persist_order(order, notes="seed_order")
+            recommendation_service.persist_fill(fill)
+        orders = order_repo.list_with_fills()
+    return orders
+
+
+@user_router.post("/orders")
+def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
+    symbol = str(req.get("symbol") or "AAPL").upper()
+    rec = recommendation_service.generate(
+        symbol=symbol,
+        bars=_demo_bars(),
+        event_text="Operator staged deterministic paper order from recommendations workflow.",
+        event=None,
+        portfolio=PortfolioSnapshot(),
+    )
+    if not rec.approved:
+        raise HTTPException(status_code=409, detail=rec.rejection_reason or "Recommendation was no-trade; order not staged.")
+    intent = recommendation_service.to_order_intent(rec)
+    order, fill = paper_broker.execute(intent)
+    recommendation_service.persist_order(order, notes="operator_staged_order")
+    recommendation_service.persist_fill(fill)
+    return {"order_id": order.order_id, "symbol": order.symbol, "status": order.status.value}
 
 
 @router.get("/users/pending")
@@ -284,6 +357,23 @@ def create_invite(req: InviteCreateRequest, admin=Depends(require_admin)):
     provider_id = email_provider.send(message)
     email_repo.create(invited_user.id, "private_alpha_invite", invited_user.email, "sent", provider_id)
     return {"invite_id": invite.id, "status": invite.status, "email": invite.email, "invite_token": invite.invite_token}
+
+
+@router.get("/invites")
+def list_invites(_admin=Depends(require_admin)):
+    rows = invite_repo.list_recent(limit=50)
+    return [
+        {
+            "id": row.id,
+            "email": row.email,
+            "display_name": row.display_name,
+            "status": row.status,
+            "invite_token": row.invite_token,
+            "invited_by": row.invited_by,
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
 
 
 def provider_health_summary() -> dict[str, str]:
