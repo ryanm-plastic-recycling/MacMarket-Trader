@@ -11,6 +11,8 @@
   --input-bg: #0e151d;
   --table-border: #25303b;
   --active-row: #162332;
+  --link: #cbd6e2;
+  --nav-hover: #162332;
 }
 
 :root[data-theme="light"] {
@@ -26,6 +28,8 @@
   --input-bg: #ffffff;
   --table-border: #dce6f1;
   --active-row: #e8f0fa;
+  --link: #2b4056;
+  --nav-hover: #e8f0fa;
 }
 
 * { box-sizing: border-box; }
@@ -37,8 +41,8 @@ body { background: var(--bg); color: var(--text); font-family: Inter, Arial, san
 .op-topbar { border-bottom: 1px solid var(--border); padding: 12px 18px; background: var(--topbar-bg); color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .op-content { padding: 18px; display: grid; gap: 12px; }
 .op-nav { display: grid; gap: 8px; }
-.op-nav a { color: #cbd6e2; text-decoration: none; padding: 6px 8px; border-radius: 6px; }
-.op-nav a:hover { background: #162332; }
+.op-nav a { color: var(--link); text-decoration: none; padding: 6px 8px; border-radius: 6px; }
+.op-nav a:hover { background: var(--nav-hover); }
 
 .op-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .op-page-header h1 { margin: 0; font-size: 24px; }
@@ -72,6 +76,7 @@ body { background: var(--bg); color: var(--text); font-family: Inter, Arial, san
 input, select, button, textarea { background: var(--input-bg); color: var(--text); border: 1px solid var(--border); padding: 8px 10px; border-radius: 6px; }
 button { cursor: pointer; }
 button:disabled { opacity: .6; cursor: not-allowed; }
+.op-theme-toggle { min-width: 92px; }
 
 @media (max-width: 1200px) {
   .op-grid-2, .op-grid-3, .op-grid-4, .op-shell { grid-template-columns: 1fr; }

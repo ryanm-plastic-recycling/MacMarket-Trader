@@ -7,6 +7,8 @@ export type NormalizedApiResult<T> = {
   raw: unknown;
 };
 
+type TokenProvider = (() => Promise<string | null>) | undefined;
+
 function coerceMessage(payload: unknown, fallback: string): string {
   if (typeof payload === "string") return payload;
   if (payload && typeof payload === "object") {
@@ -69,4 +71,20 @@ export async function fetchNormalized<T>(input: RequestInfo | URL, init?: Reques
     error: null,
     raw: payload,
   };
+}
+
+export async function fetchNormalizedAuthed<T>(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  getToken: TokenProvider,
+  retryCount = 0,
+): Promise<NormalizedApiResult<T>> {
+  const token = await getToken?.();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetchNormalized<T>(
+    input,
+    { ...init, headers },
+    retryCount,
+  );
 }

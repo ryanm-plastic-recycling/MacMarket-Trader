@@ -59,6 +59,12 @@ class RecommendationRepository:
         with self.session_factory() as session:
             return session.get(RecommendationModel, recommendation_id)
 
+    def get_by_recommendation_uid(self, recommendation_uid: str) -> RecommendationModel | None:
+        with self.session_factory() as session:
+            return session.execute(
+                select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
+            ).scalar_one_or_none()
+
     def attach_workflow_metadata(self, recommendation_id: str, *, market_data_source: str, fallback_mode: bool) -> None:
         with self.session_factory() as session:
             row = session.execute(
@@ -114,6 +120,14 @@ class OrderRepository:
                     parts = {segment.split("=", 1)[0]: segment.split("=", 1)[1] for segment in order.notes.split("|") if "=" in segment}
                     source = parts.get("source")
                     fallback_mode = parts.get("fallback") == "true"
+                if source is None and order.recommendation_id:
+                    rec = session.execute(
+                        select(RecommendationModel).where(RecommendationModel.recommendation_id == order.recommendation_id)
+                    ).scalar_one_or_none()
+                    workflow = (rec.payload or {}).get("workflow", {}) if rec else {}
+                    source = workflow.get("market_data_source")
+                    if workflow.get("fallback_mode") is not None:
+                        fallback_mode = bool(workflow.get("fallback_mode"))
                 output.append(
                     {
                         "order_id": order.order_id,

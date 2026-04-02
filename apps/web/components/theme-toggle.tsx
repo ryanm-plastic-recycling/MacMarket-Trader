@@ -21,5 +21,5 @@ export function ThemeToggle() {
     window.localStorage.setItem(STORAGE_KEY, next);
   }
 
-  return <button onClick={toggleTheme}>Theme: {theme}</button>;
+  return <button onClick={toggleTheme} className="op-theme-toggle">{theme === "dark" ? "🌙 Dark" : "☀️ Light"}</button>;
 }

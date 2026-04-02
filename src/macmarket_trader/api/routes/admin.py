@@ -240,21 +240,33 @@ def replay_runs(_user=Depends(require_approved_user)):
             )
         )
         rows = replay_repo.list_runs()
-    return [
-        {
-            "id": row.id,
-            "symbol": row.symbol,
-            "recommendation_count": row.recommendation_count,
-            "approved_count": row.approved_count,
-            "fill_count": row.fill_count,
-            "ending_heat": row.ending_heat,
-            "ending_open_notional": row.ending_open_notional,
-            "created_at": row.created_at,
-            "market_data_source": "workflow_snapshot_unavailable",
-            "fallback_mode": None,
-        }
-        for row in rows
-    ]
+    output: list[dict[str, object]] = []
+    for row in rows:
+        source = "workflow_snapshot_unavailable"
+        fallback_mode: bool | None = None
+        first_step = replay_repo.list_steps_for_run(row.id)[:1]
+        if first_step:
+            rec = recommendation_repo.get_by_recommendation_uid(first_step[0].recommendation_id)
+            workflow = (rec.payload or {}).get("workflow", {}) if rec else {}
+            source = str(workflow.get("market_data_source") or source)
+            fallback = workflow.get("fallback_mode")
+            if fallback is not None:
+                fallback_mode = bool(fallback)
+        output.append(
+            {
+                "id": row.id,
+                "symbol": row.symbol,
+                "recommendation_count": row.recommendation_count,
+                "approved_count": row.approved_count,
+                "fill_count": row.fill_count,
+                "ending_heat": row.ending_heat,
+                "ending_open_notional": row.ending_open_notional,
+                "created_at": row.created_at,
+                "market_data_source": source,
+                "fallback_mode": fallback_mode,
+            }
+        )
+    return output
 
 
 @user_router.post("/replay-runs")
@@ -275,6 +287,8 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
             portfolio=PortfolioSnapshot(),
         )
     )
+    for rec in response.recommendations:
+        recommendation_repo.attach_workflow_metadata(rec.recommendation_id, market_data_source=source, fallback_mode=fallback_mode)
     latest_run = replay_repo.list_runs(limit=1)
     return {
         "id": latest_run[0].id if latest_run else None,

@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalized } from "@/lib/api-client";
+import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type PendingUser = { id: number; email: string; display_name: string };
 type Invite = { id: number; email: string; display_name: string; status: string; invited_by: string; created_at: string; invite_token: string };
 
 export function PendingUsersPanel() {
+  const { getToken } = useAuth();
   const [users, setUsers] = useState<PendingUser[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,8 +24,8 @@ export function PendingUsersPanel() {
     setLoading(true);
     setError(null);
     const [usersResponse, invitesResponse] = await Promise.all([
-      fetchNormalized<PendingUser>("/api/admin/users/pending"),
-      fetchNormalized<Invite>("/api/admin/invites"),
+      fetchNormalizedAuthed<PendingUser>("/api/admin/users/pending", undefined, getToken),
+      fetchNormalizedAuthed<Invite>("/api/admin/invites", undefined, getToken),
     ]);
 
     if (!usersResponse.ok) {
@@ -42,11 +44,11 @@ export function PendingUsersPanel() {
   async function sendInvite() {
     if (!inviteEmail.trim()) return;
     setInviteStatus("Sending invite...");
-    const response = await fetchNormalized("/api/admin/invites", {
+    const response = await fetchNormalizedAuthed("/api/admin/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: inviteEmail.trim(), display_name: inviteName.trim() || undefined }),
-    });
+    }, getToken);
     if (!response.ok) {
       setInviteStatus(response.error ?? `Invite failed (${response.status})`);
       return;
@@ -60,7 +62,7 @@ export function PendingUsersPanel() {
 
   async function act(userId: number, action: "approve" | "reject") {
     setResultById((prev) => ({ ...prev, [userId]: "Submitting..." }));
-    const response = await fetchNormalized(`/api/admin/users/${userId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, note: `Actioned from admin queue (${action})` }) });
+    const response = await fetchNormalizedAuthed(`/api/admin/users/${userId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, note: `Actioned from admin queue (${action})` }) }, getToken);
     if (!response.ok) {
       setResultById((prev) => ({ ...prev, [userId]: `Failed (${response.status})` }));
       return;

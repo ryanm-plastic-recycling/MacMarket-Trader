@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalized } from "@/lib/api-client";
+import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type AdminUser = {
   id: number;
@@ -20,12 +21,13 @@ type AdminUser = {
 };
 
 export function AdminUsersPanel() {
+  const { getToken } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchNormalized<AdminUser>("/api/admin/users").then((result) => {
+    fetchNormalizedAuthed<AdminUser>("/api/admin/users", undefined, getToken).then((result) => {
       if (!result.ok) {
         setError(result.error ?? "Unable to load current users");
       } else {
@@ -63,8 +65,8 @@ export function AdminUsersPanel() {
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
-                  <td>{user.display_name || "-"}</td>
-                  <td>{user.email}</td>
+                  <td>{user.display_name || "Unnamed user"}</td>
+                  <td>{user.email && !user.email.includes("{{") ? user.email : "(identity pending)"}</td>
                   <td><StatusBadge tone="neutral">{user.app_role}</StatusBadge></td>
                   <td><StatusBadge tone={user.approval_status === "approved" ? "good" : "warn"}>{user.approval_status}</StatusBadge></td>
                   <td>{user.mfa_enabled ? "enabled" : "not enabled"}</td>
