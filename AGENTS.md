@@ -6,6 +6,12 @@ Read `README.md` first. Treat it as the canonical architecture charter.
 Do not shrink the root README into a status page.
 Do not remove or dilute the HACO/HACOLT policy.
 
+## Product-priority rules
+
+- HACO/HACOLT are important supporting modules, but they are not the center of the product.
+- The flagship operator surface is the Recommendations workspace.
+- Replay, Orders, Account, Admin, and Provider Health must feel like real operator tools, not placeholders.
+
 ## Product rules
 
 - MacMarket-Trader is a research-first, event-driven trading system.
@@ -20,6 +26,30 @@ Do not remove or dilute the HACO/HACOLT policy.
 - For frontend changes, ensure `npm install` and `npm run build` succeed.
 - For backend changes, run `pytest`.
 - Keep docs aligned with implementation.
+
+## UI and workflow rules
+
+- Every core operator page must implement all four states:
+  - loading
+  - empty
+  - error
+  - populated
+- Core console pages should not rely primarily on ad hoc inline styles.
+- Favor reusable console components and a consistent operator-console design language.
+- Do not expose raw backend/provider errors directly as the primary UX.
+- Provide operator-actionable guidance when external providers fail.
+
+## Charting correctness rules
+
+- Any chart layer derived from the same bar series must share one canonical indexed time base.
+- Price bars, signal markers, HACO strip, and HACOLT strip must remain aligned under zoom/pan.
+- Do not ship unsynced visual indicator strips as the primary implementation.
+
+## Productization rules
+
+- Invite-only onboarding is the primary private-alpha path unless explicitly changed.
+- Do not treat public self-signup as the main go-to-market flow.
+- The app should be presentable in local/dev mode with deterministic seed data for core workflows.
 
 ## Guardrails
 
