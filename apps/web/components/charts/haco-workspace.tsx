@@ -45,11 +45,11 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     const hacoChart = createChart(hacoRef.current, { ...baseOptions, height: 110 });
     const hacoltChart = createChart(hacoltRef.current, { ...baseOptions, height: 110 });
 
-    const candles: CandlestickData<Time>[] = data.candles.map((c) => ({ time: c.index as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    const candles: CandlestickData<Time>[] = data.candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
     const priceSeries: ISeriesApi<"Candlestick"> = priceChart.addCandlestickSeries();
     priceSeries.setData(candles);
     priceSeries.setMarkers(data.markers.map((m) => ({
-      time: m.index as Time,
+      time: m.time as Time,
       position: m.direction === "buy" ? "belowBar" : "aboveBar",
       color: m.direction === "buy" ? "#21c06e" : "#d14b4b",
       shape: m.direction === "buy" ? "arrowUp" : "arrowDown",
@@ -57,10 +57,10 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     })));
 
     const hacoSeries = hacoChart.addHistogramSeries({ base: 0, color: "#21c06e" });
-    hacoSeries.setData(data.haco_strip.map((p) => ({ time: p.index as Time, value: p.value, color: p.state === "green" ? "#21c06e" : "#c64242" })));
+    hacoSeries.setData(data.haco_strip.map((p) => ({ time: p.time as Time, value: p.value, color: p.state === "green" ? "#21c06e" : "#c64242" })));
 
     const hacoltSeries = hacoltChart.addHistogramSeries({ base: 0, color: "#4d8dff" });
-    hacoltSeries.setData(data.hacolt_strip.map((p) => ({ time: p.index as Time, value: p.value, color: p.direction === "up" ? "#4d8dff" : "#7a4dc1" })));
+    hacoltSeries.setData(data.hacolt_strip.map((p) => ({ time: p.time as Time, value: p.value, color: p.direction === "up" ? "#4d8dff" : "#7a4dc1" })));
 
     let syncing = false;
     const syncFrom = (source: IChartApi, targets: IChartApi[]) => {

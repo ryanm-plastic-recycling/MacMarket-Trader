@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalized } from "@/lib/api-client";
 
-type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number };
+type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
 
 export default function Page() {
@@ -84,7 +84,7 @@ export default function Page() {
       </Card>
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
-          <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol}</div>
+          <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "unknown"})` : (selected.market_data_source ?? dataSource)}</div>
           <div className="op-card" style={{ marginBottom: 8 }}>
             <strong>Narrative summary</strong>
             <div>

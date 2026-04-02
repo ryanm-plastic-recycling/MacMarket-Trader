@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalized } from "@/lib/api-client";
 
-type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
+type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -70,6 +70,7 @@ export default function Page() {
           <div><strong>Shares:</strong> {selected.shares}</div>
           <div><strong>Limit:</strong> {selected.limit_price}</div>
           <div><strong>Status:</strong> {selected.status}</div>
+          <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "unknown"})` : (selected.market_data_source ?? dataSource)}</div>
           <div><strong>Created at:</strong> {selected.created_at}</div>
           <div><strong>Fills:</strong></div>
           {selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}

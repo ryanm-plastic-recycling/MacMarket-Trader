@@ -15,6 +15,8 @@ type AdminUser = {
   invite_status?: string | null;
   last_seen_at?: string | null;
   last_authenticated_at?: string | null;
+  external_auth_user_id?: string | null;
+  identity_warning?: string | null;
 };
 
 export function AdminUsersPanel() {
@@ -55,7 +57,7 @@ export function AdminUsersPanel() {
                 <th>approval</th>
                 <th>MFA</th>
                 <th>invite</th>
-                <th>last seen</th>
+                <th>last seen</th><th>last auth</th><th>external auth id</th>
               </tr>
             </thead>
             <tbody>
@@ -67,7 +69,7 @@ export function AdminUsersPanel() {
                   <td><StatusBadge tone={user.approval_status === "approved" ? "good" : "warn"}>{user.approval_status}</StatusBadge></td>
                   <td>{user.mfa_enabled ? "enabled" : "not enabled"}</td>
                   <td>{user.invite_status ?? "-"}</td>
-                  <td>{user.last_seen_at ?? user.last_authenticated_at ?? "-"}</td>
+                  <td>{user.last_seen_at ?? "-"}</td><td>{user.last_authenticated_at ?? "-"}</td><td>{user.external_auth_user_id ?? "-"}{user.identity_warning ? ` (${user.identity_warning})` : ""}</td>
                 </tr>
               ))}
             </tbody>

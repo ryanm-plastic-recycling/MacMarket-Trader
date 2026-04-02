@@ -7,7 +7,7 @@ import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/compone
 import { fetchNormalized } from "@/lib/api-client";
 import { fetchHacoChart } from "@/lib/haco-api";
 
-type Rec = { id: number; created_at: string; symbol: string; payload: any; recommendation_id: string };
+type Rec = { id: number; created_at: string; symbol: string; payload: any; recommendation_id: string; market_data_source?: string; fallback_mode?: boolean };
 
 const SORTABLE_COLUMNS = ["created_at", "symbol", "side", "setup", "approved", "expected_rr", "confidence", "catalyst"] as const;
 type SortColumn = (typeof SORTABLE_COLUMNS)[number];
@@ -24,6 +24,7 @@ export default function Page() {
   const [sortCol, setSortCol] = useState<SortColumn>("created_at");
   const [showHaco, setShowHaco] = useState(false);
   const [chartSource, setChartSource] = useState("unknown");
+  const [chartError, setChartError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -97,10 +98,18 @@ export default function Page() {
   useEffect(() => {
     async function renderChart() {
       if (!chartRef.current || !selected) return;
+      const selectedFallback = Boolean(selected.fallback_mode ?? selected.payload?.workflow?.fallback_mode);
+      const selectedSource = String(selected.market_data_source ?? selected.payload?.workflow?.market_data_source ?? "unknown");
+      setChartSource(selectedFallback ? `fallback (${selectedSource})` : selectedSource);
+      if (selectedFallback) {
+        setChartError("Selected recommendation was generated from fallback bars; provider chart overlay is disabled to avoid mixed-source context.");
+        return;
+      }
+      setChartError(null);
       const payload = await fetchHacoChart({ symbol: selected.symbol, timeframe: "1D", include_heikin_ashi: showHaco });
       setChartSource(payload.fallback_mode ? `fallback (${payload.data_source})` : payload.data_source);
       const chart = createChart(chartRef.current, { height: 280, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
-      const candles: CandlestickData<Time>[] = payload.candles.slice(-90).map((c) => ({ time: c.index as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
+      const candles: CandlestickData<Time>[] = payload.candles.slice(-90).map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
       chart.addCandlestickSeries().setData(candles);
       const invalidation = chart.addLineSeries({ color: "#ff8b8b", lineStyle: LineStyle.Dashed, lineWidth: 2 });
       const target = chart.addLineSeries({ color: "#7ee787", lineStyle: LineStyle.Dotted, lineWidth: 2 });
@@ -115,7 +124,7 @@ export default function Page() {
       let hacoSeries;
       if (showHaco) {
         hacoSeries = chart.addLineSeries({ color: "#f7b267", lineWidth: 1 });
-        hacoSeries.setData(payload.heikin_ashi_candles.slice(-90).map((c) => ({ time: c.index as Time, value: c.close })));
+        hacoSeries.setData(payload.heikin_ashi_candles.slice(-90).map((c) => ({ time: c.time as Time, value: c.close })));
       }
       return () => chart.remove();
     }
@@ -123,7 +132,7 @@ export default function Page() {
     renderChart().then((c) => {
       cleanup = c;
     }).catch(() => {
-      setError("Unable to render chart overlay for selected recommendation.");
+      setChartError("Unable to render chart overlay for selected recommendation. Workflow detail remains available.");
     });
     return () => cleanup?.();
   }, [selected, showHaco]);
@@ -145,6 +154,7 @@ export default function Page() {
       </Card>
 
       {error ? <ErrorState title="Recommendations unavailable" hint={error} /> : null}
+      {chartError ? <ErrorState title="Chart context notice" hint={chartError} /> : null}
       {!loading && !error && rows.length === 0 ? <EmptyState title="No recommendations yet" hint="Generate a deterministic recommendation to seed the workspace." /> : null}
 
       <div className="op-grid-2">

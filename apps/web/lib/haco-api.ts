@@ -39,6 +39,7 @@ export async function fetchHacoChart(request: HacoChartRequest): Promise<HacoCha
     },
     body: JSON.stringify(request),
     cache: "no-store",
+    credentials: "include",
   });
   if (!response.ok) {
     throw new Error(`Failed to load HACO chart: ${response.status}`);

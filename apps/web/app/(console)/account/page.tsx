@@ -2,18 +2,29 @@
 
 import { useEffect, useState } from "react";
 
-import { Card, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { Card, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalized } from "@/lib/api-client";
 
 export default function Page() {
   const [user, setUser] = useState<any>(null);
-  useEffect(() => { fetchNormalized<any>("/api/user/me").then((r) => r.ok && setUser(r.data)); }, []);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    fetchNormalized<any>("/api/user/me").then((r) => {
+      if (!r.ok) {
+        setError(r.error ?? "Unable to load account details.");
+        return;
+      }
+      setUser(r.data);
+    });
+  }, []);
 
   return <section style={{ display: "grid", gap: 12 }}>
     <PageHeader title="Account" subtitle="Self-service profile, approval status, and authentication posture for private-alpha desk access." />
     <Card title="What this page is for">
       Confirm your authorization state before running recommendations, replay, or paper orders. If anything is out of date, contact an admin from the invite-only onboarding flow.
     </Card>
+    {error ? <ErrorState title="Account unavailable" hint={error} /> : null}
+    {user?.identity_warning ? <StatusBadge tone="warn">Identity data incomplete: {user.identity_warning}</StatusBadge> : null}
     <div className="op-grid-2">
       <Card title="Identity">
         <div>Email: {user?.email ?? "-"}</div>
@@ -27,6 +38,9 @@ export default function Page() {
         <div>Last seen: {user?.last_seen_at ?? "-"}</div>
         <div>Last authenticated: {user?.last_authenticated_at ?? "-"}</div>
         <div>Invite-only onboarding: active</div>
+      </Card>
+      <Card title="Preferences">
+        <div>Theme preference is available from the top bar and persists locally in this browser.</div>
       </Card>
     </div>
   </section>;

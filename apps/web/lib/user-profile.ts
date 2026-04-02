@@ -13,7 +13,7 @@ export type UserProfile = {
 };
 
 export async function getUserProfileFromProxy(): Promise<UserProfile> {
-  const response = await fetch("/api/user/me", { cache: "no-store" });
+  const response = await fetch("/api/user/me", { cache: "no-store", credentials: "include" });
   if (!response.ok) {
     throw new Error(`Failed to load user profile: ${response.status}`);
   }
