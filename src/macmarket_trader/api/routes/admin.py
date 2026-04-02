@@ -50,6 +50,14 @@ def _demo_bars() -> list[Bar]:
     ]
 
 
+def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
+    bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=limit)
+    if bars:
+        return bars, source, fallback_mode
+    demo = _demo_bars()
+    return demo, "fallback", True
+
+
 @user_router.get("/me")
 def me(user=Depends(current_user)):
     return {
@@ -59,6 +67,9 @@ def me(user=Depends(current_user)):
         "approval_status": user.approval_status,
         "app_role": user.app_role,
         "mfa_enabled": user.mfa_enabled,
+        "auth_provider": settings.auth_provider.strip().lower() or "mock",
+        "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
+        "last_authenticated_at": user.last_authenticated_at.isoformat() if user.last_authenticated_at else None,
     }
 
 
@@ -123,6 +134,11 @@ def dashboard(user=Depends(require_approved_user)):
             }
         ],
         "quick_links": ["/charts/haco", "/admin/users/pending", "/recommendations"],
+        "workflow_guide": [
+            "Start in Recommendations to generate a deterministic setup from current market data mode.",
+            "Run Replay to validate path-by-path risk transitions before staging paper execution.",
+            "Use Orders to review fills and paper blotter outcomes.",
+        ],
     }
 
 
@@ -130,9 +146,10 @@ def dashboard(user=Depends(require_approved_user)):
 def list_recommendations(_user=Depends(require_approved_user)):
     rows = recommendation_repo.list_recent()
     if not rows and settings.environment.lower() in {"dev", "local", "test"}:
+        seed_bars, _, _ = _workflow_bars("AAPL")
         recommendation_service.generate(
             symbol="AAPL",
-            bars=_demo_bars(),
+            bars=seed_bars,
             event_text="Deterministic seeded recommendation for local operator-console readiness.",
             event=None,
             portfolio=PortfolioSnapshot(),
@@ -154,9 +171,10 @@ def list_recommendations(_user=Depends(require_approved_user)):
 def generate_recommendations(req: dict[str, object], _user=Depends(require_approved_user)):
     symbol = str(req.get("symbol") or "AAPL").upper()
     event_text = str(req.get("event_text") or "Operator-triggered deterministic refresh run.")
+    bars, source, fallback_mode = _workflow_bars(symbol)
     rec = recommendation_service.generate(
         symbol=symbol,
-        bars=_demo_bars(),
+        bars=bars,
         event_text=event_text,
         event=None,
         portfolio=PortfolioSnapshot(),
@@ -166,6 +184,8 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         "symbol": rec.symbol,
         "approved": rec.approved,
         "outcome": rec.outcome,
+        "market_data_source": source,
+        "fallback_mode": fallback_mode,
     }
 
 
@@ -187,11 +207,12 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
 def replay_runs(_user=Depends(require_approved_user)):
     rows = replay_repo.list_runs()
     if not rows and settings.environment.lower() in {"dev", "local", "test"}:
+        seed_bars, _, _ = _workflow_bars("AAPL")
         replay_engine.run(
             ReplayRunRequest(
                 symbol="AAPL",
                 event_texts=["Deterministic replay seed event one.", "Deterministic replay seed event two."],
-                bars=_demo_bars(),
+                bars=seed_bars,
                 portfolio=PortfolioSnapshot(),
             )
         )
@@ -220,11 +241,12 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
             "Operator-triggered replay from recommendation context.",
             "Deterministic follow-through check for replay flow.",
         ]
+    bars, source, fallback_mode = _workflow_bars(symbol)
     response = replay_engine.run(
         ReplayRunRequest(
             symbol=symbol,
             event_texts=[str(text) for text in event_texts],
-            bars=_demo_bars(),
+            bars=bars,
             portfolio=PortfolioSnapshot(),
         )
     )
@@ -233,6 +255,8 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         "id": latest_run[0].id if latest_run else None,
         "symbol": symbol,
         "summary_metrics": response.summary_metrics.model_dump(mode="json"),
+        "market_data_source": source,
+        "fallback_mode": fallback_mode,
     }
 
 
@@ -256,9 +280,10 @@ def replay_steps(run_id: int, _user=Depends(require_approved_user)):
 def list_orders(_user=Depends(require_approved_user)):
     orders = order_repo.list_with_fills()
     if not orders and settings.environment.lower() in {"dev", "local", "test"}:
+        seed_bars, _, _ = _workflow_bars("AAPL")
         rec = recommendation_service.generate(
             symbol="AAPL",
-            bars=_demo_bars(),
+            bars=seed_bars,
             event_text="Deterministic paper-order seed for operator blotter readiness.",
             event=None,
             portfolio=PortfolioSnapshot(),
@@ -275,9 +300,10 @@ def list_orders(_user=Depends(require_approved_user)):
 @user_router.post("/orders")
 def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     symbol = str(req.get("symbol") or "AAPL").upper()
+    bars, source, fallback_mode = _workflow_bars(symbol)
     rec = recommendation_service.generate(
         symbol=symbol,
-        bars=_demo_bars(),
+        bars=bars,
         event_text="Operator staged deterministic paper order from recommendations workflow.",
         event=None,
         portfolio=PortfolioSnapshot(),
@@ -288,13 +314,40 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     order, fill = paper_broker.execute(intent)
     recommendation_service.persist_order(order, notes="operator_staged_order")
     recommendation_service.persist_fill(fill)
-    return {"order_id": order.order_id, "symbol": order.symbol, "status": order.status.value}
+    return {
+        "order_id": order.order_id,
+        "symbol": order.symbol,
+        "status": order.status.value,
+        "market_data_source": source,
+        "fallback_mode": fallback_mode,
+    }
 
 
 @router.get("/users/pending")
 def pending_users(_admin=Depends(require_admin)):
     users = user_repo.list_by_status(ApprovalStatus.PENDING)
     return [{"id": u.id, "email": u.email, "display_name": u.display_name} for u in users]
+
+
+@router.get("/users")
+def list_users(_admin=Depends(require_admin)):
+    users = user_repo.list_recent_users(limit=500)
+    invites = invite_repo.list_recent(limit=500)
+    invite_by_email = {item.email.strip().lower(): item for item in invites}
+    return [
+        {
+            "id": user.id,
+            "display_name": user.display_name,
+            "email": user.email,
+            "app_role": user.app_role,
+            "approval_status": user.approval_status,
+            "mfa_enabled": user.mfa_enabled,
+            "invite_status": invite_by_email.get(user.email.strip().lower()).status if invite_by_email.get(user.email.strip().lower()) else None,
+            "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
+            "last_authenticated_at": user.last_authenticated_at.isoformat() if user.last_authenticated_at else None,
+        }
+        for user in users
+    ]
 
 
 @router.post("/users/{user_id}/approve")
@@ -409,6 +462,11 @@ def provider_health(_admin=Depends(require_admin)):
                 "mode": summary["market_data"],
                 "status": market_health.status,
                 "details": market_health.details,
+                "operational_impact": (
+                    "Recommendations, replay, and paper orders are currently running on deterministic fallback bars."
+                    if market_health.status != "ok"
+                    else "Recommendations, replay, and paper orders are using provider-backed bars."
+                ),
                 "configured": market_health.configured,
                 "feed": market_health.feed,
                 "sample_symbol": market_health.sample_symbol,

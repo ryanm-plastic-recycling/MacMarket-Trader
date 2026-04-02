@@ -80,7 +80,7 @@ def current_user(authorization: str | None = Header(default=None)):
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    return user
+    return _user_repo.touch_last_seen(user.id)
 
 
 def require_approved_user(user=Depends(current_user)):

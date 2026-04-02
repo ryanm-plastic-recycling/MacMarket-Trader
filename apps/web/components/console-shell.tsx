@@ -7,6 +7,7 @@ const links = [
   ["/orders", "Orders"],
   ["/charts/haco", "HACO Context"],
   ["/admin/pending-users", "Admin / Invites"],
+  ["/admin/users", "Admin / Users"],
   ["/admin/provider-health", "Provider Health"],
   ["/account", "Account"],
 ] as const;

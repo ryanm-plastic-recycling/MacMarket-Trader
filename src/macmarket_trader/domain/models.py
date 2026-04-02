@@ -186,6 +186,8 @@ class AppUserModel(Base):
     approval_status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     app_role: Mapped[str] = mapped_column(String(24), default="user", index=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_authenticated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)

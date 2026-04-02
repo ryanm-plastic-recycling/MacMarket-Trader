@@ -10,6 +10,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from macmarket_trader.config import settings
 from macmarket_trader.domain.schemas import Bar
@@ -291,8 +292,9 @@ class PolygonMarketDataProvider(MarketDataProvider):
     def _normalize_polygon_bar(self, bar: dict[str, Any]) -> Bar:
         ts_ms = int(bar.get("t") or 0)
         ts = datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
+        market_date = ts.astimezone(ZoneInfo("America/New_York")).date()
         return Bar(
-            date=ts.date(),
+            date=market_date,
             open=float(bar["o"]),
             high=float(bar["h"]),
             low=float(bar["l"]),

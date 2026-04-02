@@ -14,6 +14,7 @@ export default function Page() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
+  const [dataSource, setDataSource] = useState("unknown");
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
 
   async function loadRuns() {
@@ -28,12 +29,15 @@ export default function Page() {
 
   async function runReplay() {
     setStatus("running replay...");
-    const run = await fetchNormalized<{ id: number }>("/api/user/replay-runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: selected?.symbol ?? "AAPL" }) });
+    const run = await fetchNormalized<{ id: number; market_data_source?: string; fallback_mode?: boolean }>("/api/user/replay-runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: selected?.symbol ?? "AAPL" }) });
     if (!run.ok) {
       setError(run.error ?? "Replay failed.");
       setStatus("failed");
       return;
     }
+    const fallbackMode = run.data?.fallback_mode ?? false;
+    const sourceName = run.data?.market_data_source ?? "provider";
+    setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("replay complete");
     await loadRuns();
   }
@@ -53,6 +57,9 @@ export default function Page() {
 
   return <section style={{ display: "grid", gap: 12 }}>
     <PageHeader title="Replay workspace" subtitle="Run deterministic replay from recommendation context and inspect step-by-step risk transitions." actions={<StatusBadge tone="neutral">{status}</StatusBadge>} />
+    <Card title="What replay is for">
+      Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{dataSource}</strong>.
+    </Card>
     <Card>
       <div className="op-row">
         <button onClick={() => void runReplay()}>Run replay</button>
