@@ -18,6 +18,25 @@ Do not remove or dilute the HACO/HACOLT policy.
 - LLMs extract/explain; deterministic rules decide and size.
 - HACO/HACOLT are retained as charting/context/research components, not the sole approval engine.
 - Security, approval gating, auditability, and deterministic risk are mandatory.
+1. Product center
+- Recommendations Workspace is the flagship product surface.
+- HACO is supporting technical context, not the center of the product.
+
+2. Workflow coherence
+- If provider-backed market data is configured, user-facing recommendation/replay/order flows must prefer provider-backed bars over demo bars.
+- Fallback mode must be explicit, never hidden.
+
+3. Admin and account usefulness
+- Admin surfaces must show current users, not only pending users/invites.
+- Persist and display practical account metadata such as last_seen_at / last_authenticated_at when available.
+
+4. Operator-console quality bar
+- Avoid placeholder-only pages.
+- Every primary page must answer: what is this for, what should the operator do next, and what data supports that action.
+
+5. HACO scope discipline
+- Preserve the dedicated HACO page and dashboard HACO module.
+- Do not force HACO into unrelated workflows unless it materially supports the decision.
 
 ## Working style
 
