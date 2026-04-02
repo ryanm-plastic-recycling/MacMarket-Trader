@@ -20,8 +20,8 @@ function coerceMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function fetchNormalized<T>(input: RequestInfo | URL, init?: RequestInit): Promise<NormalizedApiResult<T>> {
-  const response = await fetch(input, { cache: "no-store", ...init });
+export async function fetchNormalized<T>(input: RequestInfo | URL, init?: RequestInit, retryCount = 0): Promise<NormalizedApiResult<T>> {
+  const response = await fetch(input, { cache: "no-store", credentials: "include", ...init });
   let payload: unknown = null;
   try {
     payload = await response.json();
@@ -47,6 +47,10 @@ export async function fetchNormalized<T>(input: RequestInfo | URL, init?: Reques
           : [];
 
   if (!response.ok) {
+    if (response.status === 401 && retryCount < 1) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return fetchNormalized<T>(input, { ...init, headers: init?.headers }, retryCount + 1);
+    }
     return {
       ok: false,
       status: response.status,

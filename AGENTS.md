@@ -111,3 +111,7 @@ Do not remove or dilute the HACO/HACOLT policy.
 - Core operator pages must ship loading, empty, error, and populated states.
 - Operator surfaces with shared signal bars must share canonical synced time scales.
 - Avoid large inline-style-only implementations for core console pages.
+
+- Do not use numeric bar indices as user-facing chart time axes when canonical timestamps are available.
+- Do not silently mix provider-backed chart context with fallback workflow recommendations/replay/orders.
+- Do not allow one nested client-side fetch failure to blank an otherwise usable operator page.

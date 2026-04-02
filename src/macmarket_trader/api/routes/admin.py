@@ -32,6 +32,17 @@ replay_engine = ReplayEngine(service=recommendation_service)
 paper_broker = PaperBroker()
 
 
+def _safe_identity_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.startswith("{{") and normalized.endswith("}}"):
+        return None
+    return normalized
+
+
 def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
     bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=limit)
     if not bars:
@@ -58,16 +69,20 @@ def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
 
 @user_router.get("/me")
 def me(user=Depends(current_user)):
+    safe_email = _safe_identity_value(user.email)
+    safe_name = _safe_identity_value(user.display_name)
+    warning = "Identity synchronization incomplete" if safe_email is None else None
     return {
         "id": user.id,
-        "email": user.email,
-        "display_name": user.display_name,
+        "email": safe_email,
+        "display_name": safe_name,
         "approval_status": user.approval_status,
         "app_role": user.app_role,
         "mfa_enabled": user.mfa_enabled,
         "auth_provider": settings.auth_provider.strip().lower() or "mock",
         "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
         "last_authenticated_at": user.last_authenticated_at.isoformat() if user.last_authenticated_at else None,
+        "identity_warning": warning,
     }
 
 
@@ -145,13 +160,14 @@ def list_recommendations(_user=Depends(require_approved_user)):
     rows = recommendation_repo.list_recent()
     if not rows and settings.environment.lower() in {"dev", "local", "test"}:
         seed_bars, _, _ = _workflow_bars("AAPL")
-        recommendation_service.generate(
+        seed_rec = recommendation_service.generate(
             symbol="AAPL",
             bars=seed_bars,
             event_text="Deterministic seeded recommendation for local operator-console readiness.",
             event=None,
             portfolio=PortfolioSnapshot(),
         )
+        recommendation_repo.attach_workflow_metadata(seed_rec.recommendation_id, market_data_source="seed", fallback_mode=False)
         rows = recommendation_repo.list_recent()
     return [
         {
@@ -160,6 +176,8 @@ def list_recommendations(_user=Depends(require_approved_user)):
             "symbol": row.symbol,
             "recommendation_id": row.recommendation_id,
             "payload": row.payload,
+            "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
+            "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
         }
         for row in rows
     ]
@@ -176,6 +194,11 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         event_text=event_text,
         event=None,
         portfolio=PortfolioSnapshot(),
+    )
+    recommendation_repo.attach_workflow_metadata(
+        rec.recommendation_id,
+        market_data_source=source,
+        fallback_mode=fallback_mode,
     )
     return {
         "id": rec.recommendation_id,
@@ -198,6 +221,8 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
         "symbol": row.symbol,
         "recommendation_id": row.recommendation_id,
         "payload": row.payload,
+        "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
+        "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
     }
 
 
@@ -225,6 +250,8 @@ def replay_runs(_user=Depends(require_approved_user)):
             "ending_heat": row.ending_heat,
             "ending_open_notional": row.ending_open_notional,
             "created_at": row.created_at,
+            "market_data_source": "workflow_snapshot_unavailable",
+            "fallback_mode": None,
         }
         for row in rows
     ]
@@ -289,7 +316,7 @@ def list_orders(_user=Depends(require_approved_user)):
         if rec.approved:
             intent = recommendation_service.to_order_intent(rec)
             order, fill = paper_broker.execute(intent)
-            recommendation_service.persist_order(order, notes="seed_order")
+            recommendation_service.persist_order(order, notes="seed_order|source=seed|fallback=false")
             recommendation_service.persist_fill(fill)
         orders = order_repo.list_with_fills()
     return orders
@@ -310,7 +337,7 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         raise HTTPException(status_code=409, detail=rec.rejection_reason or "Recommendation was no-trade; order not staged.")
     intent = recommendation_service.to_order_intent(rec)
     order, fill = paper_broker.execute(intent)
-    recommendation_service.persist_order(order, notes="operator_staged_order")
+    recommendation_service.persist_order(order, notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}")
     recommendation_service.persist_fill(fill)
     return {
         "order_id": order.order_id,
@@ -335,11 +362,13 @@ def list_users(_admin=Depends(require_admin)):
     return [
         {
             "id": user.id,
-            "display_name": user.display_name,
-            "email": user.email,
+            "display_name": _safe_identity_value(user.display_name) or "-",
+            "email": _safe_identity_value(user.email) or "(identity pending)",
             "app_role": user.app_role,
             "approval_status": user.approval_status,
             "mfa_enabled": user.mfa_enabled,
+            "external_auth_user_id": user.external_auth_user_id,
+            "identity_warning": "placeholder identity" if _safe_identity_value(user.email) is None else None,
             "invite_status": invite_by_email.get(user.email.strip().lower()).status if invite_by_email.get(user.email.strip().lower()) else None,
             "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
             "last_authenticated_at": user.last_authenticated_at.isoformat() if user.last_authenticated_at else None,
@@ -422,6 +451,8 @@ def list_invites(_admin=Depends(require_admin)):
             "invite_token": row.invite_token,
             "invited_by": row.invited_by,
             "created_at": row.created_at,
+            "market_data_source": "workflow_snapshot_unavailable",
+            "fallback_mode": None,
         }
         for row in rows
     ]

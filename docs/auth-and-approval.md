@@ -87,3 +87,9 @@ Repo root `.env` (backend):
 2. Invitee signs in via Clerk invite link.
 3. Local account remains `pending` until admin approval.
 4. App role and approval status remain local-authoritative and are never overwritten by external auth claims.
+
+## Identity hygiene and approval sync notes
+
+- Local DB remains the source of truth for `approval_status` and `app_role`.
+- Placeholder template emails (for example `{{...}}`) are ignored for display and replaced on next valid identity sync.
+- Account/Admin pages surface an explicit identity warning when profile hydration is incomplete.

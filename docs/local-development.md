@@ -132,3 +132,9 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 3. `/orders`: inspect staged paper fills and blotter state.
 4. `/admin/pending-users` and `/admin/users`: invite, approve, and monitor current operator access.
 5. `/account`: confirm your own role/approval/MFA posture.
+
+## Reset and host consistency quick checklist
+
+- Clean reset: stop app -> remove local sqlite db -> rerun seed/bootstrap -> restart backend/web.
+- Use one hostname consistently in local dev sessions (for example, always `http://localhost:3000`) to avoid cookie/session drift.
+- Provider fallback interpretation: when provider is configured but unavailable, workflows explicitly run in fallback mode and UI badges must declare fallback source.

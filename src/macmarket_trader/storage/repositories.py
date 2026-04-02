@@ -59,6 +59,20 @@ class RecommendationRepository:
         with self.session_factory() as session:
             return session.get(RecommendationModel, recommendation_id)
 
+    def attach_workflow_metadata(self, recommendation_id: str, *, market_data_source: str, fallback_mode: bool) -> None:
+        with self.session_factory() as session:
+            row = session.execute(
+                select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_id)
+            ).scalar_one_or_none()
+            if row is None:
+                return
+            payload = dict(row.payload or {})
+            workflow = dict(payload.get("workflow") or {})
+            workflow.update({"market_data_source": market_data_source, "fallback_mode": fallback_mode})
+            payload["workflow"] = workflow
+            row.payload = payload
+            session.commit()
+
 
 class OrderRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -94,6 +108,12 @@ class OrderRepository:
             output: list[dict[str, object]] = []
             for order in orders:
                 order_fills = sorted(fills_by_order.get(order.order_id, []), key=lambda item: item.timestamp)
+                source = None
+                fallback_mode = None
+                if order.notes and "|source=" in order.notes:
+                    parts = {segment.split("=", 1)[0]: segment.split("=", 1)[1] for segment in order.notes.split("|") if "=" in segment}
+                    source = parts.get("source")
+                    fallback_mode = parts.get("fallback") == "true"
                 output.append(
                     {
                         "order_id": order.order_id,
@@ -104,6 +124,8 @@ class OrderRepository:
                         "shares": order.shares,
                         "limit_price": order.limit_price,
                         "created_at": order.created_at,
+                        "market_data_source": source,
+                        "fallback_mode": fallback_mode,
                         "fills": [
                             {"fill_price": fill.fill_price, "filled_shares": fill.filled_shares, "timestamp": fill.timestamp}
                             for fill in order_fills

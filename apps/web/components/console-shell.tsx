@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { ThemeToggle } from "@/components/theme-toggle";
+
 const links = [
   ["/dashboard", "Dashboard"],
   ["/recommendations", "Recommendations"],
@@ -25,7 +27,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <section className="op-main">
-        <header className="op-topbar">Flagship workflow: Recommendations → Replay → Paper Orders</header>
+        <header className="op-topbar"><span>Flagship workflow: Recommendations → Replay → Paper Orders</span><ThemeToggle /></header>
         <main className="op-content">{children}</main>
       </section>
     </div>

@@ -45,7 +45,7 @@ export function ProviderHealthPanel() {
           <span>latency: {market?.latency_ms ?? "-"} ms</span>
           <span>last success: {market?.last_success_at ?? "-"}</span>
         </div>
-        {providerRejected ? <p style={{ color: "#f7b267" }}>Provider is configured but request was rejected or degraded. Deterministic fallback is active. Check key, plan/entitlements, and symbol permissions.</p> : <p style={{ color: "#7ee787" }}>Live provider mode is active and healthy.</p>}
+        {providerRejected ? <p style={{ color: "#f7b267" }}>Configured provider rejected current request; workflows are running on fallback bars. Check key, plan/entitlements, and symbol permissions.</p> : <p style={{ color: "#7ee787" }}>Live provider mode is active and healthy.</p>}
         <p style={{ color: "#9fb0c3" }}>{market?.operational_impact ?? "Market-data mode determines whether recommendations, replay, and orders run on provider-backed bars or explicit fallback bars."}</p>
       </Card>
       <div className="op-grid-3">
