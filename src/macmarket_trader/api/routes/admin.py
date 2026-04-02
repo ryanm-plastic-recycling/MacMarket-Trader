@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
-from macmarket_trader.data.providers.registry import build_email_provider
+from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus
 from macmarket_trader.domain.time import utc_now
 from macmarket_trader.domain.schemas import ApprovalActionRequest
@@ -22,6 +22,7 @@ recommendation_repo = RecommendationRepository(SessionLocal)
 replay_repo = ReplayRepository(SessionLocal)
 order_repo = OrderRepository(SessionLocal)
 email_provider = build_email_provider()
+market_data_service = build_market_data_service()
 
 
 @user_router.get("/me")
@@ -44,6 +45,7 @@ def dashboard(user=Depends(require_approved_user)):
     orders = order_repo.list_with_fills(limit=5)
     pending_users = user_repo.list_by_status(ApprovalStatus.PENDING)
     provider_health = provider_health_summary()
+    latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
     return {
         "status": "ok",
         "last_refresh": utc_now().isoformat(),
@@ -53,6 +55,13 @@ def dashboard(user=Depends(require_approved_user)):
         },
         "market_regime": "event-driven / deterministic-eval",
         "provider_health": provider_health,
+        "latest_market_snapshot": {
+            "symbol": latest_snapshot.symbol,
+            "as_of": latest_snapshot.as_of.isoformat(),
+            "close": latest_snapshot.close,
+            "source": latest_snapshot.source,
+            "fallback_mode": latest_snapshot.fallback_mode,
+        },
         "counts": counts,
         "active_recommendations": [
             {
@@ -81,7 +90,9 @@ def dashboard(user=Depends(require_approved_user)):
             {
                 "kind": "provider",
                 "level": "warning" if provider_health["summary"] != "ok" else "info",
-                "message": "Market data remains deterministic fallback until provider adapter is configured.",
+                "message": (
+                    "Alpaca market data is active." if provider_health["market_data"] == "alpaca" else "Deterministic fallback market data mode is active."
+                ),
             }
         ],
         "quick_links": ["/charts/haco", "/admin/users/pending", "/recommendations"],
@@ -205,16 +216,18 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
 
 
 def provider_health_summary() -> dict[str, str]:
-    market_mode = "fallback"
+    market_health = market_data_service.provider_health(sample_symbol="AAPL")
+    market_mode = "alpaca" if market_health.status == "ok" and market_health.mode == "alpaca" else "fallback"
     auth_mode = settings.auth_provider.strip().lower() or "mock"
     email_mode = settings.email_provider.strip().lower() or "console"
-    summary = "ok" if market_mode != "fallback" else "degraded"
+    summary = "ok" if market_mode == "alpaca" else "degraded"
     return {"summary": summary, "auth": auth_mode, "email": email_mode, "market_data": market_mode}
 
 
 @router.get("/provider-health")
 def provider_health(_admin=Depends(require_admin)):
     summary = provider_health_summary()
+    market_health = market_data_service.provider_health(sample_symbol="AAPL")
     return {
         "checked_at": utc_now().isoformat(),
         "providers": [
@@ -233,8 +246,13 @@ def provider_health(_admin=Depends(require_admin)):
             {
                 "provider": "market_data",
                 "mode": summary["market_data"],
-                "status": "warning" if summary["market_data"] == "fallback" else "ok",
-                "details": "Deterministic fallback remains active until provider-backed adapter is configured.",
+                "status": "ok" if summary["market_data"] == "alpaca" else "warning",
+                "details": market_health.details,
+                "configured": market_health.configured,
+                "feed": market_health.feed,
+                "sample_symbol": market_health.sample_symbol,
+                "latency_ms": market_health.latency_ms,
+                "last_success_at": market_health.last_success_at.isoformat() if market_health.last_success_at else None,
             },
         ],
     }

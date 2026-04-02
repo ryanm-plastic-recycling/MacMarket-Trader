@@ -11,6 +11,7 @@ type DashboardPayload = {
   last_refresh: string;
   account: { app_role: string; approval_status: string };
   provider_health: { summary: string; auth: string; email: string; market_data: string };
+  latest_market_snapshot?: { symbol: string; as_of: string; close: number; source: string; fallback_mode: boolean };
   active_recommendations: Recommendation[];
   recent_replay_runs: Array<{ id: number; symbol: string; recommendation_count: number; approved_count: number; created_at: string }>;
   recent_orders: Array<{ order_id: string; symbol: string; status: string; side: string; created_at: string }>;
@@ -73,7 +74,7 @@ export default function Page() {
         <Panel title="Recent orders">{data?.recent_orders.map((o) => <div key={o.order_id}>{o.symbol} • {o.side} • {o.status}</div>)}</Panel>
         <Panel title="Pending admin actions">{data?.pending_admin_actions.map((u) => <div key={u.id}>{u.display_name || "Unknown"} ({u.email || "missing email"})</div>)}</Panel>
         <Panel title="Provider health details">
-          <div>Auth: {data?.provider_health.auth}</div><div>Email: {data?.provider_health.email}</div><div>Market data: {data?.provider_health.market_data}</div>
+          <div>Auth: {data?.provider_health.auth}</div><div>Email: {data?.provider_health.email}</div><div>Market data: {data?.provider_health.market_data}</div><div>Snapshot: {data?.latest_market_snapshot?.symbol ?? "-"} @ {data?.latest_market_snapshot?.close ?? "-"}</div><div>Source: {data?.latest_market_snapshot?.source ?? "-"}{data?.latest_market_snapshot?.fallback_mode ? " (fallback)" : ""}</div>
         </Panel>
         <Panel title="Alert / event log">{data?.alerts.map((a, idx) => <div key={idx}>[{a.level}] {a.message}</div>)}</Panel>
       </div>
