@@ -2,6 +2,11 @@
 
 Canonical deployment scripts live in `scripts/`.
 
+## Auth provider default for deployment
+
+- Deployment/private-alpha runtime should use Clerk (`AUTH_PROVIDER=clerk`).
+- Mock auth is local/test only and is blocked at startup for non-`dev/local/test` environments.
+
 ## Canonical scripts
 
 - `scripts/deploy_windows.bat`

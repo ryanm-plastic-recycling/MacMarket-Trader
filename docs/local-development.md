@@ -8,6 +8,14 @@
   - `cp .env.example .env`
   - `cp apps/web/.env.local.example apps/web/.env.local`
 
+## Auth mode for local dev (explicit mock opt-in)
+
+- Production/deployment examples default to Clerk (`AUTH_PROVIDER=clerk`).
+- For local-only mock auth, set both:
+  - `ENVIRONMENT=local` (or `dev`/`test`)
+  - `AUTH_PROVIDER=mock`
+- Startup fails closed if `AUTH_PROVIDER=mock` is used outside `dev/local/test`.
+
 
 ## Market data provider (backend `.env`)
 

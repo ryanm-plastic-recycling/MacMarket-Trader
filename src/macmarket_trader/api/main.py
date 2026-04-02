@@ -9,7 +9,7 @@ from macmarket_trader.api.routes.charts import router as charts_router
 from macmarket_trader.api.routes.health import router as health_router
 from macmarket_trader.api.routes.recommendations import router as recommendation_router
 from macmarket_trader.api.routes.replay import router as replay_router
-from macmarket_trader.config import settings
+from macmarket_trader.config import settings, validate_auth_runtime_configuration
 from macmarket_trader.logging_config import configure_logging
 
 configure_logging()
@@ -28,3 +28,8 @@ app.include_router(charts_router)
 
 app.include_router(user_router)
 app.include_router(admin_router)
+
+
+@app.on_event("startup")
+def validate_runtime_configuration() -> None:
+    validate_auth_runtime_configuration(settings)

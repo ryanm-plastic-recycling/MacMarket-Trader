@@ -20,7 +20,8 @@ Provider mode is selected from config:
 - `MARKET_DATA_PROVIDER=fallback|alpaca` + `MARKET_DATA_ENABLED=true|false`
 - Alpaca auth headers map from `.env`: `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY`
 
-Default local mode is `mock` + `console`.
+Deployment default should be `clerk` + production email provider; local mode can explicitly opt into `mock` + `console`.
+Mock auth is fail-closed outside `ENVIRONMENT in {dev, local, test}`.
 
 ## Current adapters
 
