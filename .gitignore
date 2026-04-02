@@ -42,6 +42,8 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+backups/
+create_shareable_backup.bat
 
 # =========================
 # VS Code / IDE
