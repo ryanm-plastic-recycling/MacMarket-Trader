@@ -8,21 +8,42 @@ from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus
 from macmarket_trader.domain.time import utc_now
-from macmarket_trader.domain.schemas import ApprovalActionRequest
+from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot
+from macmarket_trader.service import RecommendationService
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, OrderRepository, RecommendationRepository, ReplayRepository, UserRepository
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, RecommendationRepository, ReplayRepository, UserRepository
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 user_router = APIRouter(prefix="/user", tags=["user"])
 
 user_repo = UserRepository(SessionLocal)
 email_repo = EmailLogRepository(SessionLocal)
+invite_repo = InviteRepository(SessionLocal)
 dashboard_repo = DashboardRepository(SessionLocal)
 recommendation_repo = RecommendationRepository(SessionLocal)
 replay_repo = ReplayRepository(SessionLocal)
 order_repo = OrderRepository(SessionLocal)
 email_provider = build_email_provider()
 market_data_service = build_market_data_service()
+recommendation_service = RecommendationService()
+
+
+def _demo_bars() -> list[Bar]:
+    from datetime import date, timedelta
+
+    base = date(2026, 1, 1)
+    return [
+        Bar(
+            date=base + timedelta(days=i),
+            open=190 + (i * 0.9),
+            high=191 + (i * 0.9),
+            low=189 + (i * 0.9),
+            close=190.4 + (i * 0.9),
+            volume=1_200_000 + i * 15_000,
+            rel_volume=1.1,
+        )
+        for i in range(35)
+    ]
 
 
 @user_router.get("/me")
@@ -104,6 +125,15 @@ def dashboard(user=Depends(require_approved_user)):
 @user_router.get("/recommendations")
 def list_recommendations(_user=Depends(require_approved_user)):
     rows = recommendation_repo.list_recent()
+    if not rows and settings.environment.lower() in {"dev", "local", "test"}:
+        recommendation_service.generate(
+            symbol="AAPL",
+            bars=_demo_bars(),
+            event_text="Deterministic seeded recommendation for local operator-console readiness.",
+            event=None,
+            portfolio=PortfolioSnapshot(),
+        )
+        rows = recommendation_repo.list_recent()
     return [
         {
             "id": row.id,
@@ -114,6 +144,25 @@ def list_recommendations(_user=Depends(require_approved_user)):
         }
         for row in rows
     ]
+
+
+@user_router.post("/recommendations/generate")
+def generate_recommendations(req: dict[str, object], _user=Depends(require_approved_user)):
+    symbol = str(req.get("symbol") or "AAPL").upper()
+    event_text = str(req.get("event_text") or "Operator-triggered deterministic refresh run.")
+    rec = recommendation_service.generate(
+        symbol=symbol,
+        bars=_demo_bars(),
+        event_text=event_text,
+        event=None,
+        portfolio=PortfolioSnapshot(),
+    )
+    return {
+        "id": rec.recommendation_id,
+        "symbol": rec.symbol,
+        "approved": rec.approved,
+        "outcome": rec.outcome,
+    }
 
 
 @user_router.get("/recommendations/{recommendation_id}")
@@ -215,6 +264,26 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
     provider_id = email_provider.send(message)
     email_repo.create(user.id, "account_rejected", user.email, "sent", provider_id)
     return {"id": user.id, "approval_status": user.approval_status}
+
+
+@router.post("/invites")
+def create_invite(req: InviteCreateRequest, admin=Depends(require_admin)):
+    invited_user = user_repo.create_or_update_invited_pending_user(email=req.email, display_name=req.display_name)
+    invite = invite_repo.create(email=req.email, display_name=req.display_name, invited_by=admin.email)
+    invite_url = f"{settings.cors_allowed_origins[0]}/sign-up?invite_token={invite.invite_token}&email={req.email.strip().lower()}"
+    message = EmailMessage(
+        to_email=req.email.strip().lower(),
+        subject="MacMarket-Trader private alpha invite",
+        body=(
+            f"You have been invited to MacMarket-Trader private alpha.\n"
+            f"Use this invite link to sign in/up via Clerk: {invite_url}\n"
+            "After sign-in your local app account remains pending until admin approval."
+        ),
+        template_name="private_alpha_invite",
+    )
+    provider_id = email_provider.send(message)
+    email_repo.create(invited_user.id, "private_alpha_invite", invited_user.email, "sent", provider_id)
+    return {"invite_id": invite.id, "status": invite.status, "email": invite.email, "invite_token": invite.invite_token}
 
 
 def provider_health_summary() -> dict[str, str]:

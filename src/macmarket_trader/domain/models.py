@@ -212,3 +212,15 @@ class EmailDeliveryLogModel(Base):
     status: Mapped[str] = mapped_column(String(24), index=True)
     provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class AppInviteModel(Base):
+    __tablename__ = "app_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    invite_token: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="sent", index=True)
+    invited_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)

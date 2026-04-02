@@ -4,12 +4,32 @@ Frontend authentication is handled by Clerk; backend verifies bearer tokens usin
 
 ## Workflow
 
-1. User signs up and verifies email in Clerk.
-2. Backend verifies token, hydrates missing profile fields from Clerk Backend API when needed, and upserts local `app_users`.
-3. New users remain `pending` until admin action.
-4. Pending/rejected users are blocked from approved-product routes.
-5. Admin reviews `/admin/users/pending` and approves/rejects through admin endpoints.
-6. Approval/rejection sends transactional email via configured email provider and logs delivery.
+1. Admin sends a private-alpha invite from `/admin/pending-users`.
+2. Invited user follows invite link to Clerk sign-up/sign-in.
+3. Backend verifies token, hydrates missing profile fields from Clerk Backend API when needed, and upserts local `app_users`.
+4. Invited/new users remain `pending` until admin action.
+5. Pending/rejected users are blocked from approved-product routes.
+6. Admin reviews `/admin/users/pending` and approves/rejects through admin endpoints.
+7. Approval/rejection/invite sends transactional email via configured email provider and logs delivery.
+
+Legacy/public signup can still exist as Clerk plumbing, but private-alpha invite flow is the operator default.
+
+## Invite flow details
+
+- Admin endpoint: `POST /admin/invites` (admin + MFA required).
+- Invite sends a Clerk-compatible sign-up URL and creates/updates a local pending user row.
+- Invite-preprovisioned rows use an `invited::<email>` external ID placeholder, then bind to real Clerk `sub` at first successful login.
+- `EMAIL_PROVIDER=console` logs invite destination, template, subject, and full body for local QA.
+
+## Identity sync safeguards
+
+- Sync lookup order is:
+  1. `external_auth_user_id` match
+  2. fallback `email` match for invited pre-provisioned users
+- Existing local `approval_status` / `app_role` are never overwritten by auth claims.
+- Existing local admin users remain admin across re-login sync.
+- Pending invited users remain pending until explicit admin approval.
+- New-user provisioning without stable email is blocked (prevents blank/fragile user rows).
 
 ## Source of truth and sync rules (hard policy)
 
@@ -37,6 +57,7 @@ Frontend authentication is handled by Clerk; backend verifies bearer tokens usin
   - `POST /replay/run`
   - `GET /user/dashboard`
 - Admin-only: all `/admin/*` routes
+  - including `POST /admin/invites`
 
 ## MFA policy
 

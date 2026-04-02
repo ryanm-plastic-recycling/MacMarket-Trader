@@ -16,6 +16,10 @@ from macmarket_trader.indicators.hacolt import compute_hacolt_direction
 
 
 class HacoChartService:
+    @staticmethod
+    def _canonical_bars(bars: list[Bar]) -> list[Bar]:
+        return sorted(bars, key=lambda bar: bar.date)
+
     def build_payload(
         self,
         symbol: str,
@@ -25,10 +29,11 @@ class HacoChartService:
         data_source: str = "request_bars",
         fallback_mode: bool = False,
     ) -> HacoChartPayload:
-        opens = [bar.open for bar in bars]
-        highs = [bar.high for bar in bars]
-        lows = [bar.low for bar in bars]
-        closes = [bar.close for bar in bars]
+        canonical_bars = self._canonical_bars(bars)
+        opens = [bar.open for bar in canonical_bars]
+        highs = [bar.high for bar in canonical_bars]
+        lows = [bar.low for bar in canonical_bars]
+        closes = [bar.close for bar in canonical_bars]
 
         ha_open, ha_high, ha_low, ha_close, haco_states = compute_haco_from_ha(opens, highs, lows, closes)
         hacolt_states = compute_hacolt_direction(closes)
@@ -36,12 +41,13 @@ class HacoChartService:
         markers: list[HacoMarker] = []
         latest_flip = "none"
         latest_flip_bars_ago: int | None = None
-        for idx, (bar, point) in enumerate(zip(bars, haco_states, strict=True)):
+        for idx, (bar, point) in enumerate(zip(canonical_bars, haco_states, strict=True)):
             if point.flip:
                 latest_flip = point.flip
                 latest_flip_bars_ago = len(bars) - idx - 1
                 markers.append(
                     HacoMarker(
+                        index=idx,
                         time=bar.date,
                         marker_type="arrow_up" if point.flip == "buy" else "arrow_down",
                         direction=point.flip,
@@ -51,12 +57,12 @@ class HacoChartService:
                 )
 
         haco_strip = [
-            HacoStatePoint(time=bar.date, value=point.state_value, state=point.state)
-            for bar, point in zip(bars, haco_states, strict=True)
+            HacoStatePoint(index=idx, time=bar.date, value=point.state_value, state=point.state)
+            for idx, (bar, point) in enumerate(zip(canonical_bars, haco_states, strict=True))
         ]
         hacolt_strip = [
-            HacoltStatePoint(time=bar.date, value=point.strip_value, direction=point.direction)
-            for bar, point in zip(bars, hacolt_states, strict=True)
+            HacoltStatePoint(index=idx, time=bar.date, value=point.strip_value, direction=point.direction)
+            for idx, (bar, point) in enumerate(zip(canonical_bars, hacolt_states, strict=True))
         ]
 
         current_haco_state = haco_states[-1].state if haco_states else "neutral"
@@ -67,6 +73,7 @@ class HacoChartService:
             timeframe=timeframe,
             candles=[
                 ChartCandle(
+                    index=idx,
                     time=bar.date,
                     open=bar.open,
                     high=bar.high,
@@ -74,10 +81,11 @@ class HacoChartService:
                     close=bar.close,
                     volume=bar.volume,
                 )
-                for bar in bars
+                for idx, bar in enumerate(canonical_bars)
             ],
             heikin_ashi_candles=[
                 ChartCandle(
+                    index=idx,
                     time=bar.date,
                     open=o,
                     high=h,
@@ -85,7 +93,7 @@ class HacoChartService:
                     close=c,
                     volume=bar.volume,
                 )
-                for bar, o, h, l, c in zip(bars, ha_open, ha_high, ha_low, ha_close, strict=True)
+                for idx, (bar, o, h, l, c) in enumerate(zip(canonical_bars, ha_open, ha_high, ha_low, ha_close, strict=True))
             ]
             if include_heikin_ashi
             else [],

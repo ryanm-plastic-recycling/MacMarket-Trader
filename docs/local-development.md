@@ -62,6 +62,31 @@ This local/demo seed path adds a minimal-but-usable dataset for the operator das
 - at least one pending user,
 - provider-health snapshots for auth/email/market data.
 
+## Recommendations workflow (local/dev)
+
+- Recommendations page is data-backed from local `recommendations` records (no placeholder-only mode).
+- Use **Generate / Refresh recommendations** on `/recommendations` to trigger a deterministic backend generation run.
+- If no rows exist and environment is `dev/local/test`, backend auto-seeds one deterministic recommendation so the detail pane is immediately usable.
+- Detail pane surfaces thesis, catalyst, setup, entry zone, invalidation, targets, expected RR, confidence, provenance notes, and approved/no-trade reason.
+
+## HACO alignment expectations
+
+- HACO candles, flip markers (BUY/SELL), HACO strip, and HACOLT strip are all anchored to the same canonical indexed bar series.
+- Timeframe switches must keep every chart layer on the same canonical indices (no lookahead/off-by-one shifts between panes).
+- Marker placement is tied to the exact bar where the flip state triggers.
+- Provider-backed mode and fallback mode both use the same canonical alignment path.
+
+## Invite-based onboarding (private alpha)
+
+- Primary onboarding path is admin invite, not open self-registration.
+- Admin invite UI entry point: `/admin/pending-users` → **Private alpha invite** panel.
+- In `EMAIL_PROVIDER=console` local mode, the invite payload (including invite link) is logged in backend console output.
+- Invited users sign in/up through existing Clerk `/sign-up`/`/sign-in` routes and remain local `pending` until approved.
+- Local admin bootstrap:
+  1. Sign in as the intended admin user.
+  2. Promote local role in DB (`app_role=admin`, `approval_status=approved`) once.
+  3. Subsequent logins preserve local `app_role`/`approval_status` (source-of-truth rule).
+
 ## Test suite
 
 ```bash

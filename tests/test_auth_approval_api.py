@@ -217,3 +217,68 @@ def test_non_admin_blocked_from_pending_users_route() -> None:
 
     resp = client.get('/admin/users/pending', headers={'Authorization': 'Bearer user-token'})
     assert resp.status_code == 403
+
+
+def test_admin_can_send_private_alpha_invite() -> None:
+    _seed_mock_user('admin-token')
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.approval_status = 'approved'
+        admin.mfa_enabled = True
+        session.commit()
+
+    resp = client.post(
+        '/admin/invites',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'email': 'invitee@example.com', 'display_name': 'Invitee'},
+    )
+    assert resp.status_code == 200
+
+    with SessionLocal() as session:
+        invited = session.execute(select(AppUserModel).where(AppUserModel.email == 'invitee@example.com')).scalar_one()
+        assert invited.approval_status == 'pending'
+        assert invited.app_role == 'user'
+        assert invited.external_auth_user_id == 'invited::invitee@example.com'
+
+
+def test_invited_user_sync_keeps_pending_until_approved(monkeypatch) -> None:
+    _seed_mock_user('admin-token')
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.approval_status = 'approved'
+        admin.mfa_enabled = True
+        session.commit()
+
+    invite = client.post(
+        '/admin/invites',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'email': 'invitee@example.com', 'display_name': 'Invitee'},
+    )
+    assert invite.status_code == 200
+
+    from macmarket_trader.api.deps import auth as auth_deps
+
+    monkey_claims = {'sub': 'clerk_invited_user', 'email': 'invitee@example.com', 'name': 'Invitee', 'mfa': False}
+    monkeypatch.setattr(auth_deps._auth_provider, 'verify_token', lambda _token: monkey_claims)
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer invited-token'})
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['approval_status'] == 'pending'
+    assert payload['app_role'] == 'user'
+
+
+def test_existing_admin_user_remains_admin_after_login_sync() -> None:
+    _seed_mock_user('admin-token')
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.approval_status = 'approved'
+        session.commit()
+
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+    assert resp.status_code == 200
+    assert resp.json()['app_role'] == 'admin'
+    assert resp.json()['approval_status'] == 'approved'
