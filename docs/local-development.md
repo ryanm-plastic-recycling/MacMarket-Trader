@@ -104,8 +104,8 @@ pytest -q
 ## Frontend runtime/API routing
 
 - Browser calls use same-origin Next.js route handlers under `apps/web/app/api/*`.
-- Client pages now attach Clerk bearer tokens directly to those calls; route handlers prefer this explicit token first, then fall back to server `auth().getToken()`.
-- This removes transient `/api/user/...` auth races on first load/refresh for Replay and Orders while preserving same-origin proxy routing.
+- Workflow pages call same-origin routes with session cookies by default; route handlers resolve Clerk session auth server-side first, then optionally accept a bearer token fallback.
+- This removes `getToken()` client races that previously caused intermittent stale 401/Invalid token banners even after session recovery.
 - Next route handlers still forward to backend origin from `BACKEND_API_ORIGIN` (default `http://127.0.0.1:9510`).
 
 ## Runtime reset hygiene (local)
@@ -136,11 +136,12 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 
 ## Where to start in the UI
 
-1. `/recommendations` (flagship): generate and review deterministic setups.
-2. `/replay-runs`: validate recommendation behavior path-by-path.
-3. `/orders`: inspect staged paper fills and blotter state.
-4. `/admin/pending-users` and `/admin/users`: invite, approve, and monitor current operator access.
-5. `/account`: confirm your own role/approval/MFA posture.
+1. `/analysis` (Strategy Workbench): choose symbol/timeframe/strategy, inspect levels/context, and create recommendation.
+2. `/recommendations`: review deterministic setup detail, source truth, and execution readiness.
+3. `/replay-runs`: validate recommendation behavior path-by-path.
+4. `/orders`: inspect staged paper fills and blotter state.
+5. `/admin/pending-users` and `/admin/users`: invite, approve, and monitor current operator access.
+6. `/account`: confirm your own role/approval/MFA posture.
 
 ## Reset and host consistency quick checklist
 
@@ -150,8 +151,8 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 
 ## Auth readiness and inline operator feedback (2026-04 update)
 
-- Protected client calls (recommendations, replay, orders, admin) wait for Clerk auth readiness before issuing requests.
-- While auth is initializing, operator pages show inline "initializing authentication session" feedback instead of surfacing token errors.
+- Same-origin workflow calls now prioritize server-side session auth (cookie/session) and no longer depend on client token readiness for normal operator flows.
+- If session is unavailable, pages show inline retry-capable error feedback and clear stale banners on first subsequent successful fetch.
 - Replay/Orders/Recommendations/Admin actions now use non-blocking inline feedback states:
   - loading (in-progress),
   - success (completion),

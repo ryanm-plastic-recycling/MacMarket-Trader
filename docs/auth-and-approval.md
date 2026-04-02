@@ -101,15 +101,22 @@ Fail-closed runtime guardrail:
 
 ## Client auth readiness behavior (2026-04 update)
 
-- Protected operator fetches do not execute until auth/session readiness is confirmed client-side.
-- If token retrieval is still initializing, UI shows an explicit initializing state (not a persistent "Invalid token" failure banner).
-- After auth readiness, protected calls auto-retry via normal refresh/action path and clear stale error state on first success.
+- Protected same-origin operator fetches rely on server-side session auth resolution first (`auth()` from route handlers).
+- Client bearer token paths are now fallback-only for special cases, not the default workflow mechanism.
+- UI pages clear stale auth/error banners immediately after first successful fetch and keep loading/success/error feedback inline with retry controls.
 
 ## Provider vs fallback truth policy in operator workflows
 
-- Recommendations, replay runs, orders, and strategy workbench must label workflow source consistently.
+- Dashboard, strategy workbench, recommendations, replay runs, orders, and provider health must label workflow source consistently.
 - If fallback bars are used, UI labels fallback explicitly in metadata and chart/source chips.
 - Chart context for selected recommendation should not silently mix with conflicting source context.
+
+## Strategy-first workflow (2026-04)
+
+1. Start at **Analysis / Strategy Workbench** (`/analysis`) to choose symbol, timeframe, and strategy.
+2. Inspect chart context, trigger, entry/stop/targets, confidence filters, and source label.
+3. Create recommendation from setup and jump to **Recommendations** for review/execution.
+4. Move to **Replay** for deterministic validation and then **Orders** for paper staging.
 
 ## Account/admin operator usability notes
 

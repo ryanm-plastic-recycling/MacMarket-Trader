@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { HacoWorkspace } from "@/components/charts/haco-workspace";
-import { Card, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalized } from "@/lib/api-client";
+import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { fetchWorkflowApi } from "@/lib/api-client";
 
 type Recommendation = { id: number; symbol: string; created_at: string; payload: any };
 type DashboardPayload = {
@@ -24,10 +24,19 @@ type DashboardPayload = {
 
 export default function Page() {
   const [data, setData] = useState<DashboardPayload | null>(null);
+  const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "loading", message: "Loading operator dashboard…" });
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchNormalized<DashboardPayload>("/api/user/dashboard").then((result) => {
-      if (result.ok) setData(result.data);
+    fetchWorkflowApi<DashboardPayload>("/api/user/dashboard").then((result) => {
+      if (result.ok) {
+        setData(result.data);
+        setError(null);
+        setFeedback({ state: "success", message: "Dashboard updated." });
+        return;
+      }
+      setError(result.error ?? "Unable to load dashboard.");
+      setFeedback({ state: "error", message: result.error ?? "Unable to load dashboard." });
     });
   }, []);
 
@@ -37,13 +46,17 @@ export default function Page() {
     <section style={{ display: "grid", gap: 12 }}>
       <PageHeader
         title="Operator dashboard"
-        subtitle="Decision hub for recommendations, replay, paper orders, and admin queue."
+        subtitle="Start at Strategy Workbench, then move through Recommendations → Replay → Paper Orders."
         actions={<>
           <StatusBadge tone="neutral">{data?.market_regime ?? "loading"}</StatusBadge>
+          <Link href="/analysis"><button>Start in workbench</button></Link>
           <Link href="/recommendations"><button>Open recommendations</button></Link>
           <Link href="/replay-runs"><button>Run replay</button></Link>
         </>}
       />
+      <InlineFeedback state={feedback.state} message={feedback.message} />
+      {error ? <ErrorState title="Dashboard unavailable" hint={error} /> : null}
+      {!error && !data ? <EmptyState title="Waiting for dashboard data" hint="Refresh after your auth session initializes." /> : null}
 
       <div className="op-grid-4">
         <Card title="Account role"><StatusBadge tone="neutral">{data?.account.app_role ?? "-"}</StatusBadge></Card>

@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
 
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalizedAuthed } from "@/lib/api-client";
+import { fetchWorkflowApi } from "@/lib/api-client";
 
 type AdminUser = {
   id: number;
@@ -21,22 +20,21 @@ type AdminUser = {
 };
 
 export function AdminUsersPanel() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
-    fetchNormalizedAuthed<AdminUser>("/api/admin/users", undefined, getToken).then((result) => {
+    fetchWorkflowApi<AdminUser>("/api/admin/users").then((result) => {
       if (!result.ok) {
         setError(result.error ?? "Unable to load current users");
       } else {
+        setError(null);
         setUsers(result.items);
       }
       setLoading(false);
     });
-  }, [isLoaded, isSignedIn]);
+  }, []);
 
   if (loading) return <p>Loading current users…</p>;
   if (error) return <ErrorState title="Users unavailable" hint={error} />;

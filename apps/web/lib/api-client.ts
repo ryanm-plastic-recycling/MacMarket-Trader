@@ -9,6 +9,7 @@ export type NormalizedApiResult<T> = {
 };
 
 type TokenProvider = (() => Promise<string | null>) | undefined;
+type AuthMode = "session" | "token";
 
 function coerceMessage(payload: unknown, fallback: string): string {
   if (typeof payload === "string") return payload;
@@ -80,8 +81,10 @@ export async function fetchNormalizedAuthed<T>(
   getToken: TokenProvider,
 ): Promise<NormalizedApiResult<T>> {
   let token = await getToken?.();
-  if (!token) {
-    await new Promise((resolve) => setTimeout(resolve, 200));
+  let retryCount = 0;
+  while (!token && retryCount < 2) {
+    retryCount += 1;
+    await new Promise((resolve) => setTimeout(resolve, 150 * retryCount));
     token = await getToken?.();
   }
   if (!token) {
@@ -101,4 +104,16 @@ export async function fetchNormalizedAuthed<T>(
     input,
     { ...init, headers },
   );
+}
+
+export async function fetchWorkflowApi<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options?: { authMode?: AuthMode; getToken?: TokenProvider },
+): Promise<NormalizedApiResult<T>> {
+  const authMode = options?.authMode ?? "session";
+  if (authMode === "token") {
+    return fetchNormalizedAuthed<T>(input, init, options?.getToken);
+  }
+  return fetchNormalized<T>(input, init);
 }

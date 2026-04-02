@@ -1,16 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalizedAuthed } from "@/lib/api-client";
+import { fetchWorkflowApi } from "@/lib/api-client";
 
 type PendingUser = { id: number; email: string; display_name: string };
 type Invite = { id: number; email: string; display_name: string; status: string; invited_by: string; created_at: string; invite_token: string };
 
 export function PendingUsersPanel() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [users, setUsers] = useState<PendingUser[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,16 +20,12 @@ export function PendingUsersPanel() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   async function load() {
-    if (!isLoaded || !isSignedIn) {
-      setFeedback({ state: "loading", message: "Initializing authentication session…" });
-      return;
-    }
     setLoading(true);
     setError(null);
     setFeedback({ state: "loading", message: "Refreshing admin queue…" });
     const [usersResponse, invitesResponse] = await Promise.all([
-      fetchNormalizedAuthed<PendingUser>("/api/admin/users/pending", undefined, getToken),
-      fetchNormalizedAuthed<Invite>("/api/admin/invites", undefined, getToken),
+      fetchWorkflowApi<PendingUser>("/api/admin/users/pending"),
+      fetchWorkflowApi<Invite>("/api/admin/invites"),
     ]);
 
     if (!usersResponse.ok) {
@@ -47,17 +41,17 @@ export function PendingUsersPanel() {
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, [isLoaded, isSignedIn]);
+  useEffect(() => { void load(); }, []);
 
   async function sendInvite() {
     if (!inviteEmail.trim()) return;
     setInviteStatus("Sending invite...");
     setFeedback({ state: "loading", message: "Sending invite…" });
-    const response = await fetchNormalizedAuthed("/api/admin/invites", {
+    const response = await fetchWorkflowApi("/api/admin/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: inviteEmail.trim(), display_name: inviteName.trim() || undefined }),
-    }, getToken);
+    });
     if (!response.ok) {
       setInviteStatus(response.error ?? `Invite failed (${response.status})`);
       setFeedback({ state: "error", message: response.error ?? `Invite failed (${response.status})` });
@@ -73,7 +67,7 @@ export function PendingUsersPanel() {
 
   async function act(userId: number, action: "approve" | "reject") {
     setResultById((prev) => ({ ...prev, [userId]: "Submitting..." }));
-    const response = await fetchNormalizedAuthed(`/api/admin/users/${userId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, note: `Actioned from admin queue (${action})` }) }, getToken);
+    const response = await fetchWorkflowApi(`/api/admin/users/${userId}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId, note: `Actioned from admin queue (${action})` }) });
     if (!response.ok) {
       setResultById((prev) => ({ ...prev, [userId]: `Failed (${response.status})` }));
       return;

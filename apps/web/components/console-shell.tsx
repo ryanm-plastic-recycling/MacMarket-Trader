@@ -4,8 +4,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 const links = [
   ["/dashboard", "Dashboard"],
-  ["/recommendations", "Recommendations"],
   ["/analysis", "Strategy Workbench"],
+  ["/recommendations", "Recommendations"],
   ["/replay-runs", "Replay"],
   ["/orders", "Orders"],
   ["/charts/haco", "HACO Context"],
@@ -28,7 +28,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <section className="op-main">
-        <header className="op-topbar"><span>Flagship workflow: Recommendations → Replay → Paper Orders</span><ThemeToggle /></header>
+        <header className="op-topbar"><span>Workflow: Strategy Workbench → Recommendations → Replay → Paper Orders</span><ThemeToggle /></header>
         <main className="op-content">{children}</main>
       </section>
     </div>
