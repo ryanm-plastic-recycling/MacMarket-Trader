@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { SignOutButton, useAuth } from "@clerk/nextjs";
 
 import { Card, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalizedAuthed } from "@/lib/api-client";
@@ -14,10 +14,12 @@ function safeIdentity(value: string | null | undefined, fallback = "Identity pen
 }
 
 export default function Page() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [user, setUser] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState("dark");
   useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
     fetchNormalizedAuthed<any>("/api/user/me", undefined, getToken).then((r) => {
       if (!r.ok) {
         setError(r.error ?? "Unable to load account details.");
@@ -25,7 +27,8 @@ export default function Page() {
       }
       setUser(r.data);
     });
-  }, []);
+    setTheme(window.localStorage.getItem("macmarket-theme") === "light" ? "light" : "dark");
+  }, [isLoaded, isSignedIn]);
 
   return <section style={{ display: "grid", gap: 12 }}>
     <PageHeader title="Account" subtitle="Self-service profile, approval status, and authentication posture for private-alpha desk access." />
@@ -49,7 +52,9 @@ export default function Page() {
         <div>Invite-only onboarding: active</div>
       </Card>
       <Card title="Preferences">
-        <div>Theme preference is available from the top bar and persists locally in this browser.</div>
+        <div>Theme preference: <StatusBadge tone="neutral">{theme}</StatusBadge></div>
+        <div>Theme toggle persists SSR-safe cookie + local storage.</div>
+        <SignOutButton><button>Sign out</button></SignOutButton>
       </Card>
     </div>
   </section>;

@@ -5,6 +5,7 @@ export type NormalizedApiResult<T> = {
   items: T[];
   error: string | null;
   raw: unknown;
+  authPending?: boolean;
 };
 
 type TokenProvider = (() => Promise<string | null>) | undefined;
@@ -77,14 +78,27 @@ export async function fetchNormalizedAuthed<T>(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   getToken: TokenProvider,
-  retryCount = 0,
 ): Promise<NormalizedApiResult<T>> {
-  const token = await getToken?.();
+  let token = await getToken?.();
+  if (!token) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    token = await getToken?.();
+  }
+  if (!token) {
+    return {
+      ok: false,
+      status: 401,
+      data: null,
+      items: [],
+      error: "AUTH_NOT_READY",
+      raw: { detail: "Authentication initializing" },
+      authPending: true,
+    };
+  }
   const headers = new Headers(init?.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Authorization", `Bearer ${token}`);
   return fetchNormalized<T>(
     input,
     { ...init, headers },
-    retryCount,
   );
 }

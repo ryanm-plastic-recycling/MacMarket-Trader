@@ -98,3 +98,20 @@ Fail-closed runtime guardrail:
 - Local DB remains the source of truth for `approval_status` and `app_role`.
 - Placeholder template emails (for example `{{...}}`) are ignored for display and replaced on next valid identity sync.
 - Account/Admin pages surface an explicit identity warning when profile hydration is incomplete.
+
+## Client auth readiness behavior (2026-04 update)
+
+- Protected operator fetches do not execute until auth/session readiness is confirmed client-side.
+- If token retrieval is still initializing, UI shows an explicit initializing state (not a persistent "Invalid token" failure banner).
+- After auth readiness, protected calls auto-retry via normal refresh/action path and clear stale error state on first success.
+
+## Provider vs fallback truth policy in operator workflows
+
+- Recommendations, replay runs, orders, and strategy workbench must label workflow source consistently.
+- If fallback bars are used, UI labels fallback explicitly in metadata and chart/source chips.
+- Chart context for selected recommendation should not silently mix with conflicting source context.
+
+## Account/admin operator usability notes
+
+- Admin users view presents current users with role, approval state, MFA, invite state, and last seen/last authenticated metadata.
+- Account page surfaces local role/approval truth, MFA state, sign-out action, and persisted theme preference.

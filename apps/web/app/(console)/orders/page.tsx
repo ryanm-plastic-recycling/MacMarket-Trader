@@ -3,30 +3,38 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 
-import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
   const [dataSource, setDataSource] = useState("workflow unavailable");
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
 
   async function load() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Initializing authentication session…" });
+      return;
+    }
     setBusy(true);
+    setFeedback({ state: "loading", message: "Loading orders…" });
     const result = await fetchNormalizedAuthed<Order>("/api/user/orders", undefined, getToken);
     if (!result.ok) {
-      setError(result.error);
+      if (!result.authPending) setError(result.error);
+      setFeedback({ state: result.authPending ? "loading" : "error", message: result.authPending ? "Initializing authentication session…" : (result.error ?? "Orders load failed.") });
       setBusy(false);
       return;
     }
     setError(null);
+    setFeedback({ state: "success", message: "Orders updated." });
     setOrders(result.items);
     setSelectedOrderId((prev) => prev ?? result.items[0]?.order_id ?? null);
     setDataSource((result.items[0]?.fallback_mode ? `fallback (${result.items[0]?.market_data_source ?? "provider"})` : (result.items[0]?.market_data_source ?? "provider")) ?? "workflow unavailable");
@@ -40,6 +48,7 @@ export default function Page() {
     if (!result.ok) {
       setError(result.error ?? "Unable to stage order.");
       setStatus("failed");
+      setFeedback({ state: "error", message: result.error ?? "Unable to stage order." });
       setBusy(false);
       return;
     }
@@ -48,11 +57,12 @@ export default function Page() {
     const sourceName = result.data?.market_data_source ?? "provider";
     setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("paper order staged");
+    setFeedback({ state: "success", message: "Paper order staged." });
     await load();
     setBusy(false);
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [isLoaded, isSignedIn]);
 
   return <section className="op-stack">
     <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
@@ -64,6 +74,7 @@ export default function Page() {
         <button onClick={() => void stagePaperOrder()} disabled={busy}>{busy ? "Staging..." : "Stage paper order"}</button>
         <button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh blotter"}</button>
       </div>
+      <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
     </Card>
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
     {orders.length === 0 && !error ? <EmptyState title="No orders yet" hint="Stage a deterministic paper order to populate the blotter." /> : null}

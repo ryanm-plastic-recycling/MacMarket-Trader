@@ -147,3 +147,34 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 - Clean reset: stop app -> remove local sqlite db -> rerun seed/bootstrap -> restart backend/web.
 - Use one hostname consistently in local dev sessions (for example, always `http://localhost:3000`) to avoid cookie/session drift.
 - Provider fallback interpretation: when provider is configured but unavailable, workflows explicitly run in fallback mode and UI badges must declare fallback source.
+
+## Auth readiness and inline operator feedback (2026-04 update)
+
+- Protected client calls (recommendations, replay, orders, admin) wait for Clerk auth readiness before issuing requests.
+- While auth is initializing, operator pages show inline "initializing authentication session" feedback instead of surfacing token errors.
+- Replay/Orders/Recommendations/Admin actions now use non-blocking inline feedback states:
+  - loading (in-progress),
+  - success (completion),
+  - error (with retry).
+- Stale error banners are cleared on first subsequent successful fetch to avoid persistent false-failure states.
+
+## Strategy Workbench workflow
+
+- New flagship-adjacent workflow page: `/analysis` (Analysis / Strategy Workbench).
+- Operators can select symbol, timeframe, strategy, and review chart + setup levels (entry/stop/targets/trigger/confidence).
+- Supported initial strategy menu:
+  - Event Continuation
+  - Breakout / Prior-Day High
+  - Pullback / Trend Continuation
+  - Gap Follow-Through
+  - Mean Reversion
+  - HACO Context (supporting context, not sole approval engine)
+- Workbench has CTA: **Create recommendation from this setup**.
+- Source coherence is explicit: provider/fallback source chip is displayed and fallback is labeled throughout workflow context.
+
+## Theme persistence (SSR-safe)
+
+- Theme toggle in top bar persists to:
+  - cookie `macmarket-theme` (SSR-safe initial render), and
+  - localStorage `macmarket-theme` (client preference continuity).
+- Root HTML `data-theme` is seeded server-side from cookie to avoid hydration mismatch.

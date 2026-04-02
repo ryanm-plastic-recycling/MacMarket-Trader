@@ -21,12 +21,13 @@ type AdminUser = {
 };
 
 export function AdminUsersPanel() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
     fetchNormalizedAuthed<AdminUser>("/api/admin/users", undefined, getToken).then((result) => {
       if (!result.ok) {
         setError(result.error ?? "Unable to load current users");
@@ -35,7 +36,7 @@ export function AdminUsersPanel() {
       }
       setLoading(false);
     });
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   if (loading) return <p>Loading current users…</p>;
   if (error) return <ErrorState title="Users unavailable" hint={error} />;
@@ -65,8 +66,8 @@ export function AdminUsersPanel() {
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
-                  <td>{user.display_name || "Unnamed user"}</td>
-                  <td>{user.email && !user.email.includes("{{") ? user.email : "(identity pending)"}</td>
+                  <td>{(user.display_name && !user.display_name.includes("{{")) ? user.display_name : "Identity pending sync"}</td>
+                  <td>{user.email && !user.email.includes("{{") ? user.email : "Identity pending sync"}</td>
                   <td><StatusBadge tone="neutral">{user.app_role}</StatusBadge></td>
                   <td><StatusBadge tone={user.approval_status === "approved" ? "good" : "warn"}>{user.approval_status}</StatusBadge></td>
                   <td>{user.mfa_enabled ? "enabled" : "not enabled"}</td>

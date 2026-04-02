@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 
-import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
 
 export default function Page() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -18,18 +18,26 @@ export default function Page() {
   const [status, setStatus] = useState("idle");
   const [dataSource, setDataSource] = useState("workflow unavailable");
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
   const selectedSource = selected ? (selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? "provider")) : dataSource;
 
   async function loadRuns() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Initializing authentication session…" });
+      return;
+    }
     setBusy(true);
+    setFeedback({ state: "loading", message: "Loading replay runs…" });
     const result = await fetchNormalizedAuthed<Run>("/api/user/replay-runs", undefined, getToken);
     if (!result.ok) {
-      setError(result.error);
+      if (!result.authPending) setError(result.error);
+      setFeedback({ state: result.authPending ? "loading" : "error", message: result.authPending ? "Initializing authentication session…" : (result.error ?? "Replay load failed.") });
       setBusy(false);
       return;
     }
     setError(null);
+    setFeedback({ state: "success", message: "Replay runs updated." });
     setRuns(result.items);
     setSelectedRunId((prev) => prev ?? result.items[0]?.id ?? null);
     setBusy(false);
@@ -42,6 +50,7 @@ export default function Page() {
     if (!run.ok) {
       setError(run.error ?? "Replay failed.");
       setStatus("failed");
+      setFeedback({ state: "error", message: run.error ?? "Replay failed." });
       setBusy(false);
       return;
     }
@@ -50,16 +59,19 @@ export default function Page() {
     const sourceName = run.data?.market_data_source ?? "provider";
     setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("replay complete");
+    setFeedback({ state: "success", message: "Replay run completed." });
     await loadRuns();
     setBusy(false);
   }
 
   async function loadSteps(runId: number) {
+    if (!isLoaded || !isSignedIn) return;
     setSelectedRunId(runId);
     setBusy(true);
     const result = await fetchNormalizedAuthed<Step>(`/api/user/replay-runs/${runId}/steps`, undefined, getToken);
     if (!result.ok) {
       setError(result.error ?? "Unable to load run steps.");
+      setFeedback({ state: "error", message: result.error ?? "Unable to load run steps." });
       setBusy(false);
       return;
     }
@@ -68,7 +80,7 @@ export default function Page() {
     setBusy(false);
   }
 
-  useEffect(() => { void loadRuns(); }, []);
+  useEffect(() => { void loadRuns(); }, [isLoaded, isSignedIn]);
   useEffect(() => { if (selectedRunId) void loadSteps(selectedRunId); }, [selectedRunId]);
 
   const timelinePoints = steps.map((step) => ({
@@ -88,6 +100,7 @@ export default function Page() {
         <button onClick={() => void runReplay()} disabled={busy}>{busy ? "Running…" : "Run replay"}</button>
         <button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button>
       </div>
+      <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} />
     </Card>
     {error ? <ErrorState title="Replay unavailable" hint={error} /> : null}
     {runs.length === 0 && !error ? <EmptyState title="No replay runs yet" hint="Run replay to generate deterministic operator history." /> : null}

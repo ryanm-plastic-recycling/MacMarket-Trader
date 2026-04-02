@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 
-import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type PendingUser = { id: number; email: string; display_name: string };
 type Invite = { id: number; email: string; display_name: string; status: string; invited_by: string; created_at: string; invite_token: string };
 
 export function PendingUsersPanel() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [users, setUsers] = useState<PendingUser[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,10 +19,16 @@ export function PendingUsersPanel() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteStatus, setInviteStatus] = useState("");
+  const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   async function load() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Initializing authentication session…" });
+      return;
+    }
     setLoading(true);
     setError(null);
+    setFeedback({ state: "loading", message: "Refreshing admin queue…" });
     const [usersResponse, invitesResponse] = await Promise.all([
       fetchNormalizedAuthed<PendingUser>("/api/admin/users/pending", undefined, getToken),
       fetchNormalizedAuthed<Invite>("/api/admin/invites", undefined, getToken),
@@ -30,20 +36,23 @@ export function PendingUsersPanel() {
 
     if (!usersResponse.ok) {
       setError(usersResponse.error ?? "Failed to load pending users.");
+      setFeedback({ state: "error", message: usersResponse.error ?? "Failed to load pending users." });
       setLoading(false);
       return;
     }
 
     setUsers(usersResponse.items);
     setInvites(invitesResponse.ok ? invitesResponse.items : []);
+    setFeedback({ state: "success", message: "Admin queue refreshed." });
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [isLoaded, isSignedIn]);
 
   async function sendInvite() {
     if (!inviteEmail.trim()) return;
     setInviteStatus("Sending invite...");
+    setFeedback({ state: "loading", message: "Sending invite…" });
     const response = await fetchNormalizedAuthed("/api/admin/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,10 +60,12 @@ export function PendingUsersPanel() {
     }, getToken);
     if (!response.ok) {
       setInviteStatus(response.error ?? `Invite failed (${response.status})`);
+      setFeedback({ state: "error", message: response.error ?? `Invite failed (${response.status})` });
       return;
     }
     const token = (response.raw as Record<string, any>)?.invite_token;
     setInviteStatus(`Invite sent. Token: ${token ?? "(hidden)"}`);
+    setFeedback({ state: "success", message: "Invite sent." });
     setInviteEmail("");
     setInviteName("");
     await load();
@@ -84,6 +95,7 @@ export function PendingUsersPanel() {
           <button onClick={() => void sendInvite()}>Send invite</button>
           {inviteStatus ? <StatusBadge tone="neutral">{inviteStatus}</StatusBadge> : null}
         </div>
+        <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
       </Card>
 
       <div className="op-grid-2">
