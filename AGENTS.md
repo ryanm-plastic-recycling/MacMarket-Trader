@@ -36,3 +36,12 @@ Do not remove or dilute the HACO/HACOLT policy.
 5. Do not downgrade data-driven operator pages back into placeholders.
 6. Keep dependency changes intentional and keep lockfiles committed.
 7. Keep Windows dev path and live runtime path separate.
+
+## Hard architecture protections (must keep)
+
+- Never shrink/replace the root README with a short status stub.
+- Never overwrite local `approval_status` or `app_role` from external auth claims.
+- Clerk sign-in/sign-up routes and middleware public-route config must remain Clerk-compatible.
+- Preserve HACO in two places: dedicated workspace and dashboard-integrated module.
+- Do not downgrade data-driven operator pages back to placeholders.
+- Keep dependency changes intentional and keep `package-lock.json` committed when changed.

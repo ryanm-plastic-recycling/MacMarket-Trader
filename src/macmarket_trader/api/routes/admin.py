@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
+from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.registry import build_email_provider
 from macmarket_trader.domain.enums import ApprovalStatus
@@ -38,11 +39,51 @@ def me(user=Depends(current_user)):
 @user_router.get("/dashboard")
 def dashboard(user=Depends(require_approved_user)):
     counts = dashboard_repo.summary_counts()
+    recommendations = recommendation_repo.list_recent(limit=5)
+    replay_runs = replay_repo.list_runs(limit=5)
+    orders = order_repo.list_with_fills(limit=5)
+    pending_users = user_repo.list_by_status(ApprovalStatus.PENDING)
+    provider_health = provider_health_summary()
     return {
         "status": "ok",
-        "approval_status": user.approval_status,
-        "provider_health": {"auth": "ok", "email": "ok", "market_data": "placeholder"},
+        "last_refresh": utc_now().isoformat(),
+        "account": {
+            "approval_status": user.approval_status,
+            "app_role": user.app_role,
+        },
+        "market_regime": "event-driven / deterministic-eval",
+        "provider_health": provider_health,
         "counts": counts,
+        "active_recommendations": [
+            {
+                "id": row.id,
+                "recommendation_id": row.recommendation_id,
+                "created_at": row.created_at,
+                "symbol": row.symbol,
+                "payload": row.payload,
+            }
+            for row in recommendations
+        ],
+        "recent_replay_runs": [
+            {
+                "id": row.id,
+                "symbol": row.symbol,
+                "recommendation_count": row.recommendation_count,
+                "approved_count": row.approved_count,
+                "fill_count": row.fill_count,
+                "created_at": row.created_at,
+            }
+            for row in replay_runs
+        ],
+        "recent_orders": orders,
+        "pending_admin_actions": [{"id": u.id, "email": u.email, "display_name": u.display_name} for u in pending_users[:5]],
+        "alerts": [
+            {
+                "kind": "provider",
+                "level": "warning" if provider_health["summary"] != "ok" else "info",
+                "message": "Market data remains deterministic fallback until provider adapter is configured.",
+            }
+        ],
         "quick_links": ["/charts/haco", "/admin/users/pending", "/recommendations"],
     }
 
@@ -163,28 +204,37 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
     return {"id": user.id, "approval_status": user.approval_status}
 
 
+def provider_health_summary() -> dict[str, str]:
+    market_mode = "fallback"
+    auth_mode = settings.auth_provider.strip().lower() or "mock"
+    email_mode = settings.email_provider.strip().lower() or "console"
+    summary = "ok" if market_mode != "fallback" else "degraded"
+    return {"summary": summary, "auth": auth_mode, "email": email_mode, "market_data": market_mode}
+
+
 @router.get("/provider-health")
 def provider_health(_admin=Depends(require_admin)):
+    summary = provider_health_summary()
     return {
         "checked_at": utc_now().isoformat(),
         "providers": [
             {
                 "provider": "auth",
-                "mode": "configured",
+                "mode": summary["auth"],
                 "status": "ok",
-                "details": "Auth provider configured in backend settings.",
+                "details": "Auth provider verifies identity; app_role and approval stay local.",
             },
             {
                 "provider": "email",
-                "mode": "configured",
+                "mode": summary["email"],
                 "status": "ok",
-                "details": "Email provider boundary active with audit logging.",
+                "details": "Approval notifications are sent through provider boundary with audit logs.",
             },
             {
                 "provider": "market_data",
-                "mode": "placeholder",
-                "status": "unknown",
-                "details": "Live provider checks are not wired in this pass; deterministic placeholder status returned.",
+                "mode": summary["market_data"],
+                "status": "warning" if summary["market_data"] == "fallback" else "ok",
+                "details": "Deterministic fallback remains active until provider-backed adapter is configured.",
             },
         ],
     }
