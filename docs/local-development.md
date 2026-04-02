@@ -113,3 +113,11 @@ When local runtime state looks stale/inconsistent:
    - `python -m macmarket_trader.cli seed-demo-data`
 
 Create a lean shareable archive (excluding runtime artifacts) with the canonical backup script: `scripts\\create_shareable_backup.bat`.
+
+## Private-alpha operator workflow refresh (2026-04)
+
+- Recommendations is the flagship workspace: generate deterministic recommendations from catalyst text, inspect detail pane, then run replay or stage paper order.
+- Replay workspace supports one-click deterministic replay runs and step-by-step heat snapshots.
+- Orders page is a paper/dev blotter with staged deterministic orders only.
+- Admin invite flow is the primary onboarding path (invite + pending approval + approve/reject).
+- Local demo data can be seeded with `python scripts/seed_demo_data.py`.

@@ -1,8 +1,9 @@
 "use client";
 
-import { createChart, type CandlestickData, type IChartApi, type ISeriesApi, type Time } from "lightweight-charts";
+import { createChart, type CandlestickData, ColorType, type IChartApi, type ISeriesApi, type Time } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Card, ErrorState, StatusBadge } from "@/components/operator-ui";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 
 export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
@@ -11,7 +12,9 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [data, setData] = useState<HacoChartPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const chartRef = useRef<HTMLDivElement | null>(null);
+  const priceRef = useRef<HTMLDivElement | null>(null);
+  const hacoRef = useRef<HTMLDivElement | null>(null);
+  const hacoltRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
     setLoading(true);
@@ -26,36 +29,65 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  useEffect(() => {
-    void load();
-  }, []);
+  useEffect(() => { void load(); }, []);
 
   useEffect(() => {
-    if (!chartRef.current || !data) return;
-    const chart: IChartApi = createChart(chartRef.current, { height: embedded ? 360 : 480, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" }, grid: { vertLines: { color: "#1f2a36" }, horzLines: { color: "#1f2a36" } } });
-    const candleSeries: ISeriesApi<"Candlestick"> = chart.addCandlestickSeries();
+    if (!priceRef.current || !hacoRef.current || !hacoltRef.current || !data) return;
+
+    const baseOptions = {
+      layout: { background: { type: ColorType.Solid, color: "#0b1219" }, textColor: "#d9e2ef" },
+      grid: { vertLines: { color: "#1f2a36" }, horzLines: { color: "#1f2a36" } },
+      rightPriceScale: { borderColor: "#26303a" },
+      timeScale: { borderColor: "#26303a" },
+    };
+
+    const priceChart = createChart(priceRef.current, { ...baseOptions, height: embedded ? 260 : 330 });
+    const hacoChart = createChart(hacoRef.current, { ...baseOptions, height: 110 });
+    const hacoltChart = createChart(hacoltRef.current, { ...baseOptions, height: 110 });
+
     const candles: CandlestickData<Time>[] = data.candles.map((c) => ({ time: c.index as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
-    candleSeries.setData(candles);
-    candleSeries.setMarkers(
-      data.markers.map((m) => ({
-        time: m.index as Time,
-        position: m.direction === "buy" ? "belowBar" : "aboveBar",
-        color: m.direction === "buy" ? "#21c06e" : "#d14b4b",
-        shape: m.direction === "buy" ? "arrowUp" : "arrowDown",
-        text: m.text,
-      }))
-    );
+    const priceSeries: ISeriesApi<"Candlestick"> = priceChart.addCandlestickSeries();
+    priceSeries.setData(candles);
+    priceSeries.setMarkers(data.markers.map((m) => ({
+      time: m.index as Time,
+      position: m.direction === "buy" ? "belowBar" : "aboveBar",
+      color: m.direction === "buy" ? "#21c06e" : "#d14b4b",
+      shape: m.direction === "buy" ? "arrowUp" : "arrowDown",
+      text: m.text,
+    })));
+
+    const hacoSeries = hacoChart.addHistogramSeries({ base: 0, color: "#21c06e" });
+    hacoSeries.setData(data.haco_strip.map((p) => ({ time: p.index as Time, value: p.value, color: p.state === "green" ? "#21c06e" : "#c64242" })));
+
+    const hacoltSeries = hacoltChart.addHistogramSeries({ base: 0, color: "#4d8dff" });
+    hacoltSeries.setData(data.hacolt_strip.map((p) => ({ time: p.index as Time, value: p.value, color: p.direction === "up" ? "#4d8dff" : "#7a4dc1" })));
+
+    let syncing = false;
+    const syncFrom = (source: IChartApi, targets: IChartApi[]) => {
+      source.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (!range || syncing) return;
+        syncing = true;
+        targets.forEach((target) => target.timeScale().setVisibleLogicalRange(range));
+        syncing = false;
+      });
+    };
+    syncFrom(priceChart, [hacoChart, hacoltChart]);
+    syncFrom(hacoChart, [priceChart, hacoltChart]);
+    syncFrom(hacoltChart, [priceChart, hacoChart]);
 
     const resizeObserver = new ResizeObserver(() => {
-      if (chartRef.current) {
-        chart.applyOptions({ width: chartRef.current.clientWidth });
-      }
+      const width = priceRef.current?.clientWidth ?? 600;
+      priceChart.applyOptions({ width });
+      hacoChart.applyOptions({ width });
+      hacoltChart.applyOptions({ width });
     });
-    resizeObserver.observe(chartRef.current);
+    resizeObserver.observe(priceRef.current);
 
     return () => {
       resizeObserver.disconnect();
-      chart.remove();
+      priceChart.remove();
+      hacoChart.remove();
+      hacoltChart.remove();
     };
   }, [data, embedded]);
 
@@ -63,59 +95,33 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      {!embedded ? <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-        <h2 style={{ marginTop: 0 }}>HACO operator workspace</h2>
+      {!embedded ? <Card>
+        <h2 style={{ margin: 0 }}>HACO operator workspace</h2>
         <p style={{ marginBottom: 0, color: "#9fb0c3" }}>
-          Data source: {data?.data_source ?? "not loaded"} {data?.fallback_mode ? "(deterministic fallback active)" : "(provider-backed)"}
+          Source: <StatusBadge tone={data?.fallback_mode ? "warn" : "good"}>{data?.data_source ?? "not loaded"}</StatusBadge> · shared canonical time index active.
         </p>
-      </div> : null}
+      </Card> : null}
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <label>
-          Symbol
-          <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} style={{ marginLeft: 8, background: "#0e151d", color: "#d9e2ef", border: "1px solid #2b3642", padding: "8px 10px" }} />
-        </label>
-        <label>
-          Timeframe
-          <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} style={{ marginLeft: 8, background: "#0e151d", color: "#d9e2ef", border: "1px solid #2b3642", padding: "8px 10px" }}>
-            <option value="1D">1D</option><option value="4H">4H</option><option value="1H">1H</option>
-          </select>
-        </label>
-        <button onClick={load} disabled={loading} style={{ background: "#2d6cdf", border: "none", color: "white", padding: "8px 12px" }}>{loading ? "Loading..." : "Run HACO analysis"}</button>
-        <span style={{ color: "#9fb0c3" }}>Data source: {data?.data_source ?? "-"}</span>
+      <div className="op-row">
+        <label>Symbol <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} style={{ marginLeft: 8 }} /></label>
+        <label>Timeframe <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)} style={{ marginLeft: 8 }}><option value="1D">1D</option><option value="4H">4H</option><option value="1H">1H</option></select></label>
+        <button onClick={() => void load()} disabled={loading}>{loading ? "Loading..." : "Run HACO analysis"}</button>
       </div>
 
-      {error ? <div style={{ color: "#ff8b8b" }}>{error}</div> : null}
+      {error ? <ErrorState title="HACO unavailable" hint={error} /> : null}
 
-      <div style={{ display: "grid", gridTemplateColumns: embedded ? "1fr" : "2fr 1fr", gap: 16 }}>
-        <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-          <h3>{embedded ? "HACO dashboard module" : "Price chart + deterministic HACO buy/sell flips"}</h3>
-          <div ref={chartRef} />
-        </div>
-        {!embedded ? <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-          <h3>Signal state summary</h3>
-          <div>HACO state: {summary?.current_haco_state ?? "-"}</div>
-          <div>Latest flip: {summary?.latest_flip ?? "-"}</div>
-          <div>Flip recency (bars): {summary?.latest_flip_bars_ago ?? "-"}</div>
-          <div>HACOLT direction: {summary?.current_hacolt_direction ?? "-"}</div>
-        </div> : null}
-      </div>
+      <Card title={embedded ? "HACO mini-module" : "Price pane + synced HACO/HACOLT strips"}>
+        <div ref={priceRef} />
+        <div ref={hacoRef} style={{ marginTop: 6 }} />
+        <div ref={hacoltRef} style={{ marginTop: 6 }} />
+      </Card>
 
-      <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-        <h3>HACO state strip (green/red)</h3>
-        <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {data?.haco_strip.slice(-80).map((p) => <div key={`${p.index}-${p.time}`} title={`${p.time} (#${p.index})`} style={{ width: 8, height: 16, background: p.state === "green" ? "#21c06e" : "#c64242" }} />)}
-        </div>
-      </div>
-      <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-        <h3>HACOLT direction strip</h3>
-        <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {data?.hacolt_strip.slice(-80).map((p) => <div key={`${p.index}-${p.time}`} title={`${p.time} (#${p.index})`} style={{ width: 8, height: 12, background: p.direction === "up" ? "#4d8dff" : "#7a4dc1" }} />)}
-        </div>
-      </div>
-      {embedded ? <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
-        <strong>Signal summary:</strong> HACO {summary?.current_haco_state ?? "-"}, HACOLT {summary?.current_hacolt_direction ?? "-"}, latest flip {summary?.latest_flip ?? "-"}
-      </div> : null}
+      <Card title="Signal summary">
+        <div>HACO state: {summary?.current_haco_state ?? "-"}</div>
+        <div>Latest flip: {summary?.latest_flip ?? "-"}</div>
+        <div>Flip recency (bars): {summary?.latest_flip_bars_ago ?? "-"}</div>
+        <div>HACOLT direction: {summary?.current_hacolt_direction ?? "-"}</div>
+      </Card>
     </div>
   );
 }

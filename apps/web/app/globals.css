@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: #10151d; color: #d7dee8; font-family: Inter, Arial, sans-serif; margin: 0; }
+
+.op-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.op-aside { border-right: 1px solid #2b3642; padding: 20px; background: #0d141d; }
+.op-main { display: grid; grid-template-rows: auto 1fr; }
+.op-topbar { border-bottom: 1px solid #2b3642; padding: 12px 18px; background: #0f1722; color: #9fb0c3; }
+.op-content { padding: 18px; display: grid; gap: 12px; }
+.op-nav { display: grid; gap: 8px; }
+.op-nav a { color: #cbd6e2; text-decoration: none; padding: 6px 8px; border-radius: 6px; }
+.op-nav a:hover { background: #162332; }
+
+.op-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.op-page-header h1 { margin: 0; font-size: 24px; }
+.op-page-header p { margin: 6px 0 0; color: #9fb0c3; }
+.op-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.op-card { border: 1px solid #2a3440; background: #0f1722; border-radius: 8px; padding: 12px; }
+.op-card h3 { margin: 0 0 10px; font-size: 15px; }
+.op-grid-2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; }
+.op-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.op-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+
+.op-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.op-table th, .op-table td { border-top: 1px solid #25303b; padding: 8px; text-align: left; }
+.op-table th { color: #9fb0c3; border-top: none; }
+.op-table tr.is-selectable { cursor: pointer; }
+.op-table tr.is-active { background: #162332; }
+
+.op-badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #314357; }
+.op-badge-good { color: #7ee787; border-color: #2f6f45; }
+.op-badge-warn { color: #f7b267; border-color: #785931; }
+.op-badge-bad { color: #ff8b8b; border-color: #7c4040; }
+.op-badge-neutral { color: #a9b7c8; }
+
+.op-empty, .op-error { border: 1px dashed #304355; border-radius: 8px; padding: 12px; }
+.op-empty p, .op-error p { margin: 6px 0 0; color: #9fb0c3; }
+.op-error { border-color: #7c4040; background: #2a1717; }
+
+input, select, button, textarea { background: #0e151d; color: #d9e2ef; border: 1px solid #2b3642; padding: 8px 10px; border-radius: 6px; }
+button { cursor: pointer; }
+button:disabled { opacity: .6; cursor: not-allowed; }
+
+@media (max-width: 1200px) {
+  .op-grid-2, .op-grid-3, .op-grid-4, .op-shell { grid-template-columns: 1fr; }
+}

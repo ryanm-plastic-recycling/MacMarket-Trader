@@ -3,31 +3,29 @@ import Link from "next/link";
 const links = [
   ["/dashboard", "Dashboard"],
   ["/recommendations", "Recommendations"],
-  ["/replay-runs", "Replay runs"],
+  ["/replay-runs", "Replay"],
   ["/orders", "Orders"],
-  ["/charts/haco", "HACO charts"],
-  ["/admin/pending-users", "Admin pending users"],
-  ["/admin/provider-health", "Provider health"],
+  ["/charts/haco", "HACO Context"],
+  ["/admin/pending-users", "Admin / Invites"],
+  ["/admin/provider-health", "Provider Health"],
   ["/account", "Account"],
 ] as const;
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "270px 1fr", minHeight: "100vh", letterSpacing: "0.1px" }}>
-      <aside style={{ borderRight: "1px solid #2b3642", padding: 22, background: "#0d141d" }}>
-        <h2 style={{ marginTop: 0, fontSize: 18, marginBottom: 14 }}>MacMarket Trader</h2>
-        <p style={{ color: "#8da1b8", marginTop: 0, fontSize: 12 }}>Operator console</p>
-        <nav style={{ display: "grid", gap: 10 }}>
+    <div className="op-shell">
+      <aside className="op-aside">
+        <h2 style={{ marginTop: 0, marginBottom: 8 }}>MacMarket Trader</h2>
+        <p style={{ color: "#8da1b8", marginTop: 0, fontSize: 12 }}>Invite-only private alpha console</p>
+        <nav className="op-nav">
           {links.map(([href, label]) => (
-            <Link key={href} href={href} style={{ color: "#cbd6e2", textDecoration: "none", padding: "6px 8px", border: "1px solid transparent" }}>
-              {label}
-            </Link>
+            <Link key={href} href={href}>{label}</Link>
           ))}
         </nav>
       </aside>
-      <section>
-        <header style={{ borderBottom: "1px solid #2b3642", padding: "14px 20px", background: "#0f1722" }}>Private alpha operator console</header>
-        <main style={{ padding: 20 }}>{children}</main>
+      <section className="op-main">
+        <header className="op-topbar">Flagship workflow: Recommendations → Replay → Paper Orders</header>
+        <main className="op-content">{children}</main>
       </section>
     </div>
   );

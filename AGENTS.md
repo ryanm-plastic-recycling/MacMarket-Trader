@@ -75,3 +75,12 @@ Do not remove or dilute the HACO/HACOLT policy.
 - Preserve HACO in two places: dedicated workspace and dashboard-integrated module.
 - Do not downgrade data-driven operator pages back to placeholders.
 - Keep dependency changes intentional and keep `package-lock.json` committed when changed.
+
+
+## Productization guardrail addendum (2026-04)
+
+- Recommendations workspace is the flagship operator workflow.
+- HACO is supporting technical context, not the product center.
+- Core operator pages must ship loading, empty, error, and populated states.
+- Operator surfaces with shared signal bars must share canonical synced time scales.
+- Avoid large inline-style-only implementations for core console pages.

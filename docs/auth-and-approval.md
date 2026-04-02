@@ -80,3 +80,10 @@ Repo root `.env` (backend):
 - Authenticated users with `pending` approval are redirected to `/pending-approval`.
 - Authenticated users with rejected/suspended or insufficient-role access are redirected to `/access-denied`.
 - Frontend hosted paths no longer fall back to mock bearer tokens.
+
+## Invite-first onboarding flow
+
+1. Admin sends invite from **Admin / Invites**.
+2. Invitee signs in via Clerk invite link.
+3. Local account remains `pending` until admin approval.
+4. App role and approval status remain local-authoritative and are never overwritten by external auth claims.

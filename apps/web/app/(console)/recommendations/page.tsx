@@ -1,21 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createChart, type CandlestickData, LineStyle, type Time } from "lightweight-charts";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { fetchNormalized } from "@/lib/api-client";
+import { fetchHacoChart } from "@/lib/haco-api";
 
 type Rec = { id: number; created_at: string; symbol: string; payload: any; recommendation_id: string };
 
+const SORTABLE_COLUMNS = ["created_at", "symbol", "side", "setup", "approved", "expected_rr", "confidence", "catalyst"] as const;
+type SortColumn = (typeof SORTABLE_COLUMNS)[number];
+
 export default function Page() {
+  const chartRef = useRef<HTMLDivElement | null>(null);
   const [rows, setRows] = useState<Rec[]>([]);
   const [selected, setSelected] = useState<Rec | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [symbolInput, setSymbolInput] = useState("AAPL");
+  const [eventText, setEventText] = useState("Operator catalyst review.");
+  const [sortCol, setSortCol] = useState<SortColumn>("created_at");
+  const [showHaco, setShowHaco] = useState(false);
 
   async function load() {
     setLoading(true);
-    const response = await fetch("/api/user/recommendations", { cache: "no-store" });
-    const data = (await response.json()) as Rec[];
-    setRows(data);
-    setSelected((prev) => data.find((item) => item.id === prev?.id) ?? data[0] ?? null);
+    const result = await fetchNormalized<Rec>("/api/user/recommendations");
+    if (!result.ok) {
+      setError(result.error ?? "Could not load recommendations.");
+      setRows([]);
+      setSelected(null);
+      setLoading(false);
+      return;
+    }
+    const normalized = result.items.filter((item) => item && typeof item === "object" && "id" in item) as Rec[];
+    setRows(normalized);
+    setSelected((prev) => normalized.find((item) => item.id === prev?.id) ?? normalized[0] ?? null);
     setLoading(false);
   }
 
@@ -25,50 +46,137 @@ export default function Page() {
 
   async function generate() {
     setStatus("Generating deterministic recommendation...");
-    const response = await fetch("/api/user/recommendations/generate", {
+    const result = await fetchNormalized("/api/user/recommendations/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: "AAPL", event_text: "Operator refresh from recommendations workspace." }),
+      body: JSON.stringify({ symbol: symbolInput.trim().toUpperCase(), event_text: eventText.trim() }),
     });
-    if (!response.ok) {
-      setStatus(`Generation failed (${response.status})`);
+    if (!result.ok) {
+      setError(result.error ?? `Generation failed (${result.status}).`);
       return;
     }
+    setStatus("Recommendation generated.");
     await load();
-    setStatus("Recommendation refresh completed.");
   }
 
-  return <section style={{ display: "grid", gap: 12 }}>
-    <h1>Recommendations</h1>
-    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-      <button onClick={generate}>Generate / Refresh recommendations</button>
-      <button onClick={() => void load()} disabled={loading}>{loading ? "Refreshing..." : "Reload table"}</button>
-      <span style={{ color: "#9fb0c3" }}>{status}</span>
-    </div>
-    {rows.length === 0 ? <div style={{ border: "1px solid #2a3440", background: "#111922", padding: 12 }}>
-      <strong>No recommendation records yet.</strong>
-      <div style={{ marginTop: 6, color: "#9fb0c3" }}>Use “Generate / Refresh recommendations” to run deterministic recommendation creation for operator review.</div>
-    </div> : null}
-    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 12 }}>
-      <table style={{ width: "100%", fontSize: 13 }}><thead><tr><th>symbol</th><th>thesis</th><th>entry</th><th>invalidation</th><th>R/R</th><th>confidence</th></tr></thead>
-        <tbody>{rows.map((r) => <tr key={r.id} onClick={() => setSelected(r)} style={{ cursor: "pointer" }}><td>{r.symbol}</td><td>{r.payload?.thesis}</td><td>{r.payload?.entry?.zone_low}/{r.payload?.entry?.zone_high}</td><td>{r.payload?.invalidation?.price}</td><td>{r.payload?.quality?.expected_rr}</td><td>{r.payload?.quality?.confidence}</td></tr>)}</tbody></table>
-      <div style={{ border: "1px solid #2a3440", background: "#111922", padding: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Actionable detail pane</h3>
-        <div><strong>Recommendation ID:</strong> {selected?.recommendation_id ?? "-"}</div>
-        <div><strong>Symbol:</strong> {selected?.symbol ?? "-"}</div>
-        <div><strong>Catalyst:</strong> {selected?.payload?.catalyst?.type ?? "-"}</div>
-        <div><strong>Thesis:</strong> {selected?.payload?.thesis ?? "-"}</div>
-        <div><strong>Setup:</strong> {selected?.payload?.entry?.setup_type ?? "-"}</div>
-        <div><strong>Entry zone:</strong> {selected?.payload?.entry?.zone_low ?? "-"} - {selected?.payload?.entry?.zone_high ?? "-"}</div>
-        <div><strong>Trigger:</strong> {selected?.payload?.entry?.trigger ?? "-"}</div>
-        <div><strong>Invalidation:</strong> {selected?.payload?.invalidation?.price ?? "-"} ({selected?.payload?.invalidation?.reason ?? "-"})</div>
-        <div><strong>Targets:</strong> T1 {selected?.payload?.targets?.target_1 ?? "-"} / T2 {selected?.payload?.targets?.target_2 ?? "-"}</div>
-        <div><strong>Expected R/R:</strong> {selected?.payload?.quality?.expected_rr ?? "-"}</div>
-        <div><strong>Confidence:</strong> {selected?.payload?.quality?.confidence ?? "-"}</div>
-        <div><strong>Approved:</strong> {String(selected?.payload?.approved ?? "-")}</div>
-        <div><strong>No-trade reason:</strong> {selected?.payload?.rejection_reason ?? "n/a"}</div>
-        <div><strong>Evidence / provenance:</strong> {(selected?.payload?.evidence?.explanatory_notes ?? []).join(" | ") || "No notes"}</div>
+  const sortedRows = useMemo(() => {
+    const clone = [...rows];
+    clone.sort((a, b) => {
+      const pa = a.payload ?? {};
+      const pb = b.payload ?? {};
+      const map: Record<SortColumn, string | number> = {
+        created_at: a.created_at,
+        symbol: a.symbol,
+        side: pa.side ?? "",
+        setup: pa.entry?.setup_type ?? "",
+        approved: pa.approved ? 1 : 0,
+        expected_rr: Number(pa.quality?.expected_rr ?? 0),
+        confidence: Number(pa.quality?.confidence ?? 0),
+        catalyst: pa.catalyst?.type ?? "",
+      };
+      const bmap: Record<SortColumn, string | number> = {
+        ...map,
+        created_at: b.created_at,
+        symbol: b.symbol,
+        side: pb.side ?? "",
+        setup: pb.entry?.setup_type ?? "",
+        approved: pb.approved ? 1 : 0,
+        expected_rr: Number(pb.quality?.expected_rr ?? 0),
+        confidence: Number(pb.quality?.confidence ?? 0),
+        catalyst: pb.catalyst?.type ?? "",
+      };
+      return String(bmap[sortCol]).localeCompare(String(map[sortCol]), undefined, { numeric: true });
+    });
+    return clone;
+  }, [rows, sortCol]);
+
+  useEffect(() => {
+    async function renderChart() {
+      if (!chartRef.current || !selected) return;
+      const payload = await fetchHacoChart({ symbol: selected.symbol, timeframe: "1D", include_heikin_ashi: showHaco });
+      const chart = createChart(chartRef.current, { height: 280, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
+      const candles: CandlestickData<Time>[] = payload.candles.slice(-90).map((c) => ({ time: c.index as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
+      chart.addCandlestickSeries().setData(candles);
+      const invalidation = chart.addLineSeries({ color: "#ff8b8b", lineStyle: LineStyle.Dashed, lineWidth: 2 });
+      const target = chart.addLineSeries({ color: "#7ee787", lineStyle: LineStyle.Dotted, lineWidth: 2 });
+      const entry = chart.addLineSeries({ color: "#6ea8fe", lineWidth: 2 });
+      const inv = selected.payload?.invalidation?.price;
+      const t1 = selected.payload?.targets?.target_1;
+      const mid = Number(selected.payload?.entry?.zone_low ?? 0) + Number(selected.payload?.entry?.zone_high ?? 0);
+      const entryMid = mid > 0 ? mid / 2 : undefined;
+      if (inv) invalidation.setData(candles.map((c) => ({ time: c.time, value: inv })));
+      if (t1) target.setData(candles.map((c) => ({ time: c.time, value: t1 })));
+      if (entryMid) entry.setData(candles.map((c) => ({ time: c.time, value: entryMid })));
+      let hacoSeries;
+      if (showHaco) {
+        hacoSeries = chart.addLineSeries({ color: "#f7b267", lineWidth: 1 });
+        hacoSeries.setData(payload.heikin_ashi_candles.slice(-90).map((c) => ({ time: c.index as Time, value: c.close })));
+      }
+      return () => chart.remove();
+    }
+    let cleanup: (() => void) | undefined;
+    renderChart().then((c) => {
+      cleanup = c;
+    }).catch(() => {
+      setError("Unable to render chart overlay for selected recommendation.");
+    });
+    return () => cleanup?.();
+  }, [selected, showHaco]);
+
+  return (
+    <section style={{ display: "grid", gap: 12 }}>
+      <PageHeader title="Recommendations" subtitle="Flagship operator workspace for deterministic trade plans." actions={<StatusBadge tone="neutral">{status || "idle"}</StatusBadge>} />
+      <Card>
+        <div className="op-row">
+          <input value={symbolInput} onChange={(e) => setSymbolInput(e.target.value.toUpperCase())} placeholder="Symbol" />
+          <input value={eventText} onChange={(e) => setEventText(e.target.value)} placeholder="Catalyst summary" style={{ minWidth: 260 }} />
+          <button onClick={() => void generate()}>Generate recommendation</button>
+          <button onClick={() => void load()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
+          <button onClick={() => setError(null)}>Clear error</button>
+        </div>
+      </Card>
+
+      {error ? <ErrorState title="Recommendations unavailable" hint={error} /> : null}
+      {!loading && !error && rows.length === 0 ? <EmptyState title="No recommendations yet" hint="Generate a deterministic recommendation to seed the workspace." /> : null}
+
+      <div className="op-grid-2">
+        <Card title="Recommendation queue">
+          <div className="op-row" style={{ marginBottom: 8 }}>{SORTABLE_COLUMNS.map((col) => <button key={col} onClick={() => setSortCol(col)}>{col}</button>)}</div>
+          <table className="op-table">
+            <thead><tr><th>created_at</th><th>symbol</th><th>side</th><th>setup</th><th>approved/no_trade</th><th>expected_rr</th><th>confidence</th><th>catalyst</th></tr></thead>
+            <tbody>{sortedRows.map((r) => <tr key={r.id} onClick={() => setSelected(r)} className={`is-selectable ${selected?.id === r.id ? "is-active" : ""}`}><td>{r.created_at}</td><td>{r.symbol}</td><td>{r.payload?.side}</td><td>{r.payload?.entry?.setup_type}</td><td>{r.payload?.approved ? "approved" : "no_trade"}</td><td>{r.payload?.quality?.expected_rr}</td><td>{r.payload?.quality?.confidence}</td><td>{r.payload?.catalyst?.type}</td></tr>)}</tbody>
+          </table>
+        </Card>
+        <Card title="Selected recommendation detail">
+          {!selected ? <EmptyState title="Select a recommendation" hint="Choose a row to review thesis, risk controls, and provenance." /> : <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+            <div><strong>Thesis:</strong> {selected.payload?.thesis ?? "-"}</div>
+            <div><strong>Catalyst:</strong> {selected.payload?.catalyst?.type ?? "-"}</div>
+            <div><strong>Regime context:</strong> {selected.payload?.regime_context?.market_regime ?? "-"}</div>
+            <div><strong>Entry zone:</strong> {selected.payload?.entry?.zone_low} - {selected.payload?.entry?.zone_high}</div>
+            <div><strong>Trigger:</strong> {selected.payload?.entry?.trigger_text}</div>
+            <div><strong>Invalidation:</strong> {selected.payload?.invalidation?.price} ({selected.payload?.invalidation?.reason})</div>
+            <div><strong>Targets:</strong> {selected.payload?.targets?.target_1} / {selected.payload?.targets?.target_2}</div>
+            <div><strong>Time stop:</strong> {selected.payload?.time_stop?.max_holding_days} days</div>
+            <div><strong>Expected R/R:</strong> {selected.payload?.quality?.expected_rr}</div>
+            <div><strong>Confidence:</strong> {selected.payload?.quality?.confidence}</div>
+            <div><strong>No-trade reason:</strong> {selected.payload?.rejection_reason || "n/a"}</div>
+            <div><strong>Evidence notes:</strong> {(selected.payload?.evidence?.explanatory_notes ?? []).join(" | ") || "none"}</div>
+            <div><strong>Provenance summary:</strong> {selected.payload?.evidence?.source_type} @ {selected.payload?.evidence?.source_timestamp}</div>
+            <div className="op-row" style={{ marginTop: 8 }}>
+              <button onClick={() => void load()}>Rerun / refresh</button>
+              <button onClick={() => window.location.assign(`/replay-runs?symbol=${selected.symbol}`)}>Run replay with context</button>
+              <button onClick={() => window.location.assign(`/orders?recommendation=${selected.recommendation_id}`)}>Stage paper order</button>
+            </div>
+          </div>}
+        </Card>
       </div>
-    </div>
-  </section>;
+
+      <Card title="Recommendation chart context">
+        <div className="op-row" style={{ marginBottom: 8 }}>
+          <label><input type="checkbox" checked={showHaco} onChange={(e) => setShowHaco(e.target.checked)} /> show HACO overlay</label>
+        </div>
+        <div ref={chartRef} />
+      </Card>
+    </section>
+  );
 }

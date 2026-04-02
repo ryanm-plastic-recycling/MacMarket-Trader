@@ -1,11 +1,72 @@
 "use client";
-import { useEffect, useState } from "react";
 
-type Order = { order_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; fills: Array<{ fill_price: number; timestamp: string }> };
+import { useEffect, useMemo, useState } from "react";
+
+import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { fetchNormalized } from "@/lib/api-client";
+
+type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
   const [orders, setOrders] = useState<Order[]>([]);
-  useEffect(() => { fetch("/api/user/orders", { cache: "no-store" }).then((r) => r.json()).then(setOrders); }, []);
-  return <section><h1>Orders</h1><table><thead><tr><th>order</th><th>status</th><th>side</th><th>shares</th><th>limit</th><th>fill</th><th>timestamps</th></tr></thead>
-    <tbody>{orders.map((o) => <tr key={o.order_id}><td>{o.symbol}</td><td>{o.status}</td><td>{o.side}</td><td>{o.shares}</td><td>{o.limit_price}</td><td>{o.fills[0]?.fill_price ?? "-"}</td><td>{o.created_at} / {o.fills[0]?.timestamp ?? "-"}</td></tr>)}</tbody></table></section>;
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState("idle");
+  const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
+
+  async function load() {
+    const result = await fetchNormalized<Order>("/api/user/orders");
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setOrders(result.items);
+    setSelectedOrderId((prev) => prev ?? result.items[0]?.order_id ?? null);
+  }
+
+  async function stagePaperOrder() {
+    setStatus("staging paper order...");
+    const result = await fetchNormalized<{ order_id: string }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL" }) });
+    if (!result.ok) {
+      setError(result.error ?? "Unable to stage order.");
+      setStatus("failed");
+      return;
+    }
+    setStatus("paper order staged");
+    await load();
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  return <section style={{ display: "grid", gap: 12 }}>
+    <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{status}</StatusBadge>} />
+    <Card>
+      <div className="op-row">
+        <button onClick={() => void stagePaperOrder()}>Stage paper order</button>
+        <button onClick={() => void load()}>Refresh blotter</button>
+      </div>
+    </Card>
+    {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
+    {orders.length === 0 && !error ? <EmptyState title="No orders yet" hint="Stage a deterministic paper order to populate the blotter." /> : null}
+    <div className="op-grid-2">
+      <Card title="Order table">
+        <table className="op-table">
+          <thead><tr><th>created_at</th><th>symbol</th><th>side</th><th>shares</th><th>limit/fill</th><th>broker status</th><th>fill count</th></tr></thead>
+          <tbody>{orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td>{o.side}</td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}</tbody>
+        </table>
+      </Card>
+      <Card title="Selected order detail">
+        {!selected ? <EmptyState title="Select an order" hint="Click a blotter row to inspect paper-broker fill details." /> : <div style={{ display: "grid", gap: 6 }}>
+          <div><strong>Order id:</strong> {selected.order_id}</div>
+          <div><strong>Recommendation id:</strong> {selected.recommendation_id}</div>
+          <div><strong>Symbol/side:</strong> {selected.symbol} {selected.side}</div>
+          <div><strong>Shares:</strong> {selected.shares}</div>
+          <div><strong>Limit:</strong> {selected.limit_price}</div>
+          <div><strong>Status:</strong> {selected.status}</div>
+          <div><strong>Fills:</strong></div>
+          {selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}
+        </div>}
+      </Card>
+    </div>
+  </section>;
 }
