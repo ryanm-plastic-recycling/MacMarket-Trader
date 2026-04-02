@@ -7,6 +7,9 @@ export type UserProfile = {
   approval_status: ApprovalStatus;
   app_role: "user" | "admin" | "analyst";
   mfa_enabled: boolean;
+  auth_provider?: string;
+  last_seen_at?: string | null;
+  last_authenticated_at?: string | null;
 };
 
 export async function getUserProfileFromProxy(): Promise<UserProfile> {

@@ -12,6 +12,7 @@ export default function Page() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
+  const [dataSource, setDataSource] = useState("unknown");
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
 
   async function load() {
@@ -26,12 +27,15 @@ export default function Page() {
 
   async function stagePaperOrder() {
     setStatus("staging paper order...");
-    const result = await fetchNormalized<{ order_id: string }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL" }) });
+    const result = await fetchNormalized<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL" }) });
     if (!result.ok) {
       setError(result.error ?? "Unable to stage order.");
       setStatus("failed");
       return;
     }
+    const fallbackMode = result.data?.fallback_mode ?? false;
+    const sourceName = result.data?.market_data_source ?? "provider";
+    setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("paper order staged");
     await load();
   }
@@ -40,6 +44,9 @@ export default function Page() {
 
   return <section style={{ display: "grid", gap: 12 }}>
     <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{status}</StatusBadge>} />
+    <Card title="Blotter mode">
+      Generated from recommendation workflow bars sourced from: <strong>{dataSource}</strong>. This is paper-only execution for operator review.
+    </Card>
     <Card>
       <div className="op-row">
         <button onClick={() => void stagePaperOrder()}>Stage paper order</button>

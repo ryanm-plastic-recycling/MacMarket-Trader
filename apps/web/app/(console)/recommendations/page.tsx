@@ -23,6 +23,7 @@ export default function Page() {
   const [eventText, setEventText] = useState("Operator catalyst review.");
   const [sortCol, setSortCol] = useState<SortColumn>("created_at");
   const [showHaco, setShowHaco] = useState(false);
+  const [chartSource, setChartSource] = useState("unknown");
 
   async function load() {
     setLoading(true);
@@ -46,7 +47,7 @@ export default function Page() {
 
   async function generate() {
     setStatus("Generating deterministic recommendation...");
-    const result = await fetchNormalized("/api/user/recommendations/generate", {
+    const result = await fetchNormalized<{ market_data_source?: string; fallback_mode?: boolean }>("/api/user/recommendations/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol: symbolInput.trim().toUpperCase(), event_text: eventText.trim() }),
@@ -55,6 +56,9 @@ export default function Page() {
       setError(result.error ?? `Generation failed (${result.status}).`);
       return;
     }
+    const fallbackMode = result.data?.fallback_mode ?? false;
+    const sourceName = result.data?.market_data_source ?? "provider";
+    setChartSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("Recommendation generated.");
     await load();
   }
@@ -94,6 +98,7 @@ export default function Page() {
     async function renderChart() {
       if (!chartRef.current || !selected) return;
       const payload = await fetchHacoChart({ symbol: selected.symbol, timeframe: "1D", include_heikin_ashi: showHaco });
+      setChartSource(payload.fallback_mode ? `fallback (${payload.data_source})` : payload.data_source);
       const chart = createChart(chartRef.current, { height: 280, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
       const candles: CandlestickData<Time>[] = payload.candles.slice(-90).map((c) => ({ time: c.index as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
       chart.addCandlestickSeries().setData(candles);
@@ -126,6 +131,9 @@ export default function Page() {
   return (
     <section style={{ display: "grid", gap: 12 }}>
       <PageHeader title="Recommendations" subtitle="Flagship operator workspace for deterministic trade plans." actions={<StatusBadge tone="neutral">{status || "idle"}</StatusBadge>} />
+      <Card title="Workflow guidance">
+        Generate a recommendation from current market mode, review setup detail, then move to replay or paper orders. Chart/context source: <strong>{chartSource}</strong>.
+      </Card>
       <Card>
         <div className="op-row">
           <input value={symbolInput} onChange={(e) => setSymbolInput(e.target.value.toUpperCase())} placeholder="Symbol" />
@@ -174,6 +182,7 @@ export default function Page() {
       <Card title="Recommendation chart context">
         <div className="op-row" style={{ marginBottom: 8 }}>
           <label><input type="checkbox" checked={showHaco} onChange={(e) => setShowHaco(e.target.checked)} /> show HACO overlay</label>
+          <StatusBadge tone="neutral">{chartSource}</StatusBadge>
         </div>
         <div ref={chartRef} />
       </Card>

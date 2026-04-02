@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from macmarket_trader.api.main import app
 from macmarket_trader.api.routes import admin as admin_routes
@@ -137,6 +138,17 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
 
     client = TestClient(app)
+    from macmarket_trader.domain.models import AppUserModel
+    from macmarket_trader.storage.db import SessionLocal
+
+    client.get("/user/me", headers={"Authorization": "Bearer admin-token"})
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_admin")).scalar_one()
+        admin.app_role = "admin"
+        admin.approval_status = "approved"
+        admin.mfa_enabled = True
+        session.commit()
+
     response = client.get("/admin/provider-health", headers={"Authorization": "Bearer admin-token"})
     assert response.status_code == 200
     payload = response.json()

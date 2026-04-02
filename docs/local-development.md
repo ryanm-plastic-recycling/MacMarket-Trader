@@ -111,6 +111,7 @@ When local runtime state looks stale/inconsistent:
 4. Reinitialize or reseed local DB as needed:
    - `python -m macmarket_trader.cli init-db`
    - `python -m macmarket_trader.cli seed-demo-data`
+5. If deleting SQLite DB file manually, always stop backend/frontend first, then restart backend and reseed.
 
 Create a lean shareable archive (excluding runtime artifacts) with the canonical backup script: `scripts\\create_shareable_backup.bat`.
 
@@ -120,4 +121,14 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 - Replay workspace supports one-click deterministic replay runs and step-by-step heat snapshots.
 - Orders page is a paper/dev blotter with staged deterministic orders only.
 - Admin invite flow is the primary onboarding path (invite + pending approval + approve/reject).
+- Admin users view (`/admin/users`) shows current local users, role/approval truth, MFA, invite state, and last seen metadata.
+- Account page surfaces self-service identity + authorization metadata including last seen/last authenticated timestamps.
 - Local demo data can be seeded with `python scripts/seed_demo_data.py`.
+
+## Where to start in the UI
+
+1. `/recommendations` (flagship): generate and review deterministic setups.
+2. `/replay-runs`: validate recommendation behavior path-by-path.
+3. `/orders`: inspect staged paper fills and blotter state.
+4. `/admin/pending-users` and `/admin/users`: invite, approve, and monitor current operator access.
+5. `/account`: confirm your own role/approval/MFA posture.

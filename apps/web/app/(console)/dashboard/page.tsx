@@ -19,6 +19,7 @@ type DashboardPayload = {
   recent_orders: Array<{ order_id: string; symbol: string; status: string; side: string; created_at: string }>;
   pending_admin_actions: Array<{ id: number; email: string; display_name: string }>;
   alerts: Array<{ kind: string; level: string; message: string }>;
+  workflow_guide?: string[];
 };
 
 export default function Page() {
@@ -53,6 +54,9 @@ export default function Page() {
 
       <div className="op-grid-2">
         <Card title="Actionable recommendations">
+          <div style={{ marginBottom: 8, color: "#9fb0c3" }}>
+            Market snapshot source: {data?.latest_market_snapshot?.source ?? "-"}{data?.latest_market_snapshot?.fallback_mode ? " (fallback mode)" : ""}
+          </div>
           <table className="op-table"><thead><tr><th>symbol</th><th>thesis</th><th>R/R</th><th>confidence</th></tr></thead>
             <tbody>{data?.active_recommendations.map((r) => <tr key={r.id}><td>{r.symbol}</td><td>{r.payload?.thesis}</td><td>{r.payload?.quality?.expected_rr}</td><td>{r.payload?.quality?.confidence}</td></tr>)}</tbody></table>
           {latest ? <div style={{ marginTop: 10 }}><strong>Selected callout:</strong> {latest.payload?.thesis}</div> : null}
@@ -61,6 +65,9 @@ export default function Page() {
           <HacoWorkspace embedded />
         </Card>
       </div>
+      <Card title="Next actions">
+        {(data?.workflow_guide ?? []).map((item, idx) => <div key={idx}>{idx + 1}. {item}</div>)}
+      </Card>
 
       <div className="op-grid-4">
         <Card title="Recent replay runs">{data?.recent_replay_runs.map((r) => <div key={r.id}>{r.symbol} • {r.recommendation_count}/{r.approved_count}</div>)}</Card>

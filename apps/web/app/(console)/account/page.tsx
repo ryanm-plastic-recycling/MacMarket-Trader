@@ -10,17 +10,22 @@ export default function Page() {
   useEffect(() => { fetchNormalized<any>("/api/user/me").then((r) => r.ok && setUser(r.data)); }, []);
 
   return <section style={{ display: "grid", gap: 12 }}>
-    <PageHeader title="Account" subtitle="Operator profile and private-alpha access status." />
+    <PageHeader title="Account" subtitle="Self-service profile, approval status, and authentication posture for private-alpha desk access." />
+    <Card title="What this page is for">
+      Confirm your authorization state before running recommendations, replay, or paper orders. If anything is out of date, contact an admin from the invite-only onboarding flow.
+    </Card>
     <div className="op-grid-2">
       <Card title="Identity">
         <div>Email: {user?.email ?? "-"}</div>
         <div>Display name: {user?.display_name ?? "-"}</div>
-        <div>Auth provider: Clerk</div>
+        <div>Auth provider: {user?.auth_provider ?? "clerk"}</div>
       </Card>
       <Card title="Authorization & invite state">
         <div>Role: <StatusBadge tone="neutral">{user?.app_role ?? "-"}</StatusBadge></div>
         <div>Approval status: <StatusBadge tone={user?.approval_status === "approved" ? "good" : "warn"}>{user?.approval_status ?? "-"}</StatusBadge></div>
         <div>MFA enabled: {String(user?.mfa_enabled ?? false)}</div>
+        <div>Last seen: {user?.last_seen_at ?? "-"}</div>
+        <div>Last authenticated: {user?.last_authenticated_at ?? "-"}</div>
         <div>Invite-only onboarding: active</div>
       </Card>
     </div>

@@ -244,6 +244,20 @@ class UserRepository:
             session.refresh(user)
             return user
 
+    def touch_last_seen(self, user_id: int) -> AppUserModel:
+        from macmarket_trader.domain.time import utc_now
+
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                raise ValueError("User not found")
+            now = utc_now()
+            user.last_seen_at = now
+            user.last_authenticated_at = now
+            session.commit()
+            session.refresh(user)
+            return user
+
     def create_or_update_invited_pending_user(self, *, email: str, display_name: str | None) -> AppUserModel:
         normalized_email = email.strip().lower()
         if not normalized_email:
@@ -279,6 +293,11 @@ class UserRepository:
     def list_by_status(self, status: ApprovalStatus) -> list[AppUserModel]:
         with self.session_factory() as session:
             return list(session.execute(select(AppUserModel).where(AppUserModel.approval_status == status.value)).scalars())
+
+    def list_recent_users(self, limit: int = 200) -> list[AppUserModel]:
+        with self.session_factory() as session:
+            stmt = select(AppUserModel).order_by(AppUserModel.created_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
 
     def set_approval_status(self, *, user_id: int, status: ApprovalStatus, approved_by: str, note: str) -> AppUserModel:
         from macmarket_trader.domain.time import utc_now

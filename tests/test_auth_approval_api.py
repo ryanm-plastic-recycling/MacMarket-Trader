@@ -113,6 +113,7 @@ def test_admin_provider_health() -> None:
     with SessionLocal() as session:
         admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
         admin.app_role = 'admin'
+        admin.approval_status = 'approved'
         admin.mfa_enabled = True
         session.commit()
 
@@ -282,3 +283,29 @@ def test_existing_admin_user_remains_admin_after_login_sync() -> None:
     assert resp.status_code == 200
     assert resp.json()['app_role'] == 'admin'
     assert resp.json()['approval_status'] == 'approved'
+
+
+def test_user_me_includes_last_seen_metadata() -> None:
+    _seed_mock_user('user-token')
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer user-token'})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['last_seen_at'] is not None
+    assert payload['last_authenticated_at'] is not None
+
+
+def test_admin_users_listing_returns_current_users() -> None:
+    _seed_mock_user('admin-token')
+    _seed_mock_user('user-token')
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.approval_status = 'approved'
+        admin.mfa_enabled = True
+        session.commit()
+
+    resp = client.get('/admin/users', headers={'Authorization': 'Bearer admin-token'})
+    assert resp.status_code == 200
+    users = resp.json()
+    assert isinstance(users, list)
+    assert any(item['email'] == 'user@example.com' for item in users)
