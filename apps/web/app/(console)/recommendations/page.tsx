@@ -4,7 +4,7 @@ import { createChart, type CandlestickData, LineStyle, type Time } from "lightwe
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 
-import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchNormalizedAuthed } from "@/lib/api-client";
 import { fetchHacoChart } from "@/lib/haco-api";
 
@@ -14,7 +14,7 @@ const SORTABLE_COLUMNS = ["created_at", "symbol", "side", "setup", "approved", "
 type SortColumn = (typeof SORTABLE_COLUMNS)[number];
 
 export default function Page() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const chartRef = useRef<HTMLDivElement | null>(null);
   const [rows, setRows] = useState<Rec[]>([]);
   const [selected, setSelected] = useState<Rec | null>(null);
@@ -27,12 +27,19 @@ export default function Page() {
   const [showHaco, setShowHaco] = useState(false);
   const [chartSource, setChartSource] = useState("unknown");
   const [chartError, setChartError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   async function load() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Initializing authentication session…" });
+      return;
+    }
     setLoading(true);
+    setFeedback({ state: "loading", message: "Loading recommendations…" });
     const result = await fetchNormalizedAuthed<Rec>("/api/user/recommendations", undefined, getToken);
     if (!result.ok) {
-      setError(result.error ?? "Could not load recommendations.");
+      if (!result.authPending) setError(result.error ?? "Could not load recommendations.");
+      setFeedback({ state: result.authPending ? "loading" : "error", message: result.authPending ? "Initializing authentication session…" : (result.error ?? "Could not load recommendations.") });
       setRows([]);
       setSelected(null);
       setLoading(false);
@@ -42,15 +49,17 @@ export default function Page() {
     setError(null);
     setRows(normalized);
     setSelected((prev) => normalized.find((item) => item.id === prev?.id) ?? normalized[0] ?? null);
+    setFeedback({ state: "success", message: "Recommendations updated." });
     setLoading(false);
   }
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   async function generate() {
     setStatus("Generating deterministic recommendation...");
+    setFeedback({ state: "loading", message: "Generating recommendation…" });
     const result = await fetchNormalizedAuthed<{ market_data_source?: string; fallback_mode?: boolean }>("/api/user/recommendations/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -58,6 +67,7 @@ export default function Page() {
     }, getToken);
     if (!result.ok) {
       setError(result.error ?? `Generation failed (${result.status}).`);
+      setFeedback({ state: "error", message: result.error ?? `Generation failed (${result.status}).` });
       return;
     }
     setError(null);
@@ -65,6 +75,7 @@ export default function Page() {
     const sourceName = result.data?.market_data_source ?? "provider";
     setChartSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("Recommendation generated.");
+    setFeedback({ state: "success", message: "Recommendation generated." });
     await load();
   }
 
@@ -155,6 +166,7 @@ export default function Page() {
           <button onClick={() => void load()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
           <button onClick={() => setError(null)}>Clear error</button>
         </div>
+        <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
       </Card>
 
       {error ? <ErrorState title="Recommendations unavailable" hint={error} /> : null}
@@ -173,7 +185,10 @@ export default function Page() {
           {!selected ? <EmptyState title="Select a recommendation" hint="Choose a row to review thesis, risk controls, and provenance." /> : <div className="op-detail-list">
             <div><strong>Thesis:</strong> {selected.payload?.thesis ?? "-"}</div>
             <div><strong>Catalyst:</strong> {selected.payload?.catalyst?.type ?? "-"}</div>
+            <div><strong>Strategy:</strong> {selected.payload?.entry?.setup_type ?? "Event Continuation"}</div>
             <div><strong>Regime context:</strong> {selected.payload?.regime_context?.market_regime ?? "-"}</div>
+            <div><strong>Symbol / timeframe:</strong> {selected.symbol} / {selected.payload?.workflow?.timeframe ?? "1D"}</div>
+            <div><strong>Workflow data source:</strong> {selected.payload?.workflow?.fallback_mode ? `fallback (${selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "unknown"})` : (selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "provider")}</div>
             <div><strong>Entry zone:</strong> {selected.payload?.entry?.zone_low} - {selected.payload?.entry?.zone_high}</div>
             <div><strong>Trigger:</strong> {selected.payload?.entry?.trigger_text}</div>
             <div><strong>Invalidation:</strong> {selected.payload?.invalidation?.price} ({selected.payload?.invalidation?.reason})</div>
@@ -184,7 +199,7 @@ export default function Page() {
             <div><strong>No-trade reason:</strong> {selected.payload?.rejection_reason || "n/a"}</div>
             <div><strong>Evidence notes:</strong> {(selected.payload?.evidence?.explanatory_notes ?? []).join(" | ") || "none"}</div>
             <div><strong>Provenance summary:</strong> {selected.payload?.evidence?.source_type} @ {selected.payload?.evidence?.source_timestamp}</div>
-            <div><strong>Visible chart symbol:</strong> {selected.symbol} ({chartSource})</div>
+            <div><strong>Visible chart symbol/source:</strong> {selected.symbol} ({selected.payload?.workflow?.fallback_mode ? `fallback (${selected.payload?.workflow?.market_data_source ?? "unknown"})` : chartSource})</div>
             <div className="op-row" style={{ marginTop: 8 }}>
               <button onClick={() => void load()}>Rerun / refresh</button>
               <button onClick={() => window.location.assign(`/replay-runs?symbol=${selected.symbol}`)}>Run replay with context</button>
