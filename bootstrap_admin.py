@@ -13,7 +13,29 @@ print("Current users:")
 for row in rows:
     print(row)
 
-target_id = input("Enter the user id to promote: ").strip()
+target_id = input("Enter the user id to update: ").strip()
+target_email = input("Enter email to set (leave blank to keep current): ").strip()
+target_name = input("Enter display name to set (leave blank to keep current): ").strip()
+
+if target_email:
+    cur.execute(
+        """
+        UPDATE app_users
+        SET email = ?
+        WHERE id = ?
+        """,
+        (target_email, target_id),
+    )
+
+if target_name:
+    cur.execute(
+        """
+        UPDATE app_users
+        SET display_name = ?
+        WHERE id = ?
+        """,
+        (target_name, target_id),
+    )
 
 cur.execute(
     """
@@ -26,6 +48,7 @@ cur.execute(
     """,
     (target_id,),
 )
+
 conn.commit()
 
 rows = cur.execute(
