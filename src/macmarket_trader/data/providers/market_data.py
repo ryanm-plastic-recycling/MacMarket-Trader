@@ -1,4 +1,4 @@
-"""Market-data provider abstraction with Alpaca + deterministic fallback."""
+"""Market-data provider abstraction with Polygon + Alpaca scaffolds + deterministic fallback."""
 
 from __future__ import annotations
 
@@ -111,7 +111,7 @@ class DeterministicFallbackMarketDataProvider(MarketDataProvider):
             low=bar.low,
             close=bar.close,
             volume=bar.volume,
-            source="deterministic_fallback",
+            source="fallback",
             fallback_mode=True,
         )
 
@@ -128,6 +128,8 @@ class DeterministicFallbackMarketDataProvider(MarketDataProvider):
 
 
 class AlpacaMarketDataProvider(MarketDataProvider):
+    """Kept intact as a scaffolded alternate provider."""
+
     name = "alpaca"
 
     def __init__(self) -> None:
@@ -207,7 +209,7 @@ class AlpacaMarketDataProvider(MarketDataProvider):
             low=bar.low,
             close=bar.close,
             volume=bar.volume,
-            source="alpaca_latest_bar",
+            source="alpaca",
             fallback_mode=False,
         )
 
@@ -253,6 +255,146 @@ class AlpacaMarketDataProvider(MarketDataProvider):
             )
 
 
+class PolygonMarketDataProvider(MarketDataProvider):
+    name = "polygon"
+
+    def __init__(self) -> None:
+        self.base_url = settings.polygon_base_url.rstrip("/")
+        self.api_key = settings.polygon_api_key.strip()
+        self.timeout_seconds = settings.polygon_timeout_seconds
+        self._last_success_at: datetime | None = None
+
+    def is_configured(self) -> bool:
+        return bool(self.api_key and self.base_url)
+
+    def _request_json(self, path: str, query: dict[str, str]) -> dict[str, Any]:
+        effective_query = {**query, "apiKey": self.api_key}
+        url = f"{self.base_url}{path}?{urlencode(effective_query)}"
+        request = Request(url=url, headers={"Accept": "application/json"}, method="GET")
+        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
+            payload = json.loads(response.read().decode("utf-8"))
+            self._last_success_at = datetime.now(tz=UTC)
+            return payload
+
+    def _map_polygon_range(self, timeframe: str, limit: int) -> tuple[int, str, str, str]:
+        tf = timeframe.upper()
+        now = datetime.now(tz=UTC)
+        if tf == "1H":
+            start = now - timedelta(hours=max(limit, 1) + 2)
+            return 1, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))
+        if tf == "1M":
+            start = now - timedelta(minutes=max(limit, 1) + 5)
+            return 1, "minute", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))
+        start = (now - timedelta(days=max(limit, 1) + 5)).date().isoformat()
+        return 1, "day", start, now.date().isoformat()
+
+    def _normalize_polygon_bar(self, bar: dict[str, Any]) -> Bar:
+        ts_ms = int(bar.get("t") or 0)
+        ts = datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
+        return Bar(
+            date=ts.date(),
+            open=float(bar["o"]),
+            high=float(bar["h"]),
+            low=float(bar["l"]),
+            close=float(bar["c"]),
+            volume=int(bar.get("v") or 0),
+            rel_volume=None,
+        )
+
+    def get_historical_bars(self, symbol: str, timeframe: str, limit: int = 120) -> list[Bar]:
+        multiplier, timespan, from_ts, to_ts = self._map_polygon_range(timeframe=timeframe, limit=limit)
+        payload = self._request_json(
+            f"/v2/aggs/ticker/{symbol.upper()}/range/{multiplier}/{timespan}/{from_ts}/{to_ts}",
+            {"adjusted": "true", "sort": "asc", "limit": str(limit)},
+        )
+        results = payload.get("results", [])
+        return [self._normalize_polygon_bar(item) for item in results][-limit:]
+
+    def fetch_historical_bars(self, symbol: str, timeframe: str, limit: int) -> list[Bar]:
+        return self.get_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
+
+    def get_latest_snapshot(self, symbol: str, timeframe: str = "1D") -> MarketSnapshot:
+        payload = self._request_json(
+            f"/v2/snapshot/locale/us/markets/stocks/tickers/{symbol.upper()}",
+            {},
+        )
+        ticker = payload.get("ticker")
+        if not ticker:
+            raise ValueError(f"No snapshot returned for {symbol}")
+
+        day = ticker.get("day") or {}
+        prev_day = ticker.get("prevDay") or {}
+        last_trade = ticker.get("lastTrade") or {}
+
+        if not day:
+            raise ValueError(f"Snapshot missing current bar for {symbol}")
+
+        ts_ms = int(last_trade.get("t") or day.get("t") or 0)
+        as_of = datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
+        close = float(last_trade.get("p") or day.get("c") or prev_day.get("c") or 0.0)
+
+        return MarketSnapshot(
+            symbol=symbol.upper(),
+            timeframe=timeframe,
+            as_of=as_of,
+            open=float(day.get("o") or prev_day.get("o") or close),
+            high=float(day.get("h") or close),
+            low=float(day.get("l") or close),
+            close=close,
+            volume=int(day.get("v") or 0),
+            source="polygon",
+            fallback_mode=False,
+        )
+
+    def fetch_latest_snapshot(self, symbol: str, timeframe: str) -> MarketSnapshot:
+        return self.get_latest_snapshot(symbol=symbol, timeframe=timeframe)
+
+    def get_provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+        return self.health_check(sample_symbol=sample_symbol)
+
+    def health_check(self, sample_symbol: str) -> MarketProviderHealth:
+        if not self.is_configured():
+            return MarketProviderHealth(
+                provider="market_data",
+                mode=self.name,
+                status="warning",
+                details="Polygon API key/config are missing; deterministic fallback remains active.",
+                configured=False,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+        started = monotonic()
+        try:
+            self._request_json("/v3/reference/tickers", {"limit": "1"})
+            self.get_latest_snapshot(sample_symbol, "1D")
+            elapsed = round((monotonic() - started) * 1000, 2)
+            return MarketProviderHealth(
+                provider="market_data",
+                mode=self.name,
+                status="ok",
+                details="Polygon auth probe and sample snapshot succeeded.",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+                latency_ms=elapsed,
+                last_success_at=self._last_success_at,
+            )
+        except (HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+            elapsed = round((monotonic() - started) * 1000, 2)
+            return MarketProviderHealth(
+                provider="market_data",
+                mode=self.name,
+                status="warning",
+                details=f"Polygon probe failed: {exc}",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+                latency_ms=elapsed,
+                last_success_at=self._last_success_at,
+            )
+
+
 class MarketDataService:
     def __init__(self) -> None:
         self._historical_cache = TTLCache()
@@ -261,6 +403,9 @@ class MarketDataService:
         self._fallback_provider = DeterministicFallbackMarketDataProvider()
 
     def _build_provider(self) -> MarketDataProvider:
+        if settings.polygon_enabled:
+            return PolygonMarketDataProvider()
+
         mode = settings.market_data_provider.strip().lower()
         if settings.market_data_enabled and mode == "alpaca":
             return AlpacaMarketDataProvider()
@@ -268,7 +413,7 @@ class MarketDataService:
 
     def _fallback_result(self, symbol: str, timeframe: str, limit: int) -> tuple[list[Bar], str, bool]:
         bars = self._fallback_provider.fetch_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
-        return bars, "deterministic_fallback", True
+        return bars, "fallback", True
 
     def historical_bars(self, symbol: str, timeframe: str = "1D", limit: int = 120) -> tuple[list[Bar], str, bool]:
         cache_key = f"hist::{symbol.upper()}::{timeframe}::{limit}"
@@ -281,7 +426,7 @@ class MarketDataService:
             if not bars:
                 result = self._fallback_result(symbol=symbol, timeframe=timeframe, limit=limit)
             else:
-                source = self._provider.name if self._provider.name != "fallback" else "deterministic_fallback"
+                source = self._provider.name if self._provider.name != "fallback" else "fallback"
                 result = (bars, source, self._provider.name == "fallback")
         except Exception:
             result = self._fallback_result(symbol=symbol, timeframe=timeframe, limit=limit)
@@ -310,5 +455,15 @@ class MarketDataService:
         if self._provider.name != "fallback":
             fallback = self._fallback_provider.health_check(sample_symbol=sample_symbol)
             fallback.details = f"{health.details} Fallback remains available and active for chart/snapshot reads."
-            return fallback
+            return MarketProviderHealth(
+                provider=health.provider,
+                mode=health.mode,
+                status=health.status,
+                details=fallback.details,
+                configured=health.configured,
+                feed=health.feed,
+                sample_symbol=health.sample_symbol,
+                latency_ms=health.latency_ms,
+                last_success_at=health.last_success_at,
+            )
         return health

@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     market_data_request_timeout_seconds: int = 8
     market_data_latest_cache_ttl_seconds: int = 10
     market_data_historical_cache_ttl_seconds: int = 120
+    polygon_enabled: bool = False
+    polygon_api_key: str = ""
+    polygon_base_url: str = "https://api.polygon.io"
+    polygon_timeout_seconds: int = 8
 
     # deterministic recommendation quality gates
     min_expected_rr: float = 1.4

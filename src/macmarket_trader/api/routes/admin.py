@@ -91,7 +91,9 @@ def dashboard(user=Depends(require_approved_user)):
                 "kind": "provider",
                 "level": "warning" if provider_health["summary"] != "ok" else "info",
                 "message": (
-                    "Alpaca market data is active." if provider_health["market_data"] == "alpaca" else "Deterministic fallback market data mode is active."
+                    f"{provider_health['market_data'].capitalize()} market data is active."
+                    if provider_health["summary"] == "ok"
+                    else "Deterministic fallback market data mode is active."
                 ),
             }
         ],
@@ -217,10 +219,10 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
 
 def provider_health_summary() -> dict[str, str]:
     market_health = market_data_service.provider_health(sample_symbol="AAPL")
-    market_mode = "alpaca" if market_health.status == "ok" and market_health.mode == "alpaca" else "fallback"
+    market_mode = market_health.mode if market_health.status == "ok" else "fallback"
     auth_mode = settings.auth_provider.strip().lower() or "mock"
     email_mode = settings.email_provider.strip().lower() or "console"
-    summary = "ok" if market_mode == "alpaca" else "degraded"
+    summary = "ok" if market_health.status == "ok" else "degraded"
     return {"summary": summary, "auth": auth_mode, "email": email_mode, "market_data": market_mode}
 
 
@@ -246,7 +248,7 @@ def provider_health(_admin=Depends(require_admin)):
             {
                 "provider": "market_data",
                 "mode": summary["market_data"],
-                "status": "ok" if summary["market_data"] == "alpaca" else "warning",
+                "status": market_health.status,
                 "details": market_health.details,
                 "configured": market_health.configured,
                 "feed": market_health.feed,

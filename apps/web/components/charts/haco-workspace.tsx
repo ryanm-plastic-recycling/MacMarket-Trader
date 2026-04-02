@@ -82,7 +82,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
           </select>
         </label>
         <button onClick={load} disabled={loading} style={{ background: "#2d6cdf", border: "none", color: "white", padding: "8px 12px" }}>{loading ? "Loading..." : "Run HACO analysis"}</button>
-        <span style={{ color: "#9fb0c3" }}>Data source: {data?.fallback_mode ? "deterministic fallback" : "provider-backed"}</span>
+        <span style={{ color: "#9fb0c3" }}>Data source: {data?.data_source ?? "-"}</span>
       </div>
 
       {error ? <div style={{ color: "#ff8b8b" }}>{error}</div> : null}
