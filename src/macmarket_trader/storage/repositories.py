@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from macmarket_trader.domain.enums import AppRole, ApprovalStatus
 from macmarket_trader.domain.models import (
     AppUserModel,
     AuditLogModel,
+    AppInviteModel,
     DailyBarModel,
     EmailDeliveryLogModel,
     FillModel,
@@ -206,13 +208,17 @@ class UserRepository:
             user = session.execute(
                 select(AppUserModel).where(AppUserModel.external_auth_user_id == external_auth_user_id)
             ).scalar_one_or_none()
+            normalized_email = email.strip().lower()
+            normalized_display_name = display_name.strip()
             if user is None:
-                if not email.strip():
+                if not normalized_email:
                     raise ValueError("email required to create local app user")
-                safe_display_name = display_name.strip() if display_name.strip() else email.strip().split("@")[0]
+                user = session.execute(select(AppUserModel).where(AppUserModel.email == normalized_email)).scalar_one_or_none()
+            if user is None:
+                safe_display_name = normalized_display_name if normalized_display_name else normalized_email.split("@")[0]
                 user = AppUserModel(
                     external_auth_user_id=external_auth_user_id,
-                    email=email.strip().lower(),
+                    email=normalized_email,
                     display_name=safe_display_name,
                     approval_status=ApprovalStatus.PENDING.value,
                     app_role=AppRole.USER.value,
@@ -222,13 +228,44 @@ class UserRepository:
                 session.flush()
                 session.add(UserApprovalRequestModel(app_user_id=user.id, status=ApprovalStatus.PENDING.value, note="signup"))
             else:
+                if user.external_auth_user_id != external_auth_user_id:
+                    if user.external_auth_user_id.startswith("invited::"):
+                        user.external_auth_user_id = external_auth_user_id
+                    else:
+                        raise ValueError("email already linked to another auth identity")
                 # Local authorization state is authoritative. Never overwrite
                 # approval/app_role from external auth claims during sync.
-                if email.strip():
-                    user.email = email.strip().lower()
-                if display_name.strip():
-                    user.display_name = display_name.strip()
+                if normalized_email:
+                    user.email = normalized_email
+                if normalized_display_name:
+                    user.display_name = normalized_display_name
                 user.mfa_enabled = mfa_enabled
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def create_or_update_invited_pending_user(self, *, email: str, display_name: str | None) -> AppUserModel:
+        normalized_email = email.strip().lower()
+        if not normalized_email:
+            raise ValueError("email required for invite")
+        safe_display_name = (display_name or "").strip() or normalized_email.split("@")[0]
+        invite_external_id = f"invited::{normalized_email}"
+        with self.session_factory() as session:
+            user = session.execute(select(AppUserModel).where(AppUserModel.email == normalized_email)).scalar_one_or_none()
+            if user is None:
+                user = AppUserModel(
+                    external_auth_user_id=invite_external_id,
+                    email=normalized_email,
+                    display_name=safe_display_name,
+                    approval_status=ApprovalStatus.PENDING.value,
+                    app_role=AppRole.USER.value,
+                    mfa_enabled=False,
+                )
+                session.add(user)
+                session.flush()
+                session.add(UserApprovalRequestModel(app_user_id=user.id, status=ApprovalStatus.PENDING.value, note="invite"))
+            else:
+                user.display_name = safe_display_name or user.display_name
             session.commit()
             session.refresh(user)
             return user
@@ -271,6 +308,25 @@ class EmailLogRepository:
                 destination=destination,
                 status=status,
                 provider_message_id=provider_message_id,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+
+class InviteRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def create(self, *, email: str, display_name: str | None, invited_by: str) -> AppInviteModel:
+        with self.session_factory() as session:
+            row = AppInviteModel(
+                email=email.strip().lower(),
+                display_name=(display_name or "").strip(),
+                invite_token=f"invite_{uuid4().hex[:24]}",
+                status="sent",
+                invited_by=invited_by.strip().lower(),
             )
             session.add(row)
             session.commit()

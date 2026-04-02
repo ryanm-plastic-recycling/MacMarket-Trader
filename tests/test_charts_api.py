@@ -50,6 +50,29 @@ def test_haco_chart_payload_shape() -> None:
     assert payload["haco_strip"]
     assert payload["hacolt_strip"]
     assert "current_haco_state" in payload["explanation"]
+    assert len(payload["candles"]) == len(payload["haco_strip"]) == len(payload["hacolt_strip"])
+    candle_indices = [c["index"] for c in payload["candles"]]
+    assert candle_indices == list(range(len(payload["candles"])))
+    assert [p["index"] for p in payload["haco_strip"]] == candle_indices
+    assert [p["index"] for p in payload["hacolt_strip"]] == candle_indices
+
+
+def test_haco_flip_markers_align_to_canonical_bars() -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+    response = client.post(
+        "/charts/haco",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbol": "AAPL", "timeframe": "1D", "include_heikin_ashi": True, "bars": _bars()},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    candles = payload["candles"]
+    marker_indices = {m["index"] for m in payload["markers"]}
+    assert all(0 <= idx < len(candles) for idx in marker_indices)
+    marker_times = {m["time"] for m in payload["markers"]}
+    candle_times = {c["time"] for c in candles}
+    assert marker_times.issubset(candle_times)
 
 
 def test_haco_chart_requires_auth() -> None:

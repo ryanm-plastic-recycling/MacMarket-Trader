@@ -76,6 +76,7 @@ class IndicatorContext(BaseModel):
 
 
 class ChartCandle(BaseModel):
+    index: int
     time: date
     open: float
     high: float
@@ -85,6 +86,7 @@ class ChartCandle(BaseModel):
 
 
 class HacoMarker(BaseModel):
+    index: int
     time: date
     marker_type: str
     direction: str
@@ -93,12 +95,14 @@ class HacoMarker(BaseModel):
 
 
 class HacoStatePoint(BaseModel):
+    index: int
     time: date
     value: int
     state: str
 
 
 class HacoltStatePoint(BaseModel):
+    index: int
     time: date
     value: int
     direction: str
@@ -313,6 +317,11 @@ class AppUser(BaseModel):
 class ApprovalActionRequest(BaseModel):
     user_id: int
     note: str = ""
+
+
+class InviteCreateRequest(BaseModel):
+    email: str
+    display_name: str | None = None
 
 class ReplayRunResponse(BaseModel):
     recommendations: list[TradeRecommendation]

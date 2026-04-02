@@ -34,11 +34,11 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     if (!chartRef.current || !data) return;
     const chart: IChartApi = createChart(chartRef.current, { height: embedded ? 360 : 480, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" }, grid: { vertLines: { color: "#1f2a36" }, horzLines: { color: "#1f2a36" } } });
     const candleSeries: ISeriesApi<"Candlestick"> = chart.addCandlestickSeries();
-    const candles: CandlestickData<Time>[] = data.candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    const candles: CandlestickData<Time>[] = data.candles.map((c) => ({ time: c.index as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
     candleSeries.setData(candles);
     candleSeries.setMarkers(
       data.markers.map((m) => ({
-        time: m.time as Time,
+        time: m.index as Time,
         position: m.direction === "buy" ? "belowBar" : "aboveBar",
         color: m.direction === "buy" ? "#21c06e" : "#d14b4b",
         shape: m.direction === "buy" ? "arrowUp" : "arrowDown",
@@ -104,13 +104,13 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
         <h3>HACO state strip (green/red)</h3>
         <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {data?.haco_strip.slice(-80).map((p) => <div key={p.time} title={p.time} style={{ width: 8, height: 16, background: p.state === "green" ? "#21c06e" : "#c64242" }} />)}
+          {data?.haco_strip.slice(-80).map((p) => <div key={`${p.index}-${p.time}`} title={`${p.time} (#${p.index})`} style={{ width: 8, height: 16, background: p.state === "green" ? "#21c06e" : "#c64242" }} />)}
         </div>
       </div>
       <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>
         <h3>HACOLT direction strip</h3>
         <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {data?.hacolt_strip.slice(-80).map((p) => <div key={p.time} title={p.time} style={{ width: 8, height: 12, background: p.direction === "up" ? "#4d8dff" : "#7a4dc1" }} />)}
+          {data?.hacolt_strip.slice(-80).map((p) => <div key={`${p.index}-${p.time}`} title={`${p.time} (#${p.index})`} style={{ width: 8, height: 12, background: p.direction === "up" ? "#4d8dff" : "#7a4dc1" }} />)}
         </div>
       </div>
       {embedded ? <div style={{ border: "1px solid #26303a", background: "#0b1219", padding: 12 }}>

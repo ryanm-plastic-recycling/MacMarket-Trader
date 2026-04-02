@@ -57,3 +57,20 @@ def test_recommendation_requires_approved_user() -> None:
     client = TestClient(app)
     response = client.post('/recommendations/generate', json={"symbol": "AAPL", "event_text": "x", "bars": _bars()})
     assert response.status_code == 401
+
+
+def test_user_recommendation_listing_is_data_backed() -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+    create = client.post(
+        "/recommendations/generate",
+        headers={'Authorization': 'Bearer user-token'},
+        json={"symbol": "AAPL", "event_text": "Earnings beat with strong guidance", "bars": _bars()},
+    )
+    assert create.status_code == 200
+
+    listing = client.get("/user/recommendations", headers={'Authorization': 'Bearer user-token'})
+    assert listing.status_code == 200
+    rows = listing.json()
+    assert len(rows) >= 1
+    assert rows[0]["payload"]["thesis"]
