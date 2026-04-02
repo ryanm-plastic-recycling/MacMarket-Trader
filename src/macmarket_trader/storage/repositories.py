@@ -16,6 +16,7 @@ from macmarket_trader.domain.models import (
     EmailDeliveryLogModel,
     FillModel,
     OrderModel,
+    ProviderHealthModel,
     RecommendationEvidenceModel,
     RecommendationModel,
     ReplayRunModel,
@@ -206,10 +207,13 @@ class UserRepository:
                 select(AppUserModel).where(AppUserModel.external_auth_user_id == external_auth_user_id)
             ).scalar_one_or_none()
             if user is None:
+                if not email.strip():
+                    raise ValueError("email required to create local app user")
+                safe_display_name = display_name.strip() if display_name.strip() else email.strip().split("@")[0]
                 user = AppUserModel(
                     external_auth_user_id=external_auth_user_id,
-                    email=email,
-                    display_name=display_name,
+                    email=email.strip().lower(),
+                    display_name=safe_display_name,
                     approval_status=ApprovalStatus.PENDING.value,
                     app_role=AppRole.USER.value,
                     mfa_enabled=mfa_enabled,
@@ -218,10 +222,12 @@ class UserRepository:
                 session.flush()
                 session.add(UserApprovalRequestModel(app_user_id=user.id, status=ApprovalStatus.PENDING.value, note="signup"))
             else:
-                if email:
-                    user.email = email
-                if display_name:
-                    user.display_name = display_name
+                # Local authorization state is authoritative. Never overwrite
+                # approval/app_role from external auth claims during sync.
+                if email.strip():
+                    user.email = email.strip().lower()
+                if display_name.strip():
+                    user.display_name = display_name.strip()
                 user.mfa_enabled = mfa_enabled
             session.commit()
             session.refresh(user)
@@ -285,6 +291,18 @@ class DailyBarRepository:
                 .order_by(DailyBarModel.bar_date.asc())
             )
             return list(session.execute(stmt).scalars())
+
+class ProviderHealthRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def create(self, *, provider: str, status: str, details: str) -> ProviderHealthModel:
+        with self.session_factory() as session:
+            row = ProviderHealthModel(provider=provider, status=status, details=details)
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
 
 
 class DashboardRepository:

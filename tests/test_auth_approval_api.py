@@ -74,6 +74,9 @@ def test_admin_can_reject_user() -> None:
     _seed_mock_user('admin-token')
 
     with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.mfa_enabled = True
         target = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
         target.approval_status = 'pending'
         target_id = target.id
@@ -162,6 +165,46 @@ def test_clerk_profile_hydrates_missing_identity(monkeypatch) -> None:
     payload = resp.json()
     assert payload['email'] == 'hydrated@example.com'
     assert payload['display_name'] == 'Hydrated User'
+
+
+def test_new_user_without_email_is_not_provisioned(monkeypatch) -> None:
+    from macmarket_trader.api.deps import auth as auth_deps
+
+    monkeypatch.setattr(auth_deps.settings, 'auth_provider', 'clerk')
+    monkeypatch.setattr(auth_deps._auth_provider, 'verify_token', lambda _token: {'sub': 'clerk_missing_identity', 'mfa': False})
+    monkeypatch.setattr(auth_deps._clerk_profile_provider, 'fetch_identity', lambda _external_id: None)
+
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer clerk-token'})
+    assert resp.status_code == 401
+
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_missing_identity')).scalar_one_or_none()
+    assert user is None
+
+
+def test_hydration_failure_does_not_corrupt_existing_local_auth_state(monkeypatch) -> None:
+    from macmarket_trader.api.deps import auth as auth_deps
+
+    _seed_mock_user('user-token')
+    with SessionLocal() as session:
+        existing = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        existing.email = 'approved-user@example.com'
+        existing.display_name = 'Approved Operator'
+        existing.app_role = 'admin'
+        existing.approval_status = 'approved'
+        session.commit()
+
+    monkeypatch.setattr(auth_deps.settings, 'auth_provider', 'clerk')
+    monkeypatch.setattr(auth_deps._auth_provider, 'verify_token', lambda _token: {'sub': 'clerk_user', 'mfa': True})
+    monkeypatch.setattr(auth_deps._clerk_profile_provider, 'fetch_identity', lambda _external_id: None)
+
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer stale-claims'})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['email'] == 'approved-user@example.com'
+    assert payload['display_name'] == 'Approved Operator'
+    assert payload['approval_status'] == 'approved'
+    assert payload['app_role'] == 'admin'
 
 
 def test_non_admin_blocked_from_pending_users_route() -> None:
