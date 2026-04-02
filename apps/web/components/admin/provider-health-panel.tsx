@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 import { Card, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalized } from "@/lib/api-client";
+import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type ProviderHealth = {
   providers: Array<{ provider: string; mode: string; status: string; details: string; operational_impact?: string; configured?: boolean; feed?: string; sample_symbol?: string; latency_ms?: number | null; last_success_at?: string | null }>;
@@ -11,6 +12,7 @@ type ProviderHealth = {
 };
 
 export function ProviderHealthPanel() {
+  const { getToken } = useAuth();
   const [data, setData] = useState<ProviderHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +20,7 @@ export function ProviderHealthPanel() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const response = await fetchNormalized<ProviderHealth>("/api/admin/provider-health");
+      const response = await fetchNormalizedAuthed<ProviderHealth>("/api/admin/provider-health", undefined, getToken);
       if (!response.ok) {
         setError(response.error ?? "Failed to load provider health.");
       } else {

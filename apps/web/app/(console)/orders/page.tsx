@@ -1,56 +1,68 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalized } from "@/lib/api-client";
+import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
+  const { getToken } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
-  const [dataSource, setDataSource] = useState("unknown");
+  const [dataSource, setDataSource] = useState("workflow unavailable");
+  const [busy, setBusy] = useState(false);
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
 
   async function load() {
-    const result = await fetchNormalized<Order>("/api/user/orders");
+    setBusy(true);
+    const result = await fetchNormalizedAuthed<Order>("/api/user/orders", undefined, getToken);
     if (!result.ok) {
       setError(result.error);
+      setBusy(false);
       return;
     }
+    setError(null);
     setOrders(result.items);
     setSelectedOrderId((prev) => prev ?? result.items[0]?.order_id ?? null);
+    setDataSource((result.items[0]?.fallback_mode ? `fallback (${result.items[0]?.market_data_source ?? "provider"})` : (result.items[0]?.market_data_source ?? "provider")) ?? "workflow unavailable");
+    setBusy(false);
   }
 
   async function stagePaperOrder() {
     setStatus("staging paper order...");
-    const result = await fetchNormalized<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL" }) });
+    setBusy(true);
+    const result = await fetchNormalizedAuthed<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL" }) }, getToken);
     if (!result.ok) {
       setError(result.error ?? "Unable to stage order.");
       setStatus("failed");
+      setBusy(false);
       return;
     }
+    setError(null);
     const fallbackMode = result.data?.fallback_mode ?? false;
     const sourceName = result.data?.market_data_source ?? "provider";
     setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("paper order staged");
     await load();
+    setBusy(false);
   }
 
   useEffect(() => { void load(); }, []);
 
   return <section className="op-stack">
-    <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{status}</StatusBadge>} />
+    <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
     <Card title="Blotter mode">
       Generated from recommendation workflow bars sourced from: <strong>{dataSource}</strong>. This is paper-only execution for operator review.
     </Card>
     <Card>
       <div className="op-row">
-        <button onClick={() => void stagePaperOrder()}>Stage paper order</button>
-        <button onClick={() => void load()}>Refresh blotter</button>
+        <button onClick={() => void stagePaperOrder()} disabled={busy}>{busy ? "Staging..." : "Stage paper order"}</button>
+        <button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh blotter"}</button>
       </div>
     </Card>
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}

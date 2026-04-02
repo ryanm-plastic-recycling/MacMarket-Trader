@@ -1,16 +1,12 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { resolveAuthToken } from "@/app/api/_utils/auth-token";
 import { backendUrl } from "@/lib/backend";
 
-export async function GET() {
-  const { userId, getToken } = await auth();
-  if (!userId) {
-    return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
-  }
-  const token = await getToken();
+export async function GET(request: Request) {
+  const token = await resolveAuthToken(request);
   if (!token) {
-    return NextResponse.json({ detail: "Unable to obtain Clerk token" }, { status: 401 });
+    return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
   }
 
   const response = await fetch(backendUrl("/admin/provider-health"), {

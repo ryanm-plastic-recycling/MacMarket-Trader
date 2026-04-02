@@ -2,9 +2,10 @@
 
 import { createChart, type CandlestickData, LineStyle, type Time } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalized } from "@/lib/api-client";
+import { fetchNormalizedAuthed } from "@/lib/api-client";
 import { fetchHacoChart } from "@/lib/haco-api";
 
 type Rec = { id: number; created_at: string; symbol: string; payload: any; recommendation_id: string; market_data_source?: string; fallback_mode?: boolean };
@@ -13,6 +14,7 @@ const SORTABLE_COLUMNS = ["created_at", "symbol", "side", "setup", "approved", "
 type SortColumn = (typeof SORTABLE_COLUMNS)[number];
 
 export default function Page() {
+  const { getToken } = useAuth();
   const chartRef = useRef<HTMLDivElement | null>(null);
   const [rows, setRows] = useState<Rec[]>([]);
   const [selected, setSelected] = useState<Rec | null>(null);
@@ -28,7 +30,7 @@ export default function Page() {
 
   async function load() {
     setLoading(true);
-    const result = await fetchNormalized<Rec>("/api/user/recommendations");
+    const result = await fetchNormalizedAuthed<Rec>("/api/user/recommendations", undefined, getToken);
     if (!result.ok) {
       setError(result.error ?? "Could not load recommendations.");
       setRows([]);
@@ -37,6 +39,7 @@ export default function Page() {
       return;
     }
     const normalized = result.items.filter((item) => item && typeof item === "object" && "id" in item) as Rec[];
+    setError(null);
     setRows(normalized);
     setSelected((prev) => normalized.find((item) => item.id === prev?.id) ?? normalized[0] ?? null);
     setLoading(false);
@@ -48,15 +51,16 @@ export default function Page() {
 
   async function generate() {
     setStatus("Generating deterministic recommendation...");
-    const result = await fetchNormalized<{ market_data_source?: string; fallback_mode?: boolean }>("/api/user/recommendations/generate", {
+    const result = await fetchNormalizedAuthed<{ market_data_source?: string; fallback_mode?: boolean }>("/api/user/recommendations/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol: symbolInput.trim().toUpperCase(), event_text: eventText.trim() }),
-    });
+    }, getToken);
     if (!result.ok) {
       setError(result.error ?? `Generation failed (${result.status}).`);
       return;
     }
+    setError(null);
     const fallbackMode = result.data?.fallback_mode ?? false;
     const sourceName = result.data?.market_data_source ?? "provider";
     setChartSource(fallbackMode ? `fallback (${sourceName})` : sourceName);

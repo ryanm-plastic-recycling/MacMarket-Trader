@@ -103,9 +103,10 @@ pytest -q
 
 ## Frontend runtime/API routing
 
-- Browser calls now use same-origin Next.js route handlers under `apps/web/app/api/*` (no browser localhost dependency).
-- Next server route handlers forward to backend origin from `BACKEND_API_ORIGIN` (default `http://127.0.0.1:9510`).
-- Backend CORS remains minimal for split-port local development (`http://127.0.0.1:9500`, `http://localhost:9500`), but production browser traffic should use the frontend proxy path.
+- Browser calls use same-origin Next.js route handlers under `apps/web/app/api/*`.
+- Client pages now attach Clerk bearer tokens directly to those calls; route handlers prefer this explicit token first, then fall back to server `auth().getToken()`.
+- This removes transient `/api/user/...` auth races on first load/refresh for Replay and Orders while preserving same-origin proxy routing.
+- Next route handlers still forward to backend origin from `BACKEND_API_ORIGIN` (default `http://127.0.0.1:9510`).
 
 ## Runtime reset hygiene (local)
 

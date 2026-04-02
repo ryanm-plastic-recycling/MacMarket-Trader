@@ -1,55 +1,71 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 import { Card, EmptyState, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalized } from "@/lib/api-client";
+import { fetchNormalizedAuthed } from "@/lib/api-client";
 
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
 
 export default function Page() {
+  const { getToken } = useAuth();
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
-  const [dataSource, setDataSource] = useState("unknown");
+  const [dataSource, setDataSource] = useState("workflow unavailable");
+  const [busy, setBusy] = useState(false);
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
+  const selectedSource = selected ? (selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? "provider")) : dataSource;
 
   async function loadRuns() {
-    const result = await fetchNormalized<Run>("/api/user/replay-runs");
+    setBusy(true);
+    const result = await fetchNormalizedAuthed<Run>("/api/user/replay-runs", undefined, getToken);
     if (!result.ok) {
       setError(result.error);
+      setBusy(false);
       return;
     }
+    setError(null);
     setRuns(result.items);
     setSelectedRunId((prev) => prev ?? result.items[0]?.id ?? null);
+    setBusy(false);
   }
 
   async function runReplay() {
     setStatus("running replay...");
-    const run = await fetchNormalized<{ id: number; market_data_source?: string; fallback_mode?: boolean }>("/api/user/replay-runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: selected?.symbol ?? "AAPL" }) });
+    setBusy(true);
+    const run = await fetchNormalizedAuthed<{ id: number; market_data_source?: string; fallback_mode?: boolean }>("/api/user/replay-runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: selected?.symbol ?? "AAPL" }) }, getToken);
     if (!run.ok) {
       setError(run.error ?? "Replay failed.");
       setStatus("failed");
+      setBusy(false);
       return;
     }
+    setError(null);
     const fallbackMode = run.data?.fallback_mode ?? false;
     const sourceName = run.data?.market_data_source ?? "provider";
     setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("replay complete");
     await loadRuns();
+    setBusy(false);
   }
 
   async function loadSteps(runId: number) {
     setSelectedRunId(runId);
-    const result = await fetchNormalized<Step>(`/api/user/replay-runs/${runId}/steps`);
+    setBusy(true);
+    const result = await fetchNormalizedAuthed<Step>(`/api/user/replay-runs/${runId}/steps`, undefined, getToken);
     if (!result.ok) {
       setError(result.error ?? "Unable to load run steps.");
+      setBusy(false);
       return;
     }
+    setError(null);
     setSteps(result.items);
+    setBusy(false);
   }
 
   useEffect(() => { void loadRuns(); }, []);
@@ -63,14 +79,14 @@ export default function Page() {
   }));
 
   return <section className="op-stack">
-    <PageHeader title="Replay workspace" subtitle="Run deterministic replay from recommendation context and inspect step-by-step risk transitions." actions={<StatusBadge tone="neutral">{status}</StatusBadge>} />
+    <PageHeader title="Replay workspace" subtitle="Run deterministic replay from recommendation context and inspect step-by-step risk transitions." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
     <Card title="What replay is for">
-      Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{dataSource}</strong>.
+      Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{selectedSource}</strong>.
     </Card>
     <Card>
       <div className="op-row">
-        <button onClick={() => void runReplay()}>Run replay</button>
-        <button onClick={() => void loadRuns()}>Refresh runs</button>
+        <button onClick={() => void runReplay()} disabled={busy}>{busy ? "Running…" : "Run replay"}</button>
+        <button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button>
       </div>
     </Card>
     {error ? <ErrorState title="Replay unavailable" hint={error} /> : null}
@@ -84,7 +100,7 @@ export default function Page() {
       </Card>
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
-          <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "unknown"})` : (selected.market_data_source ?? dataSource)}</div>
+          <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource}</div>
           <div className="op-card" style={{ marginBottom: 8 }}>
             <strong>Narrative summary</strong>
             <div>
