@@ -35,7 +35,7 @@ export function ProviderHealthPanel() {
   return (
     <section>
       <h1>Provider health</h1>
-      <p style={{ color: "#9fb0c3" }}>Status snapshot checked at {data?.checked_at ?? "unknown"}.</p>
+      <p style={{ color: "#9fb0c3" }}>Provider status snapshot checked at {data?.checked_at ?? "unknown"}. Modes and statuses are sourced from backend provider configuration, not placeholders.</p>
       <div style={{ display: "grid", gap: 8 }}>
         {data?.providers.map((p) => (
           <div key={p.provider} style={{ border: "1px solid #2b3642", background: "#111922", padding: 12 }}>

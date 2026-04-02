@@ -199,7 +199,6 @@ class UserRepository:
         external_auth_user_id: str,
         email: str,
         display_name: str,
-        app_role: AppRole = AppRole.USER,
         mfa_enabled: bool = False,
     ) -> AppUserModel:
         with self.session_factory() as session:
@@ -212,16 +211,17 @@ class UserRepository:
                     email=email,
                     display_name=display_name,
                     approval_status=ApprovalStatus.PENDING.value,
-                    app_role=app_role.value,
+                    app_role=AppRole.USER.value,
                     mfa_enabled=mfa_enabled,
                 )
                 session.add(user)
                 session.flush()
                 session.add(UserApprovalRequestModel(app_user_id=user.id, status=ApprovalStatus.PENDING.value, note="signup"))
             else:
-                user.email = email
-                user.display_name = display_name
-                user.app_role = app_role.value
+                if email:
+                    user.email = email
+                if display_name:
+                    user.display_name = display_name
                 user.mfa_enabled = mfa_enabled
             session.commit()
             session.refresh(user)

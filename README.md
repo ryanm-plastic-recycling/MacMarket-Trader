@@ -472,3 +472,37 @@ Only isolated, testable, non-core research utilities may be imported later under
 ## Implementation posture
 
 This repository remains a ground-up rebuild focused on deterministic decisioning, replay/live parity, and operator-grade tooling.
+
+## Auth and approval source-of-truth policy (hard rule)
+
+- Clerk is the authentication boundary only (identity verification + session).
+- Local `app_users` data in MacMarket-Trader is the source of truth for `approval_status`, `app_role`, approval history, and operator/admin privileges.
+- External auth claims must **never** overwrite local role/approval state for existing users.
+- First login creates a local pending user (`approval_status=pending`, `app_role=user`).
+- Subsequent logins only sync identity fields and MFA state.
+- Clerk session tokens may not include `email` or `name`; backend hydration uses safe claim fallbacks and Clerk Backend API (`CLERK_SECRET_KEY`) when needed.
+
+## Windows local path vs live runtime path
+
+- Windows local dev scripts under `scripts/` remain the canonical local operator workflow.
+- Local bootstrap/admin role edits in DB must survive future Clerk logins.
+- Hosted/runtime deployment concerns stay separate from local Windows scripts and should not force localhost assumptions in hosted browser code.
+
+## Operator console scope (current)
+
+Implemented operator-console areas:
+- top banner (regime, account role, approval status, provider summary, refresh timestamp)
+- left recommendations panel with actionable fields (thesis/catalyst/entry/invalidation/target/RR/confidence)
+- right HACO module embedded in dashboard and dedicated HACO workspace
+- lower row for replay runs, orders, pending admin actions, provider health details, and alerts/event log
+
+Known constrained area:
+- market-data provider adapter remains deterministic fallback until provider-backed adapter wiring is completed (explicitly labeled in UI and provider health).
+
+## Operator-console acceptance criteria
+
+- `/api/user/me` must always reflect local DB role and approval state.
+- Bootstrapped local admin must remain admin across login sync.
+- Pending-users admin queue must enforce local admin checks.
+- HACO must remain both dashboard-integrated and available as dedicated workspace.
+- Placeholder regressions on data-driven operator pages are not allowed.

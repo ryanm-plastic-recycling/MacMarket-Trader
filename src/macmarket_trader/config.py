@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     clerk_jwt_issuer: str = ""
     clerk_jwks_url: str = ""
     clerk_jwt_audience: str = ""
+    clerk_secret_key: str = ""
+    clerk_api_base_url: str = "https://api.clerk.com"
     require_mfa_for_admin: bool = True
     enforce_global_mfa: bool = False
     email_provider: str = "console"

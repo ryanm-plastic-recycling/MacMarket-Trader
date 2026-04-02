@@ -118,3 +118,59 @@ def test_admin_provider_health() -> None:
     payload = resp.json()
     assert 'providers' in payload
     assert any(item['provider'] == 'auth' for item in payload['providers'])
+
+
+def test_admin_role_not_overwritten_by_auth_claims() -> None:
+    _seed_mock_user('admin-token')
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.approval_status = 'approved'
+        session.commit()
+
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+    assert resp.status_code == 200
+    assert resp.json()['app_role'] == 'admin'
+
+
+def test_approval_status_preserved_across_login_sync() -> None:
+    _seed_mock_user('user-token')
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user.approval_status = 'approved'
+        session.commit()
+
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer user-token'})
+    assert resp.status_code == 200
+    assert resp.json()['approval_status'] == 'approved'
+
+
+def test_clerk_profile_hydrates_missing_identity(monkeypatch) -> None:
+    from macmarket_trader.api.deps import auth as auth_deps
+    from macmarket_trader.data.providers.clerk_profile import ClerkHydratedIdentity
+
+    monkeypatch.setattr(auth_deps.settings, 'auth_provider', 'clerk')
+    monkeypatch.setattr(auth_deps._auth_provider, 'verify_token', lambda _token: {'sub': 'clerk_hydrated', 'mfa': False})
+    monkeypatch.setattr(
+        auth_deps._clerk_profile_provider,
+        'fetch_identity',
+        lambda _external_id: ClerkHydratedIdentity(email='hydrated@example.com', display_name='Hydrated User'),
+    )
+
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer whatever'})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['email'] == 'hydrated@example.com'
+    assert payload['display_name'] == 'Hydrated User'
+
+
+def test_non_admin_blocked_from_pending_users_route() -> None:
+    _seed_mock_user('user-token')
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user.approval_status = 'approved'
+        user.app_role = 'user'
+        session.commit()
+
+    resp = client.get('/admin/users/pending', headers={'Authorization': 'Bearer user-token'})
+    assert resp.status_code == 403
