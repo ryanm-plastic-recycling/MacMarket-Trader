@@ -3,16 +3,23 @@ import { NextResponse } from "next/server";
 
 import { backendUrl } from "@/lib/backend";
 
-export async function POST(request: Request, { params }: { params: { userId: string } }) {
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ userId: string }> }
+) {
+  const { userId: targetUserId } = await context.params;
+
   const { userId, getToken } = await auth();
   if (!userId) {
     return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
   }
+
   const token = await getToken();
   if (!token) {
     return NextResponse.json({ detail: "Unable to obtain Clerk token" }, { status: 401 });
   }
-  const response = await fetch(backendUrl(`/admin/users/${params.userId}/reject`), {
+
+  const response = await fetch(backendUrl(`/admin/users/${targetUserId}/reject`), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -21,6 +28,7 @@ export async function POST(request: Request, { params }: { params: { userId: str
     body: await request.text(),
     cache: "no-store",
   });
+
   const payload = await response.json();
   return NextResponse.json(payload, { status: response.status });
 }

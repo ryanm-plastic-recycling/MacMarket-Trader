@@ -3,13 +3,33 @@ import { NextResponse } from "next/server";
 
 import { backendUrl } from "@/lib/backend";
 
-export async function GET(_request: Request, { params }: { params: { runId: string } }) {
-  const { runId } = params;
-  const { userId, getToken } = await auth();
-  if (!userId) return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
-  const token = await getToken();
-  if (!token) return NextResponse.json({ detail: "Unable to obtain Clerk token" }, { status: 401 });
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ runId: string }> }
+) {
+  const { runId } = await context.params;
 
-  const response = await fetch(backendUrl(`/user/replay-runs/${runId}/steps`), { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-  return NextResponse.json(await response.json(), { status: response.status });
+  const { userId, getToken } = await auth();
+  if (!userId) {
+    return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
+  }
+
+  const token = await getToken();
+  if (!token) {
+    return NextResponse.json({ detail: "Unable to obtain Clerk token" }, { status: 401 });
+  }
+
+  const response = await fetch(
+    backendUrl(`/user/replay-runs/${runId}/steps`),
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    }
+  );
+
+  const payload = await response.json();
+  return NextResponse.json(payload, { status: response.status });
 }
