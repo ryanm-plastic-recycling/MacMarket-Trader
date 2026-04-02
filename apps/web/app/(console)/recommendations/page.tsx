@@ -2,10 +2,10 @@
 
 import { createChart, type CandlestickData, LineStyle, type Time } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalizedAuthed } from "@/lib/api-client";
+import { fetchWorkflowApi } from "@/lib/api-client";
 import { fetchHacoChart } from "@/lib/haco-api";
 
 type Rec = { id: number; created_at: string; symbol: string; payload: any; recommendation_id: string; market_data_source?: string; fallback_mode?: boolean };
@@ -14,7 +14,8 @@ const SORTABLE_COLUMNS = ["created_at", "symbol", "side", "setup", "approved", "
 type SortColumn = (typeof SORTABLE_COLUMNS)[number];
 
 export default function Page() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const searchParams = useSearchParams();
+  const searchKey = searchParams.toString();
   const chartRef = useRef<HTMLDivElement | null>(null);
   const [rows, setRows] = useState<Rec[]>([]);
   const [selected, setSelected] = useState<Rec | null>(null);
@@ -30,16 +31,12 @@ export default function Page() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   async function load() {
-    if (!isLoaded || !isSignedIn) {
-      setFeedback({ state: "loading", message: "Initializing authentication session…" });
-      return;
-    }
     setLoading(true);
     setFeedback({ state: "loading", message: "Loading recommendations…" });
-    const result = await fetchNormalizedAuthed<Rec>("/api/user/recommendations", undefined, getToken);
+    const result = await fetchWorkflowApi<Rec>("/api/user/recommendations");
     if (!result.ok) {
-      if (!result.authPending) setError(result.error ?? "Could not load recommendations.");
-      setFeedback({ state: result.authPending ? "loading" : "error", message: result.authPending ? "Initializing authentication session…" : (result.error ?? "Could not load recommendations.") });
+      setError(result.error ?? "Could not load recommendations.");
+      setFeedback({ state: "error", message: result.error ?? "Could not load recommendations." });
       setRows([]);
       setSelected(null);
       setLoading(false);
@@ -48,23 +45,29 @@ export default function Page() {
     const normalized = result.items.filter((item) => item && typeof item === "object" && "id" in item) as Rec[];
     setError(null);
     setRows(normalized);
-    setSelected((prev) => normalized.find((item) => item.id === prev?.id) ?? normalized[0] ?? null);
+    const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
+    setSelected((prev) =>
+      normalized.find((item) => item.recommendation_id === requestedRecommendation)
+      ?? normalized.find((item) => item.id === prev?.id)
+      ?? normalized[0]
+      ?? null,
+    );
     setFeedback({ state: "success", message: "Recommendations updated." });
     setLoading(false);
   }
 
   useEffect(() => {
     void load();
-  }, [isLoaded, isSignedIn]);
+  }, [searchKey]);
 
   async function generate() {
     setStatus("Generating deterministic recommendation...");
     setFeedback({ state: "loading", message: "Generating recommendation…" });
-    const result = await fetchNormalizedAuthed<{ market_data_source?: string; fallback_mode?: boolean }>("/api/user/recommendations/generate", {
+    const result = await fetchWorkflowApi<{ market_data_source?: string; fallback_mode?: boolean }>("/api/user/recommendations/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol: symbolInput.trim().toUpperCase(), event_text: eventText.trim() }),
-    }, getToken);
+    });
     if (!result.ok) {
       setError(result.error ?? `Generation failed (${result.status}).`);
       setFeedback({ state: "error", message: result.error ?? `Generation failed (${result.status}).` });
@@ -155,8 +158,11 @@ export default function Page() {
   return (
     <section className="op-stack">
       <PageHeader title="Recommendations" subtitle="Flagship operator workspace for deterministic trade plans." actions={<StatusBadge tone="neutral">{status || "idle"}</StatusBadge>} />
+      <Card title="Workflow breadcrumbs">
+        Strategy Workbench → Recommendations review → Replay validation → Paper Orders staging.
+      </Card>
       <Card title="Workflow guidance">
-        Generate a recommendation from current market mode, review setup detail, then move to replay or paper orders. Chart/context source: <strong>{chartSource}</strong>.
+        Generate from Strategy Workbench setup, validate strategy/risk context, then move to replay and paper orders. HACO is supporting context only. Chart/context source: <strong>{chartSource}</strong>.
       </Card>
       <Card>
         <div className="op-row">
@@ -189,6 +195,7 @@ export default function Page() {
             <div><strong>Regime context:</strong> {selected.payload?.regime_context?.market_regime ?? "-"}</div>
             <div><strong>Symbol / timeframe:</strong> {selected.symbol} / {selected.payload?.workflow?.timeframe ?? "1D"}</div>
             <div><strong>Workflow data source:</strong> {selected.payload?.workflow?.fallback_mode ? `fallback (${selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "unknown"})` : (selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "provider")}</div>
+            <div><strong>HACO role:</strong> Supporting technical context, not sole approval engine.</div>
             <div><strong>Entry zone:</strong> {selected.payload?.entry?.zone_low} - {selected.payload?.entry?.zone_high}</div>
             <div><strong>Trigger:</strong> {selected.payload?.entry?.trigger_text}</div>
             <div><strong>Invalidation:</strong> {selected.payload?.invalidation?.price} ({selected.payload?.invalidation?.reason})</div>
@@ -202,7 +209,7 @@ export default function Page() {
             <div><strong>Visible chart symbol/source:</strong> {selected.symbol} ({selected.payload?.workflow?.fallback_mode ? `fallback (${selected.payload?.workflow?.market_data_source ?? "unknown"})` : chartSource})</div>
             <div className="op-row" style={{ marginTop: 8 }}>
               <button onClick={() => void load()}>Rerun / refresh</button>
-              <button onClick={() => window.location.assign(`/replay-runs?symbol=${selected.symbol}`)}>Run replay with context</button>
+              <button onClick={() => window.location.assign(`/replay-runs?symbol=${selected.symbol}&recommendation=${selected.recommendation_id}`)}>Run replay with context</button>
               <button onClick={() => window.location.assign(`/orders?recommendation=${selected.recommendation_id}`)}>Stage paper order</button>
             </div>
           </div>}

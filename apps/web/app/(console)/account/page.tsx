@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SignOutButton, useAuth } from "@clerk/nextjs";
+import { SignOutButton } from "@clerk/nextjs";
 
 import { Card, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalizedAuthed } from "@/lib/api-client";
+import { fetchWorkflowApi } from "@/lib/api-client";
 
 function safeIdentity(value: string | null | undefined, fallback = "Identity pending"): string {
   if (!value) return fallback;
@@ -14,21 +14,20 @@ function safeIdentity(value: string | null | undefined, fallback = "Identity pen
 }
 
 export default function Page() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [user, setUser] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState("dark");
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
-    fetchNormalizedAuthed<any>("/api/user/me", undefined, getToken).then((r) => {
+    fetchWorkflowApi<any>("/api/user/me").then((r) => {
       if (!r.ok) {
         setError(r.error ?? "Unable to load account details.");
         return;
       }
+      setError(null);
       setUser(r.data);
     });
     setTheme(window.localStorage.getItem("macmarket-theme") === "light" ? "light" : "dark");
-  }, [isLoaded, isSignedIn]);
+  }, []);
 
   return <section style={{ display: "grid", gap: 12 }}>
     <PageHeader title="Account" subtitle="Self-service profile, approval status, and authentication posture for private-alpha desk access." />

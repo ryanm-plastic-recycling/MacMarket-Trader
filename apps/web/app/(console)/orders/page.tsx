@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchNormalizedAuthed } from "@/lib/api-client";
+import { fetchWorkflowApi } from "@/lib/api-client";
 
 type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const searchParams = useSearchParams();
+  const searchKey = searchParams.toString();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,23 +21,20 @@ export default function Page() {
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
 
   async function load() {
-    if (!isLoaded || !isSignedIn) {
-      setFeedback({ state: "loading", message: "Initializing authentication session…" });
-      return;
-    }
     setBusy(true);
     setFeedback({ state: "loading", message: "Loading orders…" });
-    const result = await fetchNormalizedAuthed<Order>("/api/user/orders", undefined, getToken);
+    const result = await fetchWorkflowApi<Order>("/api/user/orders");
     if (!result.ok) {
-      if (!result.authPending) setError(result.error);
-      setFeedback({ state: result.authPending ? "loading" : "error", message: result.authPending ? "Initializing authentication session…" : (result.error ?? "Orders load failed.") });
+      setError(result.error ?? "Orders load failed.");
+      setFeedback({ state: "error", message: result.error ?? "Orders load failed." });
       setBusy(false);
       return;
     }
     setError(null);
     setFeedback({ state: "success", message: "Orders updated." });
     setOrders(result.items);
-    setSelectedOrderId((prev) => prev ?? result.items[0]?.order_id ?? null);
+    const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
+    setSelectedOrderId((prev) => prev ?? result.items.find((order) => order.recommendation_id === requestedRecommendation)?.order_id ?? result.items[0]?.order_id ?? null);
     setDataSource((result.items[0]?.fallback_mode ? `fallback (${result.items[0]?.market_data_source ?? "provider"})` : (result.items[0]?.market_data_source ?? "provider")) ?? "workflow unavailable");
     setBusy(false);
   }
@@ -44,7 +42,8 @@ export default function Page() {
   async function stagePaperOrder() {
     setStatus("staging paper order...");
     setBusy(true);
-    const result = await fetchNormalizedAuthed<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL" }) }, getToken);
+    const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
+    const result = await fetchWorkflowApi<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL", recommendation_id: requestedRecommendation ?? undefined }) });
     if (!result.ok) {
       setError(result.error ?? "Unable to stage order.");
       setStatus("failed");
@@ -62,12 +61,15 @@ export default function Page() {
     setBusy(false);
   }
 
-  useEffect(() => { void load(); }, [isLoaded, isSignedIn]);
+  useEffect(() => { void load(); }, [searchKey]);
 
   return <section className="op-stack">
     <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
     <Card title="Blotter mode">
       Generated from recommendation workflow bars sourced from: <strong>{dataSource}</strong>. This is paper-only execution for operator review.
+    </Card>
+    <Card title="What a good blotter review looks like">
+      Confirm the staged order maps to the intended recommendation, source mode, and deterministic sizing before considering live-route promotion.
     </Card>
     <Card>
       <div className="op-row">
@@ -88,7 +90,7 @@ export default function Page() {
       <Card title="Selected order detail">
         {!selected ? <EmptyState title="Select an order" hint="Click a blotter row to inspect paper-broker fill details." /> : <div style={{ display: "grid", gap: 6 }}>
           <div><strong>Order id:</strong> {selected.order_id}</div>
-          <div><strong>Recommendation id:</strong> {selected.recommendation_id}</div>
+          <div><strong>Recommendation id:</strong> {selected.recommendation_id || new URLSearchParams(searchKey).get("recommendation") || "pending linkage"}</div>
           <div><strong>Symbol/side:</strong> {selected.symbol} {selected.side}</div>
           <div><strong>Shares:</strong> {selected.shares}</div>
           <div><strong>Limit:</strong> {selected.limit_price}</div>

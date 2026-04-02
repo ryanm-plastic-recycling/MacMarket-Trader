@@ -2,11 +2,13 @@
 
 import { createChart, type CandlestickData, LineStyle, type Time } from "lightweight-charts";
 import { useAuth } from "@clerk/nextjs";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, EmptyState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchHacoChart } from "@/lib/haco-api";
-import { fetchNormalizedAuthed } from "@/lib/api-client";
+import { fetchWorkflowApi } from "@/lib/api-client";
 
 const STRATEGIES = [
   "Event Continuation",
@@ -29,7 +31,8 @@ const STRATEGY_NOTES: Record<StrategyName, string> = {
 };
 
 export default function Page() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
+  const router = useRouter();
   const chartRef = useRef<HTMLDivElement | null>(null);
   const [symbol, setSymbol] = useState("AAPL");
   const [timeframe, setTimeframe] = useState("1D");
@@ -77,20 +80,38 @@ export default function Page() {
 
   async function createRecommendation() {
     setFeedback({ state: "loading", message: "Creating recommendation from workbench setup…" });
-    const result = await fetchNormalizedAuthed("/api/user/recommendations/generate", {
+    const result = await fetchWorkflowApi<{ recommendation_id?: string; data?: { recommendation_id?: string } }>("/api/user/recommendations/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol, event_text: `Workbench strategy: ${strategy}` }),
-    }, getToken);
+    });
     if (!result.ok) {
-      setFeedback({ state: "error", message: result.authPending ? "Authentication initializing. Please wait." : (result.error ?? "Create recommendation failed") });
+      setFeedback({ state: "error", message: result.error ?? "Create recommendation failed" });
       return;
     }
     setFeedback({ state: "success", message: "Recommendation created from selected setup." });
+    const recommendationId =
+      (result.raw as Record<string, unknown> | null)?.recommendation_id as string | undefined
+      ?? (result.data as { recommendation_id?: string } | null)?.recommendation_id;
+    if (recommendationId) {
+      router.push(`/recommendations?recommendation=${recommendationId}`);
+    }
   }
 
   return <section className="op-stack">
     <PageHeader title="Analysis / Strategy Workbench" subtitle="Operator-grade setup builder before recommendation, replay, and paper orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
+    <Card title="Start here: Strategy Workbench">
+      <ol>
+        <li>Choose symbol.</li>
+        <li>Choose timeframe.</li>
+        <li>Choose strategy.</li>
+        <li>Inspect chart, levels, and context source.</li>
+        <li>Create recommendation from setup, then open Recommendations.</li>
+      </ol>
+      <div className="op-row">
+        <Link href="/recommendations"><button>Open Recommendations workspace</button></Link>
+      </div>
+    </Card>
     <Card>
       <div className="op-grid-4">
         <div><label>Symbol</label><input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} /></div>
@@ -104,6 +125,8 @@ export default function Page() {
     <div className="op-grid-2">
       <Card title="Strategy rationale">
         <div><strong>Active/inactive notes:</strong> {STRATEGY_NOTES[strategy]}</div>
+        <div><strong>Selected strategy:</strong> {strategy}</div>
+        <div><strong>Source chip:</strong> {source}</div>
         <div><strong>Trigger:</strong> {levels.trigger}</div>
         <div><strong>Confidence/filters:</strong> {levels.confidence}</div>
         <div><strong>Entry:</strong> {levels.entry}</div>
