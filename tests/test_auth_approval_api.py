@@ -124,6 +124,17 @@ def test_admin_provider_health() -> None:
     assert any(item['provider'] == 'auth' for item in payload['providers'])
 
 
+def test_mock_admin_token_does_not_auto_grant_admin_on_fresh_db() -> None:
+    me = client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+    assert me.status_code == 200
+    me_payload = me.json()
+    assert me_payload['app_role'] == 'user'
+    assert me_payload['approval_status'] == 'pending'
+
+    provider_health = client.get('/admin/provider-health', headers={'Authorization': 'Bearer admin-token'})
+    assert provider_health.status_code == 403
+
+
 def test_admin_role_not_overwritten_by_auth_claims() -> None:
     _seed_mock_user('admin-token')
     with SessionLocal() as session:

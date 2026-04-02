@@ -55,3 +55,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_auth_runtime_configuration(cfg: Settings = settings) -> None:
+    """Fail closed when mock auth is configured outside explicit local/test environments."""
+
+    auth_provider = cfg.auth_provider.strip().lower()
+    environment = cfg.environment.strip().lower()
+    if auth_provider == "mock" and environment not in {"dev", "local", "test"}:
+        raise RuntimeError(
+            "AUTH_PROVIDER=mock is only allowed when ENVIRONMENT is one of: dev, local, test. "
+            f"Received ENVIRONMENT={cfg.environment!r}."
+        )

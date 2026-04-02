@@ -68,11 +68,16 @@ Legacy/public signup can still exist as Clerk plumbing, but private-alpha invite
 
 Repo root `.env` (backend):
 - `AUTH_PROVIDER=mock|clerk`
+- `ENVIRONMENT=dev|local|test|prod|...`
 - `CLERK_JWT_ISSUER`
 - `CLERK_JWKS_URL`
 - `CLERK_JWT_AUDIENCE` (optional)
 - `CLERK_SECRET_KEY` (required for Clerk profile hydration fallback)
 - `CLERK_API_BASE_URL` (defaults to `https://api.clerk.com`)
+
+Fail-closed runtime guardrail:
+- `AUTH_PROVIDER=mock` is only allowed when `ENVIRONMENT` is `dev`, `local`, or `test`.
+- Any other environment (for example `prod`) fails startup.
 
 ## Frontend access flows
 
