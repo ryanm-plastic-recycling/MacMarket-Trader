@@ -6,6 +6,7 @@ import argparse
 import json
 from datetime import date, timedelta
 
+from macmarket_trader.dev.seed_demo import seed_demo_data
 from macmarket_trader.domain.schemas import Bar, PortfolioSnapshot, ReplayRunRequest
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
@@ -35,6 +36,7 @@ def main() -> None:
     sub.add_parser("generate-sample-recommendation")
     sub.add_parser("run-sample-replay")
     sub.add_parser("init-db")
+    sub.add_parser("seed-demo-data")
     args = parser.parse_args()
 
     service = RecommendationService()
@@ -65,6 +67,8 @@ def main() -> None:
             )
         )
         payload = response.model_dump(mode="json")
+    elif args.command == "seed-demo-data":
+        payload = seed_demo_data()
     else:
         init_db()
         payload = {"status": "initialized", "database": "sqlite"}

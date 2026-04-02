@@ -59,13 +59,27 @@ def current_user(authorization: str | None = Header(default=None)):
     except Exception as exc:  # noqa: BLE001 - upstream provider defines exception behavior
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
+    external_id = str(claims.get("sub", "")).strip()
+    if not external_id:
+        raise HTTPException(status_code=401, detail="Token missing subject claim")
+
     email, display_name = _extract_identity(claims)
-    user = _user_repo.upsert_from_auth(
-        external_auth_user_id=str(claims.get("sub", "")),
-        email=email,
-        display_name=display_name,
-        mfa_enabled=bool(claims.get("mfa", False)),
-    )
+
+    existing_user = _user_repo.get_by_external_id(external_id)
+    if existing_user is None and not email:
+        # Auth identity is valid but local app-user provisioning is blocked until
+        # we have a stable email identifier (claims or Clerk backend hydration).
+        raise HTTPException(status_code=401, detail="Unable to provision local user without email")
+
+    try:
+        user = _user_repo.upsert_from_auth(
+            external_auth_user_id=external_id,
+            email=email,
+            display_name=display_name,
+            mfa_enabled=bool(claims.get("mfa", False)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     return user
 
 
