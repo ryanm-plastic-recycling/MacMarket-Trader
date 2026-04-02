@@ -11,17 +11,24 @@
 
 ## Market data provider (backend `.env`)
 
-MacMarket-Trader can run either in deterministic fallback mode or with Alpaca market data.
+MacMarket-Trader can run in deterministic fallback mode, Polygon mode (preferred), or Alpaca mode (scaffold retained).
 
 - Fallback-only (default):
+  - `POLYGON_ENABLED=false`
   - `MARKET_DATA_PROVIDER=fallback`
   - `MARKET_DATA_ENABLED=false`
-- Alpaca enabled:
+- Polygon enabled:
+  - Create an API key in Polygon dashboard (Stocks API access): https://polygon.io/dashboard/api-keys
+  - Set `POLYGON_ENABLED=true`
+  - Set `POLYGON_API_KEY=...`
+  - Optional: `POLYGON_BASE_URL=https://api.polygon.io`, `POLYGON_TIMEOUT_SECONDS=8`
+- Alpaca enabled (kept as alternate scaffold):
+  - `POLYGON_ENABLED=false`
   - `MARKET_DATA_PROVIDER=alpaca`
   - `MARKET_DATA_ENABLED=true`
   - `APCA_API_KEY_ID` + `APCA_API_SECRET_KEY`
 
-See `docs/market-data.md` for complete env variables, feed selection (`iex`, `sip`, `delayed_sip`), TTL tuning, and UI health indicators.
+Fallback behavior is always preserved: if Polygon/Alpaca calls fail, backend chart/snapshot reads automatically revert to deterministic fallback bars and the provider-health endpoint reports degraded status.
 
 ## Backend (FastAPI)
 
