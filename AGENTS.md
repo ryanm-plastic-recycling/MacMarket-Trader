@@ -45,7 +45,14 @@ Do not remove or dilute the HACO/HACOLT policy.
 - Client-side fetch failures must degrade gracefully; do not let one nested API failure blank an otherwise usable console page.
 - Admin and account surfaces must prefer truthful identity/status presentation over thin placeholders.
 - Use lightweight inline progress/success/error feedback for actions; avoid modal interruption for routine operator tasks.
-- 
+- Treat Strategy Workbench / Analysis as the primary entry point for operator workflow. Recommendations are review/execution, not the only place a setup is born.
+- For same-origin Next API routes, prefer server-side session auth over brittle client-supplied bearer-token flow when possible.
+- Never leave stale 401 / Invalid token banners visible after a later successful fetch.
+- If provider health is fallback or degraded, workflow pages must say fallback explicitly and consistently.
+- Do not let Account/Admin render raw identity template placeholders; normalize them to operator-friendly text.
+- Recommendations must always display strategy, timeframe, and workflow source clearly.
+- Replay and Orders must explain their relationship to the originating recommendation/setup.
+
 ## Working style
 
 - Prefer small, bounded changes.
