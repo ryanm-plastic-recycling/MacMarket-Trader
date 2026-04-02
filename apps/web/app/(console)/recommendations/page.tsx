@@ -129,7 +129,7 @@ export default function Page() {
   }, [selected, showHaco]);
 
   return (
-    <section style={{ display: "grid", gap: 12 }}>
+    <section className="op-stack">
       <PageHeader title="Recommendations" subtitle="Flagship operator workspace for deterministic trade plans." actions={<StatusBadge tone="neutral">{status || "idle"}</StatusBadge>} />
       <Card title="Workflow guidance">
         Generate a recommendation from current market mode, review setup detail, then move to replay or paper orders. Chart/context source: <strong>{chartSource}</strong>.
@@ -138,7 +138,7 @@ export default function Page() {
         <div className="op-row">
           <input value={symbolInput} onChange={(e) => setSymbolInput(e.target.value.toUpperCase())} placeholder="Symbol" />
           <input value={eventText} onChange={(e) => setEventText(e.target.value)} placeholder="Catalyst summary" style={{ minWidth: 260 }} />
-          <button onClick={() => void generate()}>Generate recommendation</button>
+          <button onClick={() => void generate()}>Generate recommendations</button>
           <button onClick={() => void load()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
           <button onClick={() => setError(null)}>Clear error</button>
         </div>
@@ -156,7 +156,7 @@ export default function Page() {
           </table>
         </Card>
         <Card title="Selected recommendation detail">
-          {!selected ? <EmptyState title="Select a recommendation" hint="Choose a row to review thesis, risk controls, and provenance." /> : <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+          {!selected ? <EmptyState title="Select a recommendation" hint="Choose a row to review thesis, risk controls, and provenance." /> : <div className="op-detail-list">
             <div><strong>Thesis:</strong> {selected.payload?.thesis ?? "-"}</div>
             <div><strong>Catalyst:</strong> {selected.payload?.catalyst?.type ?? "-"}</div>
             <div><strong>Regime context:</strong> {selected.payload?.regime_context?.market_regime ?? "-"}</div>
@@ -170,6 +170,7 @@ export default function Page() {
             <div><strong>No-trade reason:</strong> {selected.payload?.rejection_reason || "n/a"}</div>
             <div><strong>Evidence notes:</strong> {(selected.payload?.evidence?.explanatory_notes ?? []).join(" | ") || "none"}</div>
             <div><strong>Provenance summary:</strong> {selected.payload?.evidence?.source_type} @ {selected.payload?.evidence?.source_timestamp}</div>
+            <div><strong>Visible chart symbol:</strong> {selected.symbol} ({chartSource})</div>
             <div className="op-row" style={{ marginTop: 8 }}>
               <button onClick={() => void load()}>Rerun / refresh</button>
               <button onClick={() => window.location.assign(`/replay-runs?symbol=${selected.symbol}`)}>Run replay with context</button>

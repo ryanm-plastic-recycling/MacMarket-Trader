@@ -204,12 +204,18 @@ class UserRepository:
         display_name: str,
         mfa_enabled: bool = False,
     ) -> AppUserModel:
+        def _normalize_identity(value: str) -> str:
+            normalized = value.strip()
+            if normalized.startswith("{{") and normalized.endswith("}}"):
+                return ""
+            return normalized
+
         with self.session_factory() as session:
             user = session.execute(
                 select(AppUserModel).where(AppUserModel.external_auth_user_id == external_auth_user_id)
             ).scalar_one_or_none()
-            normalized_email = email.strip().lower()
-            normalized_display_name = display_name.strip()
+            normalized_email = _normalize_identity(email).lower()
+            normalized_display_name = _normalize_identity(display_name)
             if user is None:
                 if not normalized_email:
                     raise ValueError("email required to create local app user")

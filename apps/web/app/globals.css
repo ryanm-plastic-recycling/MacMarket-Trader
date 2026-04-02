@@ -18,6 +18,7 @@ body { background: #10151d; color: #d7dee8; font-family: Inter, Arial, sans-seri
 .op-page-header h1 { margin: 0; font-size: 24px; }
 .op-page-header p { margin: 6px 0 0; color: #9fb0c3; }
 .op-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.op-stack { display: grid; gap: 12px; }
 
 .op-card { border: 1px solid #2a3440; background: #0f1722; border-radius: 8px; padding: 12px; }
 .op-card h3 { margin: 0 0 10px; font-size: 15px; }
@@ -40,6 +41,7 @@ body { background: #10151d; color: #d7dee8; font-family: Inter, Arial, sans-seri
 .op-empty, .op-error { border: 1px dashed #304355; border-radius: 8px; padding: 12px; }
 .op-empty p, .op-error p { margin: 6px 0 0; color: #9fb0c3; }
 .op-error { border-color: #7c4040; background: #2a1717; }
+.op-detail-list { display: grid; gap: 6px; font-size: 13px; }
 
 input, select, button, textarea { background: #0e151d; color: #d9e2ef; border: 1px solid #2b3642; padding: 8px 10px; border-radius: 6px; }
 button { cursor: pointer; }

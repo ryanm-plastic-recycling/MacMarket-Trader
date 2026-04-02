@@ -55,7 +55,14 @@ export default function Page() {
   useEffect(() => { void loadRuns(); }, []);
   useEffect(() => { if (selectedRunId) void loadSteps(selectedRunId); }, [selectedRunId]);
 
-  return <section style={{ display: "grid", gap: 12 }}>
+  const timelinePoints = steps.map((step) => ({
+    step: step.step_index,
+    pre: Number(step.pre_step_snapshot?.open_positions_notional ?? 0),
+    post: Number(step.post_step_snapshot?.open_positions_notional ?? 0),
+    pnlDelta: Number(step.post_step_snapshot?.equity ?? 0) - Number(step.pre_step_snapshot?.equity ?? 0),
+  }));
+
+  return <section className="op-stack">
     <PageHeader title="Replay workspace" subtitle="Run deterministic replay from recommendation context and inspect step-by-step risk transitions." actions={<StatusBadge tone="neutral">{status}</StatusBadge>} />
     <Card title="What replay is for">
       Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{dataSource}</strong>.
@@ -78,12 +85,23 @@ export default function Page() {
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
           <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol}</div>
+          <div className="op-card" style={{ marginBottom: 8 }}>
+            <strong>Narrative summary</strong>
+            <div>
+              {selected.approved_count} / {selected.recommendation_count} recommendations approved, {selected.fill_count} fills,
+              ending heat {selected.ending_heat}, ending open notional {selected.ending_open_notional}.
+            </div>
+          </div>
           <div style={{ display: "grid", gap: 8 }}>{steps.map((s) => <div key={s.id} className="op-card" style={{ padding: 8 }}>
             <strong>Step {s.step_index}</strong> <StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge>
             <div>Recommendation: {s.recommendation_id}</div>
             <div>Pre heat/open notional: {s.pre_step_snapshot?.current_heat} / {s.pre_step_snapshot?.open_positions_notional}</div>
             <div>Post heat/open notional: {s.post_step_snapshot?.current_heat} / {s.post_step_snapshot?.open_positions_notional}</div>
           </div>)}</div>
+          {timelinePoints.length > 0 ? <div className="op-card" style={{ marginTop: 8 }}>
+            <strong>Entry vs exit notional timeline</strong>
+            {timelinePoints.map((point) => <div key={point.step}>Step {point.step}: {point.pre} → {point.post} (equity Δ {point.pnlDelta.toFixed(2)})</div>)}
+          </div> : null}
         </>}
       </Card>
     </div>

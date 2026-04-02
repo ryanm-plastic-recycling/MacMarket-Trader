@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from macmarket_trader.api.main import app
+from macmarket_trader.api.routes import admin as admin_routes
 from macmarket_trader.domain.models import AppUserModel
 from macmarket_trader.storage.db import SessionLocal, init_db
 
@@ -74,3 +75,25 @@ def test_user_recommendation_listing_is_data_backed() -> None:
     rows = listing.json()
     assert len(rows) >= 1
     assert rows[0]["payload"]["thesis"]
+
+
+def test_user_generation_blocks_hidden_fallback_when_provider_expected(monkeypatch) -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+
+    class StubMarketData:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            del symbol, timeframe, limit
+            return _bars(), "fallback", True
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketData())
+    monkeypatch.setattr(admin_routes.settings, "market_data_enabled", True)
+    monkeypatch.setattr(admin_routes.settings, "polygon_enabled", False)
+
+    response = client.post(
+        "/user/recommendations/generate",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbol": "AAPL", "event_text": "Operator trigger"},
+    )
+    assert response.status_code == 503
+    assert "hidden demo fallback" in response.json()["detail"]

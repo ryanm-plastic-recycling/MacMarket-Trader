@@ -32,30 +32,28 @@ replay_engine = ReplayEngine(service=recommendation_service)
 paper_broker = PaperBroker()
 
 
-def _demo_bars() -> list[Bar]:
-    from datetime import date, timedelta
-
-    base = date(2026, 1, 1)
-    return [
-        Bar(
-            date=base + timedelta(days=i),
-            open=190 + (i * 0.9),
-            high=191 + (i * 0.9),
-            low=189 + (i * 0.9),
-            close=190.4 + (i * 0.9),
-            volume=1_200_000 + i * 15_000,
-            rel_volume=1.1,
-        )
-        for i in range(35)
-    ]
-
-
 def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
     bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=limit)
-    if bars:
-        return bars, source, fallback_mode
-    demo = _demo_bars()
-    return demo, "fallback", True
+    if not bars:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No market-data bars available for operator workflow. "
+                "Verify provider health and retry from Recommendations."
+            ),
+        )
+
+    provider_is_expected = settings.market_data_enabled or settings.polygon_enabled
+    if provider_is_expected and fallback_mode:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Provider-backed market data is configured but unavailable. "
+                "User-facing recommendations/replay/orders are blocked to avoid hidden demo fallback."
+            ),
+        )
+
+    return bars, source, fallback_mode
 
 
 @user_router.get("/me")
