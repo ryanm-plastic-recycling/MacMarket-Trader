@@ -1,124 +1,219 @@
 # AGENTS.md
 
-## Repo charter
+## 1. Canonical documents
 
-Read `README.md` first. Treat it as the canonical architecture charter.
-Do not shrink the root README into a status page.
-Do not remove or dilute the HACO/HACOLT policy.
+- Read `README.md` first. Treat it as the canonical architecture charter.
+- Do not shrink the root README into a short status page.
+- Keep docs aligned with implementation.
+- Preserve the HACO / HACOLT policy from the README.
 
-## Product-priority rules
-
-- HACO/HACOLT are important supporting modules, but they are not the center of the product.
-- The flagship operator surface is the Recommendations workspace.
-- Replay, Orders, Account, Admin, and Provider Health must feel like real operator tools, not placeholders.
-
-## Product rules
+## 2. Product thesis
 
 - MacMarket-Trader is a research-first, event-driven trading system.
-- LLMs extract/explain; deterministic rules decide and size.
-- HACO/HACOLT are retained as charting/context/research components, not the sole approval engine.
-- Security, approval gating, auditability, and deterministic risk are mandatory.
-1. Product center
-- Recommendations Workspace is the flagship product surface.
-- HACO is supporting technical context, not the center of the product.
+- LLMs extract, summarize, classify, and explain; deterministic logic decides, sizes, and routes.
+- Security, approval gating, auditability, deterministic risk, and workflow traceability are mandatory.
+- This is an operator console first, not a consumer finance app.
 
-2. Workflow coherence
-- If provider-backed market data is configured, user-facing recommendation/replay/order flows must prefer provider-backed bars over demo bars.
+## 3. Product center and workflow
+
+### Primary workflow
+- **Strategy Workbench / Analysis** is the primary entry point for creating and reviewing setups.
+- **Recommendations** is the flagship review and execution-prep surface.
+- **Replay** validates the recommendation path before paper execution.
+- **Orders** is the paper blotter for staged and simulated execution outcomes.
+
+### Supporting workflow
+- **Dashboard** is the operator hub.
+- **HACO / HACOLT** are important supporting technical context and research tools, but not the product center.
+- **Admin / Invites / Users / Account / Provider Health** must feel like real operator tools, not placeholders.
+
+### Workflow coherence rules
+- If provider-backed market data is configured, user-facing recommendation / replay / order flows must prefer provider-backed bars over demo bars.
 - Fallback mode must be explicit, never hidden.
+- If a workflow is running on fallback data, label it clearly and consistently across all related pages.
+- Recommendations must always show strategy, timeframe, and workflow source.
+- Replay and Orders must explain their relationship to the originating recommendation or setup.
 
-3. Admin and account usefulness
-- Admin surfaces must show current users, not only pending users/invites.
-- Persist and display practical account metadata such as last_seen_at / last_authenticated_at when available.
+## 4. Source-of-truth rules
 
-4. Operator-console quality bar
-- Avoid placeholder-only pages.
-- Every primary page must answer: what is this for, what should the operator do next, and what data supports that action.
+### Authorization and identity
+- The local app database is the source of truth for:
+  - `approval_status`
+  - `app_role`
+- Never overwrite local `approval_status` or `app_role` from external auth claims.
+- External auth is for identity/session verification, not authorization truth.
 
-5. HACO scope discipline
-- Preserve the dedicated HACO page and dashboard HACO module.
-- Do not force HACO into unrelated workflows unless it materially supports the decision.
+### Market data and workflows
+- Never silently mix provider-backed chart context with fallback-generated recommendation / replay / order workflows.
+- Any workflow page must state whether it is using provider data or fallback data.
+- If provider health is degraded or fallback, workflow pages must say so explicitly.
 
-- HACO is supporting context, not the flagship workflow. Recommendations -> Replay -> Paper Orders remain the product center.
-- Never use numeric bar indices as user-facing chart time axes when real timestamps are available.
-- Never silently mix provider-backed chart context with fallback-generated recommendation/replay/order workflows.
-- If a workflow is running on fallback data, label it explicitly.
-- Client-side fetch failures must degrade gracefully; do not let one nested API failure blank an otherwise usable console page.
-- Admin and account surfaces must prefer truthful identity/status presentation over thin placeholders.
-- Use lightweight inline progress/success/error feedback for actions; avoid modal interruption for routine operator tasks.
-- Treat Strategy Workbench / Analysis as the primary entry point for operator workflow. Recommendations are review/execution, not the only place a setup is born.
-- For same-origin Next API routes, prefer server-side session auth over brittle client-supplied bearer-token flow when possible.
-- Never leave stale 401 / Invalid token banners visible after a later successful fetch.
-- If provider health is fallback or degraded, workflow pages must say fallback explicitly and consistently.
-- Do not let Account/Admin render raw identity template placeholders; normalize them to operator-friendly text.
-- Recommendations must always display strategy, timeframe, and workflow source clearly.
-- Replay and Orders must explain their relationship to the originating recommendation/setup.
+### Recommendations and chart context
+- A selected recommendation must render chart context from the same workflow source used to generate it.
+- Do not display levels, signals, or targets against a chart sourced from a different bar set.
+- Never use numeric bar indices as user-facing chart time axes when canonical timestamps are available.
 
-## Working style
+## 5. Auth and identity rules
 
-- Prefer small, bounded changes.
-- Run tests before finishing.
-- For frontend changes, ensure `npm install` and `npm run build` succeed.
-- For backend changes, run `pytest`.
-- Keep docs aligned with implementation.
+- Keep Clerk sign-in / sign-up routes compatible with Clerk requirements.
+- Keep middleware public-route configuration Clerk-compatible.
+- Prefer server-side session auth for same-origin Next API routes when possible.
+- Do not allow brittle client-supplied bearer-token flow to dominate same-origin auth paths.
+- Do not leave stale `401` / `Invalid token` banners visible after a later successful fetch.
+- Normalize identity data into operator-friendly text.
+- Do not render raw Clerk template placeholders like `{{user.primary_email_address.email_address}}` in Account or Admin surfaces.
+- Existing approved/admin users must remain approved/admin after login or sync.
 
-## UI and workflow rules
+## 6. Charting and indicator rules
+
+### Canonical chart rules
+- Any chart layer derived from the same bar series must share one canonical indexed time base.
+- Price bars, signal markers, strategy levels, HACO strip, and HACOLT strip must remain aligned under zoom/pan.
+- Do not ship unsynced visual indicator strips as the primary implementation.
+- Do not ship charts showing garbage time axes like `1970` when real timestamps are available.
+
+### Indicator system
+- Charts must support **operator-selectable indicators**.
+- Indicator visibility must be explicit and user-controlled, not hardcoded page by page.
+- Persist indicator selections per user or in stable local preferences when user-level persistence is not yet available.
+- Indicator controls should be available on:
+  - Strategy Workbench / Analysis
+  - Recommendations chart context
+  - HACO Context page
+
+### Supported indicator categories
+- **Trend overlays**
+  - SMA
+  - EMA
+  - VWAP
+  - Anchored VWAP
+- **Volatility**
+  - ATR
+  - Bollinger Bands
+  - Keltner Channels
+- **Structure / levels**
+  - Prior day high / low
+  - Opening range
+  - Gap levels
+  - Key support / resistance
+- **Momentum / confirmation**
+  - RSI
+  - MACD
+- **Volume**
+  - Volume bars
+  - Relative volume
+- **HACO context**
+  - HACO
+  - HACOLT
+
+### Indicator UX rules
+- Keep default charts clean and professional; do not overload the page by default.
+- Strategy overlays and indicator overlays must be visually distinct.
+- A chart should clearly display:
+  - symbol
+  - timeframe
+  - source
+  - strategy
+  - enabled indicators
+
+## 7. UI and operator-console rules
 
 - Every core operator page must implement all four states:
   - loading
   - empty
   - error
   - populated
-- Core console pages should not rely primarily on ad hoc inline styles.
+- Every primary page must answer:
+  - what is this for?
+  - what should the operator do next?
+  - what data supports that action?
+- Avoid placeholder-only pages.
 - Favor reusable console components and a consistent operator-console design language.
 - Do not expose raw backend/provider errors directly as the primary UX.
-- Provide operator-actionable guidance when external providers fail.
+- Convert provider/backend failures into operator-actionable guidance.
+- Use lightweight inline progress, success, and error feedback for actions.
+- Avoid modal interruption for routine operator tasks.
+- Do not let one nested client-side fetch failure blank an otherwise usable operator page.
+- Keep the UI dark, professional, data-first, and desk-like by default.
+- Theme toggle is allowed, but must be SSR-safe and persist correctly.
+- Core console pages should not rely primarily on ad hoc inline styles.
 
-## Charting correctness rules
+## 8. Strategy Workbench / Analysis rules
 
-- Any chart layer derived from the same bar series must share one canonical indexed time base.
-- Price bars, signal markers, HACO strip, and HACOLT strip must remain aligned under zoom/pan.
-- Do not ship unsynced visual indicator strips as the primary implementation.
+- Treat Strategy Workbench / Analysis as the primary entry point for operator workflow.
+- A setup should be born in Analysis, reviewed in Recommendations, validated in Replay, and staged in Orders.
+- Strategy Workbench should support:
+  - symbol selection
+  - timeframe selection
+  - strategy selection
+  - chart rendering
+  - strategy overlays / levels
+  - source labeling
+  - notes explaining why the strategy is active or inactive
+- Recommended initial strategy set:
+  - Event Continuation
+  - Breakout / Prior-Day High
+  - Pullback / Trend Continuation
+  - Gap Follow-Through
+  - Mean Reversion
+  - HACO Context
+- HACO is supporting technical context, not the flagship workflow.
 
-## Productization rules
+## 9. Admin, account, and onboarding rules
 
+### Admin
+- Admin surfaces must show current users, not only pending users or invites.
+- Persist and display practical account metadata such as:
+  - last seen
+  - last authenticated
+  - role
+  - approval
+  - MFA state
+  - invite state when available
+
+### Account
+- Account page must show useful operator-facing identity and authorization state.
+- Account should include:
+  - real email
+  - display name
+  - role
+  - approval status
+  - MFA state
+  - sign-out affordance
+  - theme preference when available
+
+### Onboarding
 - Invite-only onboarding is the primary private-alpha path unless explicitly changed.
 - Do not treat public self-signup as the main go-to-market flow.
 - The app should be presentable in local/dev mode with deterministic seed data for core workflows.
 
-## Guardrails
+## 10. Development and testing rules
+
+- Prefer small, bounded changes.
+- Run tests before finishing.
+- For backend changes, run `pytest`.
+- For frontend changes, ensure:
+  - `npm install`
+  - `npm test`
+  - `npm run build`
+  succeed.
+- Keep dependency changes intentional.
+- Keep lockfiles committed when changed.
+- Keep docs aligned with implementation.
+- Keep Windows dev path and live runtime path separate.
+- Keep `scripts/create_shareable_backup.bat` as the canonical backup/export script if present.
+
+## 11. Guardrails
 
 - Do not replace real auth with mock auth in production-facing paths.
 - Do not point browser code to localhost for hosted deployments.
 - Do not delete canonical architecture sections from the root README.
 - Do not add cosmetic UI work ahead of operator workflow value.
-1. Never replace the long-form README with a short scaffold summary.
-2. Never overwrite local `approval_status` or `app_role` from external auth claims.
-3. Keep Clerk sign-in/sign-up routes compatible with Clerk docs and middleware public-route requirements.
-4. Preserve HACO as both:
-   - a dedicated workspace
-   - a dashboard-integrated module
-5. Do not downgrade data-driven operator pages back into placeholders.
-6. Keep dependency changes intentional and keep lockfiles committed.
-7. Keep Windows dev path and live runtime path separate.
-
-## Hard architecture protections (must keep)
-
-- Never shrink/replace the root README with a short status stub.
-- Never overwrite local `approval_status` or `app_role` from external auth claims.
-- Clerk sign-in/sign-up routes and middleware public-route config must remain Clerk-compatible.
-- Preserve HACO in two places: dedicated workspace and dashboard-integrated module.
-- Do not downgrade data-driven operator pages back to placeholders.
-- Keep dependency changes intentional and keep `package-lock.json` committed when changed.
-
-
-## Productization guardrail addendum (2026-04)
-
-- Recommendations workspace is the flagship operator workflow.
-- HACO is supporting technical context, not the product center.
-- Core operator pages must ship loading, empty, error, and populated states.
-- Operator surfaces with shared signal bars must share canonical synced time scales.
-- Avoid large inline-style-only implementations for core console pages.
-
-- Do not use numeric bar indices as user-facing chart time axes when canonical timestamps are available.
-- Do not silently mix provider-backed chart context with fallback workflow recommendations/replay/orders.
-- Do not allow one nested client-side fetch failure to blank an otherwise usable operator page.
+- Do not downgrade data-driven operator pages back into placeholders.
+- Preserve HACO in two places:
+  - dedicated workspace
+  - dashboard-integrated supporting module
+- Do not silently mix workflow sources.
+- Do not ship charts with broken time axes or desynced strips.
+- Do not leave stale error banners visible after a successful refresh.
+- Do not let Recommendations, Replay, and Orders drift into disconnected mini-apps.
