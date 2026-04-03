@@ -23,7 +23,10 @@ from macmarket_trader.domain.models import (
     RecommendationModel,
     ReplayRunModel,
     ReplayStepModel,
+    StrategyReportRunModel,
+    StrategyReportScheduleModel,
     UserApprovalRequestModel,
+    WatchlistModel,
 )
 from macmarket_trader.domain.schemas import FillRecord, OrderRecord, PortfolioSnapshot, TradeRecommendation
 
@@ -439,3 +442,120 @@ class DashboardRepository:
                 "orders": int(session.scalar(select(func.count(OrderModel.id))) or 0),
                 "fills": int(session.scalar(select(func.count(FillModel.id))) or 0),
             }
+
+
+class WatchlistRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def list_for_user(self, app_user_id: int) -> list[WatchlistModel]:
+        with self.session_factory() as session:
+            stmt = select(WatchlistModel).where(WatchlistModel.app_user_id == app_user_id).order_by(WatchlistModel.created_at.desc())
+            return list(session.execute(stmt).scalars())
+
+    def upsert(self, *, app_user_id: int, name: str, symbols: list[str]) -> WatchlistModel:
+        with self.session_factory() as session:
+            row = session.execute(
+                select(WatchlistModel).where(WatchlistModel.app_user_id == app_user_id, WatchlistModel.name == name)
+            ).scalar_one_or_none()
+            if row is None:
+                row = WatchlistModel(app_user_id=app_user_id, name=name, symbols=symbols)
+                session.add(row)
+            else:
+                row.symbols = symbols
+            session.commit()
+            session.refresh(row)
+            return row
+
+
+class StrategyReportRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def create_schedule(
+        self,
+        *,
+        app_user_id: int,
+        name: str,
+        frequency: str,
+        run_time: str,
+        timezone_name: str,
+        email_target: str,
+        enabled: bool,
+        next_run_at: datetime,
+        payload: dict[str, object],
+    ) -> StrategyReportScheduleModel:
+        with self.session_factory() as session:
+            row = StrategyReportScheduleModel(
+                app_user_id=app_user_id,
+                name=name,
+                frequency=frequency,
+                run_time=run_time,
+                timezone=timezone_name,
+                email_target=email_target,
+                enabled=enabled,
+                next_run_at=next_run_at,
+                payload=payload,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def update_schedule(self, schedule_id: int, *, app_user_id: int, updates: dict[str, object]) -> StrategyReportScheduleModel | None:
+        with self.session_factory() as session:
+            row = session.execute(
+                select(StrategyReportScheduleModel).where(
+                    StrategyReportScheduleModel.id == schedule_id,
+                    StrategyReportScheduleModel.app_user_id == app_user_id,
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            for key, value in updates.items():
+                setattr(row, key, value)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def list_schedules_for_user(self, app_user_id: int) -> list[StrategyReportScheduleModel]:
+        with self.session_factory() as session:
+            stmt = select(StrategyReportScheduleModel).where(StrategyReportScheduleModel.app_user_id == app_user_id).order_by(StrategyReportScheduleModel.created_at.desc())
+            return list(session.execute(stmt).scalars())
+
+    def get_schedule(self, schedule_id: int) -> StrategyReportScheduleModel | None:
+        with self.session_factory() as session:
+            return session.get(StrategyReportScheduleModel, schedule_id)
+
+    def list_due_schedules(self, *, now: datetime) -> list[StrategyReportScheduleModel]:
+        with self.session_factory() as session:
+            stmt = select(StrategyReportScheduleModel).where(
+                StrategyReportScheduleModel.enabled.is_(True),
+                StrategyReportScheduleModel.next_run_at.is_not(None),
+                StrategyReportScheduleModel.next_run_at <= now,
+            )
+            return list(session.execute(stmt).scalars())
+
+    def create_run(self, *, schedule_id: int, status: str, payload: dict[str, object], delivered_to: str) -> StrategyReportRunModel:
+        with self.session_factory() as session:
+            row = StrategyReportRunModel(schedule_id=schedule_id, status=status, payload=payload, delivered_to=delivered_to)
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def list_runs(self, *, schedule_id: int, limit: int = 20) -> list[StrategyReportRunModel]:
+        with self.session_factory() as session:
+            stmt = select(StrategyReportRunModel).where(StrategyReportRunModel.schedule_id == schedule_id).order_by(StrategyReportRunModel.created_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
+
+    def mark_schedule_run(self, *, schedule_id: int, status: str, next_run_at: datetime, latest_run_id: int) -> None:
+        with self.session_factory() as session:
+            row = session.get(StrategyReportScheduleModel, schedule_id)
+            if row is None:
+                return
+            row.latest_status = status
+            row.latest_run_at = datetime.now(timezone.utc)
+            row.next_run_at = next_run_at
+            row.latest_run_id = latest_run_id
+            session.commit()

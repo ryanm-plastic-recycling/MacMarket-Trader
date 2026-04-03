@@ -10,6 +10,10 @@ from macmarket_trader.dev.seed_demo import seed_demo_data
 from macmarket_trader.domain.schemas import Bar, PortfolioSnapshot, ReplayRunRequest
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
+from macmarket_trader.storage.db import SessionLocal
+from macmarket_trader.storage.repositories import EmailLogRepository, StrategyReportRepository
+from macmarket_trader.data.providers.registry import build_email_provider
+from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.storage.db import init_db
 
 
@@ -37,9 +41,15 @@ def main() -> None:
     sub.add_parser("run-sample-replay")
     sub.add_parser("init-db")
     sub.add_parser("seed-demo-data")
+    sub.add_parser("run-due-strategy-schedules")
     args = parser.parse_args()
 
     service = RecommendationService()
+    strategy_report_service = StrategyReportService(
+        report_repo=StrategyReportRepository(SessionLocal),
+        email_provider=build_email_provider(),
+        email_log_repo=EmailLogRepository(SessionLocal),
+    )
 
     if args.command == "health":
         payload = {"status": "ok", "service": "macmarket-trader"}
@@ -69,6 +79,9 @@ def main() -> None:
         payload = response.model_dump(mode="json")
     elif args.command == "seed-demo-data":
         payload = seed_demo_data()
+    elif args.command == "run-due-strategy-schedules":
+        init_db()
+        payload = {"runs": strategy_report_service.run_due_schedules()}
     else:
         init_db()
         payload = {"status": "initialized", "database": "sqlite"}

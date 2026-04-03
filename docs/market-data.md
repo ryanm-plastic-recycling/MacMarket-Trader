@@ -53,3 +53,7 @@ Use these operator-console cues:
 
 - Provider health page now summarizes live vs fallback mode, latency, sample symbol, and last successful fetch.
 - If provider requests are rejected (for example 403), UI explains that fallback mode is active and advises checking key/plan permissions.
+
+## Workflow source coherence for indicator workbench
+
+Strategy Workbench, Recommendations, and HACO Context now expose operator-selected indicators on a shared canonical time axis. Workflow source badges must continue to show provider vs fallback mode explicitly on each page.

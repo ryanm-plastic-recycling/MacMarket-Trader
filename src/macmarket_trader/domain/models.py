@@ -226,3 +226,43 @@ class AppInviteModel(Base):
     status: Mapped[str] = mapped_column(String(24), default="sent", index=True)
     invited_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class WatchlistModel(Base):
+    __tablename__ = "watchlists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    symbols: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class StrategyReportScheduleModel(Base):
+    __tablename__ = "strategy_report_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    frequency: Mapped[str] = mapped_column(String(24), default="weekdays", index=True)
+    run_time: Mapped[str] = mapped_column(String(16), default="08:30")
+    timezone: Mapped[str] = mapped_column(String(64), default="America/New_York")
+    email_target: Mapped[str] = mapped_column(String(255))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    latest_status: Mapped[str] = mapped_column(String(24), default="idle")
+    latest_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    latest_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class StrategyReportRunModel(Base):
+    __tablename__ = "strategy_report_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    schedule_id: Mapped[int] = mapped_column(ForeignKey("strategy_report_schedules.id"), index=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    delivered_to: Mapped[str] = mapped_column(String(255))
+    payload: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)

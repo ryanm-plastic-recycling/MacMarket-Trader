@@ -5,7 +5,9 @@ import { ThemeToggle } from "@/components/theme-toggle";
 const links = [
   ["/dashboard", "Dashboard"],
   ["/analysis", "Strategy Workbench"],
+  ["/analyze", "Symbol Analyze"],
   ["/recommendations", "Recommendations"],
+  ["/schedules", "Scheduled Reports"],
   ["/replay-runs", "Replay"],
   ["/orders", "Orders"],
   ["/charts/haco", "HACO Context"],

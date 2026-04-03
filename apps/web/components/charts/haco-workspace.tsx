@@ -4,7 +4,11 @@ import { createChart, type CandlestickData, ColorType, type IChartApi, type ISer
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, ErrorState, StatusBadge } from "@/components/operator-ui";
+import { IndicatorSelector } from "@/components/charts/indicator-selector";
+import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
+
+const STORAGE_KEY = "macmarket-indicators-haco";
 
 export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [symbol, setSymbol] = useState("AAPL");
@@ -15,6 +19,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
   const priceRef = useRef<HTMLDivElement | null>(null);
   const hacoRef = useRef<HTMLDivElement | null>(null);
   const hacoltRef = useRef<HTMLDivElement | null>(null);
+  const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
 
   async function load() {
     setLoading(true);
@@ -29,7 +34,23 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      try {
+        setSelectedIndicators(normalizeSelection(raw ? (JSON.parse(raw) as string[]) : ["haco", "hacolt"]));
+      } catch {
+        setSelectedIndicators(normalizeSelection(["haco", "hacolt"]));
+      }
+    }
+    void load();
+  }, []);
+
+  function onIndicatorChange(next: IndicatorId[]) {
+    const normalized = normalizeSelection(next);
+    setSelectedIndicators(normalized);
+    if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+  }
 
   useEffect(() => {
     if (!priceRef.current || !hacoRef.current || !hacoltRef.current || !data) return;
@@ -56,11 +77,15 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       text: m.text,
     })));
 
-    const hacoSeries = hacoChart.addHistogramSeries({ base: 0, color: "#21c06e" });
-    hacoSeries.setData(data.haco_strip.map((p) => ({ time: p.time as Time, value: p.value, color: p.state === "green" ? "#21c06e" : "#c64242" })));
+    if (selectedIndicators.includes("haco")) {
+      const hacoSeries = hacoChart.addHistogramSeries({ base: 0, color: "#21c06e" });
+      hacoSeries.setData(data.haco_strip.map((p) => ({ time: p.time as Time, value: p.value, color: p.state === "green" ? "#21c06e" : "#c64242" })));
+    }
 
-    const hacoltSeries = hacoltChart.addHistogramSeries({ base: 0, color: "#4d8dff" });
-    hacoltSeries.setData(data.hacolt_strip.map((p) => ({ time: p.time as Time, value: p.value, color: p.direction === "up" ? "#4d8dff" : "#7a4dc1" })));
+    if (selectedIndicators.includes("hacolt")) {
+      const hacoltSeries = hacoltChart.addHistogramSeries({ base: 0, color: "#4d8dff" });
+      hacoltSeries.setData(data.hacolt_strip.map((p) => ({ time: p.time as Time, value: p.value, color: p.direction === "up" ? "#4d8dff" : "#7a4dc1" })));
+    }
 
     let syncing = false;
     const syncFrom = (source: IChartApi, targets: IChartApi[]) => {
@@ -89,7 +114,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       hacoChart.remove();
       hacoltChart.remove();
     };
-  }, [data, embedded]);
+  }, [data, embedded, selectedIndicators]);
 
   const summary = useMemo(() => data?.explanation, [data]);
 
@@ -111,6 +136,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       {error ? <ErrorState title="HACO unavailable" hint={error} /> : null}
 
       <Card title={embedded ? "HACO mini-module" : "Price pane + synced HACO/HACOLT strips"}>
+        <IndicatorSelector selected={selectedIndicators} onChange={onIndicatorChange} />
         <div ref={priceRef} />
         <div ref={hacoRef} style={{ marginTop: 6 }} />
         <div ref={hacoltRef} style={{ marginTop: 6 }} />

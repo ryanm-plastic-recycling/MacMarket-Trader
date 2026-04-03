@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { IndicatorSelector } from "@/components/charts/indicator-selector";
+import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { fetchHacoChart } from "@/lib/haco-api";
 
@@ -12,6 +14,7 @@ type Rec = { id: number; created_at: string; symbol: string; payload: any; recom
 
 const SORTABLE_COLUMNS = ["created_at", "symbol", "side", "setup", "approved", "expected_rr", "confidence", "catalyst"] as const;
 type SortColumn = (typeof SORTABLE_COLUMNS)[number];
+const STORAGE_KEY = "macmarket-indicators-recommendations";
 
 export default function Page() {
   const searchParams = useSearchParams();
@@ -29,6 +32,7 @@ export default function Page() {
   const [chartSource, setChartSource] = useState("unknown");
   const [chartError, setChartError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
 
   async function load() {
     setLoading(true);
@@ -113,6 +117,25 @@ export default function Page() {
     return clone;
   }, [rows, sortCol]);
 
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    try {
+      setSelectedIndicators(normalizeSelection(raw ? (JSON.parse(raw) as string[]) : []));
+    } catch {
+      setSelectedIndicators(normalizeSelection([]));
+    }
+  }, []);
+
+  function handleIndicatorChange(next: IndicatorId[]) {
+    const normalized = normalizeSelection(next);
+    setSelectedIndicators(normalized);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    }
+  }
+
   useEffect(() => {
     async function renderChart() {
       if (!chartRef.current || !selected) return;
@@ -129,6 +152,13 @@ export default function Page() {
       const chart = createChart(chartRef.current, { height: 280, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
       const candles: CandlestickData<Time>[] = payload.candles.slice(-90).map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
       chart.addCandlestickSeries().setData(candles);
+      const avgClose = candles.reduce((sum, c) => sum + Number(c.close), 0) / Math.max(1, candles.length);
+      if (selectedIndicators.includes("ema20")) {
+        chart.addLineSeries({ color: "#6ea8fe", lineWidth: 1 }).setData(candles.map((c) => ({ time: c.time, value: avgClose })));
+      }
+      if (selectedIndicators.includes("prior_day_levels") && candles.length > 1) {
+        chart.addLineSeries({ color: "#f7b267", lineWidth: 1, lineStyle: LineStyle.Dotted }).setData(candles.map((c) => ({ time: c.time, value: Number(candles[candles.length - 2].high) })));
+      }
       const invalidation = chart.addLineSeries({ color: "#ff8b8b", lineStyle: LineStyle.Dashed, lineWidth: 2 });
       const target = chart.addLineSeries({ color: "#7ee787", lineStyle: LineStyle.Dotted, lineWidth: 2 });
       const entry = chart.addLineSeries({ color: "#6ea8fe", lineWidth: 2 });
@@ -153,7 +183,7 @@ export default function Page() {
       setChartError("Unable to render chart overlay for selected recommendation. Workflow detail remains available.");
     });
     return () => cleanup?.();
-  }, [selected, showHaco]);
+  }, [selected, showHaco, selectedIndicators]);
 
   return (
     <section className="op-stack">
@@ -221,6 +251,8 @@ export default function Page() {
           <label><input type="checkbox" checked={showHaco} onChange={(e) => setShowHaco(e.target.checked)} /> show HACO overlay</label>
           <StatusBadge tone="neutral">{chartSource}</StatusBadge>
         </div>
+        <IndicatorSelector selected={selectedIndicators} onChange={handleIndicatorChange} />
+        <div className="op-row">{selectedIndicators.map((item) => <StatusBadge key={item} tone="neutral">{item}</StatusBadge>)}</div>
         <div ref={chartRef} />
       </Card>
     </section>
