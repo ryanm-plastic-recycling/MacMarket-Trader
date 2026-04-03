@@ -24,14 +24,35 @@ function coerceMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+async function parsePayload(response: Response): Promise<unknown> {
+  if (response.status === 204) {
+    return null;
+  }
+
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
+  }
+
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType.includes("application/json")) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { detail: text };
+    }
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text };
+  }
+}
+
 export async function fetchNormalized<T>(input: RequestInfo | URL, init?: RequestInit, retryCount = 0): Promise<NormalizedApiResult<T>> {
   const response = await fetch(input, { cache: "no-store", credentials: "include", ...init });
-  let payload: unknown = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
+  const payload = await parsePayload(response);
 
   const body = payload as Record<string, unknown> | null;
   const dataCandidate = Array.isArray(payload)

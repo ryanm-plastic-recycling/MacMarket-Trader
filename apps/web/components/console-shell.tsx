@@ -24,7 +24,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       <aside className="op-aside">
         <div className="op-brand-block">
           <BrandLockup />
-          <p style={{ color: "#8da1b8", marginTop: 10, fontSize: 12 }}>Invite-only private alpha console</p>
+          <p className="op-brand-caption">Invite-only private alpha console</p>
         </div>
         <nav className="op-nav">
           {links.map(([href, label]) => (
@@ -33,7 +33,13 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <section className="op-main">
-        <header className="op-topbar"><span>Workflow: Strategy Workbench → Recommendations → Replay → Paper Orders</span><ThemeToggle /></header>
+        <header className="op-topbar">
+          <div className="op-topbar-brand">
+            <BrandLockup compact />
+            <span>Workflow: Strategy Workbench → Recommendations → Replay → Paper Orders</span>
+          </div>
+          <ThemeToggle />
+        </header>
         <main className="op-content">{children}</main>
       </section>
     </div>

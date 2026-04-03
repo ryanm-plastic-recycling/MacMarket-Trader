@@ -19,7 +19,7 @@ const STORAGE_KEY = "macmarket-indicators-recommendations";
 const PROVIDER_BLOCKED_HINT = "Configured provider unavailable. Recommendations/Replay/Orders are blocked from silently falling back. For local demo only, enable WORKFLOW_DEMO_FALLBACK=true in backend env.";
 
 export default function Page() {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
   const chartRef = useRef<HTMLDivElement | null>(null);
@@ -46,7 +46,7 @@ export default function Page() {
     setLoading(true);
     setError(null);
     setFeedback({ state: "loading", message: "Loading recommendations…" });
-    const result = await fetchWorkflowApi<Rec>("/api/user/recommendations", undefined, { authMode: "token", getToken });
+    const result = await fetchWorkflowApi<Rec>("/api/user/recommendations");
     if (!result.ok) {
       if (result.authPending) {
         setError(null);
@@ -98,8 +98,7 @@ export default function Page() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: symbolInput.trim().toUpperCase(), event_text: eventText.trim() }),
-      },
-      { authMode: "token", getToken },
+      }
     );
     if (!result.ok) {
       if (result.authPending) {
