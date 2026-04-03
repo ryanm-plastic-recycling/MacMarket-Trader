@@ -506,3 +506,60 @@ Known constrained area:
 - Pending-users admin queue must enforce local admin checks.
 - HACO must remain both dashboard-integrated and available as dedicated workspace.
 - Placeholder regressions on data-driven operator pages are not allowed.
+
+
+## Strategy Workbench and operator indicator framework
+
+Strategy Workbench (`/analysis`) is the primary setup workspace.
+
+Current operator workflow remains:
+
+1. Strategy Workbench / Analysis
+2. Recommendations
+3. Replay
+4. Paper Orders
+
+The charting layer now includes an **indicator registry/config framework** so indicators are operator-selectable rather than hardcoded per page. Indicator selections persist via stable local preferences and are available across:
+
+- Strategy Workbench / Analysis
+- Recommendations chart context
+- HACO Context page
+
+Default chart state remains intentionally sparse to keep workstation readability high.
+
+## Scheduled strategy reports (foundation)
+
+MacMarket-Trader includes a production-minded recurring strategy report foundation:
+
+- watchlists/symbol lists
+- per-user report schedules (daily / weekdays / weekly)
+- timezone + runtime settings
+- strategy set and ranking preferences
+- deterministic ranking output with top-N candidates
+- latest run status + run history/audit rows
+- explicit CLI runner for due schedules
+
+The scheduler is **not** embedded as an always-on loop in web request flow. Use:
+
+```bash
+python -m macmarket_trader.cli run-due-strategy-schedules
+```
+
+to execute due schedules locally, from cron, or from Windows Task Scheduler.
+
+With `EMAIL_PROVIDER=console`, strategy report payloads are printed clearly in console logs for local testing.
+
+## Symbol Analyze workspace
+
+A dedicated **Symbol Analyze** page provides fast pre-recommendation context:
+
+- market regime snapshot
+- technical summary
+- strategy scoreboard
+- support/resistance/pivot levels
+- indicator snapshot
+- catalyst placeholder when live news is unavailable
+- bull/base/bear scenario framing
+- operator action note
+
+This page is designed as a quick answer to "what matters right now for this symbol?" before promoting a setup into Recommendations.

@@ -179,3 +179,10 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
   - cookie `macmarket-theme` (SSR-safe initial render), and
   - localStorage `macmarket-theme` (client preference continuity).
 - Root HTML `data-theme` is seeded server-side from cookie to avoid hydration mismatch.
+
+## Scheduled reports local run
+
+- Set `EMAIL_PROVIDER=console` in `.env`.
+- Create schedules from **Scheduled Reports** console page.
+- Trigger immediate run with "Run now" or execute `python -m macmarket_trader.cli run-due-strategy-schedules`.
+- Console output contains ranked payload sections (`top_candidates`, `watchlist_only`, `no_trade`).

@@ -122,3 +122,7 @@ Fail-closed runtime guardrail:
 
 - Admin users view presents current users with role, approval state, MFA, invite state, and last seen/last authenticated metadata.
 - Account page surfaces local role/approval truth, MFA state, sign-out action, and persisted theme preference.
+
+## Authorization source-of-truth reminder
+
+Scheduled report ownership is tied to local `app_users.id`. Local DB `approval_status` and `app_role` remain authoritative and are not overwritten from external auth claims.

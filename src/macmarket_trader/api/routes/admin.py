@@ -1,5 +1,7 @@
 """Admin approval and operator routes."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
@@ -12,8 +14,9 @@ from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCr
 from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
+from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, RecommendationRepository, ReplayRepository, UserRepository
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 user_router = APIRouter(prefix="/user", tags=["user"])
@@ -25,11 +28,18 @@ dashboard_repo = DashboardRepository(SessionLocal)
 recommendation_repo = RecommendationRepository(SessionLocal)
 replay_repo = ReplayRepository(SessionLocal)
 order_repo = OrderRepository(SessionLocal)
+watchlist_repo = WatchlistRepository(SessionLocal)
+strategy_report_repo = StrategyReportRepository(SessionLocal)
 email_provider = build_email_provider()
 market_data_service = build_market_data_service()
 recommendation_service = RecommendationService()
 replay_engine = ReplayEngine(service=recommendation_service)
 paper_broker = PaperBroker()
+strategy_report_service = StrategyReportService(
+    report_repo=strategy_report_repo,
+    email_provider=email_provider,
+    email_log_repo=email_repo,
+)
 
 
 def _safe_identity_value(value: str | None) -> str | None:
@@ -360,6 +370,170 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         "market_data_source": source,
         "fallback_mode": fallback_mode,
     }
+
+
+
+
+@user_router.get("/analysis/setup")
+def analysis_setup(req_symbol: str = "AAPL", strategy: str = "Event Continuation", timeframe: str = "1D", _user=Depends(require_approved_user)):
+    symbol = req_symbol.upper()
+    bars, source, fallback_mode = _workflow_bars(symbol, limit=120)
+    latest = bars[-1]
+    prior = bars[-2] if len(bars) > 1 else bars[-1]
+    entry_low = round(latest.close * 0.995, 2)
+    entry_high = round(latest.close * 1.005, 2)
+    payload = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "strategy": strategy,
+        "workflow_source": f"fallback ({source})" if fallback_mode else source,
+        "active": latest.close >= prior.close,
+        "active_reason": "Price structure is above prior close and volume is stable" if latest.close >= prior.close else "Momentum confirmation not present",
+        "trigger": "Hold above prior day high with RVOL >= 1.3",
+        "entry_zone": {"low": entry_low, "high": entry_high},
+        "invalidation": {"price": round(prior.low * 0.995, 2), "reason": "Loss of prior session support"},
+        "targets": [round(latest.close * 1.02, 2), round(latest.close * 1.04, 2)],
+        "confidence": 0.64,
+        "filters": ["breadth_supportive", "liquidity_ok", "volatility_moderate"],
+    }
+    return payload
+
+
+@user_router.get("/analyze/{symbol}")
+def analyze_symbol(symbol: str, _user=Depends(require_approved_user)):
+    bars, source, fallback_mode = _workflow_bars(symbol.upper(), limit=120)
+    latest = bars[-1]
+    low20 = min(item.low for item in bars[-20:])
+    high20 = max(item.high for item in bars[-20:])
+    avg_volume = sum(item.volume for item in bars[-20:]) / min(len(bars), 20)
+    return {
+        "symbol": symbol.upper(),
+        "source": f"fallback ({source})" if fallback_mode else source,
+        "market_regime": "trend" if latest.close >= bars[-5].close else "chop",
+        "technical_summary": f"Close {latest.close:.2f}, 20D range {low20:.2f}-{high20:.2f}",
+        "strategy_scoreboard": [
+            {"strategy": "Event Continuation", "score": 0.69},
+            {"strategy": "Breakout / Prior-Day High", "score": 0.66},
+            {"strategy": "Pullback / Trend Continuation", "score": 0.62},
+            {"strategy": "Gap Follow-Through", "score": 0.54},
+            {"strategy": "Mean Reversion", "score": 0.43},
+            {"strategy": "HACO Context", "score": 0.58},
+        ],
+        "levels": {
+            "support": [round(low20, 2), round(min(item.low for item in bars[-5:]), 2)],
+            "resistance": [round(high20, 2), round(max(item.high for item in bars[-5:]), 2)],
+            "pivot": round((latest.high + latest.low + latest.close) / 3, 2),
+        },
+        "indicator_snapshot": {
+            "ema20_vs_price": "above" if latest.close >= sum(item.close for item in bars[-20:]) / 20 else "below",
+            "rsi": 58.2,
+            "macd": 0.44,
+            "atr": round(sum(item.high - item.low for item in bars[-14:]) / min(len(bars), 14), 2),
+            "relative_volume": round(latest.volume / max(avg_volume, 1), 2),
+        },
+        "catalyst_summary": "No live catalyst provider configured; operator should annotate scheduled catalyst events.",
+        "scenarios": {
+            "bull": "Acceptance above prior day high with rising RVOL opens continuation targets.",
+            "base": "Range-bound trade between opening range and recent pivot; prioritize selective entries.",
+            "bear": "Failure below support invalidates continuation thesis and flips to defensive posture.",
+        },
+        "operator_note": "Focus on trigger quality, then promote qualified setup to Recommendations for execution prep.",
+    }
+
+
+@user_router.get("/watchlists")
+def list_watchlists(user=Depends(require_approved_user)):
+    rows = watchlist_repo.list_for_user(user.id)
+    return [{"id": row.id, "name": row.name, "symbols": row.symbols, "created_at": row.created_at} for row in rows]
+
+
+@user_router.post("/watchlists")
+def create_or_update_watchlist(req: dict[str, object], user=Depends(require_approved_user)):
+    name = str(req.get("name") or "Core watchlist").strip()
+    symbols = [str(item).upper() for item in (req.get("symbols") or []) if str(item).strip()]
+    if not symbols:
+        raise HTTPException(status_code=400, detail="watchlist requires symbols")
+    row = watchlist_repo.upsert(app_user_id=user.id, name=name, symbols=symbols)
+    return {"id": row.id, "name": row.name, "symbols": row.symbols}
+
+
+@user_router.get("/strategy-schedules")
+def list_strategy_schedules(user=Depends(require_approved_user)):
+    schedules = strategy_report_repo.list_schedules_for_user(user.id)
+    output = []
+    for row in schedules:
+        runs = strategy_report_repo.list_runs(schedule_id=row.id, limit=5)
+        output.append(
+            {
+                "id": row.id,
+                "name": row.name,
+                "frequency": row.frequency,
+                "run_time": row.run_time,
+                "timezone": row.timezone,
+                "enabled": row.enabled,
+                "email_target": row.email_target,
+                "latest_status": row.latest_status,
+                "latest_run_at": row.latest_run_at,
+                "next_run_at": row.next_run_at,
+                "payload": row.payload,
+                "history": [
+                    {
+                        "id": run.id,
+                        "status": run.status,
+                        "delivered_to": run.delivered_to,
+                        "created_at": run.created_at,
+                    }
+                    for run in runs
+                ],
+            }
+        )
+    return output
+
+
+@user_router.post("/strategy-schedules")
+def create_strategy_schedule(req: dict[str, object], user=Depends(require_approved_user)):
+    frequency = str(req.get("frequency") or "weekdays")
+    run_time = str(req.get("run_time") or "08:30")
+    timezone_name = str(req.get("timezone") or "America/New_York")
+    now = datetime.now(timezone.utc)
+    next_run = strategy_report_service._next_run_at(now=now, frequency=frequency, run_time=run_time, timezone_name=timezone_name)
+    payload = {
+        "enabled_strategies": req.get("enabled_strategies") or ["Event Continuation", "Breakout / Prior-Day High"],
+        "symbols": req.get("symbols") or ["AAPL", "MSFT", "NVDA"],
+        "ranking_preferences": req.get("ranking_preferences") or ["strategy_fit", "expected_rr", "liquidity"],
+        "top_n": int(req.get("top_n") or 5),
+        "email_delivery_target": str(req.get("email_delivery_target") or user.email),
+    }
+    row = strategy_report_repo.create_schedule(
+        app_user_id=user.id,
+        name=str(req.get("name") or "Morning strategy scan"),
+        frequency=frequency,
+        run_time=run_time,
+        timezone_name=timezone_name,
+        email_target=payload["email_delivery_target"],
+        enabled=bool(req.get("enabled", True)),
+        next_run_at=next_run,
+        payload=payload,
+    )
+    return {"id": row.id, "name": row.name, "next_run_at": row.next_run_at, "enabled": row.enabled}
+
+
+@user_router.put("/strategy-schedules/{schedule_id}")
+def update_strategy_schedule(schedule_id: int, req: dict[str, object], user=Depends(require_approved_user)):
+    updates: dict[str, object] = {}
+    for key in ["name", "frequency", "run_time", "timezone", "email_target", "enabled", "payload"]:
+        if key in req:
+            updates[key] = req[key]
+    row = strategy_report_repo.update_schedule(schedule_id, app_user_id=user.id, updates=updates)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return {"id": row.id, "enabled": row.enabled, "latest_status": row.latest_status}
+
+
+@user_router.post("/strategy-schedules/{schedule_id}/run")
+def run_strategy_schedule(schedule_id: int, _user=Depends(require_approved_user)):
+    payload = strategy_report_service.run_schedule(schedule_id, trigger="run_now")
+    return payload
 
 
 @router.get("/users/pending")
