@@ -376,3 +376,48 @@ def test_admin_users_listing_returns_current_users() -> None:
     users = resp.json()
     assert isinstance(users, list)
     assert any(item['email'] == 'user@example.com' for item in users)
+
+
+def test_user_me_returns_real_email_after_duplicate_identity_reconciliation(monkeypatch) -> None:
+    from macmarket_trader.api.deps import auth as auth_deps
+
+    with SessionLocal() as session:
+        session.add(
+            AppUserModel(
+                external_auth_user_id='clerk_split_identity',
+                email='{{user.primary_email_address.email_address}}',
+                display_name='{{user.first_name}}',
+                approval_status='pending',
+                app_role='user',
+                mfa_enabled=False,
+            )
+        )
+        session.add(
+            AppUserModel(
+                external_auth_user_id='invited::split.identity@example.com',
+                email='split.identity@example.com',
+                display_name='Split Identity',
+                approval_status='approved',
+                app_role='admin',
+                mfa_enabled=True,
+            )
+        )
+        session.commit()
+
+    monkeypatch.setattr(
+        auth_deps._auth_provider,
+        'verify_token',
+        lambda _token: {'sub': 'clerk_split_identity', 'email': 'split.identity@example.com', 'name': 'Split Identity', 'mfa': True},
+    )
+    resp = client.get('/user/me', headers={'Authorization': 'Bearer split-token'})
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['email'] == 'split.identity@example.com'
+    assert payload['identity_warning'] is None
+    assert payload['approval_status'] == 'approved'
+    assert payload['app_role'] == 'admin'
+
+    with SessionLocal() as session:
+        rows = list(session.execute(select(AppUserModel).where(AppUserModel.email == 'split.identity@example.com')).scalars())
+    assert len(rows) == 1

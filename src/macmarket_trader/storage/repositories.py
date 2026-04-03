@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from macmarket_trader.domain.enums import AppRole, ApprovalStatus
@@ -236,6 +236,195 @@ class UserRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
+    @staticmethod
+    def _normalize_identity(value: str) -> str:
+        normalized = value.strip()
+        if normalized.startswith("{{") and normalized.endswith("}}"):
+            return ""
+        return normalized
+
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        return cls._normalize_identity(value).lower()
+
+    @classmethod
+    def _invite_external_id_for_email(cls, email: str) -> str:
+        normalized_email = cls._normalize_email(email)
+        return f"invited::{normalized_email}" if normalized_email else ""
+
+    @staticmethod
+    def _approval_rank(status: str) -> int:
+        if status == ApprovalStatus.APPROVED.value:
+            return 2
+        if status == ApprovalStatus.PENDING.value:
+            return 1
+        return 0
+
+    @staticmethod
+    def _role_rank(role: str) -> int:
+        if role == AppRole.ADMIN.value:
+            return 1
+        return 0
+
+    @classmethod
+    def _is_placeholder_display_name(cls, value: str, *, email: str) -> bool:
+        normalized = cls._normalize_identity(value).lower()
+        if not normalized:
+            return True
+        email_local = email.split("@", 1)[0] if "@" in email else email
+        return normalized in {"identity pending", "pending", "unknown", "user", email_local.lower()}
+
+    def _select_canonical_user(
+        self,
+        *,
+        candidates: list[AppUserModel],
+        external_auth_user_id: str,
+        normalized_email: str,
+    ) -> AppUserModel:
+        invite_external_id = self._invite_external_id_for_email(normalized_email)
+
+        def _priority(user: AppUserModel) -> tuple[int, int, int]:
+            if normalized_email and user.email == normalized_email:
+                id_priority = 0
+            elif user.external_auth_user_id == external_auth_user_id:
+                id_priority = 1
+            elif invite_external_id and user.external_auth_user_id == invite_external_id:
+                id_priority = 2
+            else:
+                id_priority = 3
+            auth_priority = -self._approval_rank(user.approval_status) - self._role_rank(user.app_role)
+            return (id_priority, auth_priority, user.id)
+
+        return min(candidates, key=_priority)
+
+    def _merge_users(
+        self,
+        *,
+        session: Session,
+        candidates: list[AppUserModel],
+        external_auth_user_id: str,
+        normalized_email: str,
+        normalized_display_name: str,
+        mfa_enabled: bool,
+    ) -> AppUserModel:
+        canonical = self._select_canonical_user(
+            candidates=candidates,
+            external_auth_user_id=external_auth_user_id,
+            normalized_email=normalized_email,
+        )
+        duplicates = [row for row in candidates if row.id != canonical.id]
+
+        for duplicate in duplicates:
+            if duplicate.external_auth_user_id == external_auth_user_id:
+                duplicate.external_auth_user_id = f"retired::{duplicate.id}::{uuid4().hex[:8]}"
+            if normalized_email and duplicate.email == normalized_email:
+                duplicate.email = f"retired+{duplicate.id}+{normalized_email}"
+
+        session.flush()
+
+        canonical.external_auth_user_id = external_auth_user_id
+        if normalized_email:
+            canonical.email = normalized_email
+
+        approved_row = max(candidates, key=lambda row: self._approval_rank(row.approval_status))
+        canonical.approval_status = approved_row.approval_status
+        canonical.approved_at = approved_row.approved_at
+        canonical.approved_by = approved_row.approved_by
+
+        role_row = max(candidates, key=lambda row: self._role_rank(row.app_role))
+        canonical.app_role = role_row.app_role
+
+        canonical.mfa_enabled = any(row.mfa_enabled for row in candidates) or mfa_enabled
+
+        if normalized_display_name:
+            canonical.display_name = normalized_display_name
+        else:
+            preferred_name = next(
+                (
+                    row.display_name
+                    for row in candidates
+                    if not self._is_placeholder_display_name(row.display_name, email=normalized_email or row.email)
+                ),
+                "",
+            )
+            if preferred_name:
+                canonical.display_name = preferred_name
+            elif normalized_email:
+                canonical.display_name = normalized_email.split("@")[0]
+
+        for duplicate in duplicates:
+            session.query(UserApprovalRequestModel).filter(UserApprovalRequestModel.app_user_id == duplicate.id).update(
+                {UserApprovalRequestModel.app_user_id: canonical.id}
+            )
+            session.query(WatchlistModel).filter(WatchlistModel.app_user_id == duplicate.id).update(
+                {WatchlistModel.app_user_id: canonical.id}
+            )
+            session.query(StrategyReportScheduleModel).filter(StrategyReportScheduleModel.app_user_id == duplicate.id).update(
+                {StrategyReportScheduleModel.app_user_id: canonical.id}
+            )
+            session.query(EmailDeliveryLogModel).filter(EmailDeliveryLogModel.app_user_id == duplicate.id).update(
+                {EmailDeliveryLogModel.app_user_id: canonical.id}
+            )
+            session.delete(duplicate)
+
+        session.flush()
+        return canonical
+
+    def reconcile_identity_duplicates(self, *, external_auth_user_id: str, email: str) -> AppUserModel | None:
+        normalized_email = self._normalize_email(email)
+        if not external_auth_user_id.strip() and not normalized_email:
+            return None
+        invite_external_id = self._invite_external_id_for_email(normalized_email)
+        with self.session_factory() as session:
+            clauses = [AppUserModel.external_auth_user_id == external_auth_user_id.strip()]
+            if normalized_email:
+                clauses.append(AppUserModel.email == normalized_email)
+            if invite_external_id:
+                clauses.append(AppUserModel.external_auth_user_id == invite_external_id)
+            candidates = list(session.execute(select(AppUserModel).where(or_(*clauses))).scalars())
+            if not candidates:
+                return None
+            merged = self._merge_users(
+                session=session,
+                candidates=candidates,
+                external_auth_user_id=external_auth_user_id.strip(),
+                normalized_email=normalized_email,
+                normalized_display_name="",
+                mfa_enabled=False,
+            )
+            session.commit()
+            session.refresh(merged)
+            return merged
+
+    def reconcile_all_duplicate_users(self) -> int:
+        merged_count = 0
+        with self.session_factory() as session:
+            users = list(session.execute(select(AppUserModel)).scalars())
+            by_email: dict[str, list[AppUserModel]] = {}
+            for user in users:
+                normalized_email = self._normalize_email(user.email)
+                if not normalized_email:
+                    continue
+                by_email.setdefault(normalized_email, []).append(user)
+            for email, rows in by_email.items():
+                if len(rows) < 2:
+                    continue
+                canonical_external_id = next(
+                    (row.external_auth_user_id for row in rows if not row.external_auth_user_id.startswith("invited::")),
+                    rows[0].external_auth_user_id,
+                )
+                self._merge_users(
+                    session=session,
+                    candidates=rows,
+                    external_auth_user_id=canonical_external_id,
+                    normalized_email=email,
+                    normalized_display_name="",
+                    mfa_enabled=any(row.mfa_enabled for row in rows),
+                )
+                merged_count += len(rows) - 1
+            session.commit()
+        return merged_count
+
     def upsert_from_auth(
         self,
         external_auth_user_id: str,
@@ -243,23 +432,21 @@ class UserRepository:
         display_name: str,
         mfa_enabled: bool = False,
     ) -> AppUserModel:
-        def _normalize_identity(value: str) -> str:
-            normalized = value.strip()
-            if normalized.startswith("{{") and normalized.endswith("}}"):
-                return ""
-            return normalized
-
         with self.session_factory() as session:
-            user = session.execute(
-                select(AppUserModel).where(AppUserModel.external_auth_user_id == external_auth_user_id)
-            ).scalar_one_or_none()
-            normalized_email = _normalize_identity(email).lower()
-            normalized_display_name = _normalize_identity(display_name)
-            if user is None:
-                if not normalized_email:
-                    raise ValueError("email required to create local app user")
-                user = session.execute(select(AppUserModel).where(AppUserModel.email == normalized_email)).scalar_one_or_none()
-            if user is None:
+            normalized_email = self._normalize_email(email)
+            normalized_display_name = self._normalize_identity(display_name)
+            invite_external_id = self._invite_external_id_for_email(normalized_email)
+            lookup_filters = [AppUserModel.external_auth_user_id == external_auth_user_id]
+            if normalized_email:
+                lookup_filters.append(AppUserModel.email == normalized_email)
+            if invite_external_id:
+                lookup_filters.append(AppUserModel.external_auth_user_id == invite_external_id)
+
+            users = list(session.execute(select(AppUserModel).where(or_(*lookup_filters))).scalars())
+            if not users and not normalized_email:
+                raise ValueError("email required to create local app user")
+
+            if not users:
                 safe_display_name = normalized_display_name if normalized_display_name else normalized_email.split("@")[0]
                 user = AppUserModel(
                     external_auth_user_id=external_auth_user_id,
@@ -273,18 +460,14 @@ class UserRepository:
                 session.flush()
                 session.add(UserApprovalRequestModel(app_user_id=user.id, status=ApprovalStatus.PENDING.value, note="signup"))
             else:
-                if user.external_auth_user_id != external_auth_user_id:
-                    if user.external_auth_user_id.startswith("invited::"):
-                        user.external_auth_user_id = external_auth_user_id
-                    else:
-                        raise ValueError("email already linked to another auth identity")
-                # Local authorization state is authoritative. Never overwrite
-                # approval/app_role from external auth claims during sync.
-                if normalized_email:
-                    user.email = normalized_email
-                if normalized_display_name:
-                    user.display_name = normalized_display_name
-                user.mfa_enabled = mfa_enabled
+                user = self._merge_users(
+                    session=session,
+                    candidates=users,
+                    external_auth_user_id=external_auth_user_id,
+                    normalized_email=normalized_email,
+                    normalized_display_name=normalized_display_name,
+                    mfa_enabled=mfa_enabled,
+                )
             session.commit()
             session.refresh(user)
             return user
