@@ -45,7 +45,7 @@ const STORAGE_KEY = "macmarket-indicators-analysis";
 const PROVIDER_BLOCKED_HINT = "Configured provider unavailable. Workflows are blocked from silently falling back. For local demo testing only, set WORKFLOW_DEMO_FALLBACK=true and restart backend.";
 
 export default function Page() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const router = useRouter();
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
@@ -95,7 +95,11 @@ export default function Page() {
     setFeedback({ state: "loading", message: "Loading strategy setup and chart context…" });
 
     try {
-      const setupResult = await fetchWorkflowApi<SetupPayload>(`/api/user/analysis/setup?req_symbol=${nextSymbol}&strategy=${encodeURIComponent(nextStrategy)}&timeframe=${nextTimeframe}`);
+      const setupResult = await fetchWorkflowApi<SetupPayload>(
+        `/api/user/analysis/setup?req_symbol=${nextSymbol}&strategy=${encodeURIComponent(nextStrategy)}&timeframe=${nextTimeframe}`,
+        undefined,
+        { authMode: "token", getToken },
+      );
       if (!setupResult.ok) {
         if (setupResult.authPending) {
           setWorkbenchState("auth_initializing");
@@ -188,11 +192,15 @@ export default function Page() {
 
   async function createRecommendation() {
     setFeedback({ state: "loading", message: "Creating recommendation from workbench setup…" });
-    const result = await fetchWorkflowApi<{ recommendation_id?: string; data?: { recommendation_id?: string } }>("/api/user/recommendations/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: appliedSymbol, event_text: `Workbench strategy: ${appliedStrategy}` }),
-    });
+    const result = await fetchWorkflowApi<{ recommendation_id?: string; data?: { recommendation_id?: string } }>(
+      "/api/user/recommendations/generate",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: appliedSymbol, event_text: `Workbench strategy: ${appliedStrategy}` }),
+      },
+      { authMode: "token", getToken },
+    );
     if (!result.ok) {
       if (result.status === 503) {
         setWorkbenchState("provider_unavailable");

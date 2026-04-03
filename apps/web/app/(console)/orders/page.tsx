@@ -10,7 +10,7 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -29,7 +29,7 @@ export default function Page() {
     }
     setBusy(true);
     setFeedback({ state: "loading", message: "Loading orders…" });
-    const result = await fetchWorkflowApi<Order>("/api/user/orders");
+    const result = await fetchWorkflowApi<Order>("/api/user/orders", undefined, { authMode: "token", getToken });
     if (!result.ok) {
       if (result.authPending) {
         setFeedback({ state: "loading", message: "Authentication initializing. Retrying shortly…" });
@@ -61,7 +61,11 @@ export default function Page() {
     setStatus("staging paper order...");
     setBusy(true);
     const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
-    const result = await fetchWorkflowApi<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>("/api/user/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL", recommendation_id: requestedRecommendation ?? undefined }) });
+    const result = await fetchWorkflowApi<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>(
+      "/api/user/orders",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL", recommendation_id: requestedRecommendation ?? undefined }) },
+      { authMode: "token", getToken },
+    );
     if (!result.ok) {
       if (result.authPending) {
         setFeedback({ state: "loading", message: "Authentication initializing. Retry in a moment." });
