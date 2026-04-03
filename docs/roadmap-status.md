@@ -205,6 +205,158 @@ The edge for MacMarket-Trader should be integration and explanation:
 
 ## What “good” should feel like
 A trader should open the app and within 60 seconds know:
+
+## Multi-asset expansion policy
+
+MacMarket-Trader remains **equities/ETFs-first** until Phase 1 trust and workflow hardening is complete.
+
+However, the architecture should now treat **market mode** as a first-class concept so future expansion is not bolted on later.
+
+Supported market modes:
+- `equities` — current U.S. large-cap equities and sector ETFs
+- `options` — structured options research and paper workflows
+- `crypto` — crypto spot, then selected futures / perpetual-style research workflows
+
+Design rule:
+- every analysis request,
+- every strategy selection,
+- every replay run,
+- every recommendation contract,
+- every scheduled report,
+- every paper-order intent,
+- and every audit trail entry
+
+must explicitly declare its `market_mode`.
+
+The system must never assume that all strategies are equity strategies.
+
+---
+
+## Phase placement
+
+### Current phase stance
+
+**Do not move active development focus away from Phase 1.**
+
+Options and crypto should begin as a **bounded foundation track started early**, not as a full product pivot during private-alpha hardening.
+
+### Add under “Phase 2 started early (kept bounded)”
+
+- Multi-asset market-mode foundation (`equities`, `options`, `crypto`) across request/response schemas, strategy registry, replay metadata, and audit payloads.
+- Strategy registry refactor so supported strategies are keyed by market mode instead of scattered hardcoded lists.
+- Analysis workbench market-mode selector with unsupported modes clearly labeled as research-preview / planned when full workflows are not yet enabled.
+- Initial options strategy specifications, including **iron condor**, with contract structures, risk definitions, and research-only recommendation contracts.
+- Initial crypto strategy specifications for spot and later futures/perpetual-style contexts, with explicit handling for 24/7 session logic, funding, basis, and liquidation-aware risk fields.
+
+---
+
+## New roadmap section: Future market-mode expansion
+
+### Options research mode
+
+Goal:
+Add a structured, explainable, research-first options workflow that uses deterministic strategy logic rather than “AI picks.”
+
+Initial scope:
+- defined-risk or fully specified multi-leg structures first
+- chain-aware analysis
+- implied volatility context
+- Greeks-aware scoring
+- paper-only recommendation and replay support before any execution ambitions
+
+Required data/logic concepts:
+- underlying symbol
+- expiration / DTE
+- strike selection rules
+- bid/ask and spread quality
+- implied volatility level and percentile/rank when supported
+- skew / term structure hooks
+- delta / gamma / theta / vega exposure
+- open interest and volume per leg
+- max profit / max loss / breakeven computation
+- assignment / early-exercise awareness where relevant
+- contract multiplier and fees
+
+Initial options strategy family:
+- **iron condor**
+- bull call debit spread
+- bear put debit spread
+- bear call credit spread
+- bull put credit spread
+
+#### Iron condor specification
+
+Research contract must include:
+- underlying symbol
+- expiration date / DTE
+- short put strike
+- long put strike
+- short call strike
+- long call strike
+- net credit
+- width of widest spread
+- max loss
+- lower breakeven
+- upper breakeven
+- target profit rule
+- stop / adjustment rule
+- volatility entry filter
+- event blocker flag (earnings, major macro, known catalyst)
+
+Eligibility rules should prefer:
+- range-bound underlying thesis
+- elevated implied volatility / premium selling environment
+- sufficient liquidity across all four legs
+- acceptable bid/ask width and open interest
+- no nearby catalyst that can invalidate the range thesis
+
+### Crypto research mode
+
+Goal:
+Add a crypto-native research track that respects 24/7 markets, venue fragmentation, leverage effects, and derivatives-specific behavior.
+
+Rollout order:
+1. crypto spot research
+2. crypto futures / perpetual-style research
+3. crypto paper-order support only after replay and audit parity are stable
+
+Required data/logic concepts:
+- venue / market identifier
+- spot vs futures vs perpetual-style instrument type
+- mark price vs index price where applicable
+- 24/7 session model and weekend handling
+- funding rate history and extremes
+- basis vs spot
+- open interest
+- liquidation / leverage stress context
+- depth / spread / slippage estimates
+- news / on-chain or venue-event hooks when available
+
+Initial crypto strategy family:
+- crypto breakout continuation
+- crypto pullback trend continuation
+- basis carry monitor
+- funding-extreme mean reversion monitor
+
+---
+
+## Acceptance criteria for the foundation pass
+
+A valid early implementation should:
+- keep current equities workflows working without regression
+- add a first-class `market_mode` field across the main domain contracts
+- centralize strategy definitions in a registry keyed by market mode
+- expose options and crypto in the Analysis UI without pretending unsupported execution exists
+- keep Recommendations / Replay / Orders honest about unsupported paths
+- update README and roadmap text so repo intent matches code direction
+- add tests proving the mode-aware registry and request contracts work
+
+A valid early implementation should **not**:
+- claim live options execution
+- claim live crypto execution
+- silently reuse equity sizing or replay logic for options/crypto
+- mix market modes in reports without explicit labels
+- introduce fake precision when required chain/venue data is absent
 - which symbols matter today
 - which strategy is active
 - which setups are worth trading
