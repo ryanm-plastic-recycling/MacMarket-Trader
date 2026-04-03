@@ -217,3 +217,15 @@
 - Do not ship charts with broken time axes or desynced strips.
 - Do not leave stale error banners visible after a successful refresh.
 - Do not let Recommendations, Replay, and Orders drift into disconnected mini-apps.
+
+- ## Roadmap discipline
+- Always refer work back to the product roadmap phases.
+- Unless explicitly told otherwise, assume the repo remains in **Phase 1 — Private alpha hardening** until the remaining Phase 1 gate items are truly complete.
+- Do not allow Phase 2 feature sprawl to undermine Phase 1 trust and workflow coherence.
+- When adding or modifying major features, update a roadmap status doc showing what is complete vs open for the current phase.
+- Preserve the product center:
+  - Strategy Workbench / Analysis
+  - Recommendations
+  - Replay
+  - Paper Orders
+- Treat Symbol Analyze, Scheduled Strategy Reports, and richer AI orchestration as Phase 2+ foundations unless they materially help Phase 1 workflow trust.
