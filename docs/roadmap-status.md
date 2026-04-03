@@ -109,6 +109,23 @@ Must-have:
 - Added backend tests for invite/Clerk merge, placeholder-email reconciliation, approved/admin preservation, duplicate-row retirement, `/user/me` real-email output, and idempotent repeated login.
 - Added one-time local/dev repair utility (`scripts/reconcile_duplicate_users.py`) for pre-existing duplicate rows.
 
+### 2026-04-03 market-mode foundation (started early, bounded this pass)
+
+Completed in this pass:
+- Added first-class domain typing for `market_mode`, `instrument_type`, and `trading_session_model` plus typed multi-asset contracts (instrument identity, options contract/structure context, crypto market context).
+- Added a centralized market-mode strategy registry and removed equity-only hardcoded strategy assumptions from analysis/analyze/schedule boundaries.
+- Added options/crypto analysis research-preview payload behavior, including explicit non-live metadata and Iron Condor structure preview details.
+- Added recommendation/replay guardrails so non-equity mode requests return explicit planned-preview responses instead of fake live success.
+- Added schedule payload mode-awareness (`market_mode`) and explicit blocking for non-equity schedule execution in current Phase 1.
+- Added analysis workbench market-mode selector + strategy filtering, with planned research preview labeling and guarded recommendation creation for non-equity modes.
+- Added tests for enums/schemas/contracts, strategy registry coverage, analysis API market-mode behavior, schedule mode blocking, and frontend strategy filtering helper.
+
+Still open from this track:
+- Options and crypto replay semantics are not yet mode-native (still intentionally blocked for live generation in Phase 1).
+- Options chain, IV surface/skew, and full Greeks provider integration remain later-phase items.
+- Crypto venue funding/basis/OI live data integration and liquidation-aware risk logic remain later-phase items.
+- Full options/crypto paper execution routing is still out of scope for Phase 1.
+
 ## Phase 1 open items
 
 - Add broader end-to-end UI tests for full in-session loop validation (Analysis -> Recommendations -> Replay -> Orders).
@@ -117,6 +134,7 @@ Must-have:
 - Tighten consistency checks so dashboard/replay/orders/recommendations source badges can be regression-tested together.
 - Continue replacing remaining ad-hoc inline styles on core pages with reusable operator-console components.
 - Complete final private-alpha operator runbook pass with screenshots/examples.
+- Keep options/crypto paths in explicit research-preview mode until mode-native replay + risk + paper workflow parity is implemented and tested.
 
 ### Phase 2 — Alpha differentiators
 Goal: become interesting enough that someone wants access.

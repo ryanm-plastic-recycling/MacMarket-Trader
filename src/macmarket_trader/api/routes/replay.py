@@ -1,6 +1,6 @@
 """Replay API route."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from macmarket_trader.api.deps.auth import require_approved_user
 from macmarket_trader.domain.schemas import ReplayRunRequest, ReplayRunResponse
@@ -13,4 +13,7 @@ replay_engine = ReplayEngine(service=RecommendationService())
 
 @router.post("/run", response_model=ReplayRunResponse)
 def run_replay(req: ReplayRunRequest, _user=Depends(require_approved_user)) -> ReplayRunResponse:
-    return replay_engine.run(req)
+    try:
+        return replay_engine.run(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

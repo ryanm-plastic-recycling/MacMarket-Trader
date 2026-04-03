@@ -31,6 +31,7 @@ def test_strategy_schedule_create_and_run_now() -> None:
             'frequency': 'weekdays',
             'run_time': '08:30',
             'timezone': 'America/New_York',
+            'market_mode': 'equities',
             'symbols': ['AAPL', 'MSFT'],
             'enabled_strategies': ['Event Continuation'],
             'top_n': 3,
@@ -49,6 +50,29 @@ def test_strategy_schedule_create_and_run_now() -> None:
     with SessionLocal() as session:
         run_row = session.execute(select(StrategyReportRunModel).where(StrategyReportRunModel.schedule_id == schedule_id)).scalar_one()
         assert run_row.status == 'sent'
+
+def test_strategy_schedule_non_equity_mode_blocks_run_cleanly() -> None:
+    _seed_and_approve_user()
+    create = client.post(
+        '/user/strategy-schedules',
+        headers={'Authorization': 'Bearer user-token'},
+        json={
+            'name': 'Options research scan',
+            'frequency': 'weekdays',
+            'run_time': '08:30',
+            'timezone': 'America/New_York',
+            'market_mode': 'options',
+            'symbols': ['SPY'],
+            'enabled_strategies': ['Iron Condor'],
+            'top_n': 3,
+        },
+    )
+    assert create.status_code == 200
+    schedule_id = create.json()['id']
+
+    run_now = client.post(f'/user/strategy-schedules/{schedule_id}/run', headers={'Authorization': 'Bearer user-token'})
+    assert run_now.status_code == 409
+    assert 'planned research preview' in run_now.json()['detail']
 
 
 def test_strategy_report_due_runner_selects_due_schedules() -> None:
@@ -91,3 +115,33 @@ def test_symbol_analyze_response_shape() -> None:
     assert 'market_regime' in payload
     assert 'strategy_scoreboard' in payload
     assert 'levels' in payload
+
+
+def test_analysis_setup_accepts_market_mode_and_returns_preview_for_options() -> None:
+    _seed_and_approve_user()
+    resp = client.get(
+        '/user/analysis/setup',
+        params={'req_symbol': 'AAPL', 'market_mode': 'options', 'strategy': 'Iron Condor'},
+        headers={'Authorization': 'Bearer user-token'},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['market_mode'] == 'options'
+    assert payload['status'] == 'planned_research_preview'
+    assert payload['execution_enabled'] is False
+    assert payload['option_structure']['type'] == 'iron_condor'
+
+
+def test_analysis_setup_returns_preview_for_crypto() -> None:
+    _seed_and_approve_user()
+    resp = client.get(
+        '/user/analysis/setup',
+        params={'req_symbol': 'BTCUSD', 'market_mode': 'crypto', 'strategy': 'Crypto Spot Breakout'},
+        headers={'Authorization': 'Bearer user-token'},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['market_mode'] == 'crypto'
+    assert payload['status'] == 'planned_research_preview'
+    assert payload['execution_enabled'] is False
+    assert 'crypto_context' in payload

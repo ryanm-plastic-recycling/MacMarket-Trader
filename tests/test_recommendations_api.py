@@ -43,11 +43,12 @@ def test_recommendations_generate_contract() -> None:
     response = client.post(
         "/recommendations/generate",
         headers={'Authorization': 'Bearer user-token'},
-        json={"symbol": "AAPL", "event_text": "Earnings beat with strong guidance", "bars": _bars()},
+        json={"symbol": "AAPL", "market_mode": "equities", "event_text": "Earnings beat with strong guidance", "bars": _bars()},
     )
     assert response.status_code == 200
     payload = response.json()
     assert payload["thesis"]
+    assert payload["market_mode"] == "equities"
     assert payload["catalyst"]["type"]
     assert payload["entry"]["zone_low"] < payload["targets"]["target_2"]
     assert payload["constraints"]["final_share_count"] >= payload["sizing"]["shares"]
@@ -97,3 +98,17 @@ def test_user_generation_blocks_hidden_fallback_when_provider_expected(monkeypat
     )
     assert response.status_code == 503
     assert "hidden demo fallback" in response.json()["detail"]
+
+
+def test_user_generation_non_equity_returns_planned_preview_error() -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+    response = client.post(
+        "/user/recommendations/generate",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbol": "AAPL", "market_mode": "options", "event_text": "Iron condor research setup"},
+    )
+    assert response.status_code == 409
+    payload = response.json()["detail"]
+    assert payload["status"] == "planned_research_preview"
+    assert payload["market_mode"] == "options"

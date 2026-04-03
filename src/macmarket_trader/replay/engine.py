@@ -38,6 +38,7 @@ class ReplayEngine:
                 event_text=text,
                 event=None,
                 portfolio=portfolio_state,
+                market_mode=req.market_mode,
             )
             recs.append(rec)
             if rec.approved:
@@ -85,6 +86,7 @@ class ReplayEngine:
             ending_open_notional=portfolio_state.open_positions_notional,
         )
         return ReplayRunResponse(
+            market_mode=req.market_mode,
             recommendations=recs,
             orders=orders,
             fills=fills,

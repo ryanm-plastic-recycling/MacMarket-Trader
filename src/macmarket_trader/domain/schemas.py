@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from macmarket_trader.domain.enums import AppRole, ApprovalStatus, Direction, EventSourceType, OrderStatus, RegimeType, SetupType
+from macmarket_trader.domain.enums import AppRole, ApprovalStatus, Direction, EventSourceType, InstrumentType, MarketMode, OrderStatus, RegimeType, SetupType, TradingSessionModel
 from macmarket_trader.domain.time import utc_now
 
 
@@ -222,6 +223,7 @@ class ConstraintReport(BaseModel):
 
 class TradeRecommendation(BaseModel):
     outcome: str = "approved"
+    market_mode: MarketMode = MarketMode.EQUITIES
     recommendation_id: str = Field(default_factory=lambda: f"rec_{uuid4().hex[:12]}")
     symbol: str
     side: Direction
@@ -277,8 +279,63 @@ class AuditRecord(BaseModel):
     payload: dict[str, object]
 
 
+class InstrumentIdentity(BaseModel):
+    market_mode: MarketMode = MarketMode.EQUITIES
+    instrument_type: InstrumentType = InstrumentType.EQUITY
+    symbol: str
+    underlying_symbol: str | None = None
+    quote_currency: str = "USD"
+    trading_session_model: TradingSessionModel = TradingSessionModel.US_EQUITIES_REGULAR_HOURS
+
+
+class OptionContractContext(BaseModel):
+    expiration: date
+    strike: float
+    option_right: Literal["call", "put"]
+    multiplier: int = 100
+    days_to_expiration: int
+    implied_volatility: float | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    open_interest: int | None = None
+    bid: float | None = None
+    ask: float | None = None
+
+
+class OptionStructureLeg(BaseModel):
+    action: Literal["buy", "sell"]
+    option_right: Literal["call", "put"]
+    strike: float
+    quantity: int = 1
+
+
+class OptionStructureContext(BaseModel):
+    strategy_id: str
+    strategy_legs: list[OptionStructureLeg] = Field(default_factory=list)
+    net_debit_credit: float
+    max_profit: float
+    max_loss: float
+    breakeven_low: float | None = None
+    breakeven_high: float | None = None
+
+
+class CryptoMarketContext(BaseModel):
+    venue: str
+    quote_currency: str = "USD"
+    mark_price: float | None = None
+    index_price: float | None = None
+    funding_rate: float | None = None
+    basis: float | None = None
+    open_interest: float | None = None
+    liquidation_buffer_pct: float | None = None
+
+
 class RecommendationGenerateRequest(BaseModel):
     symbol: str
+    market_mode: MarketMode = MarketMode.EQUITIES
+    strategy_id: str | None = None
     event_text: str | None = None
     event: NewsEvent | MacroEvent | CorporateEvent | None = None
     bars: list[Bar]
@@ -287,6 +344,7 @@ class RecommendationGenerateRequest(BaseModel):
 
 class ReplayRunRequest(BaseModel):
     symbol: str
+    market_mode: MarketMode = MarketMode.EQUITIES
     event_texts: list[str]
     bars: list[Bar]
     portfolio: PortfolioSnapshot | None = None
@@ -324,6 +382,7 @@ class InviteCreateRequest(BaseModel):
     display_name: str | None = None
 
 class ReplayRunResponse(BaseModel):
+    market_mode: MarketMode = MarketMode.EQUITIES
     recommendations: list[TradeRecommendation]
     orders: list[OrderRecord]
     fills: list[FillRecord]

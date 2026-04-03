@@ -8,13 +8,14 @@ from macmarket_trader.api.deps.auth import current_user, require_admin, require_
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
-from macmarket_trader.domain.enums import ApprovalStatus
+from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
 from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest
 from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
 from macmarket_trader.strategy_reports import StrategyReportService
+from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
 
@@ -198,14 +199,26 @@ def list_recommendations(_user=Depends(require_approved_user)):
 def generate_recommendations(req: dict[str, object], _user=Depends(require_approved_user)):
     symbol = str(req.get("symbol") or "AAPL").upper()
     event_text = str(req.get("event_text") or "Operator-triggered deterministic refresh run.")
+    market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
     bars, source, fallback_mode = _workflow_bars(symbol)
-    rec = recommendation_service.generate(
-        symbol=symbol,
-        bars=bars,
-        event_text=event_text,
-        event=None,
-        portfolio=PortfolioSnapshot(),
-    )
+    try:
+        rec = recommendation_service.generate(
+            symbol=symbol,
+            bars=bars,
+            event_text=event_text,
+            event=None,
+            portfolio=PortfolioSnapshot(),
+            market_mode=market_mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "planned_research_preview",
+                "market_mode": market_mode.value,
+                "message": str(exc),
+            },
+        ) from exc
     recommendation_repo.attach_workflow_metadata(
         rec.recommendation_id,
         market_data_source=source,
@@ -216,6 +229,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         "symbol": rec.symbol,
         "approved": rec.approved,
         "outcome": rec.outcome,
+        "market_mode": rec.market_mode.value,
         "market_data_source": source,
         "fallback_mode": fallback_mode,
     }
@@ -283,6 +297,7 @@ def replay_runs(_user=Depends(require_approved_user)):
 @user_router.post("/replay-runs")
 def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)):
     symbol = str(req.get("symbol") or "AAPL").upper()
+    market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
     event_texts = req.get("event_texts")
     if not isinstance(event_texts, list) or not event_texts:
         event_texts = [
@@ -290,20 +305,32 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
             "Deterministic follow-through check for replay flow.",
         ]
     bars, source, fallback_mode = _workflow_bars(symbol)
-    response = replay_engine.run(
-        ReplayRunRequest(
-            symbol=symbol,
-            event_texts=[str(text) for text in event_texts],
-            bars=bars,
-            portfolio=PortfolioSnapshot(),
+    try:
+        response = replay_engine.run(
+            ReplayRunRequest(
+                symbol=symbol,
+                market_mode=market_mode,
+                event_texts=[str(text) for text in event_texts],
+                bars=bars,
+                portfolio=PortfolioSnapshot(),
+            )
         )
-    )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "planned_research_preview",
+                "market_mode": market_mode.value,
+                "message": str(exc),
+            },
+        ) from exc
     for rec in response.recommendations:
         recommendation_repo.attach_workflow_metadata(rec.recommendation_id, market_data_source=source, fallback_mode=fallback_mode)
     latest_run = replay_repo.list_runs(limit=1)
     return {
         "id": latest_run[0].id if latest_run else None,
         "symbol": symbol,
+        "market_mode": market_mode.value,
         "summary_metrics": response.summary_metrics.model_dump(mode="json"),
         "market_data_source": source,
         "fallback_mode": fallback_mode,
@@ -376,8 +403,18 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
 
 
 @user_router.get("/analysis/setup")
-def analysis_setup(req_symbol: str = "AAPL", strategy: str = "Event Continuation", timeframe: str = "1D", _user=Depends(require_approved_user)):
+def analysis_setup(
+    req_symbol: str = "AAPL",
+    strategy: str = "Event Continuation",
+    timeframe: str = "1D",
+    market_mode: MarketMode = MarketMode.EQUITIES,
+    _user=Depends(require_approved_user),
+):
     symbol = req_symbol.upper()
+    strategies = list_strategies(market_mode)
+    strategy_entry = get_strategy_by_display_name(strategy, market_mode=market_mode) or (strategies[0] if strategies else None)
+    if strategy_entry is None:
+        raise HTTPException(status_code=400, detail="No strategies configured for selected market mode")
     bars, source, fallback_mode = _workflow_bars(symbol, limit=120)
     latest = bars[-1]
     prior = bars[-2] if len(bars) > 1 else bars[-1]
@@ -385,8 +422,10 @@ def analysis_setup(req_symbol: str = "AAPL", strategy: str = "Event Continuation
     entry_high = round(latest.close * 1.005, 2)
     payload = {
         "symbol": symbol,
+        "market_mode": market_mode.value,
         "timeframe": timeframe,
-        "strategy": strategy,
+        "strategy": strategy_entry.display_name,
+        "strategy_metadata": strategy_entry.model_dump(mode="json"),
         "workflow_source": f"fallback ({source})" if fallback_mode else source,
         "active": latest.close >= prior.close,
         "active_reason": "Price structure is above prior close and volume is stable" if latest.close >= prior.close else "Momentum confirmation not present",
@@ -397,11 +436,55 @@ def analysis_setup(req_symbol: str = "AAPL", strategy: str = "Event Continuation
         "confidence": 0.64,
         "filters": ["breadth_supportive", "liquidity_ok", "volatility_moderate"],
     }
+    if market_mode != MarketMode.EQUITIES:
+        payload.update(
+            {
+                "status": "planned_research_preview",
+                "execution_enabled": False,
+                "operator_guidance": (
+                    "Mode is planned research preview only in Phase 1. "
+                    "Use setup notes and risk context; do not stage live recommendation generation."
+                ),
+                "required_data_inputs": strategy_entry.required_data_inputs,
+            }
+        )
+    if market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "iron_condor":
+        payload["option_structure"] = {
+            "type": "iron_condor",
+            "expiration": "2026-05-15",
+            "legs": [
+                {"action": "buy", "right": "put", "strike": 190.0, "label": "lower long put"},
+                {"action": "sell", "right": "put", "strike": 195.0, "label": "short put"},
+                {"action": "sell", "right": "call", "strike": 210.0, "label": "short call"},
+                {"action": "buy", "right": "call", "strike": 215.0, "label": "higher long call"},
+            ],
+            "net_credit": 1.35,
+            "max_profit": 135.0,
+            "max_loss": 365.0,
+            "breakeven_low": 193.65,
+            "breakeven_high": 211.35,
+            "dte": 42,
+            "iv_snapshot": 0.24,
+            "theta_context": 0.07,
+            "vega_context": -0.11,
+            "event_blockers": ["Avoid binary events inside 7 DTE window", "Review earnings/macro event calendar"],
+        }
+    if market_mode == MarketMode.CRYPTO:
+        payload["crypto_context"] = {
+            "venue": "preview_unwired",
+            "quote_currency": "USD",
+            "mark_price": round(latest.close, 2),
+            "index_price": round(latest.close * 0.998, 2),
+            "funding_rate": "preview_only_not_live",
+            "basis": "preview_only_not_live",
+            "open_interest": "preview_only_not_live",
+            "liquidation_buffer_pct": 6.5,
+        }
     return payload
 
 
 @user_router.get("/analyze/{symbol}")
-def analyze_symbol(symbol: str, _user=Depends(require_approved_user)):
+def analyze_symbol(symbol: str, market_mode: MarketMode = MarketMode.EQUITIES, _user=Depends(require_approved_user)):
     bars, source, fallback_mode = _workflow_bars(symbol.upper(), limit=120)
     latest = bars[-1]
     low20 = min(item.low for item in bars[-20:])
@@ -409,16 +492,13 @@ def analyze_symbol(symbol: str, _user=Depends(require_approved_user)):
     avg_volume = sum(item.volume for item in bars[-20:]) / min(len(bars), 20)
     return {
         "symbol": symbol.upper(),
+        "market_mode": market_mode.value,
         "source": f"fallback ({source})" if fallback_mode else source,
         "market_regime": "trend" if latest.close >= bars[-5].close else "chop",
         "technical_summary": f"Close {latest.close:.2f}, 20D range {low20:.2f}-{high20:.2f}",
         "strategy_scoreboard": [
-            {"strategy": "Event Continuation", "score": 0.69},
-            {"strategy": "Breakout / Prior-Day High", "score": 0.66},
-            {"strategy": "Pullback / Trend Continuation", "score": 0.62},
-            {"strategy": "Gap Follow-Through", "score": 0.54},
-            {"strategy": "Mean Reversion", "score": 0.43},
-            {"strategy": "HACO Context", "score": 0.58},
+            {"strategy": entry.display_name, "score": round(0.70 - (idx * 0.04), 2), "status": entry.status}
+            for idx, entry in enumerate(list_strategies(market_mode))
         ],
         "levels": {
             "support": [round(low20, 2), round(min(item.low for item in bars[-5:]), 2)],
@@ -439,6 +519,8 @@ def analyze_symbol(symbol: str, _user=Depends(require_approved_user)):
             "bear": "Failure below support invalidates continuation thesis and flips to defensive posture.",
         },
         "operator_note": "Focus on trigger quality, then promote qualified setup to Recommendations for execution prep.",
+        "status": "live" if market_mode == MarketMode.EQUITIES else "planned_research_preview",
+        "execution_enabled": market_mode == MarketMode.EQUITIES,
     }
 
 
@@ -456,6 +538,13 @@ def create_or_update_watchlist(req: dict[str, object], user=Depends(require_appr
         raise HTTPException(status_code=400, detail="watchlist requires symbols")
     row = watchlist_repo.upsert(app_user_id=user.id, name=name, symbols=symbols)
     return {"id": row.id, "name": row.name, "symbols": row.symbols}
+
+
+
+
+@user_router.get("/strategy-registry")
+def strategy_registry(market_mode: MarketMode | None = None, _user=Depends(require_approved_user)):
+    return [entry.model_dump(mode="json") for entry in list_strategies(market_mode)]
 
 
 @user_router.get("/strategy-schedules")
@@ -498,8 +587,11 @@ def create_strategy_schedule(req: dict[str, object], user=Depends(require_approv
     timezone_name = str(req.get("timezone") or "America/New_York")
     now = datetime.now(timezone.utc)
     next_run = strategy_report_service._next_run_at(now=now, frequency=frequency, run_time=run_time, timezone_name=timezone_name)
+    market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
+    default_strategies = [entry.display_name for entry in list_strategies(market_mode)[:3]]
     payload = {
-        "enabled_strategies": req.get("enabled_strategies") or ["Event Continuation", "Breakout / Prior-Day High"],
+        "market_mode": market_mode.value,
+        "enabled_strategies": req.get("enabled_strategies") or default_strategies,
         "symbols": req.get("symbols") or ["AAPL", "MSFT", "NVDA"],
         "ranking_preferences": req.get("ranking_preferences") or ["strategy_fit", "expected_rr", "liquidity"],
         "top_n": int(req.get("top_n") or 5),
@@ -533,7 +625,10 @@ def update_strategy_schedule(schedule_id: int, req: dict[str, object], user=Depe
 
 @user_router.post("/strategy-schedules/{schedule_id}/run")
 def run_strategy_schedule(schedule_id: int, _user=Depends(require_approved_user)):
-    payload = strategy_report_service.run_schedule(schedule_id, trigger="run_now")
+    try:
+        payload = strategy_report_service.run_schedule(schedule_id, trigger="run_now")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return payload
 
 
