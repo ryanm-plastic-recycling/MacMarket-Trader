@@ -81,3 +81,4 @@ release/
 # =========================
 .DS_Store
 fix_admin.py
+macmarket_trader.db-journal
