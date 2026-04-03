@@ -152,6 +152,7 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 ## Auth readiness and inline operator feedback (2026-04 update)
 
 - Same-origin workflow calls now prioritize server-side session auth (cookie/session) and no longer depend on client token readiness for normal operator flows.
+- When Clerk session is present but token materialization is still initializing, same-origin routes return an auth-initializing response and workflow pages remain in loading state instead of surfacing a stale 401/Invalid token banner.
 - If session is unavailable, pages show inline retry-capable error feedback and clear stale banners on first subsequent successful fetch.
 - Replay/Orders/Recommendations/Admin actions now use non-blocking inline feedback states:
   - loading (in-progress),
@@ -186,3 +187,8 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 - Create schedules from **Scheduled Reports** console page.
 - Trigger immediate run with "Run now" or execute `python -m macmarket_trader.cli run-due-strategy-schedules`.
 - Console output contains ranked payload sections (`top_candidates`, `watchlist_only`, `no_trade`).
+
+## Roadmap status tracking
+
+- Current alpha roadmap status is tracked in `docs/roadmap-status.md`.
+- Treat the current milestone as **Phase 1 — Private alpha hardening** until open Phase 1 items there are closed.

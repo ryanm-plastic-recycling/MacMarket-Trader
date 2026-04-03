@@ -449,6 +449,11 @@ The codebase should define typed contracts for:
 - provider health
 - HACO chart workspace
 
+## Current roadmap status and alpha milestone
+
+- Detailed status tracking lives in `docs/roadmap-status.md`.
+- Current project milestone remains **Phase 1 — Private alpha hardening** with focus on workflow trust, auth stability, source coherence, and operator-grade guidance.
+
 ## Success criteria for v1
 
 MacMarket-Trader v1 is successful only if it can do all of the following:

@@ -103,6 +103,7 @@ Fail-closed runtime guardrail:
 
 - Protected same-origin operator fetches rely on server-side session auth resolution first (`auth()` from route handlers).
 - Client bearer token paths are now fallback-only for special cases, not the default workflow mechanism.
+- If a signed-in session is still initializing token resolution, workflow routes return an auth-initializing response and UI keeps an inline loading state (instead of stale intermittent 401 banners).
 - UI pages clear stale auth/error banners immediately after first successful fetch and keep loading/success/error feedback inline with retry controls.
 
 ## Provider vs fallback truth policy in operator workflows
