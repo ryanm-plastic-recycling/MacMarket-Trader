@@ -92,6 +92,12 @@ Must-have:
 - Core workflow tests now cover first-class indicator rendering output (EMA 20/50/200, VWAP, Bollinger, prior-day levels, volume, RSI) in chart overlay plumbing.
 - App favicon now uses the square MacMarket icon asset (`app/icon.svg`) while sidebar lockup branding is scaled for operator-console readability.
 
+### 2026-04-03 stability follow-up (this pass)
+
+- Cleared stale workflow error banners earlier in the request lifecycle on Recommendations, Replay, and Orders so prior auth/provider errors do not linger after a valid in-session refresh path.
+- Added lightweight auto-clearing success feedback timers on Analysis, Recommendations, Replay, and Orders to keep operator pages informative without leaving persistent stale status chips after successful actions.
+- Kept work bounded to Phase 1 trust/stability hardening; broader end-to-end workflow coverage remains open below.
+
 ## Phase 1 open items
 
 - Add broader end-to-end UI tests for full in-session loop validation (Analysis -> Recommendations -> Replay -> Orders).

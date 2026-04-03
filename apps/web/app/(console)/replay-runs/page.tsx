@@ -32,10 +32,14 @@ export default function Page() {
       return;
     }
     setBusy(true);
+    setError(null);
+    setStepError(null);
     setFeedback({ state: "loading", message: "Loading replay runs…" });
     const result = await fetchWorkflowApi<Run>("/api/user/replay-runs", undefined, { authMode: "token", getToken });
     if (!result.ok) {
       if (result.authPending) {
+        setError(null);
+        setStepError(null);
         setFeedback({ state: "loading", message: "Authentication initializing. Retrying shortly…" });
         setBusy(false);
         return;
@@ -100,9 +104,11 @@ export default function Page() {
     if (!isLoaded || !isSignedIn) return;
     setSelectedRunId(runId);
     setBusy(true);
+    setStepError(null);
     const result = await fetchWorkflowApi<Step>(`/api/user/replay-runs/${runId}/steps`, undefined, { authMode: "token", getToken });
     if (!result.ok) {
       if (result.authPending) {
+        setStepError(null);
         setFeedback({ state: "loading", message: "Authentication initializing while loading replay steps…" });
         setBusy(false);
         return;
@@ -126,6 +132,11 @@ export default function Page() {
     void loadRuns();
   }, [searchKey, isLoaded, isSignedIn]);
   useEffect(() => { if (selectedRunId && isLoaded && isSignedIn) void loadSteps(selectedRunId); }, [selectedRunId, isLoaded, isSignedIn]);
+  useEffect(() => {
+    if (feedback.state !== "success") return;
+    const timer = window.setTimeout(() => setFeedback({ state: "idle", message: "" }), 2800);
+    return () => window.clearTimeout(timer);
+  }, [feedback.state, feedback.message]);
 
   const timelinePoints = steps.map((step) => ({
     step: step.step_index,
