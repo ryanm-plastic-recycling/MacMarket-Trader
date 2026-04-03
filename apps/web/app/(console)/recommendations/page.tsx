@@ -44,10 +44,12 @@ export default function Page() {
       return;
     }
     setLoading(true);
+    setError(null);
     setFeedback({ state: "loading", message: "Loading recommendations…" });
     const result = await fetchWorkflowApi<Rec>("/api/user/recommendations", undefined, { authMode: "token", getToken });
     if (!result.ok) {
       if (result.authPending) {
+        setError(null);
         setFeedback({ state: "loading", message: "Authentication initializing. Retrying shortly…" });
         setLoading(false);
         return;
@@ -77,6 +79,11 @@ export default function Page() {
     if (!isLoaded || !isSignedIn) return;
     void load();
   }, [searchKey, isLoaded, isSignedIn]);
+  useEffect(() => {
+    if (feedback.state !== "success") return;
+    const timer = window.setTimeout(() => setFeedback({ state: "idle", message: "" }), 2800);
+    return () => window.clearTimeout(timer);
+  }, [feedback.state, feedback.message]);
 
   async function generate() {
     if (!isLoaded || !isSignedIn) {

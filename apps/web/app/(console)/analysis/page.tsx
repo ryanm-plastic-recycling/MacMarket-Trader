@@ -181,6 +181,11 @@ export default function Page() {
   }, [selectedIndicators]);
 
   useEffect(() => () => chartApiRef.current?.remove(), []);
+  useEffect(() => {
+    if (feedback.state !== "success") return;
+    const timer = window.setTimeout(() => setFeedback({ state: "idle", message: "" }), 2800);
+    return () => window.clearTimeout(timer);
+  }, [feedback.state, feedback.message]);
 
   async function refreshAnalysis() {
     const nextSymbol = draftSymbol.trim().toUpperCase() || "AAPL";

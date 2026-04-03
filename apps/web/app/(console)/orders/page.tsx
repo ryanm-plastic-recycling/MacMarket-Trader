@@ -28,10 +28,12 @@ export default function Page() {
       return;
     }
     setBusy(true);
+    setError(null);
     setFeedback({ state: "loading", message: "Loading orders…" });
     const result = await fetchWorkflowApi<Order>("/api/user/orders", undefined, { authMode: "token", getToken });
     if (!result.ok) {
       if (result.authPending) {
+        setError(null);
         setFeedback({ state: "loading", message: "Authentication initializing. Retrying shortly…" });
         setBusy(false);
         return;
@@ -95,6 +97,11 @@ export default function Page() {
     if (!isLoaded || !isSignedIn) return;
     void load();
   }, [searchKey, isLoaded, isSignedIn]);
+  useEffect(() => {
+    if (feedback.state !== "success") return;
+    const timer = window.setTimeout(() => setFeedback({ state: "idle", message: "" }), 2800);
+    return () => window.clearTimeout(timer);
+  }, [feedback.state, feedback.message]);
 
   return <section className="op-stack">
     <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
