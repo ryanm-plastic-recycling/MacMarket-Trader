@@ -1,22 +1,20 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { resolveAuthTokenState } from "@/app/api/_utils/auth-token";
 import { backendUrl } from "@/lib/backend";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ recommendationId: string }> }
 ) {
   const { recommendationId } = await context.params;
 
-  const { userId, getToken } = await auth();
-  if (!userId) {
-    return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
+  const resolved = await resolveAuthTokenState(request);
+  if (!resolved.token && resolved.authPending) {
+    return NextResponse.json({ detail: "Authentication initializing" }, { status: 425 });
   }
-
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ detail: "Unable to obtain Clerk token" }, { status: 401 });
+  if (!resolved.token) {
+    return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
   }
 
   const response = await fetch(
@@ -24,7 +22,7 @@ export async function GET(
     {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${resolved.token}`,
       },
       cache: "no-store",
     }

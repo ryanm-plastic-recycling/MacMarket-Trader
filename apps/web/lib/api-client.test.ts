@@ -25,6 +25,17 @@ describe("fetchNormalized", () => {
     expect(result.error).toBeNull();
     fetchSpy.mockRestore();
   });
+
+  it("marks authPending when route reports auth initialization", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Authentication initializing" }), { status: 425 }),
+    );
+    const result = await fetchNormalized<{ id: number }>("/api/user/orders");
+    expect(result.ok).toBe(false);
+    expect(result.authPending).toBe(true);
+    expect(result.error).toBe("AUTH_NOT_READY");
+    fetchSpy.mockRestore();
+  });
 });
 
 describe("fetchWorkflowApi", () => {

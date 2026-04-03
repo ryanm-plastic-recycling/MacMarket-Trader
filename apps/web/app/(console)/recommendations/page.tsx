@@ -1,6 +1,7 @@
 "use client";
 
 import { createChart, type CandlestickData, LineStyle, type Time } from "lightweight-charts";
+import { useAuth } from "@clerk/nextjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -17,6 +18,7 @@ type SortColumn = (typeof SORTABLE_COLUMNS)[number];
 const STORAGE_KEY = "macmarket-indicators-recommendations";
 
 export default function Page() {
+  const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
   const chartRef = useRef<HTMLDivElement | null>(null);
@@ -35,10 +37,19 @@ export default function Page() {
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
 
   async function load() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Initializing authenticated workflow…" });
+      return;
+    }
     setLoading(true);
     setFeedback({ state: "loading", message: "Loading recommendations…" });
     const result = await fetchWorkflowApi<Rec>("/api/user/recommendations");
     if (!result.ok) {
+      if (result.authPending) {
+        setFeedback({ state: "loading", message: "Authentication initializing. Retrying shortly…" });
+        setLoading(false);
+        return;
+      }
       setError(result.error ?? "Could not load recommendations.");
       setFeedback({ state: "error", message: result.error ?? "Could not load recommendations." });
       setRows([]);
@@ -61,10 +72,15 @@ export default function Page() {
   }
 
   useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
     void load();
-  }, [searchKey]);
+  }, [searchKey, isLoaded, isSignedIn]);
 
   async function generate() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Authentication still initializing." });
+      return;
+    }
     setStatus("Generating deterministic recommendation...");
     setFeedback({ state: "loading", message: "Generating recommendation…" });
     const result = await fetchWorkflowApi<{ market_data_source?: string; fallback_mode?: boolean }>("/api/user/recommendations/generate", {
@@ -73,6 +89,10 @@ export default function Page() {
       body: JSON.stringify({ symbol: symbolInput.trim().toUpperCase(), event_text: eventText.trim() }),
     });
     if (!result.ok) {
+      if (result.authPending) {
+        setFeedback({ state: "loading", message: "Authentication initializing. Please retry in a moment." });
+        return;
+      }
       setError(result.error ?? `Generation failed (${result.status}).`);
       setFeedback({ state: "error", message: result.error ?? `Generation failed (${result.status}).` });
       return;
@@ -194,6 +214,7 @@ export default function Page() {
       <Card title="Workflow guidance">
         Generate from Strategy Workbench setup, validate strategy/risk context, then move to replay and paper orders. HACO is supporting context only. Chart/context source: <strong>{chartSource}</strong>.
       </Card>
+      {!isLoaded ? <Card title="Auth status">Initializing authenticated session before protected workflow API requests.</Card> : null}
       <Card>
         <div className="op-row">
           <input value={symbolInput} onChange={(e) => setSymbolInput(e.target.value.toUpperCase())} placeholder="Symbol" />

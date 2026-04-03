@@ -19,6 +19,21 @@ type AdminUser = {
   identity_warning?: string | null;
 };
 
+function cleanIdentity(value: string | null | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (!trimmed || (trimmed.startsWith("{{") && trimmed.endsWith("}}")) || trimmed.includes("invited::")) {
+    return fallback;
+  }
+  return trimmed;
+}
+
+function formatTimestamp(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
 export function AdminUsersPanel() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,13 +79,13 @@ export function AdminUsersPanel() {
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
-                  <td>{(user.display_name && !user.display_name.includes("{{")) ? user.display_name : "Identity pending sync"}</td>
-                  <td>{user.email && !user.email.includes("{{") ? user.email : "Identity pending sync"}</td>
+                  <td>{cleanIdentity(user.display_name, "Identity pending sync")}</td>
+                  <td>{cleanIdentity(user.email, "Identity pending sync")}</td>
                   <td><StatusBadge tone="neutral">{user.app_role}</StatusBadge></td>
                   <td><StatusBadge tone={user.approval_status === "approved" ? "good" : "warn"}>{user.approval_status}</StatusBadge></td>
                   <td>{user.mfa_enabled ? "enabled" : "not enabled"}</td>
                   <td>{user.invite_status ?? "-"}</td>
-                  <td>{user.last_seen_at ?? "-"}</td><td>{user.last_authenticated_at ?? "-"}</td><td>{user.external_auth_user_id ?? "-"}{user.identity_warning ? ` (${user.identity_warning})` : ""}</td>
+                  <td>{formatTimestamp(user.last_seen_at)}</td><td>{formatTimestamp(user.last_authenticated_at)}</td><td>{user.external_auth_user_id ?? "-"}{user.identity_warning ? ` (${user.identity_warning})` : ""}</td>
                 </tr>
               ))}
             </tbody>

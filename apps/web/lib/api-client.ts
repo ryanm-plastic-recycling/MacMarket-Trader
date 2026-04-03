@@ -51,6 +51,18 @@ export async function fetchNormalized<T>(input: RequestInfo | URL, init?: Reques
           : [];
 
   if (!response.ok) {
+    const message = coerceMessage(payload, `Request failed (${response.status})`);
+    if ((response.status === 425 || response.status === 503) && /auth/i.test(message)) {
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        items: [],
+        error: "AUTH_NOT_READY",
+        raw: payload,
+        authPending: true,
+      };
+    }
     if (response.status === 401 && retryCount < 1) {
       await new Promise((resolve) => setTimeout(resolve, 150));
       return fetchNormalized<T>(input, { ...init, headers: init?.headers }, retryCount + 1);
@@ -60,7 +72,7 @@ export async function fetchNormalized<T>(input: RequestInfo | URL, init?: Reques
       status: response.status,
       data: null,
       items: [],
-      error: coerceMessage(payload, `Request failed (${response.status})`),
+      error: message,
       raw: payload,
     };
   }

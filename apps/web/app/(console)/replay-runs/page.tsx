@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -10,6 +11,7 @@ type Run = { id: number; symbol: string; created_at: string; recommendation_coun
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
 
 export default function Page() {
+  const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
   const [runs, setRuns] = useState<Run[]>([]);
@@ -25,10 +27,19 @@ export default function Page() {
   const selectedSource = selected ? (selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? "provider")) : dataSource;
 
   async function loadRuns() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Initializing authenticated workflow…" });
+      return;
+    }
     setBusy(true);
     setFeedback({ state: "loading", message: "Loading replay runs…" });
     const result = await fetchWorkflowApi<Run>("/api/user/replay-runs");
     if (!result.ok) {
+      if (result.authPending) {
+        setFeedback({ state: "loading", message: "Authentication initializing. Retrying shortly…" });
+        setBusy(false);
+        return;
+      }
       setError(result.error ?? "Replay load failed.");
       setFeedback({ state: "error", message: result.error ?? "Replay load failed." });
       setBusy(false);
@@ -44,11 +55,20 @@ export default function Page() {
   }
 
   async function runReplay() {
+    if (!isLoaded || !isSignedIn) {
+      setFeedback({ state: "loading", message: "Authentication still initializing." });
+      return;
+    }
     setStatus("running replay...");
     setBusy(true);
     const preferredSymbol = new URLSearchParams(searchKey).get("symbol") ?? selected?.symbol ?? "AAPL";
     const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean }>("/api/user/replay-runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: preferredSymbol }) });
     if (!run.ok) {
+      if (run.authPending) {
+        setFeedback({ state: "loading", message: "Authentication initializing. Retry in a moment." });
+        setBusy(false);
+        return;
+      }
       setError(run.error ?? "Replay failed.");
       setStatus("failed");
       setFeedback({ state: "error", message: run.error ?? "Replay failed." });
@@ -67,10 +87,16 @@ export default function Page() {
   }
 
   async function loadSteps(runId: number) {
+    if (!isLoaded || !isSignedIn) return;
     setSelectedRunId(runId);
     setBusy(true);
     const result = await fetchWorkflowApi<Step>(`/api/user/replay-runs/${runId}/steps`);
     if (!result.ok) {
+      if (result.authPending) {
+        setFeedback({ state: "loading", message: "Authentication initializing while loading replay steps…" });
+        setBusy(false);
+        return;
+      }
       setStepError(result.error ?? "Unable to load run steps.");
       setFeedback({ state: "error", message: result.error ?? "Unable to load run steps." });
       setBusy(false);
@@ -82,8 +108,11 @@ export default function Page() {
     setBusy(false);
   }
 
-  useEffect(() => { void loadRuns(); }, [searchKey]);
-  useEffect(() => { if (selectedRunId) void loadSteps(selectedRunId); }, [selectedRunId]);
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    void loadRuns();
+  }, [searchKey, isLoaded, isSignedIn]);
+  useEffect(() => { if (selectedRunId && isLoaded && isSignedIn) void loadSteps(selectedRunId); }, [selectedRunId, isLoaded, isSignedIn]);
 
   const timelinePoints = steps.map((step) => ({
     step: step.step_index,
@@ -98,6 +127,7 @@ export default function Page() {
       Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{selectedSource}</strong>.
       <div>A good run keeps risk controls deterministic, preserves source coherence, and shows explainable approval/rejection outcomes at each step.</div>
     </Card>
+    {!isLoaded ? <Card title="Auth status">Initializing authenticated session before replay data requests.</Card> : null}
     <Card>
       <div className="op-row">
         <button onClick={() => void runReplay()} disabled={busy}>{busy ? "Running…" : "Run replay"}</button>
@@ -118,6 +148,11 @@ export default function Page() {
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
           <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource} · recommendation {new URLSearchParams(searchKey).get("recommendation") ?? "linked from selected run"}</div>
+          <div className="op-card" style={{ marginBottom: 8 }}>
+            <strong>Validation scope</strong>
+            <div>Originating setup/recommendation: {new URLSearchParams(searchKey).get("recommendation") ?? steps[0]?.recommendation_id ?? "selected run set"}.</div>
+            <div>Validated: deterministic approvals, heat transitions, and order-intent eligibility under source {selectedSource}.</div>
+          </div>
           <div className="op-card" style={{ marginBottom: 8 }}>
             <strong>Narrative summary</strong>
             <div>

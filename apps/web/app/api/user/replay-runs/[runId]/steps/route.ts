@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { resolveAuthToken } from "@/app/api/_utils/auth-token";
+import { resolveAuthTokenState } from "@/app/api/_utils/auth-token";
 import { backendUrl } from "@/lib/backend";
 
 export async function GET(
@@ -9,8 +9,11 @@ export async function GET(
 ) {
   const { runId } = await context.params;
 
-  const token = await resolveAuthToken(request);
-  if (!token) {
+  const resolved = await resolveAuthTokenState(request);
+  if (!resolved.token && resolved.authPending) {
+    return NextResponse.json({ detail: "Authentication initializing" }, { status: 425 });
+  }
+  if (!resolved.token) {
     return NextResponse.json({ detail: "Authentication required" }, { status: 401 });
   }
 
@@ -19,7 +22,7 @@ export async function GET(
     {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${resolved.token}`,
       },
       cache: "no-store",
     }

@@ -10,7 +10,14 @@ function safeIdentity(value: string | null | undefined, fallback = "Identity pen
   if (!value) return fallback;
   const trimmed = value.trim();
   if (trimmed.startsWith("{{") && trimmed.endsWith("}}")) return fallback;
+  if (trimmed.includes("invited::")) return fallback;
   return trimmed;
+}
+
+function formatTimestamp(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
 export default function Page() {
@@ -46,8 +53,8 @@ export default function Page() {
         <div>Role: <StatusBadge tone="neutral">{user?.app_role ?? "-"}</StatusBadge></div>
         <div>Approval status: <StatusBadge tone={user?.approval_status === "approved" ? "good" : "warn"}>{user?.approval_status ?? "-"}</StatusBadge></div>
         <div>MFA enabled: {String(user?.mfa_enabled ?? false)}</div>
-        <div>Last seen: {user?.last_seen_at ?? "-"}</div>
-        <div>Last authenticated: {user?.last_authenticated_at ?? "-"}</div>
+        <div>Last seen: {formatTimestamp(user?.last_seen_at)}</div>
+        <div>Last authenticated: {formatTimestamp(user?.last_authenticated_at)}</div>
         <div>Invite-only onboarding: active</div>
       </Card>
       <Card title="Preferences">
