@@ -56,7 +56,7 @@ Those are handled by deterministic engines with full audit trails.
 - **Execution mode:** paper trading first
 - **Directionality:** long and short in research; deployment gated behind explicit broker and risk approval
 - **Recommendation standard:** every recommendation must include thesis, catalyst, regime context, entry plan, invalidation, targets, sizing logic, and evidence bundle
-
+> v1 remains U.S. large-cap equities and sector ETFs only. However, the platform now reserves first-class architecture support for future `market_mode` expansion into options research and crypto research. These future modes must remain deterministic, auditable, and explicitly labeled. No options or crypto workflow should be represented as supported until its data contracts, replay semantics, risk logic, and paper workflow are mode-aware and fully tested.
 ### Explicit non-goals for v1
 
 - crypto
