@@ -21,5 +21,11 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
     ? (theme === "light" ? "/brand/macmarket-icon-light.svg" : "/brand/macmarket-icon-dark.svg")
     : (theme === "light" ? "/brand/macmarket-lockup-light.svg" : "/brand/macmarket-lockup-dark.svg");
 
-  return <img src={src} alt="MacMarket Trader" style={{ width: compact ? 36 : 170, height: "auto" }} />;
+  return (
+    <img
+      src={src}
+      alt="MacMarket Trader"
+      className={compact ? "op-brand-lockup op-brand-lockup-compact" : "op-brand-lockup"}
+    />
+  );
 }

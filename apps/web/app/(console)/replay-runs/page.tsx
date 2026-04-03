@@ -11,7 +11,7 @@ type Run = { id: number; symbol: string; created_at: string; recommendation_coun
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
 
 export default function Page() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
   const [runs, setRuns] = useState<Run[]>([]);
@@ -33,7 +33,7 @@ export default function Page() {
     }
     setBusy(true);
     setFeedback({ state: "loading", message: "Loading replay runs…" });
-    const result = await fetchWorkflowApi<Run>("/api/user/replay-runs");
+    const result = await fetchWorkflowApi<Run>("/api/user/replay-runs", undefined, { authMode: "token", getToken });
     if (!result.ok) {
       if (result.authPending) {
         setFeedback({ state: "loading", message: "Authentication initializing. Retrying shortly…" });
@@ -65,7 +65,11 @@ export default function Page() {
     setStatus("running replay...");
     setBusy(true);
     const preferredSymbol = new URLSearchParams(searchKey).get("symbol") ?? selected?.symbol ?? "AAPL";
-    const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean }>("/api/user/replay-runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: preferredSymbol }) });
+    const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean }>(
+      "/api/user/replay-runs",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: preferredSymbol }) },
+      { authMode: "token", getToken },
+    );
     if (!run.ok) {
       if (run.authPending) {
         setFeedback({ state: "loading", message: "Authentication initializing. Retry in a moment." });
@@ -96,7 +100,7 @@ export default function Page() {
     if (!isLoaded || !isSignedIn) return;
     setSelectedRunId(runId);
     setBusy(true);
-    const result = await fetchWorkflowApi<Step>(`/api/user/replay-runs/${runId}/steps`);
+    const result = await fetchWorkflowApi<Step>(`/api/user/replay-runs/${runId}/steps`, undefined, { authMode: "token", getToken });
     if (!result.ok) {
       if (result.authPending) {
         setFeedback({ state: "loading", message: "Authentication initializing while loading replay steps…" });

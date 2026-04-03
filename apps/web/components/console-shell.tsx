@@ -22,8 +22,10 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="op-shell">
       <aside className="op-aside">
-        <BrandLockup />
-        <p style={{ color: "#8da1b8", marginTop: 8, fontSize: 12 }}>Invite-only private alpha console</p>
+        <div className="op-brand-block">
+          <BrandLockup />
+          <p style={{ color: "#8da1b8", marginTop: 10, fontSize: 12 }}>Invite-only private alpha console</p>
+        </div>
         <nav className="op-nav">
           {links.map(([href, label]) => (
             <Link key={href} href={href}>{label}</Link>

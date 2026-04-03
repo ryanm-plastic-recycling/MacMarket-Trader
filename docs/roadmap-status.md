@@ -73,6 +73,8 @@ Must-have:
 
 ## Phase 1 complete items
 
+### 2026-04-03 pass notes
+
 - Strategy Workbench (`/analysis`) is the primary setup entry and links into Recommendations.
 - Core workflow surfaces exist and are connected: Recommendations -> Replay -> Orders.
 - Workflow source labeling is explicit on core pages and fallback mode is visibly tagged.
@@ -86,6 +88,9 @@ Must-have:
 - Same-origin `/api/charts/haco` and `/api/user/analysis/setup` routes now return auth-initializing responses (425) instead of early 401 during token/session bridge timing.
 - Provider-configured-but-degraded workflow blocks now include operator guidance for explicit local/dev demo fallback (`WORKFLOW_DEMO_FALLBACK=true`) without silent production fallback.
 - Console/auth surfaces now use theme-aware MacMarket brand lockup and icon assets.
+- Workflow pages (Analysis, Recommendations, Replay, Orders) now gate same-origin protected requests behind Clerk readiness and token-bridge fetch mode, reducing in-session 401/Invalid-token churn while auth settles.
+- Core workflow tests now cover first-class indicator rendering output (EMA 20/50/200, VWAP, Bollinger, prior-day levels, volume, RSI) in chart overlay plumbing.
+- App favicon now uses the square MacMarket icon asset (`app/icon.svg`) while sidebar lockup branding is scaled for operator-console readability.
 
 ## Phase 1 open items
 
