@@ -53,6 +53,18 @@
 - Do not display levels, signals, or targets against a chart sourced from a different bar set.
 - Never use numeric bar indices as user-facing chart time axes when canonical timestamps are available.
 
+## Roadmap discipline addendum
+
+Add this near the top of AGENTS.md, after the README/charter section:
+
+- `docs/roadmap-status.md` is the canonical phase tracker for this repo.
+- Every material Codex pass must:
+  - read `docs/roadmap-status.md` before changes
+  - keep work scoped to the current phase unless explicitly authorized
+  - update `docs/roadmap-status.md` at the end with completed vs open items
+- Do not mark a roadmap item complete unless it is actually testable in the running product.
+- If a pass adds a foundation for a later phase, record it under “started early” rather than moving the phase forward.
+
 ## 5. Auth and identity rules
 
 - Keep Clerk sign-in / sign-up routes compatible with Clerk requirements.
