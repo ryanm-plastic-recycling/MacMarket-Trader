@@ -20,7 +20,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
-  const [dataSource, setDataSource] = useState("workflow unavailable");
+  const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
@@ -40,8 +40,11 @@ export default function Page() {
         setBusy(false);
         return;
       }
-      setError(result.error ?? "Replay load failed.");
-      setFeedback({ state: "error", message: result.error ?? "Replay load failed." });
+      const message = result.status === 503
+        ? "Configured provider unavailable. Replay is blocked from silently falling back. For local demo only, enable WORKFLOW_DEMO_FALLBACK=true in backend env."
+        : (result.error ?? "Replay load failed.");
+      setError(message);
+      setFeedback({ state: "error", message });
       setBusy(false);
       return;
     }
@@ -69,9 +72,12 @@ export default function Page() {
         setBusy(false);
         return;
       }
-      setError(run.error ?? "Replay failed.");
+      const message = run.status === 503
+        ? "Configured provider unavailable. Replay is blocked from silently falling back. For local demo only, enable WORKFLOW_DEMO_FALLBACK=true in backend env."
+        : (run.error ?? "Replay failed.");
+      setError(message);
       setStatus("failed");
-      setFeedback({ state: "error", message: run.error ?? "Replay failed." });
+      setFeedback({ state: "error", message });
       setBusy(false);
       return;
     }
@@ -97,8 +103,11 @@ export default function Page() {
         setBusy(false);
         return;
       }
-      setStepError(result.error ?? "Unable to load run steps.");
-      setFeedback({ state: "error", message: result.error ?? "Unable to load run steps." });
+      const message = result.status === 503
+        ? "Configured provider unavailable. Replay steps are blocked from silently falling back. For local demo only, enable WORKFLOW_DEMO_FALLBACK=true in backend env."
+        : (result.error ?? "Unable to load run steps.");
+      setStepError(message);
+      setFeedback({ state: "error", message });
       setBusy(false);
       return;
     }

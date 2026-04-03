@@ -1,6 +1,6 @@
 "use client";
 
-import { createChart, type CandlestickData, LineStyle, type Time } from "lightweight-charts";
+import { createChart, LineStyle, type CandlestickData, type IChartApi, type Time } from "lightweight-charts";
 import { useAuth } from "@clerk/nextjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -10,28 +10,30 @@ import { IndicatorSelector } from "@/components/charts/indicator-selector";
 import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { fetchHacoChart } from "@/lib/haco-api";
+import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
 
 type Rec = { id: number; created_at: string; symbol: string; payload: any; recommendation_id: string; market_data_source?: string; fallback_mode?: boolean };
-
 const SORTABLE_COLUMNS = ["created_at", "symbol", "side", "setup", "approved", "expected_rr", "confidence", "catalyst"] as const;
 type SortColumn = (typeof SORTABLE_COLUMNS)[number];
 const STORAGE_KEY = "macmarket-indicators-recommendations";
+const PROVIDER_BLOCKED_HINT = "Configured provider unavailable. Recommendations/Replay/Orders are blocked from silently falling back. For local demo only, enable WORKFLOW_DEMO_FALLBACK=true in backend env.";
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
   const chartRef = useRef<HTMLDivElement | null>(null);
+  const chartApiRef = useRef<IChartApi | null>(null);
   const [rows, setRows] = useState<Rec[]>([]);
   const [selected, setSelected] = useState<Rec | null>(null);
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [symbolInput, setSymbolInput] = useState("AAPL");
   const [eventText, setEventText] = useState("Operator catalyst review.");
   const [sortCol, setSortCol] = useState<SortColumn>("created_at");
   const [showHaco, setShowHaco] = useState(false);
-  const [chartSource, setChartSource] = useState("unknown");
+  const [chartSource, setChartSource] = useState("workflow pending");
   const [chartError, setChartError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
@@ -50,8 +52,8 @@ export default function Page() {
         setLoading(false);
         return;
       }
-      setError(result.error ?? "Could not load recommendations.");
-      setFeedback({ state: "error", message: result.error ?? "Could not load recommendations." });
+      setError(result.status === 503 ? PROVIDER_BLOCKED_HINT : (result.error ?? "Could not load recommendations."));
+      setFeedback({ state: "error", message: result.status === 503 ? PROVIDER_BLOCKED_HINT : (result.error ?? "Could not load recommendations.") });
       setRows([]);
       setSelected(null);
       setLoading(false);
@@ -93,8 +95,9 @@ export default function Page() {
         setFeedback({ state: "loading", message: "Authentication initializing. Please retry in a moment." });
         return;
       }
-      setError(result.error ?? `Generation failed (${result.status}).`);
-      setFeedback({ state: "error", message: result.error ?? `Generation failed (${result.status}).` });
+      const msg = result.status === 503 ? PROVIDER_BLOCKED_HINT : (result.error ?? `Generation failed (${result.status}).`);
+      setError(msg);
+      setFeedback({ state: "error", message: msg });
       return;
     }
     setError(null);
@@ -137,19 +140,18 @@ export default function Page() {
     return clone;
   }, [rows, sortCol]);
 
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     const raw = window.localStorage.getItem(STORAGE_KEY);
     try {
-      setSelectedIndicators(normalizeSelection(raw ? (JSON.parse(raw) as string[]) : []));
+      setSelectedIndicators(normalizeSelection(raw ? (JSON.parse(raw) as string[]) : []).filter((item) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(item)));
     } catch {
-      setSelectedIndicators(normalizeSelection([]));
+      setSelectedIndicators(normalizeSelection([]).filter((item) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(item)));
     }
   }, []);
 
   function handleIndicatorChange(next: IndicatorId[]) {
-    const normalized = normalizeSelection(next);
+    const normalized = normalizeSelection(next).filter((item) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(item));
     setSelectedIndicators(normalized);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
@@ -160,25 +162,23 @@ export default function Page() {
     async function renderChart() {
       if (!chartRef.current || !selected) return;
       const selectedFallback = Boolean(selected.fallback_mode ?? selected.payload?.workflow?.fallback_mode);
-      const selectedSource = String(selected.market_data_source ?? selected.payload?.workflow?.market_data_source ?? "unknown");
+      const selectedSource = String(selected.market_data_source ?? selected.payload?.workflow?.market_data_source ?? "provider");
       setChartSource(selectedFallback ? `fallback (${selectedSource})` : selectedSource);
       if (selectedFallback) {
         setChartError("Selected recommendation was generated from fallback bars; provider chart overlay is disabled to avoid mixed-source context.");
         return;
       }
       setChartError(null);
-      const payload = await fetchHacoChart({ symbol: selected.symbol, timeframe: "1D", include_heikin_ashi: showHaco });
+      const timeframe = String(selected.payload?.workflow?.timeframe ?? "1D");
+      const payload = await fetchHacoChart({ symbol: selected.symbol, timeframe, include_heikin_ashi: showHaco });
       setChartSource(payload.fallback_mode ? `fallback (${payload.data_source})` : payload.data_source);
-      const chart = createChart(chartRef.current, { height: 280, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
-      const candles: CandlestickData<Time>[] = payload.candles.slice(-90).map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
+      if (chartApiRef.current) chartApiRef.current.remove();
+      const chart = createChart(chartRef.current, { height: 300, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
+      chartApiRef.current = chart;
+      const candles: Array<CandlestickData<Time> & { volume: number }> = payload.candles.slice(-120).map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
       chart.addCandlestickSeries().setData(candles);
-      const avgClose = candles.reduce((sum, c) => sum + Number(c.close), 0) / Math.max(1, candles.length);
-      if (selectedIndicators.includes("ema20")) {
-        chart.addLineSeries({ color: "#6ea8fe", lineWidth: 1 }).setData(candles.map((c) => ({ time: c.time, value: avgClose })));
-      }
-      if (selectedIndicators.includes("prior_day_levels") && candles.length > 1) {
-        chart.addLineSeries({ color: "#f7b267", lineWidth: 1, lineStyle: LineStyle.Dotted }).setData(candles.map((c) => ({ time: c.time, value: Number(candles[candles.length - 2].high) })));
-      }
+      applyIndicatorsToChart(chart, candles, selectedIndicators);
+
       const invalidation = chart.addLineSeries({ color: "#ff8b8b", lineStyle: LineStyle.Dashed, lineWidth: 2 });
       const target = chart.addLineSeries({ color: "#7ee787", lineStyle: LineStyle.Dotted, lineWidth: 2 });
       const entry = chart.addLineSeries({ color: "#6ea8fe", lineWidth: 2 });
@@ -189,20 +189,17 @@ export default function Page() {
       if (inv) invalidation.setData(candles.map((c) => ({ time: c.time, value: inv })));
       if (t1) target.setData(candles.map((c) => ({ time: c.time, value: t1 })));
       if (entryMid) entry.setData(candles.map((c) => ({ time: c.time, value: entryMid })));
-      let hacoSeries;
       if (showHaco) {
-        hacoSeries = chart.addLineSeries({ color: "#f7b267", lineWidth: 1 });
-        hacoSeries.setData(payload.heikin_ashi_candles.slice(-90).map((c) => ({ time: c.time as Time, value: c.close })));
+        chart.addLineSeries({ color: "#f7b267", lineWidth: 1 }).setData(payload.heikin_ashi_candles.slice(-120).map((c) => ({ time: c.time as Time, value: c.close })));
       }
-      return () => chart.remove();
     }
-    let cleanup: (() => void) | undefined;
-    renderChart().then((c) => {
-      cleanup = c;
-    }).catch(() => {
-      setChartError("Unable to render chart overlay for selected recommendation. Workflow detail remains available.");
+    void renderChart().catch((err) => {
+      const message = err instanceof Error && err.message === "AUTH_NOT_READY"
+        ? "Auth is still initializing for chart context. Retry in a moment."
+        : "Unable to render chart overlay for selected recommendation. Workflow detail remains available.";
+      setChartError(message);
     });
-    return () => cleanup?.();
+    return () => chartApiRef.current?.remove();
   }, [selected, showHaco, selectedIndicators]);
 
   return (
@@ -245,7 +242,7 @@ export default function Page() {
             <div><strong>Strategy:</strong> {selected.payload?.entry?.setup_type ?? "Event Continuation"}</div>
             <div><strong>Regime context:</strong> {selected.payload?.regime_context?.market_regime ?? "-"}</div>
             <div><strong>Symbol / timeframe:</strong> {selected.symbol} / {selected.payload?.workflow?.timeframe ?? "1D"}</div>
-            <div><strong>Workflow data source:</strong> {selected.payload?.workflow?.fallback_mode ? `fallback (${selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "unknown"})` : (selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "provider")}</div>
+            <div><strong>Workflow data source:</strong> {selected.payload?.workflow?.fallback_mode ? `fallback (${selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "provider"})` : (selected.payload?.workflow?.market_data_source ?? selected.market_data_source ?? "provider")}</div>
             <div><strong>HACO role:</strong> Supporting technical context, not sole approval engine.</div>
             <div><strong>Entry zone:</strong> {selected.payload?.entry?.zone_low} - {selected.payload?.entry?.zone_high}</div>
             <div><strong>Trigger:</strong> {selected.payload?.entry?.trigger_text}</div>
@@ -255,9 +252,7 @@ export default function Page() {
             <div><strong>Expected R/R:</strong> {selected.payload?.quality?.expected_rr}</div>
             <div><strong>Confidence:</strong> {selected.payload?.quality?.confidence}</div>
             <div><strong>No-trade reason:</strong> {selected.payload?.rejection_reason || "n/a"}</div>
-            <div><strong>Evidence notes:</strong> {(selected.payload?.evidence?.explanatory_notes ?? []).join(" | ") || "none"}</div>
             <div><strong>Provenance summary:</strong> {selected.payload?.evidence?.source_type} @ {selected.payload?.evidence?.source_timestamp}</div>
-            <div><strong>Visible chart symbol/source:</strong> {selected.symbol} ({selected.payload?.workflow?.fallback_mode ? `fallback (${selected.payload?.workflow?.market_data_source ?? "unknown"})` : chartSource})</div>
             <div className="op-row" style={{ marginTop: 8 }}>
               <button onClick={() => void load()}>Rerun / refresh</button>
               <button onClick={() => window.location.assign(`/replay-runs?symbol=${selected.symbol}&recommendation=${selected.recommendation_id}`)}>Run replay with context</button>
@@ -272,7 +267,7 @@ export default function Page() {
           <label><input type="checkbox" checked={showHaco} onChange={(e) => setShowHaco(e.target.checked)} /> show HACO overlay</label>
           <StatusBadge tone="neutral">{chartSource}</StatusBadge>
         </div>
-        <IndicatorSelector selected={selectedIndicators} onChange={handleIndicatorChange} />
+        <IndicatorSelector selected={selectedIndicators} onChange={handleIndicatorChange} enabledIds={FIRST_CLASS_WORKFLOW_INDICATORS} />
         <div className="op-row">{selectedIndicators.map((item) => <StatusBadge key={item} tone="neutral">{item}</StatusBadge>)}</div>
         <div ref={chartRef} />
       </Card>

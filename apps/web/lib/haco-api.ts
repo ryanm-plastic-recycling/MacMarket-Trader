@@ -42,6 +42,9 @@ export async function fetchHacoChart(request: HacoChartRequest): Promise<HacoCha
     credentials: "include",
   });
   if (!response.ok) {
+    if (response.status === 425) {
+      throw new Error("AUTH_NOT_READY");
+    }
     throw new Error(`Failed to load HACO chart: ${response.status}`);
   }
   return (await response.json()) as HacoChartPayload;

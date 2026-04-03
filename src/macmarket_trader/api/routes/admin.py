@@ -65,7 +65,8 @@ def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
         )
 
     provider_is_expected = settings.market_data_enabled or settings.polygon_enabled
-    if provider_is_expected and fallback_mode:
+    allow_dev_demo_fallback = settings.workflow_demo_fallback and settings.environment.strip().lower() in {"dev", "local", "test"}
+    if provider_is_expected and fallback_mode and not allow_dev_demo_fallback:
         raise HTTPException(
             status_code=503,
             detail=(
