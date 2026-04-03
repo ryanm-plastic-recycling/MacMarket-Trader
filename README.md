@@ -67,6 +67,52 @@ Those are handled by deterministic engines with full audit trails.
 - static percentage exits like “take profit at 5%” without structure-based support
 - UI-heavy work before engine credibility exists
 
+## Future multi-asset expansion architecture (planned)
+
+### Market mode policy
+
+MacMarket keeps **equities** as the only live execution-prep mode in v1/private alpha.
+
+Future expansion is designed around explicit, typed `market_mode` + `instrument_type` contracts:
+
+- `equities` (live in v1 scope)
+- `options` (planned research preview / paper-first later)
+- `crypto` (planned research preview / paper-first later)
+
+Every major workflow contract should carry mode context:
+
+- analysis/workbench setup payloads,
+- recommendation generation requests/responses,
+- replay requests/responses,
+- strategy schedule payloads,
+- order/replay summaries and audit payloads.
+
+Design constraint: replay/live parity must hold **within each mode** before that mode is promoted.
+
+### Options research mode (planned)
+
+Options research mode requires chain-aware and structure-aware contracts (not equity shortcuts):
+
+- expiration / DTE,
+- strikes and rights,
+- IV and skew context,
+- Greeks (delta/gamma/theta/vega),
+- bid/ask + open-interest liquidity checks,
+- defined-risk structure math (net debit/credit, max profit/loss, breakevens).
+
+Initial options strategy planning includes defined-risk structures first (including **Iron Condor**), while covered calls stay later due to inventory/assignment modeling dependencies.
+
+### Crypto research mode (planned)
+
+Crypto mode requires dedicated 24/7 and derivatives-aware risk logic:
+
+- 24/7 session handling (including weekends),
+- spot vs perpetual/futures instrument typing,
+- funding-rate and basis context,
+- open interest and leverage/liquidation-aware risk fields.
+
+Crypto sizing/risk/replay logic must be mode-native; it must not inherit equities logic unchanged.
+
 ## Recommendation contract
 
 Every recommendation must be structured like this conceptually:

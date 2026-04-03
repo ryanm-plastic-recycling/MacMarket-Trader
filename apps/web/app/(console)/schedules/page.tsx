@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, EmptyState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
+import type { MarketMode } from "@/lib/strategy-registry";
 
 type Schedule = {
   id: number;
@@ -22,6 +23,7 @@ export default function SchedulesPage() {
   const [name, setName] = useState("Morning strategy scan");
   const [symbols, setSymbols] = useState("AAPL,MSFT,NVDA");
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  const [marketMode, setMarketMode] = useState<MarketMode>("equities");
 
   async function load() {
     setFeedback({ state: "loading", message: "Loading schedules..." });
@@ -45,6 +47,7 @@ export default function SchedulesPage() {
         frequency: "weekdays",
         run_time: "08:30",
         timezone: "America/New_York",
+        market_mode: marketMode,
         symbols: symbols.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean),
         enabled_strategies: ["Event Continuation", "Breakout / Prior-Day High", "Pullback / Trend Continuation"],
         top_n: 5,
@@ -84,6 +87,7 @@ export default function SchedulesPage() {
       <div className="op-row">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Schedule name" />
         <input value={symbols} onChange={(e) => setSymbols(e.target.value)} placeholder="AAPL,MSFT,NVDA" style={{ minWidth: 260 }} />
+        <select value={marketMode} onChange={(e) => setMarketMode(e.target.value as MarketMode)}><option value="equities">equities</option><option value="options">options (planned)</option><option value="crypto">crypto (planned)</option></select>
         <button onClick={() => void createSchedule()}>Create schedule</button>
       </div>
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />

@@ -34,6 +34,30 @@ class OrderStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+
+
+class MarketMode(str, Enum):
+    EQUITIES = "equities"
+    OPTIONS = "options"
+    CRYPTO = "crypto"
+
+
+class InstrumentType(str, Enum):
+    EQUITY = "equity"
+    ETF = "etf"
+    FUND = "fund"
+    OPTION_CONTRACT = "option_contract"
+    CRYPTO_SPOT = "crypto_spot"
+    CRYPTO_PERPETUAL = "crypto_perpetual"
+    CRYPTO_FUTURE = "crypto_future"
+
+
+class TradingSessionModel(str, Enum):
+    US_EQUITIES_REGULAR_HOURS = "us_equities_regular_hours"
+    US_OPTIONS_REGULAR_HOURS = "us_options_regular_hours"
+    CRYPTO_24_7 = "crypto_24_7"
+
+
 class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"

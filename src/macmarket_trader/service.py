@@ -5,7 +5,7 @@ from __future__ import annotations
 from macmarket_trader.audit.engine import AuditEngine
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.mock import MockMarketDataProvider
-from macmarket_trader.domain.enums import EventSourceType, SetupType
+from macmarket_trader.domain.enums import EventSourceType, MarketMode, SetupType
 from macmarket_trader.domain.schemas import (
     CatalystMetadata,
     CorporateEvent,
@@ -63,8 +63,13 @@ class RecommendationService:
         event_text: str | None,
         event: NewsEvent | MacroEvent | CorporateEvent | None,
         portfolio: PortfolioSnapshot | None,
+        market_mode: MarketMode = MarketMode.EQUITIES,
     ) -> TradeRecommendation:
         portfolio_state = portfolio or PortfolioSnapshot()
+        if market_mode != MarketMode.EQUITIES:
+            raise ValueError(
+                f"{market_mode.value} mode is not enabled yet for live recommendation generation. Use analysis research preview."
+            )
         structured_event = event or self.extractor.extract(symbol=symbol, text=event_text or "")
         technical_context = self.provider.build_technical_context(bars)
         regime = self.regime_engine.classify(bars)
@@ -116,6 +121,7 @@ class RecommendationService:
         outcome = "approved" if approved else "no_trade"
         rec = TradeRecommendation(
             outcome=outcome,
+            market_mode=market_mode,
             symbol=symbol,
             side=setup.direction,
             thesis=self._build_thesis(structured_event.summary, setup.setup_type.value, regime.regime.value),

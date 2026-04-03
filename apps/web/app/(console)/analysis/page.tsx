@@ -12,24 +12,21 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 import { IndicatorSelector } from "@/components/charts/indicator-selector";
 import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
 import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
-
-const STRATEGIES = [
-  "Event Continuation",
-  "Breakout / Prior-Day High",
-  "Pullback / Trend Continuation",
-  "Gap Follow-Through",
-  "Mean Reversion",
-  "HACO Context",
-] as const;
+import { fetchStrategyRegistry, filterStrategiesByMode, type MarketMode, type StrategyRegistryEntry } from "@/lib/strategy-registry";
 
 const SUPPORTED_TIMEFRAMES = ["1D", "4H", "1H"] as const;
 
-type StrategyName = (typeof STRATEGIES)[number];
 type SupportedTimeframe = (typeof SUPPORTED_TIMEFRAMES)[number];
 type WorkbenchState = "auth_initializing" | "loading_analysis" | "ready" | "fallback_mode" | "provider_unavailable" | "hard_failure";
 
 type SetupPayload = {
+  market_mode: MarketMode;
   workflow_source: string;
+  strategy: string;
+  strategy_metadata?: StrategyRegistryEntry;
+  status?: string;
+  execution_enabled?: boolean;
+  operator_guidance?: string;
   active: boolean;
   active_reason: string;
   trigger: string;
@@ -51,12 +48,15 @@ export default function Page() {
   const chartApiRef = useRef<IChartApi | null>(null);
 
   const [draftSymbol, setDraftSymbol] = useState("AAPL");
+  const [draftMarketMode, setDraftMarketMode] = useState<MarketMode>("equities");
   const [draftTimeframe, setDraftTimeframe] = useState<SupportedTimeframe>("1D");
-  const [draftStrategy, setDraftStrategy] = useState<StrategyName>("Event Continuation");
+  const [draftStrategy, setDraftStrategy] = useState("Event Continuation");
 
   const [appliedSymbol, setAppliedSymbol] = useState("AAPL");
+  const [appliedMarketMode, setAppliedMarketMode] = useState<MarketMode>("equities");
   const [appliedTimeframe, setAppliedTimeframe] = useState<SupportedTimeframe>("1D");
-  const [appliedStrategy, setAppliedStrategy] = useState<StrategyName>("Event Continuation");
+  const [appliedStrategy, setAppliedStrategy] = useState("Event Continuation");
+  const [strategyRegistry, setStrategyRegistry] = useState<StrategyRegistryEntry[]>([]);
 
   const [source, setSource] = useState("workflow pending");
   const [setup, setSetup] = useState<SetupPayload | null>(null);
@@ -90,7 +90,7 @@ export default function Page() {
     }
   }
 
-  const runAnalysis = async (nextSymbol: string, nextTimeframe: SupportedTimeframe, nextStrategy: StrategyName) => {
+  const runAnalysis = async (nextSymbol: string, nextMode: MarketMode, nextTimeframe: SupportedTimeframe, nextStrategy: string) => {
     if (!isLoaded || !isSignedIn || !chartRef.current) {
       setWorkbenchState("auth_initializing");
       setFeedback({ state: "loading", message: "Authentication session is initializing for protected workbench routes…" });
@@ -102,7 +102,7 @@ export default function Page() {
 
     try {
       const setupResult = await fetchWorkflowApi<SetupPayload>(
-        `/api/user/analysis/setup?req_symbol=${nextSymbol}&strategy=${encodeURIComponent(nextStrategy)}&timeframe=${nextTimeframe}`,
+        `/api/user/analysis/setup?req_symbol=${nextSymbol}&strategy=${encodeURIComponent(nextStrategy)}&timeframe=${nextTimeframe}&market_mode=${nextMode}`,
         undefined
       );
       if (!setupResult.ok) {
@@ -176,12 +176,12 @@ export default function Page() {
   useEffect(() => {
     if (!isLoaded || !isSignedIn || initialLoadDone) return;
     setInitialLoadDone(true);
-    void runAnalysis(appliedSymbol, appliedTimeframe, appliedStrategy);
-  }, [isLoaded, isSignedIn, initialLoadDone, appliedSymbol, appliedTimeframe, appliedStrategy]);
+    void runAnalysis(appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy);
+  }, [isLoaded, isSignedIn, initialLoadDone, appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy]);
 
   useEffect(() => {
     if (!initialLoadDone) return;
-    void runAnalysis(appliedSymbol, appliedTimeframe, appliedStrategy);
+    void runAnalysis(appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndicators]);
 
@@ -192,22 +192,40 @@ export default function Page() {
     return () => window.clearTimeout(timer);
   }, [feedback.state, feedback.message]);
 
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    void fetchStrategyRegistry().then((rows) => setStrategyRegistry(rows)).catch(() => setStrategyRegistry([]));
+  }, [isLoaded, isSignedIn]);
+
+  const strategiesForDraftMode = useMemo(() => filterStrategiesByMode(strategyRegistry, draftMarketMode), [strategyRegistry, draftMarketMode]);
+  useEffect(() => {
+    if (strategiesForDraftMode.length === 0) return;
+    if (!strategiesForDraftMode.some((item) => item.display_name === draftStrategy)) {
+      setDraftStrategy(strategiesForDraftMode[0].display_name);
+    }
+  }, [draftStrategy, strategiesForDraftMode]);
+
   async function refreshAnalysis() {
     const nextSymbol = draftSymbol.trim().toUpperCase() || "AAPL";
     setAppliedSymbol(nextSymbol);
+    setAppliedMarketMode(draftMarketMode);
     setAppliedTimeframe(draftTimeframe);
     setAppliedStrategy(draftStrategy);
-    await runAnalysis(nextSymbol, draftTimeframe, draftStrategy);
+    await runAnalysis(nextSymbol, draftMarketMode, draftTimeframe, draftStrategy);
   }
 
   async function createRecommendation() {
+    if (appliedMarketMode !== "equities") {
+      setFeedback({ state: "error", message: "Create recommendation is disabled for planned research preview modes (options/crypto)." });
+      return;
+    }
     setFeedback({ state: "loading", message: "Creating recommendation from workbench setup…" });
     const result = await fetchWorkflowApi<{ recommendation_id?: string; data?: { recommendation_id?: string } }>(
       "/api/user/recommendations/generate",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: appliedSymbol, event_text: `Workbench strategy: ${appliedStrategy}` }),
+        body: JSON.stringify({ symbol: appliedSymbol, market_mode: appliedMarketMode, event_text: `Workbench strategy: ${appliedStrategy}` }),
       }
     );
     if (!result.ok) {
@@ -256,10 +274,12 @@ export default function Page() {
     <Card>
       <div className="op-grid-4">
         <div><label>Symbol</label><input value={draftSymbol} onChange={(e) => setDraftSymbol(e.target.value.toUpperCase())} /></div>
+        <div><label>Market mode</label><select value={draftMarketMode} onChange={(e) => setDraftMarketMode(e.target.value as MarketMode)}><option value="equities">equities</option><option value="options">options</option><option value="crypto">crypto</option></select></div>
         <div><label>Timeframe</label><select value={draftTimeframe} onChange={(e) => setDraftTimeframe(e.target.value as SupportedTimeframe)}>{SUPPORTED_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}</select></div>
-        <div><label>Strategy</label><select value={draftStrategy} onChange={(e) => setDraftStrategy(e.target.value as StrategyName)}>{STRATEGIES.map((name) => <option key={name} value={name}>{name}</option>)}</select></div>
+        <div><label>Strategy</label><select value={draftStrategy} onChange={(e) => setDraftStrategy(e.target.value)}>{strategiesForDraftMode.map((entry) => <option key={entry.strategy_id} value={entry.display_name}>{entry.display_name}</option>)}</select></div>
         <div className="op-row" style={{ alignItems: "end" }}><button onClick={() => void refreshAnalysis()}>Refresh analysis</button></div>
       </div>
+      {draftMarketMode !== "equities" ? <StatusBadge tone="warn">planned research preview</StatusBadge> : null}
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void refreshAnalysis()} />
     </Card>
 
@@ -270,12 +290,13 @@ export default function Page() {
         <div><strong>Workbench state:</strong> {workbenchState.replaceAll("_", " ")}</div>
         <div><strong>Active/inactive:</strong> {setup?.active ? "active" : "inactive"} — {setup?.active_reason ?? "loading"}</div>
         <div><strong>Selected strategy:</strong> {appliedStrategy}</div>
-        <div><strong>Symbol / timeframe:</strong> {appliedSymbol} / {appliedTimeframe}</div>
+        <div><strong>Symbol / mode / timeframe:</strong> {appliedSymbol} / {appliedMarketMode} / {appliedTimeframe}</div>
         <div><strong>Workflow source:</strong> {setup?.workflow_source ?? source}</div>
+        {setup?.operator_guidance ? <div><strong>Mode guidance:</strong> {setup.operator_guidance}</div> : null}
         <div><strong>Summary:</strong> {setupSummary ?? "loading"}</div>
         <div><strong>Confidence/filter state:</strong> {setup?.confidence ?? "-"} · {(setup?.filters ?? []).join(", ")}</div>
         <div><strong>Targets:</strong> {setup?.targets?.join(" / ") ?? "-"}</div>
-        <div className="op-row" style={{ marginTop: 8 }}><button onClick={() => void createRecommendation()}>Create recommendation from setup</button></div>
+        <div className="op-row" style={{ marginTop: 8 }}><button disabled={appliedMarketMode !== "equities"} onClick={() => void createRecommendation()}>Create recommendation from setup</button></div>
       </Card>
       <Card title="Enabled indicators">{selectedIndicators.map((indicator) => <StatusBadge key={indicator} tone="neutral">{indicator}</StatusBadge>)}</Card>
     </div>
