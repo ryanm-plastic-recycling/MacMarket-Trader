@@ -218,7 +218,7 @@
 - Do not leave stale error banners visible after a successful refresh.
 - Do not let Recommendations, Replay, and Orders drift into disconnected mini-apps.
 
-- ## Roadmap discipline
+## 12. Roadmap discipline
 - Always refer work back to the product roadmap phases.
 - Unless explicitly told otherwise, assume the repo remains in **Phase 1 — Private alpha hardening** until the remaining Phase 1 gate items are truly complete.
 - Do not allow Phase 2 feature sprawl to undermine Phase 1 trust and workflow coherence.
