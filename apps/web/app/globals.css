@@ -35,11 +35,13 @@
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: Inter, Arial, sans-serif; margin: 0; }
 
-.op-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.op-shell { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
 .op-aside { border-right: 1px solid var(--border); padding: 20px; background: var(--aside-bg); }
-.op-brand-block { margin-bottom: 14px; }
-.op-brand-lockup { width: min(210px, 100%); height: auto; display: block; }
-.op-brand-lockup-compact { width: 40px; }
+.op-brand-block { margin-bottom: 18px; }
+.op-brand-lockup { width: min(280px, 100%); height: auto; display: block; }
+.op-brand-lockup-compact { width: 120px; }
+.op-brand-caption { color: var(--muted); margin-top: 12px; font-size: 13px; }
+.op-topbar-brand { display: inline-flex; align-items: center; gap: 12px; }
 .op-main { display: grid; grid-template-rows: auto 1fr; }
 .op-topbar { border-bottom: 1px solid var(--border); padding: 12px 18px; background: var(--topbar-bg); color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .op-content { padding: 18px; display: grid; gap: 12px; }

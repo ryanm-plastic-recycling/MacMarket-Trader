@@ -94,8 +94,12 @@ Must-have:
 
 ### 2026-04-03 stability follow-up (this pass)
 
-- Cleared stale workflow error banners earlier in the request lifecycle on Recommendations, Replay, and Orders so prior auth/provider errors do not linger after a valid in-session refresh path.
-- Added lightweight auto-clearing success feedback timers on Analysis, Recommendations, Replay, and Orders to keep operator pages informative without leaving persistent stale status chips after successful actions.
+- Added a shared same-origin workflow proxy helper (`app/api/_utils/workflow-proxy.ts`) so protected Next API routes resolve auth once, preserve upstream status codes, and safely return JSON/text/empty upstream bodies without throwing opaque 500s.
+- Routed core workflow endpoints (Recommendations, Replay, Orders, Analysis setup, HACO chart, Dashboard, Analyze) through the shared proxy path to surface upstream operator-usable detail (including 503/provider-blocked responses) instead of generic failures.
+- Standardized same-origin workflow page fetches to session-mode `fetchWorkflowApi` on Analysis, Recommendations, Replay, and Orders, reducing client-token timing churn for signed-in operators.
+- Cleared stale error banners on successful refresh paths and kept lightweight auto-clearing success feedback across core workflow pages.
+- Analysis keeps draft/applied controls with explicit Refresh trigger; unsupported/non-renderable selected indicators are now surfaced as an explicit operator notice.
+- Updated console branding treatment with larger lockup integration and topbar brand presence while keeping theme-aware lockup/icon assets.
 - Kept work bounded to Phase 1 trust/stability hardening; broader end-to-end workflow coverage remains open below.
 
 ## Phase 1 open items

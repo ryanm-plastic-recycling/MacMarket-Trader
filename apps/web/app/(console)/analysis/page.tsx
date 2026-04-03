@@ -45,7 +45,7 @@ const STORAGE_KEY = "macmarket-indicators-analysis";
 const PROVIDER_BLOCKED_HINT = "Configured provider unavailable. Workflows are blocked from silently falling back. For local demo testing only, set WORKFLOW_DEMO_FALLBACK=true and restart backend.";
 
 export default function Page() {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
@@ -61,6 +61,7 @@ export default function Page() {
   const [source, setSource] = useState("workflow pending");
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
+  const [unsupportedIndicators, setUnsupportedIndicators] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [workbenchState, setWorkbenchState] = useState<WorkbenchState>("auth_initializing");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -70,14 +71,19 @@ export default function Page() {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     try {
       const parsed = raw ? (JSON.parse(raw) as string[]) : [];
-      setSelectedIndicators(normalizeSelection(parsed));
+      const normalized = normalizeSelection(parsed);
+      const unsupported = normalized.filter((id) => !FIRST_CLASS_WORKFLOW_INDICATORS.includes(id));
+      setUnsupportedIndicators(unsupported);
+      setSelectedIndicators(normalized.filter((id) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(id)));
     } catch {
-      setSelectedIndicators(normalizeSelection([]));
+      setUnsupportedIndicators([]);
+      setSelectedIndicators(normalizeSelection([]).filter((id) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(id)));
     }
   }, []);
 
   function setIndicators(next: IndicatorId[]) {
     const normalized = normalizeSelection(next).filter((id) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(id));
+    setUnsupportedIndicators([]);
     setSelectedIndicators(normalized);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
@@ -97,8 +103,7 @@ export default function Page() {
     try {
       const setupResult = await fetchWorkflowApi<SetupPayload>(
         `/api/user/analysis/setup?req_symbol=${nextSymbol}&strategy=${encodeURIComponent(nextStrategy)}&timeframe=${nextTimeframe}`,
-        undefined,
-        { authMode: "token", getToken },
+        undefined
       );
       if (!setupResult.ok) {
         if (setupResult.authPending) {
@@ -203,8 +208,7 @@ export default function Page() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: appliedSymbol, event_text: `Workbench strategy: ${appliedStrategy}` }),
-      },
-      { authMode: "token", getToken },
+      }
     );
     if (!result.ok) {
       if (result.status === 503) {
@@ -240,6 +244,14 @@ export default function Page() {
     </Card>
 
     {workbenchState === "provider_unavailable" ? <ErrorState title="Provider configured but unavailable" hint={PROVIDER_BLOCKED_HINT} /> : null}
+
+
+    {unsupportedIndicators.length > 0 ? (
+      <ErrorState
+        title="Indicator availability note"
+        hint={`Selected but not yet renderable on this chart: ${unsupportedIndicators.join(", ")}. Choose from supported indicators below.`}
+      />
+    ) : null}
 
     <Card>
       <div className="op-grid-4">

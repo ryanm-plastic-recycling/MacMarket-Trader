@@ -11,7 +11,7 @@ type Run = { id: number; symbol: string; created_at: string; recommendation_coun
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
 
 export default function Page() {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
   const [runs, setRuns] = useState<Run[]>([]);
@@ -35,7 +35,7 @@ export default function Page() {
     setError(null);
     setStepError(null);
     setFeedback({ state: "loading", message: "Loading replay runs…" });
-    const result = await fetchWorkflowApi<Run>("/api/user/replay-runs", undefined, { authMode: "token", getToken });
+    const result = await fetchWorkflowApi<Run>("/api/user/replay-runs");
     if (!result.ok) {
       if (result.authPending) {
         setError(null);
@@ -71,8 +71,7 @@ export default function Page() {
     const preferredSymbol = new URLSearchParams(searchKey).get("symbol") ?? selected?.symbol ?? "AAPL";
     const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean }>(
       "/api/user/replay-runs",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: preferredSymbol }) },
-      { authMode: "token", getToken },
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: preferredSymbol }) }
     );
     if (!run.ok) {
       if (run.authPending) {
@@ -105,7 +104,7 @@ export default function Page() {
     setSelectedRunId(runId);
     setBusy(true);
     setStepError(null);
-    const result = await fetchWorkflowApi<Step>(`/api/user/replay-runs/${runId}/steps`, undefined, { authMode: "token", getToken });
+    const result = await fetchWorkflowApi<Step>(`/api/user/replay-runs/${runId}/steps`);
     if (!result.ok) {
       if (result.authPending) {
         setStepError(null);
