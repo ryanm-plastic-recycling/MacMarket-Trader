@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     polygon_api_key: str = ""
     polygon_base_url: str = "https://api.polygon.io"
     polygon_timeout_seconds: int = 8
+    workflow_demo_fallback: bool = False
 
     # deterministic recommendation quality gates
     min_expected_rr: float = 1.4

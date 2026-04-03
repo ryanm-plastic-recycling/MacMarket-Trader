@@ -81,6 +81,12 @@ Must-have:
 - Admin users page and Account page present operator-facing identity/authorization fields (role, approval, MFA, last seen/authenticated, invite state when available).
 - Provider health page includes operational impact language for fallback-vs-provider interpretation.
 
+- Analysis now uses draft-vs-applied controls to prevent protected requests on every symbol keystroke.
+- Analysis/recommendations chart indicator rendering is implemented for EMA 20/50/200, VWAP, Bollinger Bands, prior-day levels, volume bars, and RSI strip.
+- Same-origin `/api/charts/haco` and `/api/user/analysis/setup` routes now return auth-initializing responses (425) instead of early 401 during token/session bridge timing.
+- Provider-configured-but-degraded workflow blocks now include operator guidance for explicit local/dev demo fallback (`WORKFLOW_DEMO_FALLBACK=true`) without silent production fallback.
+- Console/auth surfaces now use theme-aware MacMarket brand lockup and icon assets.
+
 ## Phase 1 open items
 
 - Add broader end-to-end UI tests for full in-session loop validation (Analysis -> Recommendations -> Replay -> Orders).

@@ -36,7 +36,11 @@ MacMarket-Trader can run in deterministic fallback mode, Polygon mode (preferred
   - `MARKET_DATA_ENABLED=true`
   - `APCA_API_KEY_ID` + `APCA_API_SECRET_KEY`
 
-Fallback behavior is always preserved: if Polygon/Alpaca calls fail, backend chart/snapshot reads automatically revert to deterministic fallback bars and the provider-health endpoint reports degraded status.
+Fallback behavior is always preserved for chart/snapshot reads. User-facing workflow endpoints (Analysis setup, Recommendations, Replay, Orders) intentionally block when provider-backed data is configured but degraded, so operators do not silently run execution workflows on demo bars.
+
+Local/dev override (explicit):
+- `WORKFLOW_DEMO_FALLBACK=true` (backend `.env`) allows workflow endpoints to proceed in fallback mode **only** when `ENVIRONMENT` is `dev`, `local`, or `test`.
+- Keep this disabled for production-facing behavior.
 
 ## Backend (FastAPI)
 
@@ -162,8 +166,19 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 
 ## Strategy Workbench workflow
 
+- Indicator selector now exposes first-class rendered overlays on Analysis and Recommendations charts:
+  - EMA 20, EMA 50, EMA 200
+  - VWAP
+  - Bollinger Bands
+  - Prior day high/low
+  - Volume bars
+  - RSI compact strip
+- Non-rendered indicators remain visible but disabled until implemented to avoid misleading toggle behavior.
+
+
 - New flagship-adjacent workflow page: `/analysis` (Analysis / Strategy Workbench).
 - Operators can select symbol, timeframe, strategy, and review chart + setup levels (entry/stop/targets/trigger/confidence).
+- Analysis uses draft controls and only runs protected fetches on **Refresh analysis** (plus one intentional initial load after auth is ready).
 - Supported initial strategy menu:
   - Event Continuation
   - Breakout / Prior-Day High
@@ -173,6 +188,10 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
   - HACO Context (supporting context, not sole approval engine)
 - Workbench has CTA: **Create recommendation from this setup**.
 - Source coherence is explicit: provider/fallback source chip is displayed and fallback is labeled throughout workflow context.
+
+- Supported Analysis timeframes are currently: `1D`, `4H`, `1H` (no synthetic `1W` option).
+- Workflow pages explicitly label source mode as provider, fallback (local/dev override), or provider-blocked.
+- Source chips should never display `unknown`; if source is not resolved yet, UI shows `workflow pending`.
 
 ## Theme persistence (SSR-safe)
 

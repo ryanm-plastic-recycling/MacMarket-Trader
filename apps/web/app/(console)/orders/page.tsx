@@ -17,7 +17,7 @@ export default function Page() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
-  const [dataSource, setDataSource] = useState("workflow unavailable");
+  const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
@@ -36,8 +36,11 @@ export default function Page() {
         setBusy(false);
         return;
       }
-      setError(result.error ?? "Orders load failed.");
-      setFeedback({ state: "error", message: result.error ?? "Orders load failed." });
+      const message = result.status === 503
+        ? "Configured provider unavailable. Orders are blocked from silently falling back. For local demo only, enable WORKFLOW_DEMO_FALLBACK=true in backend env."
+        : (result.error ?? "Orders load failed.");
+      setError(message);
+      setFeedback({ state: "error", message });
       setBusy(false);
       return;
     }
@@ -46,7 +49,7 @@ export default function Page() {
     setOrders(result.items);
     const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
     setSelectedOrderId((prev) => prev ?? result.items.find((order) => order.recommendation_id === requestedRecommendation)?.order_id ?? result.items[0]?.order_id ?? null);
-    setDataSource((result.items[0]?.fallback_mode ? `fallback (${result.items[0]?.market_data_source ?? "provider"})` : (result.items[0]?.market_data_source ?? "provider")) ?? "workflow unavailable");
+    setDataSource((result.items[0]?.fallback_mode ? `fallback (${result.items[0]?.market_data_source ?? "provider"})` : (result.items[0]?.market_data_source ?? "provider")) ?? "workflow pending");
     setBusy(false);
   }
 
@@ -65,9 +68,12 @@ export default function Page() {
         setBusy(false);
         return;
       }
-      setError(result.error ?? "Unable to stage order.");
+      const message = result.status === 503
+        ? "Configured provider unavailable. Orders are blocked from silently falling back. For local demo only, enable WORKFLOW_DEMO_FALLBACK=true in backend env."
+        : (result.error ?? "Unable to stage order.");
+      setError(message);
       setStatus("failed");
-      setFeedback({ state: "error", message: result.error ?? "Unable to stage order." });
+      setFeedback({ state: "error", message });
       setBusy(false);
       return;
     }
@@ -120,7 +126,7 @@ export default function Page() {
           <div><strong>Shares:</strong> {selected.shares}</div>
           <div><strong>Limit:</strong> {selected.limit_price}</div>
           <div><strong>Status:</strong> {selected.status}</div>
-          <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "unknown"})` : (selected.market_data_source ?? dataSource)}</div>
+          <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)}</div>
           <div><strong>Created at:</strong> {selected.created_at}</div>
           <div><strong>Fills:</strong></div>
           {selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}

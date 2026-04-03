@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ThemeToggle } from "@/components/theme-toggle";
+import { BrandLockup } from "@/components/brand-lockup";
 
 const links = [
   ["/dashboard", "Dashboard"],
@@ -21,8 +22,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="op-shell">
       <aside className="op-aside">
-        <h2 style={{ marginTop: 0, marginBottom: 8 }}>MacMarket Trader</h2>
-        <p style={{ color: "#8da1b8", marginTop: 0, fontSize: 12 }}>Invite-only private alpha console</p>
+        <BrandLockup />
+        <p style={{ color: "#8da1b8", marginTop: 8, fontSize: 12 }}>Invite-only private alpha console</p>
         <nav className="op-nav">
           {links.map(([href, label]) => (
             <Link key={href} href={href}>{label}</Link>
