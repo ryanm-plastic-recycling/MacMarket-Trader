@@ -102,10 +102,18 @@ Must-have:
 - Updated console branding treatment with larger lockup integration and topbar brand presence while keeping theme-aware lockup/icon assets.
 - Kept work bounded to Phase 1 trust/stability hardening; broader end-to-end workflow coverage remains open below.
 
+### 2026-04-03 identity reconciliation hardening (this pass)
+
+- Fixed private-alpha auth sync reconciliation so split local identities (Clerk-sub row + invite/email row) merge into one canonical `app_users` row during login sync.
+- Canonical merge now preserves local authorization truth (`approval_status`, `app_role`) and upgrades merged identity fields (`external_auth_user_id`, normalized email, best display name, MFA OR-merge).
+- Added backend tests for invite/Clerk merge, placeholder-email reconciliation, approved/admin preservation, duplicate-row retirement, `/user/me` real-email output, and idempotent repeated login.
+- Added one-time local/dev repair utility (`scripts/reconcile_duplicate_users.py`) for pre-existing duplicate rows.
+
 ## Phase 1 open items
 
 - Add broader end-to-end UI tests for full in-session loop validation (Analysis -> Recommendations -> Replay -> Orders).
 - Expand integration tests around auth-initialization edge timing under real Clerk session turnover.
+- Add a production-safe admin endpoint wrapper for duplicate-identity repair (script exists for local/dev; hosted runbook path remains open).
 - Tighten consistency checks so dashboard/replay/orders/recommendations source badges can be regression-tested together.
 - Continue replacing remaining ad-hoc inline styles on core pages with reusable operator-console components.
 - Complete final private-alpha operator runbook pass with screenshots/examples.

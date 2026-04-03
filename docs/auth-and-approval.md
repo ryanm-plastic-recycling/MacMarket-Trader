@@ -25,7 +25,18 @@ Legacy/public signup can still exist as Clerk plumbing, but private-alpha invite
 
 - Sync lookup order is:
   1. `external_auth_user_id` match
-  2. fallback `email` match for invited pre-provisioned users
+  2. normalized `email` match
+  3. invited placeholder `external_auth_user_id` match (`invited::<email>`)
+- If multiple local rows represent the same human (for example split invite + Clerk rows), auth sync deterministically merges them into one canonical `app_users` row.
+- Merge preserves local authorization truth:
+  - strongest local `approval_status` wins (approved > pending > rejected/suspended)
+  - strongest local `app_role` wins (admin > user)
+  - merged `mfa_enabled` is true if any merged row has MFA enabled
+- Canonical merged identity always writes:
+  - `external_auth_user_id` = real Clerk `sub`
+  - `email` = normalized real email
+  - `display_name` = best non-placeholder display name
+- Duplicate rows are retired after merge and dependent local records are re-linked to the canonical user row.
 - Existing local `approval_status` / `app_role` are never overwritten by auth claims.
 - Existing local admin users remain admin across re-login sync.
 - Pending invited users remain pending until explicit admin approval.
@@ -98,6 +109,9 @@ Fail-closed runtime guardrail:
 - Local DB remains the source of truth for `approval_status` and `app_role`.
 - Placeholder template emails (for example `{{...}}`) are ignored for display and replaced on next valid identity sync.
 - Account/Admin pages surface an explicit identity warning when profile hydration is incomplete.
+- A one-time local/dev repair path is available for pre-existing split identities:
+  - `python scripts/reconcile_duplicate_users.py` (full pass)
+  - `python scripts/reconcile_duplicate_users.py --email user@example.com --external-id clerk_xxx` (targeted pass)
 
 ## Client auth readiness behavior (2026-04 update)
 
