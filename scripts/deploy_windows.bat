@@ -12,7 +12,7 @@ set "BACKEND_HOST=localhost"
 set "FRONTEND_HOST=localhost"
 set "EXPECTED_NODE_MAJOR=v20"
 set "EXPECTED_NODE_DISPLAY=any supported v20.x release"
-set "RUN_TESTS=0"
+set "RUN_TESTS=1"
 set "RUN_E2E=0"
 set "STRICT_NODE=0"
 
