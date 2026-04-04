@@ -159,3 +159,61 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     assert market_entry["sample_symbol"] == "AAPL"
     assert market_entry["latency_ms"] == 12.4
     assert market_entry["last_success_at"].startswith("2026-04-02")
+
+
+def test_provider_health_reports_blocked_workflows_when_probe_fails_and_demo_fallback_disabled(monkeypatch) -> None:
+    class StubMarketDataService:
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data",
+                mode="polygon",
+                status="warning",
+                details="Polygon probe failed: HTTP Error 403: Forbidden",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", False)
+    monkeypatch.setattr(settings, "environment", "local")
+
+    summary = admin_routes.provider_health_summary()
+    assert summary["configured_provider"] == "polygon"
+    assert summary["effective_read_mode"] == "fallback"
+    assert summary["workflow_execution_mode"] == "blocked"
+
+    payload = admin_routes.provider_health()
+    market_entry = next(item for item in payload["providers"] if item["provider"] == "market_data")
+    assert market_entry["workflow_execution_mode"] == "blocked"
+    assert "blocked" in market_entry["operational_impact"].lower()
+
+
+def test_provider_health_reports_demo_fallback_when_probe_fails_and_demo_fallback_enabled(monkeypatch) -> None:
+    class StubMarketDataService:
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data",
+                mode="polygon",
+                status="warning",
+                details="Polygon probe failed: HTTP Error 403: Forbidden",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", True)
+    monkeypatch.setattr(settings, "environment", "local")
+
+    summary = admin_routes.provider_health_summary()
+    assert summary["configured_provider"] == "polygon"
+    assert summary["effective_read_mode"] == "fallback"
+    assert summary["workflow_execution_mode"] == "demo_fallback"
+
+    payload = admin_routes.provider_health()
+    market_entry = next(item for item in payload["providers"] if item["provider"] == "market_data")
+    assert market_entry["workflow_execution_mode"] == "demo_fallback"
+    assert "explicit deterministic demo fallback bars" in market_entry["operational_impact"].lower()

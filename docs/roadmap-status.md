@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-03
+Last updated: 2026-04-04
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -126,12 +126,26 @@ Still open from this track:
 - Crypto venue funding/basis/OI live data integration and liquidation-aware risk logic remain later-phase items.
 - Full options/crypto paper execution routing is still out of scope for Phase 1.
 
+### 2026-04-04 provider truth + HACO contract hardening (this pass)
+
+- Unified provider truth model across Dashboard + Provider Health with explicit fields for:
+  - configured provider
+  - effective chart/snapshot read mode
+  - workflow execution mode (`provider` / `demo_fallback` / `blocked`)
+  - failure reason when probe fails.
+- Provider health now reports blocked workflows (instead of false fallback-running copy) when provider degrades and `WORKFLOW_DEMO_FALLBACK=false`.
+- Local/dev/test explicit demo fallback (`WORKFLOW_DEMO_FALLBACK=true`) is now messaged as explicit deterministic demo fallback execution mode.
+- HACO Context indicator selector is now contract-accurate: only HACO/HACOLT are enabled and persisted; unsupported workflow overlays are not implied.
+- Added backend tests for degraded-provider blocked-vs-demo-fallback messaging and frontend unit coverage for HACO indicator support contract.
+- Updated local and market-data docs to match runtime workflow truth.
+
 ## Phase 1 open items
 
 - Add broader end-to-end UI tests for full in-session loop validation (Analysis -> Recommendations -> Replay -> Orders).
 - Expand integration tests around auth-initialization edge timing under real Clerk session turnover.
 - Add a production-safe admin endpoint wrapper for duplicate-identity repair (script exists for local/dev; hosted runbook path remains open).
 - Tighten consistency checks so dashboard/replay/orders/recommendations source badges can be regression-tested together.
+- Add end-to-end UI regression coverage for dashboard/provider-health truth-model agreement.
 - Continue replacing remaining ad-hoc inline styles on core pages with reusable operator-console components.
 - Complete final private-alpha operator runbook pass with screenshots/examples.
 - Keep options/crypto paths in explicit research-preview mode until mode-native replay + risk + paper workflow parity is implemented and tested.

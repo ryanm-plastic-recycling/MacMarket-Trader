@@ -15,6 +15,8 @@ export const FIRST_CLASS_WORKFLOW_INDICATORS: IndicatorId[] = [
   "rsi",
 ];
 
+export const HACO_CONTEXT_SUPPORTED_INDICATORS: IndicatorId[] = ["haco", "hacolt"];
+
 function ema(values: number[], period: number): Array<number | null> {
   const multiplier = 2 / (period + 1);
   const output: Array<number | null> = [];

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, ErrorState, StatusBadge } from "@/components/operator-ui";
 import { IndicatorSelector } from "@/components/charts/indicator-selector";
 import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
+import { HACO_CONTEXT_SUPPORTED_INDICATORS } from "@/lib/chart-indicators";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 
 const STORAGE_KEY = "macmarket-indicators-haco";
@@ -38,16 +39,20 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     if (typeof window !== "undefined") {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       try {
-        setSelectedIndicators(normalizeSelection(raw ? (JSON.parse(raw) as string[]) : ["haco", "hacolt"]));
+        setSelectedIndicators(
+          normalizeSelection(raw ? (JSON.parse(raw) as string[]) : HACO_CONTEXT_SUPPORTED_INDICATORS).filter((id) =>
+            HACO_CONTEXT_SUPPORTED_INDICATORS.includes(id),
+          ),
+        );
       } catch {
-        setSelectedIndicators(normalizeSelection(["haco", "hacolt"]));
+        setSelectedIndicators(HACO_CONTEXT_SUPPORTED_INDICATORS);
       }
     }
     void load();
   }, []);
 
   function onIndicatorChange(next: IndicatorId[]) {
-    const normalized = normalizeSelection(next);
+    const normalized = normalizeSelection(next).filter((id) => HACO_CONTEXT_SUPPORTED_INDICATORS.includes(id));
     setSelectedIndicators(normalized);
     if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   }
@@ -136,7 +141,10 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       {error ? <ErrorState title="HACO unavailable" hint={error} /> : null}
 
       <Card title={embedded ? "HACO mini-module" : "Price pane + synced HACO/HACOLT strips"}>
-        <IndicatorSelector selected={selectedIndicators} onChange={onIndicatorChange} />
+        <IndicatorSelector selected={selectedIndicators} onChange={onIndicatorChange} enabledIds={HACO_CONTEXT_SUPPORTED_INDICATORS} />
+        <p style={{ margin: "6px 0", color: "#9fb0c3" }}>
+          HACO Context currently supports HACO + HACOLT strips only. Use Analysis/Recommendations for first-class workflow overlays.
+        </p>
         <div ref={priceRef} />
         <div ref={hacoRef} style={{ marginTop: 6 }} />
         <div ref={hacoltRef} style={{ marginTop: 6 }} />
