@@ -17,6 +17,7 @@ The defensible edge is:
 
 ## Current Status
 MacMarket-Trader remains in **Phase 1 — Private alpha hardening** for operator trust and workflow coherence.
+Phase 1 is **not formally closed yet** in this pass; see “Phase 1 remaining blockers”.
 
 ## Core product pillars
 
@@ -139,15 +140,24 @@ Still open from this track:
 - Added backend tests for degraded-provider blocked-vs-demo-fallback messaging and frontend unit coverage for HACO indicator support contract.
 - Updated local and market-data docs to match runtime workflow truth.
 
-## Phase 1 open items
+### 2026-04-04 workflow hardening + closeout validation pass (this pass)
 
-- Add broader end-to-end UI tests for full in-session loop validation (Analysis -> Recommendations -> Replay -> Orders).
-- Expand integration tests around auth-initialization edge timing under real Clerk session turnover.
-- Add a production-safe admin endpoint wrapper for duplicate-identity repair (script exists for local/dev; hosted runbook path remains open).
-- Tighten consistency checks so dashboard/replay/orders/recommendations source badges can be regression-tested together.
-- Add end-to-end UI regression coverage for dashboard/provider-health truth-model agreement.
-- Continue replacing remaining ad-hoc inline styles on core pages with reusable operator-console components.
-- Complete final private-alpha operator runbook pass with screenshots/examples.
+- Added Phase 1 hardening regression coverage for:
+  - deterministic Analysis/Recommendations/Replay/Orders coherence via user workflow API path,
+  - recommendation-to-order lineage preservation using explicit `recommendation_id`,
+  - dashboard/provider-health provider-truth-model agreement,
+  - degraded-provider blocked-vs-demo-fallback workflow execution labeling.
+- Hardened paper order staging contract:
+  - `/user/orders` now supports staging directly from an existing recommendation id,
+  - staged order now preserves recommendation linkage, symbol, and workflow source metadata from the originating recommendation when provided.
+- Hardened same-origin admin provider-health route via shared workflow proxy helper so auth-initializing and upstream error handling match other protected workflow routes.
+- Added practical operator runbook: `docs/private-alpha-operator-runbook.md` (local startup, workflow verification checklist, provider/fallback truth interpretation, and common recovery steps).
+
+## Phase 1 remaining blockers (truthful)
+
+- Add browser-level end-to-end UI regression for the full in-session click path (Analysis -> Recommendations -> Replay -> Orders), including stale-banner recovery checks.
+- Add browser-level dashboard/provider-health parity regression so shared provider truth chips are test-enforced at the rendered UI layer (not only API layer).
+- Expand auth/session-turnover integration coverage under real Clerk token/session churn for protected same-origin routes.
 - Keep options/crypto paths in explicit research-preview mode until mode-native replay + risk + paper workflow parity is implemented and tested.
 
 ### Phase 2 — Alpha differentiators
