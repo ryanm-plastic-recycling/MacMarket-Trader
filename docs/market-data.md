@@ -1,16 +1,23 @@
-# Market Data Setup (Alpaca + deterministic fallback)
+# Market Data Setup (Polygon/Alpaca + deterministic fallback)
 
-MacMarket-Trader v1 supports one real market-data provider: **Alpaca**.
+MacMarket-Trader v1 supports real market-data providers: **Polygon** (preferred) and **Alpaca** (alternate scaffold).
 
 If Alpaca is not configured, disabled, or temporarily unavailable, the backend stays operational in explicit **deterministic fallback** mode.
 
 ## Backend `.env` variables (repo root)
 
 ```bash
+POLYGON_ENABLED=true
+POLYGON_API_KEY=...
+
+# Optional Polygon tuning
+POLYGON_BASE_URL=https://api.polygon.io
+POLYGON_TIMEOUT_SECONDS=8
+
+# Alternate provider scaffold
+POLYGON_ENABLED=false
 MARKET_DATA_PROVIDER=alpaca
 MARKET_DATA_ENABLED=true
-
-# Alpaca credentials (Trading API-style headers)
 APCA_API_KEY_ID=...
 APCA_API_SECRET_KEY=...
 
@@ -22,7 +29,7 @@ MARKET_DATA_LATEST_CACHE_TTL_SECONDS=10
 MARKET_DATA_HISTORICAL_CACHE_TTL_SECONDS=120
 ```
 
-## Feed selection guidance
+## Feed selection guidance (Alpaca)
 
 - `iex` (default): dev-friendly and safest default for paper-first local workflows.
 - `sip`: full SIP feed when entitlement is available.
@@ -39,20 +46,30 @@ Fallback mode is used when:
 In fallback mode:
 - HACO chart payloads still render with deterministic bars.
 - Dashboard latest snapshot still resolves using deterministic market data.
-- Provider-health surfaces a warning and indicates fallback.
+- Provider-health shows:
+  - configured provider (`polygon` or `alpaca`)
+  - effective chart/snapshot read mode
+  - workflow execution mode (`provider`, `demo_fallback`, or `blocked`)
+  - failure reason when probe/dependency checks fail.
+
+## Workflow execution truth
+
+- Healthy provider probe: workflows run on provider-backed bars.
+- Degraded provider probe + `WORKFLOW_DEMO_FALLBACK=false`: workflows are **blocked** (no silent fallback execution).
+- Degraded provider probe + `WORKFLOW_DEMO_FALLBACK=true` in `dev/local/test`: workflows run on explicit deterministic demo fallback bars.
 
 ## UI indicators (live vs fallback)
 
 Use these operator-console cues:
-- **Dashboard top banner**: `Provider summary` is `ok` when Alpaca health probe succeeds, otherwise `degraded`.
-- **Dashboard provider-health pane**: `Market data` shows `alpaca` when live, `fallback` when not.
+- **Dashboard provider summary**: shows workflow execution mode (`provider`, `demo_fallback`, or `blocked`) plus configured provider + effective read mode.
+- **Dashboard alert log**: mirrors provider-health operational impact messaging for blocked-vs-demo-fallback states.
 - **HACO workspace**: `Data source` and `(deterministic fallback active)` labeling make source mode explicit.
-- **Provider health page**: market-data card includes mode, feed, configured flag, sample symbol, latency, and last-success timestamp.
+- **Provider health page**: market-data card includes configured provider, effective read mode, workflow execution mode, feed/configuration details, failure reason, and operational impact text.
 
 ## Operator-facing provider mode guidance
 
-- Provider health page now summarizes live vs fallback mode, latency, sample symbol, and last successful fetch.
-- If provider requests are rejected (for example 403), UI explains that fallback mode is active and advises checking key/plan permissions.
+- Provider health page now summarizes configured-vs-effective-vs-workflow mode, latency, sample symbol, and last successful fetch.
+- If provider requests are rejected (for example 403), UI explains whether workflows are blocked or running on explicit demo fallback based on `WORKFLOW_DEMO_FALLBACK`.
 
 ## Workflow source coherence for indicator workbench
 

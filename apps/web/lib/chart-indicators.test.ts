@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyIndicatorsToChart } from "@/lib/chart-indicators";
+import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS, HACO_CONTEXT_SUPPORTED_INDICATORS } from "@/lib/chart-indicators";
 import type { IndicatorId } from "@/lib/indicator-framework";
 
 type SeriesRecorder = { kind: string; options?: Record<string, unknown>; data: unknown[] };
@@ -39,6 +39,11 @@ const candles = Array.from({ length: 240 }).map((_, idx) => ({
 }));
 
 describe("applyIndicatorsToChart", () => {
+  it("keeps HACO context indicator contract restricted to rendered strips", () => {
+    expect(HACO_CONTEXT_SUPPORTED_INDICATORS).toEqual(["haco", "hacolt"]);
+    expect(HACO_CONTEXT_SUPPORTED_INDICATORS.every((item) => !FIRST_CLASS_WORKFLOW_INDICATORS.includes(item))).toBe(true);
+  });
+
   it("renders first-class workflow indicators with data-bearing series", () => {
     const { chart, series, scaleCalls } = buildChartRecorder();
     const selected: IndicatorId[] = ["ema20", "ema50", "ema200", "vwap", "bollinger", "prior_day_levels", "volume", "rsi"];

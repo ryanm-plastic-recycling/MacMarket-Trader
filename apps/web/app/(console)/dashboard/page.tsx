@@ -12,7 +12,7 @@ type DashboardPayload = {
   market_regime: string;
   last_refresh: string;
   account: { app_role: string; approval_status: string };
-  provider_health: { summary: string; auth: string; email: string; market_data: string };
+  provider_health: { summary: string; auth: string; email: string; market_data: string; configured_provider: string; effective_read_mode: string; workflow_execution_mode: string; failure_reason?: string };
   latest_market_snapshot?: { symbol: string; as_of: string; close: number; source: string; fallback_mode: boolean };
   active_recommendations: Recommendation[];
   recent_replay_runs: Array<{ id: number; symbol: string; recommendation_count: number; approved_count: number; created_at: string }>;
@@ -61,7 +61,12 @@ export default function Page() {
       <div className="op-grid-4">
         <Card title="Account role"><StatusBadge tone="neutral">{data?.account.app_role ?? "-"}</StatusBadge></Card>
         <Card title="Approval"><StatusBadge tone={data?.account.approval_status === "approved" ? "good" : "warn"}>{data?.account.approval_status ?? "-"}</StatusBadge></Card>
-        <Card title="Provider summary"><StatusBadge tone={data?.provider_health.summary === "ok" ? "good" : "warn"}>{data?.provider_health.market_data ?? "-"}</StatusBadge></Card>
+        <Card title="Provider summary">
+          <StatusBadge tone={data?.provider_health.workflow_execution_mode === "provider" ? "good" : "warn"}>{data?.provider_health.workflow_execution_mode ?? "-"}</StatusBadge>
+          <div style={{ marginTop: 8, color: "#9fb0c3" }}>
+            configured: {data?.provider_health.configured_provider ?? "-"} · reads: {data?.provider_health.effective_read_mode ?? "-"}
+          </div>
+        </Card>
         <Card title="Last refresh">{data?.last_refresh ?? "-"}</Card>
       </div>
 
@@ -80,6 +85,11 @@ export default function Page() {
       </div>
       <Card title="Next actions">
         {(data?.workflow_guide ?? []).map((item, idx) => <div key={idx}>{idx + 1}. {item}</div>)}
+        {data?.provider_health.failure_reason ? (
+          <div style={{ marginTop: 8, color: "#f7b267" }}>
+            Provider probe detail: {data.provider_health.failure_reason}
+          </div>
+        ) : null}
       </Card>
 
       <div className="op-grid-4">

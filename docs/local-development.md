@@ -151,7 +151,10 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 
 - Clean reset: stop app -> remove local sqlite db -> rerun seed/bootstrap -> restart backend/web.
 - Use one hostname consistently in local dev sessions (for example, always `http://localhost:3000`) to avoid cookie/session drift.
-- Provider fallback interpretation: when provider is configured but unavailable, workflows explicitly run in fallback mode and UI badges must declare fallback source.
+- Provider fallback interpretation:
+  - provider degraded + `WORKFLOW_DEMO_FALLBACK=false` => workflows are blocked
+  - provider degraded + `WORKFLOW_DEMO_FALLBACK=true` (dev/local/test only) => workflows run on explicit demo fallback bars
+  - dashboard + provider health expose the same configured/effective/workflow mode truth model.
 
 ## Auth readiness and inline operator feedback (2026-04 update)
 
@@ -174,6 +177,7 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
   - Volume bars
   - RSI compact strip
 - Non-rendered indicators remain visible but disabled until implemented to avoid misleading toggle behavior.
+- HACO Context restricts indicator selection to HACO/HACOLT strips only; first-class workflow overlays remain on Analysis/Recommendations charts.
 
 
 - New flagship-adjacent workflow page: `/analysis` (Analysis / Strategy Workbench).

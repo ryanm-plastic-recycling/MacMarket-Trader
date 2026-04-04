@@ -152,9 +152,14 @@ def dashboard(user=Depends(require_approved_user)):
                 "kind": "provider",
                 "level": "warning" if provider_health["summary"] != "ok" else "info",
                 "message": (
-                    f"{provider_health['market_data'].capitalize()} market data is active."
-                    if provider_health["summary"] == "ok"
-                    else "Deterministic fallback market data mode is active."
+                    f"{provider_health['configured_provider'].capitalize()} provider-backed workflows are active."
+                    if provider_health["workflow_execution_mode"] == "provider"
+                    else (
+                        "Provider probe degraded and workflow demo fallback is disabled. "
+                        "Recommendations, replay, and orders are blocked."
+                        if provider_health["workflow_execution_mode"] == "blocked"
+                        else "Explicit demo fallback bars are active for workflows."
+                    )
                 ),
             }
         ],
@@ -744,17 +749,61 @@ def list_invites(_admin=Depends(require_admin)):
 
 def provider_health_summary() -> dict[str, str]:
     market_health = market_data_service.provider_health(sample_symbol="AAPL")
-    market_mode = market_health.mode if market_health.status == "ok" else "fallback"
+    configured_provider = "fallback"
+    if settings.polygon_enabled:
+        configured_provider = "polygon"
+    elif settings.market_data_enabled:
+        configured_provider = settings.market_data_provider.strip().lower() or "fallback"
+
+    env = settings.environment.strip().lower()
+    allow_demo_fallback = settings.workflow_demo_fallback and env in {"dev", "local", "test"}
+    provider_degraded = market_health.status != "ok"
+
+    effective_read_mode = configured_provider if not provider_degraded else "fallback"
+    if provider_degraded and configured_provider != "fallback" and not allow_demo_fallback:
+        workflow_execution_mode = "blocked"
+    elif configured_provider == "fallback" or (provider_degraded and allow_demo_fallback):
+        workflow_execution_mode = "demo_fallback"
+    else:
+        workflow_execution_mode = "provider"
+
+    if workflow_execution_mode == "blocked":
+        market_mode = "blocked"
+    elif effective_read_mode == "fallback":
+        market_mode = "fallback"
+    else:
+        market_mode = configured_provider
+
     auth_mode = settings.auth_provider.strip().lower() or "mock"
     email_mode = settings.email_provider.strip().lower() or "console"
-    summary = "ok" if market_health.status == "ok" else "degraded"
-    return {"summary": summary, "auth": auth_mode, "email": email_mode, "market_data": market_mode}
+    summary = "ok" if workflow_execution_mode == "provider" else "degraded"
+    return {
+        "summary": summary,
+        "auth": auth_mode,
+        "email": email_mode,
+        "market_data": market_mode,
+        "configured_provider": configured_provider,
+        "effective_read_mode": effective_read_mode,
+        "workflow_execution_mode": workflow_execution_mode,
+        "failure_reason": market_health.details if provider_degraded else "",
+    }
 
 
 @router.get("/provider-health")
 def provider_health(_admin=Depends(require_admin)):
     summary = provider_health_summary()
     market_health = market_data_service.provider_health(sample_symbol="AAPL")
+    workflow_mode = summary["workflow_execution_mode"]
+    operational_impact = "Recommendations, replay, and paper orders are using provider-backed bars."
+    if workflow_mode == "blocked":
+        operational_impact = (
+            "Configured provider probe failed and WORKFLOW_DEMO_FALLBACK=false. "
+            "Recommendations, replay, and paper orders are blocked until provider health recovers."
+        )
+    elif workflow_mode == "demo_fallback":
+        operational_impact = (
+            "Recommendations, replay, and paper orders are running on explicit deterministic demo fallback bars."
+        )
     return {
         "checked_at": utc_now().isoformat(),
         "providers": [
@@ -775,11 +824,11 @@ def provider_health(_admin=Depends(require_admin)):
                 "mode": summary["market_data"],
                 "status": market_health.status,
                 "details": market_health.details,
-                "operational_impact": (
-                    "Recommendations, replay, and paper orders are currently running on deterministic fallback bars."
-                    if market_health.status != "ok"
-                    else "Recommendations, replay, and paper orders are using provider-backed bars."
-                ),
+                "configured_provider": summary["configured_provider"],
+                "effective_read_mode": summary["effective_read_mode"],
+                "workflow_execution_mode": workflow_mode,
+                "failure_reason": summary["failure_reason"] or None,
+                "operational_impact": operational_impact,
                 "configured": market_health.configured,
                 "feed": market_health.feed,
                 "sample_symbol": market_health.sample_symbol,
