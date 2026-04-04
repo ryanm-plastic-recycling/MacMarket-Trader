@@ -18,8 +18,8 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
   }, []);
 
   const src = compact
-    ? (theme === "light" ? "/brand/macmarket-icon-light.svg" : "/brand/macmarket-icon-dark.svg")
-    : (theme === "light" ? "/brand/macmarket-lockup-light.svg" : "/brand/macmarket-lockup-dark.svg");
+    ? (theme === "light" ? "/brand/square_console_ticks_icon_light.png" : "/brand/square_console_ticks_icon_dark.png")
+    : (theme === "light" ? "/brand/square_console_ticks_lockup_light.png" : "/brand/square_console_ticks_lockup_dark.png");
 
   return (
     <img
