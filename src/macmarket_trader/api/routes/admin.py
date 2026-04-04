@@ -207,6 +207,8 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
     symbol = str(req.get("symbol") or "AAPL").upper()
     event_text = str(req.get("event_text") or "Operator-triggered deterministic refresh run.")
     market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
+    approval_status = getattr(_user.approval_status, "value", _user.approval_status)
+    user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     bars, source, fallback_mode = _workflow_bars(symbol)
     try:
         rec = recommendation_service.generate(
@@ -216,6 +218,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
             event=None,
             portfolio=PortfolioSnapshot(),
             market_mode=market_mode,
+            user_is_approved=user_is_approved,
         )
     except ValueError as exc:
         raise HTTPException(

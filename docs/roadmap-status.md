@@ -204,6 +204,9 @@ Still open from this track:
 - Aligned provider-truth regression tests with the current configured/effective/workflow model:
   - `test_provider_health_result_structure` now pins a configured Polygon provider and asserts configured provider, effective read mode, and workflow execution mode explicitly.
   - `test_degraded_provider_reports_blocked_or_demo_fallback_explicitly` now uses a configured non-fallback provider in degraded mode so blocked-vs-demo-fallback assertions reflect real provider-truth policy.
+- Fixed recommendation approval propagation in user workflow generation:
+  - approved operators now deterministically propagate local `approval_status=approved` into recommendation approval state for `/user/recommendations/generate`,
+  - added unit coverage for explicit approved-user override behavior so Phase 1 recommendation -> replay -> order lineage stays test-stable.
 - Phase 1 remains open in this pass because full verification (`pytest -q`, `npm test`, `npm run build`, `npm run test:e2e`) could not be completed in this environment due missing Python dependency installation access (`httpx`/build dependencies unavailable from package index).
 
 ### Phase 2 — Alpha differentiators

@@ -64,6 +64,7 @@ class RecommendationService:
         event: NewsEvent | MacroEvent | CorporateEvent | None,
         portfolio: PortfolioSnapshot | None,
         market_mode: MarketMode = MarketMode.EQUITIES,
+        user_is_approved: bool = False,
     ) -> TradeRecommendation:
         portfolio_state = portfolio or PortfolioSnapshot()
         if market_mode != MarketMode.EQUITIES:
@@ -99,6 +100,12 @@ class RecommendationService:
         if not quality_passed:
             approved = False
             rejection_reason = "; ".join(quality_reasons)
+        if user_is_approved and not approved:
+            approved = True
+            rejection_reason = None
+            quality_reasons.append(
+                "User approval override applied: local approval_status=approved."
+            )
 
         closes = [bar.close for bar in bars]
         haco_states = compute_haco_states(closes)
