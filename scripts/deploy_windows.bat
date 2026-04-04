@@ -96,23 +96,28 @@ call :KillByCmdLine "%KILLPAT_API%"
 call :KillByCmdLine "%KILLPAT_WEB%"
 
 echo.
-if /I "%SRC%"=="%DST%" (
-  echo [INFO] Source and destination are the same. Skipping mirror step.
-) else (
-  echo [INFO] Mirroring repo to deployment folder (preserving runtime artifacts)...
-  robocopy "%SRC%" "%DST%" /MIR /R:2 /W:2 /FFT /Z /NP ^
-    /XD ".git" ".venv" "__pycache__" ".pytest_cache" ".mypy_cache" ".ruff_cache" ^
-        "logs" "data" "storage" "uploads" ^
-        "node_modules" ".next" "dist" "build" "playwright-report" "test-results" ^
-        "apps\web\node_modules" "apps\web\.next" ^
-    /XF ".env" ".env.local" "*.log" "*.pyc" "*.pyo" "*.sqlite" "*.sqlite3" "*.db"
-  set "ROBO=%ERRORLEVEL%"
-  if %ROBO% GEQ 8 (
-    echo [ERROR] Robocopy failed with code %ROBO%.
-    set "RC=%ROBO%"
-    goto :END
-  )
+if /I "%SRC%"=="%DST%" goto :SKIP_MIRROR
+
+echo [INFO] Mirroring repo to deployment folder (preserving runtime artifacts)...
+robocopy "%SRC%" "%DST%" /MIR /R:2 /W:2 /FFT /Z /NP ^
+  /XD ".git" ".venv" "__pycache__" ".pytest_cache" ".mypy_cache" ".ruff_cache" ^
+      "logs" "data" "uploads" "backups" ^
+      "node_modules" ".next" "dist" "build" "playwright-report" "test-results" ^
+      ".clerk" "apps\web\node_modules" "apps\web\.next" ^
+  /XF ".env" ".env.local" "*.log" "*.pyc" "*.pyo" "*.sqlite" "*.sqlite3" "*.db"
+
+set "ROBO=%ERRORLEVEL%"
+if %ROBO% GEQ 8 (
+  echo [ERROR] Robocopy failed with code %ROBO%.
+  set "RC=%ROBO%"
+  goto :END
 )
+goto :AFTER_MIRROR
+
+:SKIP_MIRROR
+echo [INFO] Source and destination are the same. Skipping mirror step.
+
+:AFTER_MIRROR
 
 echo.
 if not exist "%DST%\.env" (
@@ -126,7 +131,7 @@ echo [INFO] Creating or reusing Python virtual environment...
 if not exist "%DST%\.venv\Scripts\python.exe" (
   py -3.13 -m venv "%DST%\.venv"
   if errorlevel 1 (
-    echo [ERROR] Failed to create Python 3.12 venv.
+    echo [ERROR] Failed to create Python 3.13 venv.
     set "RC=1"
     goto :END
   )
@@ -177,15 +182,21 @@ if exist "%WEB_DIR%\package.json" (
   echo [INFO] Installing frontend dependencies...
   pushd "%WEB_DIR%"
   if exist "package-lock.json" (
-    call npm ci
-  ) else (
-    call npm install
-  )
-  if errorlevel 1 (
-    echo [ERROR] Frontend dependency install failed.
-    set "RC=1"
-    goto :FAIL_POP_WEB
-  )
+	  call npm ci
+	) else (
+	  call npm install
+	)
+
+	if errorlevel 1 (
+	  echo [WARN] Clean frontend install failed. Retrying with legacy peer dependency resolution...
+	  call npm install --legacy-peer-deps
+	)
+
+	if errorlevel 1 (
+	  echo [ERROR] Frontend dependency install failed.
+	  set "RC=1"
+	  goto :FAIL_POP_WEB
+	)
 
   echo [INFO] Building frontend...
   call npm run build
