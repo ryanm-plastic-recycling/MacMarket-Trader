@@ -299,7 +299,7 @@ exit /b 0
 :KillByCmdLine
 set "PAT=%~1"
 if "%PAT%"=="" exit /b 0
-powershell -NoProfile -Command "$pat = '%PAT%'; $procs = Get-CimInstance Win32_Process ^| Where-Object { $_.CommandLine -and $_.CommandLine -like $pat }; if(-not $procs){ exit 0 }; foreach($p in $procs){ Write-Host ('[INFO] taskkill /PID ' + $p.ProcessId); & taskkill.exe /PID $p.ProcessId /F /T ^| Out-Null }"
+powershell -NoProfile -Command "$pat='%PAT%'; $procs = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -like $pat }); foreach($p in $procs){ Write-Host ('[INFO] taskkill /PID ' + $p.ProcessId); Start-Process -FilePath taskkill.exe -ArgumentList '/PID', $p.ProcessId, '/F', '/T' -NoNewWindow -Wait }"
 exit /b 0
 
 :WaitForHttp
