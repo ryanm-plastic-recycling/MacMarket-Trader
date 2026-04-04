@@ -210,6 +210,13 @@ Still open from this track:
 - Confirmed deployed local DB bootstrap path (`macmarket_trader.db`) and local admin/user approval recovery path.
 - Phase 1 is functionally complete for local private-alpha validation.
 - Remaining follow-up is deployment/runtime auth/frontend startup polish, not core Phase 1 workflow correctness.
+### 2026-04-04 frontend deployment blocker fix pass (this pass)
+
+- Fixed Recommendations queue-promotion typing in `apps/web/app/(console)/recommendations/page.tsx` to use typed promote payload (`result.data?.recommendation_id`) instead of `result.raw` access that broke `next build` type-checking.
+- Preserved workflow behavior: after promotion, stored recommendations are reloaded, the promoted stored recommendation is auto-selected by `recommendation_id`, and queue-only selection is cleared when lineage selection is applied.
+- Applied tiny Windows deployment script cleanup so Node version checks accept valid `v20.x` values without false mismatch warnings.
+- Verification remains environment-limited in this container due missing frontend/backend dependency resolution (`next`/`vitest`/`httpx` unavailable).
+
 ## Phase 1 remaining blockers (truthful)
 
 - Execute the updated browser-level Playwright regression suite successfully in CI/runtime.
