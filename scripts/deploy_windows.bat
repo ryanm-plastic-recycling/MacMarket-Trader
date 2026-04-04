@@ -101,7 +101,7 @@ if /I "%SRC%"=="%DST%" goto :SKIP_MIRROR
 echo [INFO] Mirroring repo to deployment folder (preserving runtime artifacts)...
 robocopy "%SRC%" "%DST%" /MIR /R:2 /W:2 /FFT /Z /NP ^
   /XD ".git" ".venv" "__pycache__" ".pytest_cache" ".mypy_cache" ".ruff_cache" ^
-      "logs" "data" "uploads" "backups" ^
+      "logs" "uploads" "backups" ^
       "node_modules" ".next" "dist" "build" "playwright-report" "test-results" ^
       ".clerk" "apps\web\node_modules" "apps\web\.next" ^
   /XF ".env" ".env.local" "*.log" "*.pyc" "*.pyo" "*.sqlite" "*.sqlite3" "*.db"
