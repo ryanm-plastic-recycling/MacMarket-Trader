@@ -112,3 +112,41 @@ def test_user_generation_non_equity_returns_planned_preview_error() -> None:
     payload = response.json()["detail"]
     assert payload["status"] == "planned_research_preview"
     assert payload["market_mode"] == "options"
+
+
+def test_user_ranked_recommendation_queue_contract() -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+    response = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["AAPL", "MSFT"], "timeframe": "1D", "market_mode": "equities", "top_n": 5},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["queue"]
+    first = payload["queue"][0]
+    assert "rank" in first
+    assert "score_breakdown" in first
+    assert "reason_text" in first
+
+
+def test_user_ranked_queue_candidate_can_be_promoted() -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+    queue = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["AAPL"], "market_mode": "equities"},
+    )
+    assert queue.status_code == 200
+    candidate = queue.json()["queue"][0]
+    promote = client.post(
+        "/user/recommendations/queue/promote",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbol": candidate["symbol"], "strategy": candidate["strategy"], "thesis": candidate["thesis"]},
+    )
+    assert promote.status_code == 200
+    promoted = promote.json()
+    assert promoted["symbol"] == "AAPL"
+    assert "id" in promoted

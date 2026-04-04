@@ -28,3 +28,10 @@ With `EMAIL_PROVIDER=console`, report payloads are printed to stdout, including:
 - Deterministic scoring fields and rank metadata
 
 No external provider is required in local/dev mode.
+
+## Phase 2 updates (2026-04-04)
+
+- Schedule runs now persist a full ranked queue payload plus summary counts (`top_candidate_count`, `watchlist_count`, `no_trade_count`).
+- The same deterministic ranking engine is shared across Symbol Analyze, Recommendations queue generation, and scheduled reports.
+- `/user/strategy-schedules` now returns config summaries and recent run summaries for operator-facing history/detail views.
+- Non-equity `market_mode` schedules remain explicitly blocked as planned research preview.

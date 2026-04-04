@@ -6,10 +6,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, ErrorState, StatusBadge } from "@/components/operator-ui";
 import { IndicatorSelector } from "@/components/charts/indicator-selector";
 import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
-import { HACO_CONTEXT_SUPPORTED_INDICATORS } from "@/lib/chart-indicators";
+import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS, HACO_CONTEXT_SUPPORTED_INDICATORS } from "@/lib/chart-indicators";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 
 const STORAGE_KEY = "macmarket-indicators-haco";
+const HACO_WORKSPACE_SUPPORTED_INDICATORS: IndicatorId[] = [...FIRST_CLASS_WORKFLOW_INDICATORS, ...HACO_CONTEXT_SUPPORTED_INDICATORS];
 
 export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [symbol, setSymbol] = useState("AAPL");
@@ -40,19 +41,19 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       try {
         setSelectedIndicators(
-          normalizeSelection(raw ? (JSON.parse(raw) as string[]) : HACO_CONTEXT_SUPPORTED_INDICATORS).filter((id) =>
-            HACO_CONTEXT_SUPPORTED_INDICATORS.includes(id),
+          normalizeSelection(raw ? (JSON.parse(raw) as string[]) : HACO_WORKSPACE_SUPPORTED_INDICATORS).filter((id) =>
+            HACO_WORKSPACE_SUPPORTED_INDICATORS.includes(id),
           ),
         );
       } catch {
-        setSelectedIndicators(HACO_CONTEXT_SUPPORTED_INDICATORS);
+        setSelectedIndicators(HACO_WORKSPACE_SUPPORTED_INDICATORS);
       }
     }
     void load();
   }, []);
 
   function onIndicatorChange(next: IndicatorId[]) {
-    const normalized = normalizeSelection(next).filter((id) => HACO_CONTEXT_SUPPORTED_INDICATORS.includes(id));
+    const normalized = normalizeSelection(next).filter((id) => HACO_WORKSPACE_SUPPORTED_INDICATORS.includes(id));
     setSelectedIndicators(normalized);
     if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   }
@@ -74,6 +75,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     const candles: CandlestickData<Time>[] = data.candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
     const priceSeries: ISeriesApi<"Candlestick"> = priceChart.addCandlestickSeries();
     priceSeries.setData(candles);
+    applyIndicatorsToChart(priceChart, data.candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume })), selectedIndicators);
     priceSeries.setMarkers(data.markers.map((m) => ({
       time: m.time as Time,
       position: m.direction === "buy" ? "belowBar" : "aboveBar",
@@ -141,9 +143,9 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       {error ? <ErrorState title="HACO unavailable" hint={error} /> : null}
 
       <Card title={embedded ? "HACO mini-module" : "Price pane + synced HACO/HACOLT strips"}>
-        <IndicatorSelector selected={selectedIndicators} onChange={onIndicatorChange} enabledIds={HACO_CONTEXT_SUPPORTED_INDICATORS} />
+        <IndicatorSelector selected={selectedIndicators} onChange={onIndicatorChange} enabledIds={HACO_WORKSPACE_SUPPORTED_INDICATORS} />
         <p style={{ margin: "6px 0", color: "#9fb0c3" }}>
-          HACO Context currently supports HACO + HACOLT strips only. Use Analysis/Recommendations for first-class workflow overlays.
+          Price pane overlays and synced HACO/HACOLT strips share one canonical time axis.
         </p>
         <div ref={priceRef} />
         <div ref={hacoRef} style={{ marginTop: 6 }} />

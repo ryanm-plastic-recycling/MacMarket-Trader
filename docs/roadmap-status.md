@@ -16,8 +16,8 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader remains in **Phase 1 — Private alpha hardening** for operator trust and workflow coherence.
-Phase 1 is **not formally closed yet** in this pass; see “Phase 1 remaining blockers”.
+MacMarket-Trader is now executing **Phase 2 — Alpha differentiators** as the active implementation scope for this pass.
+Phase 1 hardening remains an operational baseline, while this pass focused on Phase 2 workflow value delivery.
 
 ## Core product pillars
 
@@ -227,6 +227,37 @@ These foundations stay in place but are not the focus until Phase 1 closes:
 - Symbol Analyze workspace.
 - Scheduled strategy reports (schedule CRUD + run-now + CLI due runner).
 - Operator indicator registry/framework and persisted indicator preferences.
+
+### 2026-04-04 Phase 2 cohesive implementation pass (this pass)
+
+Completed in this pass:
+- Added a reusable deterministic ranking engine (`src/macmarket_trader/ranking_engine.py`) shared by:
+  - Symbol Analyze
+  - Recommendations ranked queue generation
+  - Scheduled strategy reports
+- Upgraded Recommendations into a backend-backed ranked queue workflow:
+  - `/user/recommendations/queue` for deterministic candidate ranking,
+  - `/user/recommendations/queue/promote` to promote a queue candidate into a stored recommendation.
+- Upgraded Symbol Analyze to a triage-oriented output contract with:
+  - mode/timeframe/source labels,
+  - ranked strategy scoreboard,
+  - operator next-action links into Analysis/Recommendations/Schedules.
+- Extended scheduled strategy reports/listing payloads with:
+  - run summary counts,
+  - queue payload visibility,
+  - schedule config summary + recent run summary metadata.
+- Extended HACO workspace chart controls to include first-class workflow overlays on the price pane while preserving synced HACO/HACOLT strips.
+- Added backend tests for ranking engine output, recommendation queue API, promotion flow, and schedule summary/detail behavior.
+
+Remaining Phase 2 gaps (truthful):
+- Recommendations page still needs deeper persisted recommendation + ranked queue side-by-side lineage UX polish.
+- Analyze triage can be further improved with richer indicator scenario provenance and strategy-specific explainability text.
+- Schedules page still needs finer-grained editing controls (frequency/timezone/email target) and per-run detail drill-in.
+- Admin invite/onboarding surfaces still need stronger “recent activity + next action” operational guidance polish.
+- Additional frontend unit coverage for new client-side queue/schedule state helpers remains open.
+
+Started early (bounded, not Phase 3 complete):
+- Ranking provenance payload structure is now rich enough to support later per-watchlist and multi-delivery expansion.
 
 ### Phase 3 — Paid beta
 Goal: something people would pay for as a research and trade-planning tool.

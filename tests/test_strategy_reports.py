@@ -4,9 +4,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from macmarket_trader.api.main import app
+from macmarket_trader.domain.enums import MarketMode
 from macmarket_trader.domain.models import AppUserModel, StrategyReportRunModel
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import EmailLogRepository, StrategyReportRepository
+from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.data.providers.mock import ConsoleEmailProvider
 
@@ -46,6 +48,8 @@ def test_strategy_schedule_create_and_run_now() -> None:
     assert 'top_candidates' in payload
     assert 'watchlist_only' in payload
     assert 'no_trade' in payload
+    assert 'queue' in payload
+    assert 'summary' in payload
 
     with SessionLocal() as session:
         run_row = session.execute(select(StrategyReportRunModel).where(StrategyReportRunModel.schedule_id == schedule_id)).scalar_one()
@@ -145,3 +149,44 @@ def test_analysis_setup_returns_preview_for_crypto() -> None:
     assert payload['status'] == 'planned_research_preview'
     assert payload['execution_enabled'] is False
     assert 'crypto_context' in payload
+
+
+def test_strategy_schedule_list_includes_run_summary() -> None:
+    _seed_and_approve_user()
+    create = client.post(
+        '/user/strategy-schedules',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'name': 'Summary scan', 'symbols': ['AAPL'], 'market_mode': 'equities'},
+    )
+    schedule_id = create.json()['id']
+    run_now = client.post(f'/user/strategy-schedules/{schedule_id}/run', headers={'Authorization': 'Bearer user-token'})
+    assert run_now.status_code == 200
+    listing = client.get('/user/strategy-schedules', headers={'Authorization': 'Bearer user-token'})
+    assert listing.status_code == 200
+    row = next(item for item in listing.json() if item['id'] == schedule_id)
+    assert row['config_summary']['market_mode'] == 'equities'
+    assert row['latest_payload_summary']['top_candidate_count'] >= 0
+    assert row['history'][0]['summary']['total'] >= 0
+
+
+def test_ranking_engine_outputs_explainable_fields() -> None:
+    bars, source, fallback_mode = admin_provider_bars()
+    result = DeterministicRankingEngine().rank_candidates(
+        bars_by_symbol={'AAPL': (bars, source, fallback_mode)},
+        strategies=['Event Continuation'],
+        market_mode=MarketMode.EQUITIES,
+        timeframe='1D',
+    )
+    candidate = result['queue'][0]
+    assert candidate['strategy'] == 'Event Continuation'
+    assert 'score_breakdown' in candidate
+    assert 'reason_text' in candidate
+
+
+def admin_provider_bars():
+    bars, source, fallback_mode = StrategyReportService(
+        report_repo=StrategyReportRepository(SessionLocal),
+        email_provider=ConsoleEmailProvider(),
+        email_log_repo=EmailLogRepository(SessionLocal),
+    ).market_data_service.historical_bars(symbol='AAPL', timeframe='1D', limit=60)
+    return bars, source, fallback_mode
