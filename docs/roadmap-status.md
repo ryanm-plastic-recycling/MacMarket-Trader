@@ -176,12 +176,27 @@ Still open from this track:
 - Hardened frontend verification guidance and startup behavior for Windows local validation:
   - explicit Node runtime requirement (`20.19.6`),
   - explicit warning to run outside OneDrive-synced directories for final `next build`/Playwright verification,
-  - Playwright `webServer` now clears stale `.next` before startup to reduce local cache/readlink brittleness.
+- Playwright `webServer` now clears stale `.next` before startup to reduce local cache/readlink brittleness.
+
+### 2026-04-04 Phase 1 verification failure remediation pass (this pass)
+
+- Hardened Analysis setup contract for non-equity preview modes:
+  - `/user/analysis/setup` now returns deterministic planned-preview payloads for options/crypto without depending on provider-backed workflow bars,
+  - avoids leaking provider-blocked `503` into preview-only market modes.
+- Tightened workflow hardening regression fixture for recommendation->order lineage:
+  - happy-path event seed now uses deterministic positive corporate-catalyst text,
+  - test now asserts recommendation approval before staging order by `recommendation_id`.
+- Stabilized Analysis Playwright click path selectors:
+  - added stable test ids for the Analysis refresh and create-recommendation controls,
+  - e2e now targets those stable controls instead of brittle copy-only selectors.
+- Refactored dashboard/provider-health Playwright parity coverage:
+  - default parity test now validates healthy provider mode (`provider` + `reads: provider`),
+  - added explicit demo-fallback parity test under controlled mocked degraded fixture.
 
 ## Phase 1 remaining blockers (truthful)
 
-- Execute the new browser-level Playwright regression suite successfully in CI/runtime.
-- Verify dashboard/provider-health rendered parity regression run is green in CI/runtime.
+- Execute the updated browser-level Playwright regression suite successfully in CI/runtime.
+- Verify healthy-provider and demo-fallback dashboard/provider-health parity regressions are green in CI/runtime.
 - Keep options/crypto paths in explicit research-preview mode until mode-native replay + risk + paper workflow parity is implemented and tested.
 
 ### Phase 2 — Alpha differentiators

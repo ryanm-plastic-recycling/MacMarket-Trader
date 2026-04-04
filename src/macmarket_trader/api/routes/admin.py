@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
+from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
@@ -41,6 +42,7 @@ strategy_report_service = StrategyReportService(
     email_provider=email_provider,
     email_log_repo=email_repo,
 )
+preview_market_data_provider = DeterministicFallbackMarketDataProvider()
 
 
 def _safe_identity_value(value: str | None) -> str | None:
@@ -436,7 +438,14 @@ def analysis_setup(
     strategy_entry = get_strategy_by_display_name(strategy, market_mode=market_mode) or (strategies[0] if strategies else None)
     if strategy_entry is None:
         raise HTTPException(status_code=400, detail="No strategies configured for selected market mode")
-    bars, source, fallback_mode = _workflow_bars(symbol, limit=120)
+
+    if market_mode == MarketMode.EQUITIES:
+        bars, source, fallback_mode = _workflow_bars(symbol, limit=120)
+    else:
+        bars = preview_market_data_provider.fetch_historical_bars(symbol=symbol, timeframe=timeframe, limit=120)
+        source = "planned_preview_fallback"
+        fallback_mode = True
+
     latest = bars[-1]
     prior = bars[-2] if len(bars) > 1 else bars[-1]
     entry_low = round(latest.close * 0.995, 2)

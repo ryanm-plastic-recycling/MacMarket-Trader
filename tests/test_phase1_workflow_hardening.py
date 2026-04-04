@@ -46,9 +46,10 @@ def test_analysis_to_recommendation_to_replay_to_order_flow_keeps_lineage() -> N
     create_rec = client.post(
         '/user/recommendations/generate',
         headers={'Authorization': 'Bearer user-token'},
-        json={'symbol': 'AAPL', 'event_text': 'Operator happy path check'},
+        json={'symbol': 'AAPL', 'event_text': 'Earnings beat with raised strong guidance breakout'},
     )
     assert create_rec.status_code == 200
+    assert create_rec.json()['approved'] is True
     recommendation_id = create_rec.json()['id']
 
     recs = client.get('/user/recommendations', headers={'Authorization': 'Bearer user-token'})

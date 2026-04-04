@@ -279,7 +279,7 @@ export default function Page() {
         <div><label>Market mode</label><select value={draftMarketMode} onChange={(e) => setDraftMarketMode(e.target.value as MarketMode)}><option value="equities">equities</option><option value="options">options</option><option value="crypto">crypto</option></select></div>
         <div><label>Timeframe</label><select value={draftTimeframe} onChange={(e) => setDraftTimeframe(e.target.value as SupportedTimeframe)}>{SUPPORTED_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}</select></div>
         <div><label>Strategy</label><select value={draftStrategy} onChange={(e) => setDraftStrategy(e.target.value)}>{strategiesForDraftMode.map((entry) => <option key={entry.strategy_id} value={entry.display_name}>{entry.display_name}</option>)}</select></div>
-        <div className="op-row" style={{ alignItems: "end" }}><button onClick={() => void refreshAnalysis()}>Refresh analysis</button></div>
+        <div className="op-row" style={{ alignItems: "end" }}><button data-testid="analysis-refresh-button" onClick={() => void refreshAnalysis()}>Refresh analysis</button></div>
       </div>
       {draftMarketMode !== "equities" ? <StatusBadge tone="warn">planned research preview</StatusBadge> : null}
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void refreshAnalysis()} />
@@ -298,7 +298,7 @@ export default function Page() {
         <div><strong>Summary:</strong> {setupSummary ?? "loading"}</div>
         <div><strong>Confidence/filter state:</strong> {setup?.confidence ?? "-"} · {(setup?.filters ?? []).join(", ")}</div>
         <div><strong>Targets:</strong> {setup?.targets?.join(" / ") ?? "-"}</div>
-        <div className="op-row" style={{ marginTop: 8 }}><button disabled={appliedMarketMode !== "equities"} onClick={() => void createRecommendation()}>Create recommendation from setup</button></div>
+        <div className="op-row" style={{ marginTop: 8 }}><button data-testid="analysis-create-recommendation-button" disabled={appliedMarketMode !== "equities"} onClick={() => void createRecommendation()}>Create recommendation from setup</button></div>
       </Card>
       <Card title="Enabled indicators">{selectedIndicators.map((indicator) => <StatusBadge key={indicator} tone="neutral">{indicator}</StatusBadge>)}</Card>
     </div>

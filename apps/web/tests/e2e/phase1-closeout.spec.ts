@@ -86,8 +86,8 @@ test("analysis -> recommendations -> replay -> orders click path with stale-bann
   });
 
   await page.goto("/analysis");
-  await page.getByRole("button", { name: "Refresh analysis" }).click();
-  await page.getByRole("button", { name: "Create recommendation from setup" }).click();
+  await page.getByTestId("analysis-refresh-button").click();
+  await page.getByTestId("analysis-create-recommendation-button").click();
 
   await expect(page).toHaveURL(/\/recommendations\?recommendation=rec-phase1-e2e/);
   await expect(page.getByText("Recommendations unavailable")).toBeVisible();
@@ -106,7 +106,55 @@ test("analysis -> recommendations -> replay -> orders click path with stale-bann
   await expect(page.getByText("Order id:")).toBeVisible();
 });
 
-test("dashboard and provider-health show matching provider truth chips/messages", async ({ page }) => {
+test("dashboard and provider-health show matching provider truth chips/messages in healthy provider mode", async ({ page }) => {
+  await page.route("**/api/user/dashboard", async (route) => {
+    await route.fulfill({
+      json: {
+        market_regime: "risk_on",
+        last_refresh: "2026-04-04T00:00:00Z",
+        account: { app_role: "admin", approval_status: "approved" },
+        provider_health: {
+          summary: "ok",
+          auth: "ok",
+          email: "ok",
+          market_data: "polygon",
+          configured_provider: "polygon",
+          effective_read_mode: "provider",
+          workflow_execution_mode: "provider",
+          failure_reason: null,
+        },
+        active_recommendations: [],
+        recent_replay_runs: [],
+        recent_orders: [],
+        pending_admin_actions: [],
+        alerts: [],
+        workflow_guide: ["check provider truth"],
+      },
+    });
+  });
+  await page.route("**/api/admin/provider-health", async (route) => {
+    await route.fulfill({
+      json: {
+        checked_at: "2026-04-04T00:00:00Z",
+        providers: [
+          { provider: "market_data", mode: "configured", status: "ok", details: "polygon healthy", configured_provider: "polygon", effective_read_mode: "provider", workflow_execution_mode: "provider", operational_impact: "workflows on provider-backed bars", failure_reason: null },
+        ],
+      },
+    });
+  });
+
+  await page.goto("/dashboard");
+  await expect(page.getByText("provider")).toBeVisible();
+  await expect(page.getByText(/configured: polygon · reads: provider/i)).toBeVisible();
+
+  await page.goto("/admin/provider-health");
+  await expect(page.getByText(/workflow mode: provider/i)).toBeVisible();
+  await expect(page.getByText(/configured provider: polygon/i)).toBeVisible();
+  await expect(page.getByText(/effective read mode: provider/i)).toBeVisible();
+  await expect(page.getByText(/provider-backed bars/i)).toBeVisible();
+});
+
+test("dashboard and provider-health show matching provider truth chips/messages in demo fallback mode", async ({ page }) => {
   await page.route("**/api/user/dashboard", async (route) => {
     await route.fulfill({
       json: {
