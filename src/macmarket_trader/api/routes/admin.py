@@ -10,7 +10,7 @@ from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
-from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest
+from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest, TradeRecommendation
 from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
@@ -381,15 +381,31 @@ def list_orders(_user=Depends(require_approved_user)):
 
 @user_router.post("/orders")
 def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
+    recommendation_id = str(req.get("recommendation_id") or "").strip()
+    rec: TradeRecommendation
+    source = "workflow_snapshot_unavailable"
+    fallback_mode = False
     symbol = str(req.get("symbol") or "AAPL").upper()
-    bars, source, fallback_mode = _workflow_bars(symbol)
-    rec = recommendation_service.generate(
-        symbol=symbol,
-        bars=bars,
-        event_text="Operator staged deterministic paper order from recommendations workflow.",
-        event=None,
-        portfolio=PortfolioSnapshot(),
-    )
+
+    if recommendation_id:
+        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+        if rec_row is None:
+            raise HTTPException(status_code=404, detail="Recommendation not found for paper-order staging.")
+        rec = TradeRecommendation.model_validate(rec_row.payload or {})
+        symbol = rec.symbol
+        workflow = (rec_row.payload or {}).get("workflow", {})
+        source = str(workflow.get("market_data_source") or source)
+        fallback_mode = bool(workflow.get("fallback_mode", False))
+    else:
+        bars, source, fallback_mode = _workflow_bars(symbol)
+        rec = recommendation_service.generate(
+            symbol=symbol,
+            bars=bars,
+            event_text="Operator staged deterministic paper order from recommendations workflow.",
+            event=None,
+            portfolio=PortfolioSnapshot(),
+        )
+
     if not rec.approved:
         raise HTTPException(status_code=409, detail=rec.rejection_reason or "Recommendation was no-trade; order not staged.")
     intent = recommendation_service.to_order_intent(rec)

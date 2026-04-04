@@ -215,3 +215,4 @@ Create a lean shareable archive (excluding runtime artifacts) with the canonical
 
 - Current alpha roadmap status is tracked in `docs/roadmap-status.md`.
 - Treat the current milestone as **Phase 1 — Private alpha hardening** until open Phase 1 items there are closed.
+- Operator validation checklist and recovery playbook are in `docs/private-alpha-operator-runbook.md`.
