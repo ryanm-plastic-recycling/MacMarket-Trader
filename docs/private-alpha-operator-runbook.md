@@ -36,6 +36,31 @@ python -m macmarket_trader.cli init-db
 python -m macmarket_trader.cli seed-demo-data
 ```
 
+### Backend (Windows PowerShell)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+python -m uvicorn macmarket_trader.api.main:app --reload --port 9510
+```
+
+### Frontend (Windows PowerShell)
+
+```powershell
+Set-Location apps/web
+npm install
+npm run dev
+```
+
+### Seed deterministic operator data (Windows PowerShell)
+
+```powershell
+python -m macmarket_trader.cli init-db
+python -m macmarket_trader.cli seed-demo-data
+```
+
+
 ## 2) Provider mode vs fallback mode (must stay explicit)
 
 Provider/source truth is represented in three fields:
@@ -108,14 +133,14 @@ Verify:
 - options/crypto execution workflows (research preview only)
 - brokerage/live order integrations
 - public-facing onboarding
-- full E2E browser automation suite
+- full cross-environment browser automation execution in CI (core Phase 1 click-path and provider-parity browser regressions now exist)
 
 ## 5) Common local recovery playbook
 
 ### Stale frontend build/cache behavior
 
 1. Stop backend + frontend.
-2. Clear Next build cache: `rm -rf apps/web/.next`
+2. Clear Next build cache: `rm -rf apps/web/.next` (bash) or `Remove-Item -Recurse -Force apps/web/.next` (PowerShell)
 3. Restart backend/frontend.
 
 ### Provider entitlement/health mismatch
@@ -141,6 +166,10 @@ Use one-time local utility if old split identities exist:
 python scripts/reconcile_duplicate_users.py
 ```
 
+```powershell
+python scripts/reconcile_duplicate_users.py
+```
+
 Then sign out/in and verify `/admin/users` contains one canonical row per user with preserved role/approval.
 
 ## 6) Phase 1 validation commands
@@ -148,6 +177,13 @@ Then sign out/in and verify `/admin/users` contains one canonical row per user w
 ```bash
 pytest -q
 cd apps/web && npm test && npm run build
+```
+
+```powershell
+pytest -q
+Set-Location apps/web
+npm test
+npm run build
 ```
 
 Phase 1 should not be marked closed unless these checks pass and the click path above is operator-usable.

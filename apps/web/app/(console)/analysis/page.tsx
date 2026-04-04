@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchHacoChart } from "@/lib/haco-api";
 import { fetchWorkflowApi } from "@/lib/api-client";
+import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { IndicatorSelector } from "@/components/charts/indicator-selector";
 import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
 import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
@@ -65,6 +66,7 @@ export default function Page() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [workbenchState, setWorkbenchState] = useState<WorkbenchState>("auth_initializing");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -91,7 +93,7 @@ export default function Page() {
   }
 
   const runAnalysis = async (nextSymbol: string, nextMode: MarketMode, nextTimeframe: SupportedTimeframe, nextStrategy: string) => {
-    if (!isLoaded || !isSignedIn || !chartRef.current) {
+    if (!authReady || !chartRef.current) {
       setWorkbenchState("auth_initializing");
       setFeedback({ state: "loading", message: "Authentication session is initializing for protected workbench routes…" });
       return;
@@ -174,7 +176,7 @@ export default function Page() {
   };
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || initialLoadDone) return;
+    if (!authReady || initialLoadDone) return;
     setInitialLoadDone(true);
     void runAnalysis(appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy);
   }, [isLoaded, isSignedIn, initialLoadDone, appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy]);
@@ -193,7 +195,7 @@ export default function Page() {
   }, [feedback.state, feedback.message]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!authReady) return;
     void fetchStrategyRegistry().then((rows) => setStrategyRegistry(rows)).catch(() => setStrategyRegistry([]));
   }, [isLoaded, isSignedIn]);
 

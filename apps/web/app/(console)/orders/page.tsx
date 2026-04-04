@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
+import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 
 type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
@@ -20,10 +21,11 @@ export default function Page() {
   const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
 
   async function load() {
-    if (!isLoaded || !isSignedIn) {
+    if (!authReady) {
       setFeedback({ state: "loading", message: "Initializing authenticated workflow…" });
       return;
     }
@@ -56,7 +58,7 @@ export default function Page() {
   }
 
   async function stagePaperOrder() {
-    if (!isLoaded || !isSignedIn) {
+    if (!authReady) {
       setFeedback({ state: "loading", message: "Authentication still initializing." });
       return;
     }
@@ -93,7 +95,7 @@ export default function Page() {
   }
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!authReady) return;
     void load();
   }, [searchKey, isLoaded, isSignedIn]);
   useEffect(() => {
@@ -110,7 +112,7 @@ export default function Page() {
     <Card title="What a good blotter review looks like">
       Confirm the staged order maps to the intended recommendation, source mode, and deterministic sizing before considering live-route promotion.
     </Card>
-    {!isLoaded ? <Card title="Auth status">Initializing authenticated session before orders API requests.</Card> : null}
+    {!authReady ? <Card title="Auth status">Initializing authenticated session before orders API requests.</Card> : null}
     <Card>
       <div className="op-row">
         <button onClick={() => void stagePaperOrder()} disabled={busy}>{busy ? "Staging..." : "Stage paper order"}</button>

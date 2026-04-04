@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
+import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
@@ -23,11 +24,12 @@ export default function Page() {
   const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
   const selectedSource = selected ? (selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? "provider")) : dataSource;
 
   async function loadRuns() {
-    if (!isLoaded || !isSignedIn) {
+    if (!authReady) {
       setFeedback({ state: "loading", message: "Initializing authenticated workflow…" });
       return;
     }
@@ -62,7 +64,7 @@ export default function Page() {
   }
 
   async function runReplay() {
-    if (!isLoaded || !isSignedIn) {
+    if (!authReady) {
       setFeedback({ state: "loading", message: "Authentication still initializing." });
       return;
     }
@@ -100,7 +102,7 @@ export default function Page() {
   }
 
   async function loadSteps(runId: number) {
-    if (!isLoaded || !isSignedIn) return;
+    if (!authReady) return;
     setSelectedRunId(runId);
     setBusy(true);
     setStepError(null);
@@ -127,7 +129,7 @@ export default function Page() {
   }
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!authReady) return;
     void loadRuns();
   }, [searchKey, isLoaded, isSignedIn]);
   useEffect(() => { if (selectedRunId && isLoaded && isSignedIn) void loadSteps(selectedRunId); }, [selectedRunId, isLoaded, isSignedIn]);
@@ -150,7 +152,7 @@ export default function Page() {
       Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{selectedSource}</strong>.
       <div>A good run keeps risk controls deterministic, preserves source coherence, and shows explainable approval/rejection outcomes at each step.</div>
     </Card>
-    {!isLoaded ? <Card title="Auth status">Initializing authenticated session before replay data requests.</Card> : null}
+    {!authReady ? <Card title="Auth status">Initializing authenticated session before replay data requests.</Card> : null}
     <Card>
       <div className="op-row">
         <button onClick={() => void runReplay()} disabled={busy}>{busy ? "Running…" : "Run replay"}</button>

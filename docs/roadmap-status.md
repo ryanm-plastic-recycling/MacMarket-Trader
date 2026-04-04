@@ -153,11 +153,22 @@ Still open from this track:
 - Hardened same-origin admin provider-health route via shared workflow proxy helper so auth-initializing and upstream error handling match other protected workflow routes.
 - Added practical operator runbook: `docs/private-alpha-operator-runbook.md` (local startup, workflow verification checklist, provider/fallback truth interpretation, and common recovery steps).
 
+### 2026-04-04 Phase 1 closeout blocker pass (this pass)
+
+- Added browser-level regression specs (Playwright) for:
+  - full operator click-path flow: Analysis -> Recommendations -> Replay -> Orders,
+  - stale-banner recovery in Recommendations after an initial auth/error response,
+  - dashboard/provider-health rendered parity checks for shared provider-truth chips/messages.
+- Added test-only auth bypass wiring (`NEXT_PUBLIC_E2E_BYPASS_AUTH=true`) for protected console pages used by browser automation, including admin provider-health page gate bypass in that test mode.
+- Expanded auth/session-turnover integration coverage in frontend route utility tests:
+  - Clerk token churn -> auth-initializing (`425`) behavior,
+  - protected same-origin proxy status/body passthrough under upstream failures.
+- Updated private-alpha runbook with explicit Windows PowerShell startup, seed, cache-clear, and verification commands alongside bash examples.
+
 ## Phase 1 remaining blockers (truthful)
 
-- Add browser-level end-to-end UI regression for the full in-session click path (Analysis -> Recommendations -> Replay -> Orders), including stale-banner recovery checks.
-- Add browser-level dashboard/provider-health parity regression so shared provider truth chips are test-enforced at the rendered UI layer (not only API layer).
-- Expand auth/session-turnover integration coverage under real Clerk token/session churn for protected same-origin routes.
+- Execute the new browser-level Playwright regression suite successfully in CI/runtime (current local environment cannot install/run Playwright due package access restrictions).
+- Verify dashboard/provider-health rendered parity regression run is green in CI/runtime (spec implemented; execution still blocked locally with Playwright install constraints).
 - Keep options/crypto paths in explicit research-preview mode until mode-native replay + risk + paper workflow parity is implemented and tested.
 
 ### Phase 2 — Alpha differentiators
