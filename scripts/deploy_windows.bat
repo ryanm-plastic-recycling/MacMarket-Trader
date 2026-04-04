@@ -280,7 +280,7 @@ if not defined NODE_VER (
   echo [ERROR] Node was not found on PATH.
   exit /b 1
 )
-if /I "!NODE_VER:~0,4!"=="%EXPECTED_NODE_MAJOR%" (
+if /I "!NODE_VER:~0,3!"=="%EXPECTED_NODE_MAJOR%" (
   echo [INFO] Node version OK: !NODE_VER!
   exit /b 0
 )

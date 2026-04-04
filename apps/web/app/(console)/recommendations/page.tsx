@@ -76,6 +76,7 @@ export default function RecommendationsPage() {
       const matched = result.items.find((item) => item.recommendation_id === targetUid);
       if (matched) {
         setSelectedRecommendationId(matched.id);
+        setSelectedQueueKey(null);
       }
     }
   }
@@ -136,7 +137,8 @@ export default function RecommendationsPage() {
 
     setError(null);
     setFeedback({ state: "success", message: "Queue candidate promoted to stored recommendation." });
-    await loadRecommendations({ selectRecommendationUid: result.raw?.recommendation_id as string | undefined });
+    const promotedRecommendationId = result.data?.recommendation_id;
+    await loadRecommendations({ selectRecommendationUid: promotedRecommendationId });
   }
 
   function openReplay() {
