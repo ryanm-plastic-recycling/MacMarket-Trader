@@ -59,7 +59,12 @@ export default function AnalyzePage() {
       </Card>
       <div className="op-grid-2">
         <Card title="Scenarios">{Object.entries(payload.scenarios).map(([key, value]) => <div key={key}><strong>{key}:</strong> {value}</div>)}</Card>
-        <Card title="What to do next"><div>{payload.operator_note}</div><div className="op-row" style={{ marginTop: 8 }}>{payload.next_actions.map((action) => <button key={action.label} onClick={() => window.location.assign(action.path)}>{action.label}</button>)}</div></Card>
+        <Card title="What to do next"><div>{payload.operator_note}</div><div className="op-row" style={{ marginTop: 8 }}>{payload.next_actions.map((action) => {
+          const path = action.path.includes("/recommendations")
+            ? `${action.path}${action.path.includes("?") ? "&" : "?"}symbols=${payload.symbol}`
+            : action.path;
+          return <button key={action.label} onClick={() => window.location.assign(path)}>{action.label}</button>;
+        })}</div></Card>
       </div>
     </>}
   </section>;

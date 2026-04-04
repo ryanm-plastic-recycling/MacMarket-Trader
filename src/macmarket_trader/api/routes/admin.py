@@ -234,6 +234,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
     strategy = str(req.get("strategy") or "Event Continuation")
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required to promote queue candidate")
+
     bars, source, fallback_mode = _workflow_bars(symbol)
     event_text = str(req.get("thesis") or f"Queue promotion for {strategy}")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
@@ -247,17 +248,50 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         market_mode=MarketMode.EQUITIES,
         user_is_approved=user_is_approved,
     )
+
+    ranking_provenance = {
+        "rank": req.get("rank"),
+        "symbol": symbol,
+        "strategy": strategy,
+        "strategy_id": req.get("strategy_id"),
+        "strategy_status": req.get("strategy_status") or req.get("status"),
+        "timeframe": req.get("timeframe") or "1D",
+        "market_mode": req.get("market_mode") or MarketMode.EQUITIES.value,
+        "source": req.get("source") or source,
+        "workflow_source": req.get("workflow_source") or source,
+        "status": req.get("status"),
+        "score": req.get("score"),
+        "score_breakdown": req.get("score_breakdown") or {},
+        "expected_rr": req.get("expected_rr"),
+        "confidence": req.get("confidence"),
+        "thesis": req.get("thesis") or "",
+        "trigger": req.get("trigger") or "",
+        "entry_zone": req.get("entry_zone") or {},
+        "invalidation": req.get("invalidation") or {},
+        "targets": req.get("targets") or [],
+        "reason_text": req.get("reason_text") or "",
+    }
+
     recommendation_repo.attach_workflow_metadata(
         rec.recommendation_id,
         market_data_source=source,
         fallback_mode=fallback_mode,
     )
+    recommendation_repo.attach_ranking_provenance(
+        rec.recommendation_id,
+        ranking_provenance=ranking_provenance,
+    )
+
+    persisted = recommendation_repo.get_by_recommendation_uid(rec.recommendation_id)
+    workflow = (persisted.payload or {}).get("workflow", {}) if persisted else {}
     return {
-        "id": rec.recommendation_id,
+        "id": persisted.id if persisted else None,
+        "recommendation_id": rec.recommendation_id,
         "symbol": rec.symbol,
         "strategy": strategy,
-        "market_data_source": source,
-        "fallback_mode": fallback_mode,
+        "market_data_source": workflow.get("market_data_source", source),
+        "fallback_mode": bool(workflow.get("fallback_mode", fallback_mode)),
+        "ranking_provenance": workflow.get("ranking_provenance", ranking_provenance),
         "approved": rec.approved,
     }
 
@@ -620,7 +654,7 @@ def analyze_symbol(symbol: str, market_mode: MarketMode = MarketMode.EQUITIES, _
         "next_actions": [
             {"label": "Open full workbench", "path": f"/analysis?symbol={symbol.upper()}"},
             {"label": "Seed recommendation queue", "path": f"/recommendations?symbol={symbol.upper()}"},
-            {"label": "Create schedule from symbol", "path": "/schedules"},
+            {"label": "Create schedule from symbol", "path": f"/schedules?symbols={symbol.upper()}&name={symbol.upper()}%20Morning%20scan"},
         ],
         "status": "live" if market_mode == MarketMode.EQUITIES else "planned_research_preview",
         "execution_enabled": market_mode == MarketMode.EQUITIES,

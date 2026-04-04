@@ -82,6 +82,21 @@ class RecommendationRepository:
             row.payload = payload
             session.commit()
 
+    def attach_ranking_provenance(self, recommendation_id: str, *, ranking_provenance: dict[str, object]) -> None:
+        with self.session_factory() as session:
+            row = session.execute(
+                select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_id)
+            ).scalar_one_or_none()
+            if row is None:
+                return
+            payload = dict(row.payload or {})
+            workflow = dict(payload.get("workflow") or {})
+            workflow["ranking_provenance"] = ranking_provenance
+            payload["workflow"] = workflow
+            row.payload = payload
+            session.commit()
+
+
 
 class OrderRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
