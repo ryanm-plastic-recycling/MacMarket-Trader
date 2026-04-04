@@ -199,6 +199,13 @@ Still open from this track:
 - Verify healthy-provider and demo-fallback dashboard/provider-health parity regressions are green in CI/runtime.
 - Keep options/crypto paths in explicit research-preview mode until mode-native replay + risk + paper workflow parity is implemented and tested.
 
+### 2026-04-04 gate-follow-up (this pass)
+
+- Aligned provider-truth regression tests with the current configured/effective/workflow model:
+  - `test_provider_health_result_structure` now pins a configured Polygon provider and asserts configured provider, effective read mode, and workflow execution mode explicitly.
+  - `test_degraded_provider_reports_blocked_or_demo_fallback_explicitly` now uses a configured non-fallback provider in degraded mode so blocked-vs-demo-fallback assertions reflect real provider-truth policy.
+- Phase 1 remains open in this pass because full verification (`pytest -q`, `npm test`, `npm run build`, `npm run test:e2e`) could not be completed in this environment due missing Python dependency installation access (`httpx`/build dependencies unavailable from package index).
+
 ### Phase 2 — Alpha differentiators
 Goal: become interesting enough that someone wants access.
 
