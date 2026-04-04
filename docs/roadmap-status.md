@@ -193,6 +193,23 @@ Still open from this track:
   - default parity test now validates healthy provider mode (`provider` + `reads: provider`),
   - added explicit demo-fallback parity test under controlled mocked degraded fixture.
 
+### 2026-04-04 Windows deployment validation + local runtime closeout (this pass)
+
+- Verified deployed backend in `C:\Dashboard\MacMarket-Trader`:
+  - `/health` returns 200
+  - `pytest -q` passes (78 passed)
+- Verified deployed frontend in `C:\Dashboard\MacMarket-Trader\apps\web`:
+  - `npm test` passes (15 passed)
+  - `npm run build` passes
+  - manual `next start` succeeds locally
+- Hardened Windows deployment script across:
+  - robocopy exclusion fixes (`storage` / `data` package regressions)
+  - backend startup launch path
+  - backend health check reliability
+  - Node 20.x tolerance messaging
+- Confirmed deployed local DB bootstrap path (`macmarket_trader.db`) and local admin/user approval recovery path.
+- Phase 1 is functionally complete for local private-alpha validation.
+- Remaining follow-up is deployment/runtime auth/frontend startup polish, not core Phase 1 workflow correctness.
 ## Phase 1 remaining blockers (truthful)
 
 - Execute the updated browser-level Playwright regression suite successfully in CI/runtime.
