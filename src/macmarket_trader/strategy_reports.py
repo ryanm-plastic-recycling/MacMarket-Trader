@@ -1,38 +1,18 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from statistics import mean
 from zoneinfo import ZoneInfo
 
 from macmarket_trader.data.providers.base import EmailMessage, EmailProvider
 from macmarket_trader.data.providers.registry import build_market_data_service
 from macmarket_trader.domain.enums import MarketMode
-from macmarket_trader.domain.schemas import Bar
+from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.strategy_registry import list_strategies
 from macmarket_trader.storage.repositories import (
     EmailLogRepository,
     StrategyReportRepository,
 )
-
-
-@dataclass
-class RankedCandidate:
-    symbol: str
-    strategy: str
-    source: str
-    thesis: str
-    trigger: str
-    entry_zone: str
-    invalidation: str
-    targets: str
-    expected_rr: float
-    confidence: float
-    rank: int
-    quick_note: str
-    status: str
-    score: float
 
 
 class StrategyReportService:
@@ -47,6 +27,7 @@ class StrategyReportService:
         self.email_provider = email_provider
         self.email_log_repo = email_log_repo
         self.market_data_service = build_market_data_service()
+        self.ranking_engine = DeterministicRankingEngine()
 
     @staticmethod
     def _next_run_at(*, now: datetime, frequency: str, run_time: str, timezone_name: str) -> datetime:
@@ -68,44 +49,6 @@ class StrategyReportService:
                 candidate = (candidate + timedelta(days=1)).replace(hour=hour, minute=minute, second=0, microsecond=0)
         return candidate.astimezone(timezone.utc)
 
-    @staticmethod
-    def _score_symbol(symbol: str, bars: list[Bar], strategy: str) -> dict[str, float]:
-        last = bars[-1]
-        avg_volume = mean([bar.volume for bar in bars[-20:]]) if bars else float(last.volume)
-        daily_ranges = [max(bar.high - bar.low, 0.01) for bar in bars[-14:]]
-        atr = mean(daily_ranges) if daily_ranges else 1.0
-        close = max(last.close, 0.01)
-        rel_volatility = min(2.0, atr / close * 100)
-        liquidity = min(1.0, avg_volume / 4_000_000)
-        strategy_fit = 0.75 if strategy == "Event Continuation" else 0.68
-        regime_fit = 0.65 + min(0.2, rel_volatility / 10)
-        catalyst_quality = 0.55
-        volatility_fit = min(1.0, rel_volatility / 1.5)
-        spread_penalty = 0.05 if liquidity > 0.5 else 0.18
-        expected_rr = round(1.2 + (strategy_fit * 1.1) + (volatility_fit * 0.35) - spread_penalty, 2)
-        confidence = max(0.2, min(0.95, (strategy_fit + regime_fit + liquidity) / 3))
-        score = (
-            strategy_fit * 0.24
-            + regime_fit * 0.18
-            + catalyst_quality * 0.12
-            + liquidity * 0.14
-            + volatility_fit * 0.14
-            + confidence * 0.10
-            + min(1.0, expected_rr / 3) * 0.12
-            - spread_penalty * 0.16
-        )
-        return {
-            "strategy_fit_score": round(strategy_fit, 3),
-            "regime_fit_score": round(regime_fit, 3),
-            "catalyst_quality_score": round(catalyst_quality, 3),
-            "liquidity_score": round(liquidity, 3),
-            "volatility_suitability_score": round(volatility_fit, 3),
-            "spread_slippage_penalty": round(spread_penalty, 3),
-            "expected_rr": expected_rr,
-            "confidence": round(confidence, 3),
-            "total_score": round(score, 3),
-        }
-
     def run_schedule(self, schedule_id: int, *, trigger: str = "manual") -> dict[str, object]:
         schedule = self.report_repo.get_schedule(schedule_id)
         if schedule is None:
@@ -126,55 +69,35 @@ class StrategyReportService:
         if not strategies:
             strategies = ["Event Continuation"]
 
-        source = "provider"
-        fallback = False
-        candidates: list[RankedCandidate] = []
+        bars_by_symbol = {}
+        last_source = "provider"
+        last_fallback = False
         for symbol in symbols:
-            bars, data_source, fallback_mode = self.market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=60)
+            bars, source, fallback_mode = self.market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=60)
             if not bars:
                 continue
-            source = data_source
-            fallback = fallback_mode
-            for strategy in strategies:
-                metrics = self._score_symbol(symbol, bars, strategy)
-                signal_status = "top_candidate" if metrics["total_score"] >= 0.62 else "watchlist"
-                if metrics["confidence"] < 0.45:
-                    signal_status = "no_trade"
-                candidates.append(
-                    RankedCandidate(
-                        symbol=symbol,
-                        strategy=strategy,
-                        source=(f"fallback ({data_source})" if fallback_mode else data_source),
-                        thesis=f"{strategy} alignment with deterministic regime and liquidity filters.",
-                        trigger="Hold above opening range high with RVOL confirmation.",
-                        entry_zone=f"{bars[-1].close * 0.995:.2f} - {bars[-1].close * 1.005:.2f}",
-                        invalidation=f"{bars[-1].low * 0.995:.2f}",
-                        targets=f"{bars[-1].close * 1.02:.2f} / {bars[-1].close * 1.04:.2f}",
-                        expected_rr=metrics["expected_rr"],
-                        confidence=metrics["confidence"],
-                        rank=0,
-                        quick_note=f"fit={metrics['strategy_fit_score']}, liquidity={metrics['liquidity_score']}, vol={metrics['volatility_suitability_score']}",
-                        status=signal_status,
-                        score=metrics["total_score"],
-                    )
-                )
+            bars_by_symbol[symbol] = (bars, source, fallback_mode)
+            last_source = source
+            last_fallback = fallback_mode
 
-        candidates.sort(key=lambda item: item.score, reverse=True)
-        for idx, item in enumerate(candidates, start=1):
-            item.rank = idx
-
-        top_candidates = [item for item in candidates if item.status == "top_candidate"][:top_n]
-        watchlist = [item for item in candidates if item.status == "watchlist"]
-        no_trade = [item for item in candidates if item.status == "no_trade"]
+        ranking = self.ranking_engine.rank_candidates(
+            bars_by_symbol=bars_by_symbol,
+            strategies=strategies,
+            market_mode=market_mode,
+            timeframe="1D",
+            top_n=top_n,
+        )
 
         payload = {
             "schedule_id": schedule.id,
             "trigger": trigger,
             "ran_at": datetime.now(timezone.utc).isoformat(),
-            "source": f"fallback ({source})" if fallback else source,
-            "top_candidates": [item.__dict__ for item in top_candidates],
-            "watchlist_only": [item.__dict__ for item in watchlist],
-            "no_trade": [item.__dict__ for item in no_trade],
+            "source": f"fallback ({last_source})" if last_fallback else last_source,
+            "top_candidates": ranking["top_candidates"],
+            "watchlist_only": ranking["watchlist_only"],
+            "no_trade": ranking["no_trade"],
+            "queue": ranking["queue"],
+            "summary": ranking["summary"],
         }
         run_row = self.report_repo.create_run(
             schedule_id=schedule.id,

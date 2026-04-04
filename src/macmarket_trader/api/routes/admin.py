@@ -13,6 +13,7 @@ from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
 from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest, TradeRecommendation
 from macmarket_trader.execution.paper_broker import PaperBroker
+from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
 from macmarket_trader.strategy_reports import StrategyReportService
@@ -43,6 +44,7 @@ strategy_report_service = StrategyReportService(
     email_log_repo=email_repo,
 )
 preview_market_data_provider = DeterministicFallbackMarketDataProvider()
+ranking_engine = DeterministicRankingEngine()
 
 
 def _safe_identity_value(value: str | None) -> str | None:
@@ -200,6 +202,64 @@ def list_recommendations(_user=Depends(require_approved_user)):
         }
         for row in rows
     ]
+
+
+@user_router.post("/recommendations/queue")
+def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_approved_user)):
+    market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
+    symbols = [str(item).upper() for item in (req.get("symbols") or ["AAPL", "MSFT", "NVDA"]) if str(item).strip()]
+    timeframe = str(req.get("timeframe") or "1D")
+    selected_strategies = [str(item) for item in (req.get("strategies") or []) if str(item).strip()]
+    if not selected_strategies:
+        selected_strategies = [entry.display_name for entry in list_strategies(market_mode)[:3]]
+    bars_by_symbol = {symbol: _workflow_bars(symbol, limit=120) for symbol in symbols}
+    ranking = ranking_engine.rank_candidates(
+        bars_by_symbol=bars_by_symbol,
+        strategies=selected_strategies,
+        market_mode=market_mode,
+        timeframe=timeframe,
+        top_n=int(req.get("top_n") or 10),
+    )
+    return {
+        "market_mode": market_mode.value,
+        "timeframe": timeframe,
+        "source": "mixed" if len({item["workflow_source"] for item in ranking["queue"]}) > 1 else (ranking["queue"][0]["workflow_source"] if ranking["queue"] else "provider"),
+        **ranking,
+    }
+
+
+@user_router.post("/recommendations/queue/promote")
+def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approved_user)):
+    symbol = str(req.get("symbol") or "").upper()
+    strategy = str(req.get("strategy") or "Event Continuation")
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required to promote queue candidate")
+    bars, source, fallback_mode = _workflow_bars(symbol)
+    event_text = str(req.get("thesis") or f"Queue promotion for {strategy}")
+    approval_status = getattr(_user.approval_status, "value", _user.approval_status)
+    user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
+    rec = recommendation_service.generate(
+        symbol=symbol,
+        bars=bars,
+        event_text=event_text,
+        event=None,
+        portfolio=PortfolioSnapshot(),
+        market_mode=MarketMode.EQUITIES,
+        user_is_approved=user_is_approved,
+    )
+    recommendation_repo.attach_workflow_metadata(
+        rec.recommendation_id,
+        market_data_source=source,
+        fallback_mode=fallback_mode,
+    )
+    return {
+        "id": rec.recommendation_id,
+        "symbol": rec.symbol,
+        "strategy": strategy,
+        "market_data_source": source,
+        "fallback_mode": fallback_mode,
+        "approved": rec.approved,
+    }
 
 
 @user_router.post("/recommendations/generate")
@@ -523,16 +583,21 @@ def analyze_symbol(symbol: str, market_mode: MarketMode = MarketMode.EQUITIES, _
     low20 = min(item.low for item in bars[-20:])
     high20 = max(item.high for item in bars[-20:])
     avg_volume = sum(item.volume for item in bars[-20:]) / min(len(bars), 20)
+    ranking = ranking_engine.rank_candidates(
+        bars_by_symbol={symbol.upper(): (bars, source, fallback_mode)},
+        strategies=[entry.display_name for entry in list_strategies(market_mode)[:4]],
+        market_mode=market_mode,
+        timeframe="1D",
+        top_n=5,
+    )
     return {
         "symbol": symbol.upper(),
         "market_mode": market_mode.value,
+        "timeframe": "1D",
         "source": f"fallback ({source})" if fallback_mode else source,
         "market_regime": "trend" if latest.close >= bars[-5].close else "chop",
         "technical_summary": f"Close {latest.close:.2f}, 20D range {low20:.2f}-{high20:.2f}",
-        "strategy_scoreboard": [
-            {"strategy": entry.display_name, "score": round(0.70 - (idx * 0.04), 2), "status": entry.status}
-            for idx, entry in enumerate(list_strategies(market_mode))
-        ],
+        "strategy_scoreboard": ranking["queue"][:6],
         "levels": {
             "support": [round(low20, 2), round(min(item.low for item in bars[-5:]), 2)],
             "resistance": [round(high20, 2), round(max(item.high for item in bars[-5:]), 2)],
@@ -552,6 +617,11 @@ def analyze_symbol(symbol: str, market_mode: MarketMode = MarketMode.EQUITIES, _
             "bear": "Failure below support invalidates continuation thesis and flips to defensive posture.",
         },
         "operator_note": "Focus on trigger quality, then promote qualified setup to Recommendations for execution prep.",
+        "next_actions": [
+            {"label": "Open full workbench", "path": f"/analysis?symbol={symbol.upper()}"},
+            {"label": "Seed recommendation queue", "path": f"/recommendations?symbol={symbol.upper()}"},
+            {"label": "Create schedule from symbol", "path": "/schedules"},
+        ],
         "status": "live" if market_mode == MarketMode.EQUITIES else "planned_research_preview",
         "execution_enabled": market_mode == MarketMode.EQUITIES,
     }
@@ -586,6 +656,14 @@ def list_strategy_schedules(user=Depends(require_approved_user)):
     output = []
     for row in schedules:
         runs = strategy_report_repo.list_runs(schedule_id=row.id, limit=5)
+        latest_payload_summary = None
+        if runs and runs[0].payload:
+            summary = (runs[0].payload or {}).get("summary") or {}
+            latest_payload_summary = {
+                "top_candidate_count": summary.get("top_candidate_count", 0),
+                "watchlist_count": summary.get("watchlist_count", 0),
+                "no_trade_count": summary.get("no_trade_count", 0),
+            }
         output.append(
             {
                 "id": row.id,
@@ -599,12 +677,21 @@ def list_strategy_schedules(user=Depends(require_approved_user)):
                 "latest_run_at": row.latest_run_at,
                 "next_run_at": row.next_run_at,
                 "payload": row.payload,
+                "config_summary": {
+                    "market_mode": (row.payload or {}).get("market_mode", "equities"),
+                    "symbols_count": len((row.payload or {}).get("symbols") or []),
+                    "strategy_count": len((row.payload or {}).get("enabled_strategies") or []),
+                    "top_n": (row.payload or {}).get("top_n", 5),
+                    "delivery_target": (row.payload or {}).get("email_delivery_target") or row.email_target,
+                },
+                "latest_payload_summary": latest_payload_summary,
                 "history": [
                     {
                         "id": run.id,
                         "status": run.status,
                         "delivered_to": run.delivered_to,
                         "created_at": run.created_at,
+                        "summary": (run.payload or {}).get("summary"),
                     }
                     for run in runs
                 ],

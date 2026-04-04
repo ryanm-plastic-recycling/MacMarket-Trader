@@ -1,55 +1,65 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, EmptyState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
 
 type AnalyzePayload = {
   symbol: string;
+  market_mode: string;
+  timeframe: string;
   source: string;
   market_regime: string;
   technical_summary: string;
-  strategy_scoreboard: Array<{ strategy: string; score: number }>;
+  strategy_scoreboard: Array<{ rank: number; strategy: string; status: string; score: number; expected_rr: number; confidence: number; reason_text: string }>;
   levels: { support: number[]; resistance: number[]; pivot: number };
   indicator_snapshot: Record<string, string | number>;
   catalyst_summary: string;
   scenarios: Record<string, string>;
   operator_note: string;
+  next_actions: Array<{ label: string; path: string }>;
 };
 
 export default function AnalyzePage() {
   const [symbol, setSymbol] = useState("AAPL");
   const [payload, setPayload] = useState<AnalyzePayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   async function load() {
-    setFeedback({ state: "loading", message: "Analyzing symbol..." });
+    setFeedback({ state: "loading", message: "Running fast symbol triage…" });
     const result = await fetchWorkflowApi<AnalyzePayload>(`/api/user/analyze/${symbol}`);
     if (!result.ok || !result.data) {
+      setError(result.error ?? "Analyze failed");
       setFeedback({ state: "error", message: result.error ?? "Analyze failed" });
       return;
     }
+    setError(null);
     setPayload(result.data);
-    setFeedback({ state: "success", message: "Analyze snapshot ready" });
+    setFeedback({ state: "success", message: "Analyze triage ready." });
   }
 
   useEffect(() => { void load(); }, []);
 
   return <section className="op-stack">
-    <PageHeader title="Symbol Analyze" subtitle="Quick operator summary to decide what matters now before recommendation generation." actions={<StatusBadge tone="neutral">{payload?.source ?? "source pending"}</StatusBadge>} />
+    <PageHeader title="Symbol Analyze" subtitle="Fast triage workspace that complements Strategy Workbench." actions={<StatusBadge tone="neutral">{payload?.source ?? "source pending"}</StatusBadge>} />
     <Card>
       <div className="op-row"><input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} /><button onClick={() => void load()}>Analyze</button></div>
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
     </Card>
-    {!payload ? <EmptyState title="No symbol snapshot" hint="Run analyze to inspect regime, levels, scenarios, and strategy scoreboard." /> : <>
-      <div className="op-grid-2">
-        <Card title="Regime + technical summary"><div>{payload.market_regime}</div><div>{payload.technical_summary}</div><div><strong>Catalyst:</strong> {payload.catalyst_summary}</div><div><strong>Operator note:</strong> {payload.operator_note}</div></Card>
-        <Card title="Strategy scoreboard"><table className="op-table"><thead><tr><th>Strategy</th><th>Score</th></tr></thead><tbody>{payload.strategy_scoreboard.map((row) => <tr key={row.strategy}><td>{row.strategy}</td><td>{row.score}</td></tr>)}</tbody></table></Card>
-      </div>
+    {error ? <ErrorState title="Analyze unavailable" hint={error} /> : null}
+    {!payload ? <EmptyState title="No symbol snapshot" hint="Run analyze to inspect triage scoreboard and next actions." /> : <>
       <div className="op-grid-3">
-        <Card title="Support / resistance"><div>Support: {payload.levels.support.join(" / ")}</div><div>Resistance: {payload.levels.resistance.join(" / ")}</div><div>Pivot: {payload.levels.pivot}</div></Card>
+        <Card title="Mode / timeframe / regime"><div><strong>mode:</strong> {payload.market_mode}</div><div><strong>timeframe:</strong> {payload.timeframe}</div><div><strong>regime:</strong> {payload.market_regime}</div><div>{payload.technical_summary}</div></Card>
+        <Card title="Levels"><div>Support: {payload.levels.support.join(" / ")}</div><div>Resistance: {payload.levels.resistance.join(" / ")}</div><div>Pivot: {payload.levels.pivot}</div></Card>
         <Card title="Indicator snapshot">{Object.entries(payload.indicator_snapshot).map(([key, value]) => <div key={key}>{key}: {String(value)}</div>)}</Card>
-        <Card title="Bull / Base / Bear">{Object.entries(payload.scenarios).map(([key, value]) => <div key={key}><strong>{key}:</strong> {value}</div>)}</Card>
+      </div>
+      <Card title="Ranked strategy scoreboard">
+        <table className="op-table"><thead><tr><th>rank</th><th>strategy</th><th>status</th><th>score</th><th>rr</th><th>confidence</th></tr></thead><tbody>{payload.strategy_scoreboard.map((row) => <tr key={`${row.rank}-${row.strategy}`}><td>{row.rank}</td><td>{row.strategy}</td><td>{row.status}</td><td>{row.score}</td><td>{row.expected_rr}</td><td>{row.confidence}</td></tr>)}</tbody></table>
+      </Card>
+      <div className="op-grid-2">
+        <Card title="Scenarios">{Object.entries(payload.scenarios).map(([key, value]) => <div key={key}><strong>{key}:</strong> {value}</div>)}</Card>
+        <Card title="What to do next"><div>{payload.operator_note}</div><div className="op-row" style={{ marginTop: 8 }}>{payload.next_actions.map((action) => <button key={action.label} onClick={() => window.location.assign(action.path)}>{action.label}</button>)}</div></Card>
       </div>
     </>}
   </section>;
