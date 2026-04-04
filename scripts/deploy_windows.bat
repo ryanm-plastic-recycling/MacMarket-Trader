@@ -124,7 +124,7 @@ if exist "%WEB_DIR%\package.json" if not exist "%WEB_DIR%\.env.local" (
 
 echo [INFO] Creating or reusing Python virtual environment...
 if not exist "%DST%\.venv\Scripts\python.exe" (
-  py -3.12 -m venv "%DST%\.venv"
+  py -3.13 -m venv "%DST%\.venv"
   if errorlevel 1 (
     echo [ERROR] Failed to create Python 3.12 venv.
     set "RC=1"
