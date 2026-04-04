@@ -1,2 +1,4 @@
 @echo off
-call scripts\restart_windows.bat %*
+setlocal
+call "%~dp0scripts\restart_windows.bat" %*
+exit /b %errorlevel%

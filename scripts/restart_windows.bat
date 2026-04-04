@@ -1,24 +1,48 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 
-set APP_ROOT=C:\Dashboard\MacMarket-Trader
-set LIVE_DIR=%APP_ROOT%\live
-set LOG_DIR=%LIVE_DIR%\logs
-set FRONTEND_PORT=9500
-set BACKEND_PORT=9510
+set "DST=C:\Dashboard\MacMarket-Trader"
+set "BACKEND_PORT=9510"
+set "FRONTEND_PORT=9500"
+set "BACKEND_HOST=127.0.0.1"
+set "FRONTEND_HOST=127.0.0.1"
 
-for %%P in (%FRONTEND_PORT% %BACKEND_PORT%) do (
-  for /f "tokens=5" %%a in ('netstat -ano ^| findstr :%%P') do taskkill /F /PID %%a >nul 2>nul
-)
+if not "%~1"=="" set "DST=%~1"
 
-if not exist "%LIVE_DIR%" (
-  echo [FAIL] Live directory not found: %LIVE_DIR%
+set "LOG_DIR=%DST%\logs"
+set "WEB_DIR=%DST%\apps\web"
+
+echo.
+echo =========================================================
+echo Restarting MacMarket-Trader
+echo   DST: %DST%
+echo =========================================================
+echo.
+
+if not exist "%DST%" (
+  echo [ERROR] Deployment directory not found:
+  echo         %DST%
+  pause
   exit /b 1
 )
-if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
-cd /d %LIVE_DIR%
-start "macmarket-api" cmd /c "call .venv\Scripts\activate.bat && uvicorn macmarket_trader.api.main:app --host 127.0.0.1 --port %BACKEND_PORT% >> %LOG_DIR%\backend.log 2>&1"
-if exist apps\web\package.json start "macmarket-web" cmd /c "cd /d %LIVE_DIR%\apps\web && npm run start -- --hostname 127.0.0.1 --port %FRONTEND_PORT% >> %LOG_DIR%\frontend.log 2>&1"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
 
-echo Restart completed.
+for %%P in (%FRONTEND_PORT% %BACKEND_PORT%) do (
+  for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":%%P .*LISTENING"') do (
+    echo [INFO] taskkill /PID %%a on port %%P
+    taskkill /F /PID %%a >nul 2>nul
+  )
+)
+
+echo [INFO] Starting backend...
+start "MacMarket-Trader API" /MIN cmd /c "cd /d \"%DST%\" && call .venv\Scripts\activate.bat && python -m uvicorn macmarket_trader.api.main:app --host %BACKEND_HOST% --port %BACKEND_PORT% > \"%LOG_DIR%\backend.log\" 2>&1"
+
+if exist "%WEB_DIR%\package.json" (
+  echo [INFO] Starting frontend...
+  start "MacMarket-Trader WEB" /MIN cmd /c "cd /d \"%WEB_DIR%\" && npm run start -- --hostname %FRONTEND_HOST% --port %FRONTEND_PORT% > \"%LOG_DIR%\frontend.log\" 2>&1"
+)
+
+echo [OK] Restart issued.
+pause
+exit /b 0
