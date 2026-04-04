@@ -143,7 +143,7 @@ def test_degraded_provider_reports_blocked_or_demo_fallback_explicitly(monkeypat
 
     monkeypatch.setattr(admin_routes, 'market_data_service', DegradedMarketData())
     monkeypatch.setattr(admin_routes.settings, 'market_data_enabled', True)
-    monkeypatch.setattr(admin_routes.settings, 'polygon_enabled', False)
+    monkeypatch.setattr(admin_routes.settings, 'polygon_enabled', True)
     monkeypatch.setattr(admin_routes.settings, 'workflow_demo_fallback', False)
 
     blocked = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})

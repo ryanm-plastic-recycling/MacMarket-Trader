@@ -136,6 +136,9 @@ def test_provider_health_result_structure(monkeypatch) -> None:
             )
 
     monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", False)
+    monkeypatch.setattr(settings, "environment", "test")
 
     client = TestClient(app)
     from macmarket_trader.domain.models import AppUserModel
@@ -153,6 +156,9 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     market_entry = next(item for item in payload["providers"] if item["provider"] == "market_data")
+    assert market_entry["configured_provider"] == "polygon"
+    assert market_entry["effective_read_mode"] == "polygon"
+    assert market_entry["workflow_execution_mode"] == "provider"
     assert market_entry["mode"] == "polygon"
     assert market_entry["status"] == "ok"
     assert market_entry["feed"] == "stocks"
