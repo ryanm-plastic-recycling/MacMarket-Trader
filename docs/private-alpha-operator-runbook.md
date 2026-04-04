@@ -12,6 +12,11 @@ This runbook is for internal operators validating the **Phase 1 product center**
 
 ## 1) Local start checklist
 
+### Frontend runtime requirements
+
+- Use **Node `20.19.6`** (matches `apps/web/package.json` engines).
+- On Windows, run verification from a local non-OneDrive path (for example `C:\dev\MacMarket-Trader`), not a OneDrive-synced directory, to avoid `.next` readlink `EINVAL` failures during `next build` and Playwright webServer startup.
+
 ### Backend
 
 ```bash
@@ -140,8 +145,9 @@ Verify:
 ### Stale frontend build/cache behavior
 
 1. Stop backend + frontend.
-2. Clear Next build cache: `rm -rf apps/web/.next` (bash) or `Remove-Item -Recurse -Force apps/web/.next` (PowerShell)
-3. Restart backend/frontend.
+2. Clear Next build cache: `rm -rf apps/web/.next` (bash) or `Remove-Item -Recurse -Force apps/web/.next` (PowerShell).
+3. If on Windows and the repo is in OneDrive, move it to a non-synced local path first (OneDrive file virtualization can break `.next` symlink/readlink behavior).
+4. Restart backend/frontend.
 
 ### Provider entitlement/health mismatch
 
@@ -184,6 +190,12 @@ pytest -q
 Set-Location apps/web
 npm test
 npm run build
+```
+
+If pytest picks up a non-test auth mode from a local `.env`, force test mode inline:
+
+```bash
+ENVIRONMENT=test AUTH_PROVIDER=mock pytest -q
 ```
 
 Phase 1 should not be marked closed unless these checks pass and the click path above is operator-usable.

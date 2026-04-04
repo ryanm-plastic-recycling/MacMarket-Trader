@@ -165,10 +165,23 @@ Still open from this track:
   - protected same-origin proxy status/body passthrough under upstream failures.
 - Updated private-alpha runbook with explicit Windows PowerShell startup, seed, cache-clear, and verification commands alongside bash examples.
 
+### 2026-04-04 verification environment closeout pass (this pass)
+
+- Hardened pytest bootstrap to force deterministic test auth defaults regardless of developer `.env` drift:
+  - `ENVIRONMENT=test`
+  - `AUTH_PROVIDER=mock`
+  - `EMAIL_PROVIDER=console`
+- This restores `/user/me` mock-token provisioning flow for `user-token` and `admin-token` under pytest so `clerk_user` / `clerk_admin` seeding paths execute in tests.
+- Clarified backend setup docs to match implementation truth: backend dependency install is `pip install -e \".[dev]\"` from `pyproject.toml`; no root `requirements.txt` is currently maintained.
+- Hardened frontend verification guidance and startup behavior for Windows local validation:
+  - explicit Node runtime requirement (`20.19.6`),
+  - explicit warning to run outside OneDrive-synced directories for final `next build`/Playwright verification,
+  - Playwright `webServer` now clears stale `.next` before startup to reduce local cache/readlink brittleness.
+
 ## Phase 1 remaining blockers (truthful)
 
-- Execute the new browser-level Playwright regression suite successfully in CI/runtime (current local environment cannot install/run Playwright due package access restrictions).
-- Verify dashboard/provider-health rendered parity regression run is green in CI/runtime (spec implemented; execution still blocked locally with Playwright install constraints).
+- Execute the new browser-level Playwright regression suite successfully in CI/runtime.
+- Verify dashboard/provider-health rendered parity regression run is green in CI/runtime.
 - Keep options/crypto paths in explicit research-preview mode until mode-native replay + risk + paper workflow parity is implemented and tested.
 
 ### Phase 2 — Alpha differentiators

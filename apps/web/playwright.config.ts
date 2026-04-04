@@ -8,7 +8,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run dev",
+    command: "node ./scripts/clean-next-cache.mjs && npm run dev",
     port: 9500,
     reuseExistingServer: !process.env.CI,
     env: {
