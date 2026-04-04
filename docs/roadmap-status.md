@@ -501,3 +501,32 @@ A valid early implementation should **not**:
 - which setups are worth trading
 - what levels matter
 - what to ignore
+
+### 2026-04-04 Phase 2 bounded closeout — Recommendations lineage + Analyze handoff (this pass)
+
+Completed in this pass:
+- Recommendations same-origin queue proxy coverage is now complete with explicit Next routes for:
+  - `/api/user/recommendations/queue`
+  - `/api/user/recommendations/queue/promote`
+- Recommendations workspace is upgraded from a thin queue/count panel to a lineage-first review surface with:
+  - ranked queue pane,
+  - persisted recommendations pane,
+  - context-aware selection/detail behavior,
+  - queue vs stored recommendation detail separation,
+  - explicit ranking provenance rendering when present,
+  - context-aware Replay/Orders navigation (recommendation id preferred when selected).
+- Analyze -> Recommendations handoff now carries symbol prefill context (`symbols` query param) and Recommendations now consumes:
+  - `?symbol=`
+  - `?symbols=`
+  - `?recommendation=`
+- Queue promotion now persists ranking provenance into stored recommendation payloads under:
+  - `payload.workflow.ranking_provenance`
+  including rank/strategy/timeframe/source/scoring/explainability fields, while preserving existing workflow metadata (`market_data_source`, `fallback_mode`).
+- Minimal Analyze -> Schedules prefill support added:
+  - `?symbols=` pre-fills symbol input
+  - `?name=` pre-fills draft schedule name
+
+Still open after this pass (Phase 2):
+- Full schedule control polish (frequency/run-time/timezone editing UX, validation, and richer run drill-in details).
+- Broader admin/operator polish items called out in prior Phase 2 gap list.
+- Additional frontend helper coverage outside the recommendations-focused helper/route tests added in this pass.

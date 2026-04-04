@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import type { MarketMode } from "@/lib/strategy-registry";
@@ -22,6 +23,11 @@ type Schedule = {
 };
 
 export default function SchedulesPage() {
+  const searchParams = useSearchParams();
+  const prefill = useMemo(() => ({
+    symbols: (searchParams.get("symbols") ?? "").split(",").map((item) => item.trim().toUpperCase()).filter(Boolean),
+    name: (searchParams.get("name") ?? "").trim(),
+  }), [searchParams]);
   const [rows, setRows] = useState<Schedule[]>([]);
   const [selected, setSelected] = useState<Schedule | null>(null);
   const [name, setName] = useState("Morning strategy scan");
@@ -45,6 +51,15 @@ export default function SchedulesPage() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (prefill.symbols.length) {
+      setSymbols(prefill.symbols.join(","));
+    }
+    if (prefill.name) {
+      setName(prefill.name);
+    }
+  }, [prefill.name, prefill.symbols.join(",")]);
 
   async function createOrUpdateSchedule(scheduleId?: number) {
     const payload = {
