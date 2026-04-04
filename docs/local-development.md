@@ -44,6 +44,9 @@ Local/dev override (explicit):
 
 ## Backend (FastAPI)
 
+MacMarket-Trader backend dependencies are managed from `pyproject.toml` (PEP 621).
+There is currently **no root `requirements.txt`** install path.
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
@@ -103,6 +106,12 @@ This local/demo seed path adds a minimal-but-usable dataset for the operator das
 
 ```bash
 pytest -q
+```
+
+If local shell defaults to a non-test auth provider through a personal `.env`, force mock-auth test mode explicitly:
+
+```bash
+ENVIRONMENT=test AUTH_PROVIDER=mock pytest -q
 ```
 
 ## Frontend runtime/API routing
