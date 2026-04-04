@@ -3,14 +3,6 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM =========================================================
 REM  MacMarket-Trader - deploy_windows.bat
-REM
-REM  - Mirrors repo from SRC (folder containing this repo/script) -> DST
-REM  - Supports in-place deploy when SRC == DST
-REM  - Preserves runtime artifacts in DST (.env, .env.local, venv, DB, logs, uploads)
-REM  - Stops existing backend/frontend listeners with hard-kill fallback
-REM  - Rebuilds backend/frontend and restarts services
-REM  - Optional tests: set RUN_TESTS=1 and/or RUN_E2E=1
-REM  - ALWAYS pauses so you can read output
 REM =========================================================
 
 set "DST=C:\Dashboard\MacMarket-Trader"
@@ -18,14 +10,14 @@ set "BACKEND_PORT=9510"
 set "FRONTEND_PORT=9500"
 set "BACKEND_HOST=127.0.0.1"
 set "FRONTEND_HOST=127.0.0.1"
-set "EXPECTED_NODE=v20.19.6"
+set "EXPECTED_NODE_MAJOR=v20"
+set "EXPECTED_NODE_DISPLAY=any supported v20.x release"
 set "RUN_TESTS=0"
 set "RUN_E2E=0"
 set "STRICT_NODE=0"
 
 if not "%~1"=="" set "DST=%~1"
 
-REM Repo root = parent of scripts folder
 for %%I in ("%~dp0..") do set "SRC=%%~fI"
 
 set "LOG_DIR=%DST%\logs"
@@ -33,6 +25,8 @@ set "DATA_DIR=%DST%\data"
 set "STORAGE_DIR=%DST%\storage"
 set "UPLOAD_DIR=%DST%\uploads"
 set "WEB_DIR=%DST%\apps\web"
+set "BACKEND_LOG=%LOG_DIR%\backend.log"
+set "FRONTEND_LOG=%LOG_DIR%\frontend.log"
 
 set "RC=0"
 
@@ -49,7 +43,6 @@ echo   RUN_E2E : %RUN_E2E%
 echo =========================================================
 echo.
 
-REM ----- Admin check (warn, do not hard fail) -----
 net session >nul 2>&1
 if errorlevel 1 (
   echo [WARN] Not running as Administrator. Continuing, but port/process cleanup may be limited.
@@ -57,7 +50,6 @@ if errorlevel 1 (
   echo [INFO] Running with Administrator privileges.
 )
 
-REM ----- Sanity check repo -----
 if not exist "%SRC%\README.md" (
   echo [ERROR] Source path does not look like the MacMarket repo:
   echo         %SRC%
@@ -74,21 +66,18 @@ if not exist "%SRC%\apps\web\package.json" (
   echo [WARN] apps\web\package.json not found in source. Frontend steps will be skipped.
 )
 
-REM ----- Ensure destination folders -----
 if not exist "%DST%" mkdir "%DST%" >nul 2>&1
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>&1
 if not exist "%STORAGE_DIR%" mkdir "%STORAGE_DIR%" >nul 2>&1
 if not exist "%UPLOAD_DIR%" mkdir "%UPLOAD_DIR%" >nul 2>&1
 
-REM ----- Node version guidance -----
 call :CheckNode
 if errorlevel 1 (
   set "RC=1"
   goto :END
 )
 
-REM ----- Stop listeners and stray processes -----
 echo [INFO] Stopping listeners on %FRONTEND_PORT% / %BACKEND_PORT%...
 call :StopPort "%FRONTEND_PORT%"
 call :StopPort "%BACKEND_PORT%"
@@ -182,21 +171,21 @@ if exist "%WEB_DIR%\package.json" (
   echo [INFO] Installing frontend dependencies...
   pushd "%WEB_DIR%"
   if exist "package-lock.json" (
-	  call npm ci
-	) else (
-	  call npm install
-	)
+    call npm ci
+  ) else (
+    call npm install
+  )
 
-	if errorlevel 1 (
-	  echo [WARN] Clean frontend install failed. Retrying with legacy peer dependency resolution...
-	  call npm install --legacy-peer-deps
-	)
+  if errorlevel 1 (
+    echo [WARN] Clean frontend install failed. Retrying with legacy peer dependency resolution...
+    call npm install --legacy-peer-deps
+  )
 
-	if errorlevel 1 (
-	  echo [ERROR] Frontend dependency install failed.
-	  set "RC=1"
-	  goto :FAIL_POP_WEB
-	)
+  if errorlevel 1 (
+    echo [ERROR] Frontend dependency install failed.
+    set "RC=1"
+    goto :FAIL_POP_WEB
+  )
 
   echo [INFO] Building frontend...
   call npm run build
@@ -245,26 +234,30 @@ popd
 
 echo.
 echo [INFO] Starting backend...
-start "MacMarket-Trader API" /MIN cmd /c "cd /d \"%DST%\" && call .venv\Scripts\activate.bat && python -m uvicorn macmarket_trader.api.main:app --host %BACKEND_HOST% --port %BACKEND_PORT% > \"%LOG_DIR%\backend.log\" 2>&1"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
+start "MacMarket-Trader API" /MIN /D "%DST%" "%DST%\.venv\Scripts\python.exe" -m uvicorn macmarket_trader.api.main:app --host %BACKEND_HOST% --port %BACKEND_PORT%
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Starting frontend...
-  start "MacMarket-Trader WEB" /MIN cmd /c "cd /d \"%WEB_DIR%\" && npm run start -- --hostname %FRONTEND_HOST% --port %FRONTEND_PORT% > \"%LOG_DIR%\frontend.log\" 2>&1"
+  start "MacMarket-Trader WEB" /MIN /D "%WEB_DIR%" npm.cmd run start -- --hostname %FRONTEND_HOST% --port %FRONTEND_PORT%
 )
 
 echo [INFO] Waiting for backend health...
-call :WaitForHttp "http://%BACKEND_HOST%:%BACKEND_PORT%/health" "backend /health" "60"
+timeout /t 2 /nobreak >nul
+call :WaitForHttp "http://%BACKEND_HOST%:%BACKEND_PORT%/health" "backend /health" "90"
 if errorlevel 1 (
   echo [ERROR] Backend health check did not pass in time.
+  call :ShowLogTail "%BACKEND_LOG%" "backend"
   set "RC=1"
   goto :END
 )
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Waiting for frontend root...
-  call :WaitForHttp "http://%FRONTEND_HOST%:%FRONTEND_PORT%/" "frontend root" "90"
+  call :WaitForHttp "http://%FRONTEND_HOST%:%FRONTEND_PORT%/" "frontend root" "120"
   if errorlevel 1 (
     echo [ERROR] Frontend did not respond in time.
+    call :ShowLogTail "%FRONTEND_LOG%" "frontend"
     set "RC=1"
     goto :END
   )
@@ -287,17 +280,17 @@ if not defined NODE_VER (
   echo [ERROR] Node was not found on PATH.
   exit /b 1
 )
-if /I "!NODE_VER!"=="%EXPECTED_NODE%" (
+if /I "!NODE_VER:~0,4!"=="%EXPECTED_NODE_MAJOR%" (
   echo [INFO] Node version OK: !NODE_VER!
   exit /b 0
 )
 
-echo [WARN] Node version mismatch: found !NODE_VER!, expected %EXPECTED_NODE%.
+echo [WARN] Node version mismatch: found !NODE_VER!, expected %EXPECTED_NODE_DISPLAY%.
 if "%STRICT_NODE%"=="1" (
   echo [ERROR] STRICT_NODE=1, refusing to continue.
   exit /b 1
 )
-echo [WARN] Continuing because STRICT_NODE=0. For reliable verification, use %EXPECTED_NODE%.
+echo [WARN] Continuing because STRICT_NODE=0. For reliable verification, use a supported Node 20.x version.
 exit /b 0
 
 :StopPort
@@ -332,6 +325,17 @@ powershell -NoProfile -Command ^
   "} while((Get-Date) -lt $deadline);" ^
   "exit 1"
 exit /b %errorlevel%
+
+:ShowLogTail
+set "LOG_FILE=%~1"
+set "LOG_LABEL=%~2"
+if exist "%LOG_FILE%" (
+  echo [INFO] Last %LOG_LABEL% log lines:
+  powershell -NoProfile -Command "Get-Content -Path '%LOG_FILE%' -Tail 50"
+) else (
+  echo [WARN] %LOG_LABEL% log file not found: %LOG_FILE%
+)
+exit /b 0
 
 :END
 echo.
