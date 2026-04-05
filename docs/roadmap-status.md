@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-04
+Last updated: 2026-04-05
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -124,6 +124,7 @@ Completed in this pass:
 Still open from this track:
 - Options and crypto replay semantics are not yet mode-native (still intentionally blocked for live generation in Phase 1).
 - Options chain, IV surface/skew, and full Greeks provider integration remain later-phase items.
+- Cross-mode `expected_range` / `expected_move` semantics remain roadmap-defined only until preview payloads, scoring logic, and replay annotations carry explicit method-tagged fields per mode.
 - Crypto venue funding/basis/OI live data integration and liquidation-aware risk logic remain later-phase items.
 - Full options/crypto paper execution routing is still out of scope for Phase 1.
 
@@ -210,13 +211,6 @@ Still open from this track:
 - Confirmed deployed local DB bootstrap path (`macmarket_trader.db`) and local admin/user approval recovery path.
 - Phase 1 is functionally complete for local private-alpha validation.
 - Remaining follow-up is deployment/runtime auth/frontend startup polish, not core Phase 1 workflow correctness.
-### 2026-04-04 frontend deployment blocker fix pass (this pass)
-
-- Fixed Recommendations queue-promotion typing in `apps/web/app/(console)/recommendations/page.tsx` to use typed promote payload (`result.data?.recommendation_id`) instead of `result.raw` access that broke `next build` type-checking.
-- Preserved workflow behavior: after promotion, stored recommendations are reloaded, the promoted stored recommendation is auto-selected by `recommendation_id`, and queue-only selection is cleared when lineage selection is applied.
-- Applied tiny Windows deployment script cleanup so Node version checks accept valid `v20.x` values without false mismatch warnings.
-- Verification remains environment-limited in this container due missing frontend/backend dependency resolution (`next`/`vitest`/`httpx` unavailable).
-
 ## Phase 1 remaining blockers (truthful)
 
 - Execute the updated browser-level Playwright regression suite successfully in CI/runtime.
@@ -251,6 +245,7 @@ These foundations stay in place but are not the focus until Phase 1 closes:
 - Symbol Analyze workspace.
 - Scheduled strategy reports (schedule CRUD + run-now + CLI due runner).
 - Operator indicator registry/framework and persisted indicator preferences.
+- Cross-mode `expected_range` / `expected_move` contract policy with explicit method tagging, horizon semantics, provenance, and blocked/omitted states.
 
 ### 2026-04-04 Phase 2 cohesive implementation pass (this pass)
 
@@ -351,6 +346,11 @@ The edge for MacMarket-Trader should be integration and explanation:
 
 ## What “good” should feel like
 A trader should open the app and within 60 seconds know:
+- which symbols matter today
+- which strategy is active
+- which setups are worth trading
+- what levels matter
+- what to ignore
 
 ## Multi-asset expansion policy
 
@@ -392,11 +392,90 @@ Options and crypto should begin as a **bounded foundation track started early**,
 - Strategy registry refactor so supported strategies are keyed by market mode instead of scattered hardcoded lists.
 - Analysis workbench market-mode selector with unsupported modes clearly labeled as research-preview / planned when full workflows are not yet enabled.
 - Initial options strategy specifications, including **iron condor**, with contract structures, risk definitions, and research-only recommendation contracts.
+- Cross-mode `expected_range` / `expected_move` policy with mode-aware methods, horizon typing, provenance, and explicit blocked/omitted handling instead of implied precision.
 - Initial crypto strategy specifications for spot and later futures/perpetual-style contexts, with explicit handling for 24/7 session logic, funding, basis, and liquidation-aware risk fields.
 
 ---
 
 ## New roadmap section: Future market-mode expansion
+
+### Cross-mode expected range / expected move policy
+
+`expected_range` should be the normalized cross-mode research contract.
+The UI may still say **expected move** where that is standard market language, especially in options workflows.
+
+Purpose:
+- provide volatility-aware range context for the intended decision horizon
+- support entry/invalidation framing, strike placement, regime filtering, and replay annotations
+- remain explicitly separate from targets, stop distances, payoff breakevens, liquidation thresholds, and sizing outputs
+
+Any mode that exposes this concept should carry:
+- method
+- horizon value + horizon unit (`trading_days`, `calendar_days`, `hours`, or `expiration`)
+- reference price type
+- absolute move value
+- percent move value when derivable
+- lower bound
+- upper bound
+- snapshot timestamp
+- provenance / input notes
+- status (`computed`, `blocked`, `omitted`)
+- blocked/omitted reason when applicable
+
+Usage rules:
+- never infer expected range from payoff breakevens, targets, stop distances, or liquidation thresholds
+- never mix outputs from different methods without preserving the method tag
+- block or omit the field when data quality is not strong enough
+- treat it as range context, not as a probability guarantee
+
+#### Equities / ETFs expected range policy
+
+Use for the current 1 to 5 trading day swing horizon in regular-hours equities / ETF workflows.
+
+Initial approved baseline:
+- `equity_realized_vol_1sigma`: `spot_price * realized_vol_annualized * sqrt(horizon_trading_days / 252)`
+
+Later / optional methods:
+- `equity_atr_projection` (heuristic range context, not a sigma estimate)
+- `equity_event_analog_range` (later, only after event replay/analog support is strong enough)
+
+Equities caveats:
+- carry `horizon_trading_days`, not DTE
+- regular-hours session rules still apply; overnight gaps and scheduled events can dominate the estimate
+- when earnings, macro, or company events are close enough to distort a baseline estimate, flag or block it rather than pretend normal-vol precision
+- if an equities workflow uses listed-options data to estimate the underlying range, tag it explicitly as `options_implied_underlying_range` instead of merging it with equity-native methods
+
+#### Options expected move policy
+
+For options, the UI can continue to say **expected move** because that is the standard market term.
+The stored contract should still remain method-tagged and explicitly separate from payoff math.
+
+Initial approved methods:
+- `iv_1sigma`: `underlying_price * implied_volatility * sqrt(DTE / 365)`
+- `atm_straddle_mid`: `ATM call mid + ATM put mid`
+
+Options caveats:
+- expected move is range context for the underlying into the selected expiration; it is not the same thing as structure breakevens
+- do not infer it from max profit / max loss / breakeven fields
+- if bid/ask quality, open interest, or chain completeness is weak, block or omit it instead of fabricating precision
+
+#### Crypto expected range policy
+
+For crypto, use **expected range** as the default normalized term because 24/7 trading, venue fragmentation, and derivatives reference pricing make the simpler equities/options label less precise.
+The UI can still map this to expected move where helpful, but the contract should stay explicit about reference price and horizon basis.
+
+Initial approved baseline:
+- `crypto_realized_vol_1sigma`: `reference_price * realized_vol_annualized * sqrt(horizon_calendar_days / 365)`
+
+Later / optional methods:
+- `crypto_atr_24x7_projection` (heuristic range context, not a sigma estimate)
+
+Crypto caveats:
+- always declare the price reference used (`spot_last`, `index_price`, or `mark_price`)
+- for futures/perpetual-style research, prefer `index_price` or `mark_price` over thin venue last-trade prints when possible
+- keep funding, basis, open interest, and liquidation stress adjacent but separate from the base range method in early implementations
+- block or omit the field during dislocated venue conditions, thin liquidity, or unreliable reference pricing
+- do not claim options-implied crypto expected move until crypto options are a separately supported mode with reliable chain data
 
 ### Options research mode
 
@@ -407,6 +486,7 @@ Initial scope:
 - defined-risk or fully specified multi-leg structures first
 - chain-aware analysis
 - implied volatility context
+- expected move context for the underlying, kept separate from payoff math
 - Greeks-aware scoring
 - paper-only recommendation and replay support before any execution ambitions
 
@@ -416,12 +496,15 @@ Required data/logic concepts:
 - strike selection rules
 - bid/ask and spread quality
 - implied volatility level and percentile/rank when supported
+- expected-move context with explicit method labeling
 - skew / term structure hooks
 - delta / gamma / theta / vega exposure
 - open interest and volume per leg
 - max profit / max loss / breakeven computation
+- expected-move lower/upper bounds with snapshot timestamp and provenance
 - assignment / early-exercise awareness where relevant
 - contract multiplier and fees
+- blocked / omitted handling when chain quality is not reliable enough for expected-move calculation
 
 Initial options strategy family:
 - **iron condor**
@@ -444,6 +527,11 @@ Research contract must include:
 - max loss
 - lower breakeven
 - upper breakeven
+- expected-move method
+- expected-move value
+- expected-move lower bound
+- expected-move upper bound
+- short-strike distance versus expected-move envelope
 - target profit rule
 - stop / adjustment rule
 - volatility entry filter
@@ -454,6 +542,7 @@ Eligibility rules should prefer:
 - elevated implied volatility / premium selling environment
 - sufficient liquidity across all four legs
 - acceptable bid/ask width and open interest
+- short strikes evaluated explicitly versus the selected expected-move envelope instead of inferred from breakevens
 - no nearby catalyst that can invalidate the range thesis
 
 ### Crypto research mode
@@ -470,12 +559,14 @@ Required data/logic concepts:
 - venue / market identifier
 - spot vs futures vs perpetual-style instrument type
 - mark price vs index price where applicable
+- expected-range context with explicit price-reference and horizon basis
 - 24/7 session model and weekend handling
 - funding rate history and extremes
 - basis vs spot
 - open interest
 - liquidation / leverage stress context
 - depth / spread / slippage estimates
+- blocked / omitted handling when venue data quality is insufficient for range calculation
 - news / on-chain or venue-event hooks when available
 
 Initial crypto strategy family:
@@ -492,6 +583,7 @@ A valid early implementation should:
 - keep current equities workflows working without regression
 - add a first-class `market_mode` field across the main domain contracts
 - centralize strategy definitions in a registry keyed by market mode
+- define explicit method-tagged `expected_range` / `expected_move` semantics per market mode before surfacing them in scoring, preview payloads, or replay annotations
 - expose options and crypto in the Analysis UI without pretending unsupported execution exists
 - keep Recommendations / Replay / Orders honest about unsupported paths
 - update README and roadmap text so repo intent matches code direction
@@ -501,39 +593,8 @@ A valid early implementation should **not**:
 - claim live options execution
 - claim live crypto execution
 - silently reuse equity sizing or replay logic for options/crypto
+- silently reuse one mode's expected-range method as another mode's default
+- infer expected range from payoff breakevens, targets, stop distances, or liquidation thresholds
 - mix market modes in reports without explicit labels
 - introduce fake precision when required chain/venue data is absent
-- which symbols matter today
-- which strategy is active
-- which setups are worth trading
-- what levels matter
-- what to ignore
-
-### 2026-04-04 Phase 2 bounded closeout — Recommendations lineage + Analyze handoff (this pass)
-
-Completed in this pass:
-- Recommendations same-origin queue proxy coverage is now complete with explicit Next routes for:
-  - `/api/user/recommendations/queue`
-  - `/api/user/recommendations/queue/promote`
-- Recommendations workspace is upgraded from a thin queue/count panel to a lineage-first review surface with:
-  - ranked queue pane,
-  - persisted recommendations pane,
-  - context-aware selection/detail behavior,
-  - queue vs stored recommendation detail separation,
-  - explicit ranking provenance rendering when present,
-  - context-aware Replay/Orders navigation (recommendation id preferred when selected).
-- Analyze -> Recommendations handoff now carries symbol prefill context (`symbols` query param) and Recommendations now consumes:
-  - `?symbol=`
-  - `?symbols=`
-  - `?recommendation=`
-- Queue promotion now persists ranking provenance into stored recommendation payloads under:
-  - `payload.workflow.ranking_provenance`
-  including rank/strategy/timeframe/source/scoring/explainability fields, while preserving existing workflow metadata (`market_data_source`, `fallback_mode`).
-- Minimal Analyze -> Schedules prefill support added:
-  - `?symbols=` pre-fills symbol input
-  - `?name=` pre-fills draft schedule name
-
-Still open after this pass (Phase 2):
-- Full schedule control polish (frequency/run-time/timezone editing UX, validation, and richer run drill-in details).
-- Broader admin/operator polish items called out in prior Phase 2 gap list.
-- Additional frontend helper coverage outside the recommendations-focused helper/route tests added in this pass.
+- fabricate expected range when inputs are stale, weak, or missing
