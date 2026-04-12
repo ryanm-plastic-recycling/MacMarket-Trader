@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import jwt
@@ -25,6 +26,10 @@ class ClerkAuthProvider(AuthProvider):
     def verify_token(self, token: str) -> dict[str, Any]:
         signing_key = self._jwk_client.get_signing_key_from_jwt(token)
         options = {"verify_aud": self.audience is not None}
+        # leeway compensates for in-transit latency between the Next.js proxy and this
+        # backend. Clerk session tokens default to 60s lifetime; 30s of leeway absorbs
+        # network and processing delay without meaningfully relaxing security — the token
+        # was still validly issued by Clerk and the user's session remains active.
         claims = jwt.decode(
             token,
             signing_key.key,
@@ -32,6 +37,7 @@ class ClerkAuthProvider(AuthProvider):
             issuer=self.issuer,
             audience=self.audience,
             options=options,
+            leeway=timedelta(seconds=30),
         )
         if not isinstance(claims, dict):
             raise ValueError("Invalid Clerk claims payload")
