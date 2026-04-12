@@ -78,3 +78,23 @@ export function isFallbackWorkflow(candidate: QueueCandidate | null, recommendat
   }
   return candidate.workflow_source.toLowerCase().includes("fallback") || candidate.source?.toLowerCase().includes("fallback") === true;
 }
+
+/**
+ * Returns a Set of queue-row keys (same format as the page's selectedQueueKey:
+ * "${symbol}-${strategy}-${rank}") for every stored recommendation that has
+ * ranking_provenance, so the queue table can badge already-promoted rows.
+ */
+export function getPromotedQueueKeys(rows: StoredRecommendation[]): Set<string> {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const provenance = getRankingProvenance(row.payload);
+    if (!provenance) continue;
+    const symbol = typeof provenance.symbol === "string" ? provenance.symbol : null;
+    const strategy = typeof provenance.strategy === "string" ? provenance.strategy : null;
+    const rank = provenance.rank != null ? Number(provenance.rank) : null;
+    if (symbol && strategy && rank != null && !Number.isNaN(rank)) {
+      keys.add(`${symbol}-${strategy}-${rank}`);
+    }
+  }
+  return keys;
+}

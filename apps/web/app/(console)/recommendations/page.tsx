@@ -13,6 +13,7 @@ import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { fetchHacoChart } from "@/lib/haco-api";
 import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
 import {
+  getPromotedQueueKeys,
   getRankingProvenance,
   isFallbackWorkflow,
   parseRecommendationSearchParams,
@@ -21,6 +22,20 @@ import {
 } from "@/lib/recommendations";
 
 const STORAGE_KEY = "macmarket-indicators-recommendations";
+
+type QueueSummary = {
+  total: number;
+  top_candidate_count: number;
+  watchlist_count: number;
+  no_trade_count: number;
+};
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr.slice(0, 10);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
 
 function asText(value: unknown): string {
   if (value === null || value === undefined) return "-";
@@ -37,6 +52,7 @@ export default function RecommendationsPage() {
 
   const [rows, setRows] = useState<StoredRecommendation[]>([]);
   const [queue, setQueue] = useState<QueueCandidate[]>([]);
+  const [queueSummary, setQueueSummary] = useState<QueueSummary | null>(null);
   const [selectedQueueKey, setSelectedQueueKey] = useState<string | null>(null);
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
   const [symbols, setSymbols] = useState("AAPL,MSFT,NVDA,AMZN");
@@ -95,7 +111,7 @@ export default function RecommendationsPage() {
 
     setLoading((prev) => ({ ...prev, queue: true }));
     setFeedback({ state: "loading", message: "Refreshing ranked recommendation queue…" });
-    const result = await fetchWorkflowApi<{ queue: QueueCandidate[] }>("/api/user/recommendations/queue", {
+    const result = await fetchWorkflowApi<{ queue: QueueCandidate[]; summary: QueueSummary }>("/api/user/recommendations/queue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbols: activeSymbols, timeframe: "1D", market_mode: "equities" }),
@@ -110,6 +126,7 @@ export default function RecommendationsPage() {
 
     setError(null);
     setQueue(result.data.queue);
+    setQueueSummary(result.data.summary ?? null);
     setSelectedQueueKey((prev) => {
       const preserved = result.data?.queue.find((item) => `${item.symbol}-${item.strategy}-${item.rank}` === prev);
       if (preserved) return `${preserved.symbol}-${preserved.strategy}-${preserved.rank}`;
@@ -222,6 +239,7 @@ export default function RecommendationsPage() {
   }, [selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, fallbackDerived, selectedIndicators]);
 
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
+  const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
 
   return (
     <section className="op-stack">
@@ -246,17 +264,34 @@ export default function RecommendationsPage() {
 
       <div className="op-grid-2">
         <Card title="Ranked queue candidates">
+          {queueSummary ? (
+            <div className="op-row" style={{ marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
+              <StatusBadge tone="good">{queueSummary.top_candidate_count} top candidate{queueSummary.top_candidate_count !== 1 ? "s" : ""}</StatusBadge>
+              <StatusBadge tone="neutral">{queueSummary.watchlist_count} watchlist</StatusBadge>
+              <StatusBadge tone="warn">{queueSummary.no_trade_count} no-trade</StatusBadge>
+              <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem", alignSelf: "center" }}>{queueSummary.total} total</span>
+            </div>
+          ) : null}
           {loading.queue && queue.length === 0 ? <EmptyState title="Loading queue" hint="Fetching ranked queue candidates." /> : null}
           {!loading.queue && queue.length === 0 ? <EmptyState title="No queue candidates" hint="Refresh queue with at least one symbol." /> : null}
           {queue.length > 0 ? (
             <table className="op-table">
-              <thead><tr><th>rank</th><th>symbol</th><th>strategy</th><th>source</th><th>status</th><th>score</th></tr></thead>
+              <thead><tr><th>rank</th><th>symbol</th><th>strategy</th><th>status</th><th>score</th><th>rr</th><th>conf</th><th></th></tr></thead>
               <tbody>
                 {queue.map((row) => {
                   const key = `${row.symbol}-${row.strategy}-${row.rank}`;
+                  const isPromoted = promotedKeys.has(key);
+                  const statusTone = row.status === "top_candidate" ? "good" : row.status === "no_trade" ? "warn" : "neutral";
                   return (
                     <tr key={key} className={`is-selectable ${selectedQueueKey === key ? "is-active" : ""}`} onClick={() => { setSelectedQueueKey(key); setSelectedRecommendationId(null); }}>
-                      <td>{row.rank}</td><td>{row.symbol}</td><td>{row.strategy}</td><td>{row.workflow_source}</td><td>{row.status}</td><td>{row.score}</td>
+                      <td>{row.rank}</td>
+                      <td>{row.symbol}</td>
+                      <td>{row.strategy}</td>
+                      <td><StatusBadge tone={statusTone}>{row.status.replace(/_/g, " ")}</StatusBadge></td>
+                      <td>{row.score}</td>
+                      <td>{row.expected_rr}</td>
+                      <td>{row.confidence}</td>
+                      <td>{isPromoted ? <StatusBadge tone="good">promoted</StatusBadge> : null}</td>
                     </tr>
                   );
                 })}
@@ -270,17 +305,24 @@ export default function RecommendationsPage() {
           {!loading.recommendations && rows.length === 0 ? <EmptyState title="No stored recommendations" hint="Promote a queue candidate to create reviewable lineage." /> : null}
           {rows.length > 0 ? (
             <table className="op-table">
-              <thead><tr><th>created</th><th>symbol</th><th>recommendation id</th><th>approved</th><th>source</th></tr></thead>
+              <thead><tr><th>date</th><th>symbol</th><th>strategy</th><th>queue rank</th><th>approved</th><th>source</th></tr></thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className={`is-selectable ${selectedRecommendationId === row.id ? "is-active" : ""}`} onClick={() => { setSelectedRecommendationId(row.id); setSelectedQueueKey(null); }}>
-                    <td>{row.created_at}</td>
-                    <td>{row.symbol}</td>
-                    <td>{row.recommendation_id}</td>
-                    <td>{String((row.payload as Record<string, unknown>)?.approved ?? "-")}</td>
-                    <td>{row.market_data_source ?? asText((row.payload.workflow as Record<string, unknown> | undefined)?.market_data_source)}</td>
-                  </tr>
-                ))}
+                {rows.map((row) => {
+                  const prov = getRankingProvenance(row.payload as Record<string, unknown>);
+                  const strategy = typeof prov?.strategy === "string" ? prov.strategy : "-";
+                  const rank = prov?.rank != null ? `#${String(prov.rank)}` : "-";
+                  const approved = (row.payload as Record<string, unknown>)?.approved;
+                  return (
+                    <tr key={row.id} className={`is-selectable ${selectedRecommendationId === row.id ? "is-active" : ""}`} onClick={() => { setSelectedRecommendationId(row.id); setSelectedQueueKey(null); }}>
+                      <td>{formatDate(row.created_at)}</td>
+                      <td>{row.symbol}</td>
+                      <td>{strategy}</td>
+                      <td>{rank}</td>
+                      <td>{approved == null ? "-" : approved ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>}</td>
+                      <td>{row.market_data_source ?? asText((row.payload.workflow as Record<string, unknown> | undefined)?.market_data_source)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : null}
@@ -296,18 +338,30 @@ export default function RecommendationsPage() {
               <div><strong>strategy:</strong> {selectedQueue.strategy}</div>
               <div><strong>timeframe:</strong> {selectedQueue.timeframe}</div>
               <div><strong>market_mode:</strong> {selectedQueue.market_mode ?? "equities"}</div>
-              <div><strong>source/workflow_source:</strong> {selectedQueue.source ?? "-"} / {selectedQueue.workflow_source}</div>
-              <div><strong>status:</strong> {selectedQueue.status}</div>
+              <div><strong>workflow source:</strong> {selectedQueue.workflow_source}{selectedQueue.source && selectedQueue.source !== selectedQueue.workflow_source ? ` (${selectedQueue.source})` : ""}</div>
+              <div><strong>status:</strong> {selectedQueue.status.replace(/_/g, " ")}</div>
               <div><strong>score:</strong> {selectedQueue.score}</div>
-              <div><strong>score_breakdown:</strong> {asText(selectedQueue.score_breakdown)}</div>
-              <div><strong>expected_rr:</strong> {selectedQueue.expected_rr}</div>
-              <div><strong>confidence:</strong> {selectedQueue.confidence}</div>
+              <div><strong>expected rr:</strong> {selectedQueue.expected_rr} &nbsp; <strong>confidence:</strong> {selectedQueue.confidence}</div>
               <div><strong>thesis:</strong> {selectedQueue.thesis}</div>
+              <div><strong>reason:</strong> {selectedQueue.reason_text}</div>
               <div><strong>trigger:</strong> {asText(selectedQueue.trigger)}</div>
-              <div><strong>entry_zone:</strong> {asText(selectedQueue.entry_zone)}</div>
+              <div><strong>entry zone:</strong> {asText(selectedQueue.entry_zone)}</div>
               <div><strong>invalidation:</strong> {asText(selectedQueue.invalidation)}</div>
               <div><strong>targets:</strong> {asText(selectedQueue.targets)}</div>
-              <div><strong>reason_text:</strong> {selectedQueue.reason_text}</div>
+              {selectedQueue.score_breakdown ? (
+                <div><strong>score breakdown:</strong>{" "}
+                  {Object.entries(selectedQueue.score_breakdown).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}
+                </div>
+              ) : null}
+              <div style={{ marginTop: 12, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
+                {promotedKeys.has(`${selectedQueue.symbol}-${selectedQueue.strategy}-${selectedQueue.rank}`) ? (
+                  <StatusBadge tone="good">Already promoted to recommendation</StatusBadge>
+                ) : (
+                  <button onClick={() => void promoteSelected()} disabled={loading.promote} style={{ width: "100%" }}>
+                    {loading.promote ? "Promoting…" : "Promote to recommendation"}
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </Card>
@@ -315,17 +369,27 @@ export default function RecommendationsPage() {
         <Card title="Stored recommendation detail + lineage">
           {!selectedRecommendation ? <EmptyState title="No stored recommendation selected" hint="Select a stored recommendation row to inspect persisted lineage." /> : (
             <div className="op-detail-list">
-              <div><strong>recommendation id:</strong> {selectedRecommendation.recommendation_id}</div>
-              <div><strong>symbol:</strong> {selectedRecommendation.symbol}</div>
-              <div><strong>created_at:</strong> {selectedRecommendation.created_at}</div>
-              <div><strong>approved:</strong> {String((selectedRecommendation.payload as Record<string, unknown>)?.approved ?? "-")}</div>
-              <div><strong>workflow source metadata:</strong> {selectedRecommendation.market_data_source ?? "-"} / fallback={String(selectedRecommendation.fallback_mode ?? false)}</div>
+              <div><strong>symbol:</strong> {selectedRecommendation.symbol} &nbsp; <strong>created:</strong> {formatDate(selectedRecommendation.created_at)}</div>
+              <div><strong>approved:</strong> {(() => { const a = (selectedRecommendation.payload as Record<string, unknown>)?.approved; return a == null ? "-" : a ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>; })()}</div>
+              <div><strong>source:</strong> {selectedRecommendation.market_data_source ?? "-"}{selectedRecommendation.fallback_mode ? " (fallback)" : ""}</div>
               <div><strong>thesis:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.thesis)}</div>
               <div><strong>entry:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.entry)}</div>
               <div><strong>invalidation:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.invalidation)}</div>
               <div><strong>targets:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.targets)}</div>
-              <div><strong>ranking provenance:</strong> {asText(selectedRecProvenance)}</div>
-              <div><strong>origin queue relationship:</strong> {selectedRecProvenance ? `Promoted from rank ${asText(selectedRecProvenance.rank)} (${asText(selectedRecProvenance.strategy)} on ${asText(selectedRecProvenance.symbol)})` : "No queue promotion provenance persisted."}</div>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
+                <strong>Queue lineage</strong>
+              </div>
+              {selectedRecProvenance ? (
+                <>
+                  <div><strong>promoted from:</strong> Rank {asText(selectedRecProvenance.rank)} — {asText(selectedRecProvenance.strategy)} on {asText(selectedRecProvenance.symbol)}</div>
+                  <div><strong>queue status:</strong> {typeof selectedRecProvenance.status === "string" ? selectedRecProvenance.status.replace(/_/g, " ") : asText(selectedRecProvenance.status)}</div>
+                  <div><strong>queue score:</strong> {asText(selectedRecProvenance.score)} &nbsp; <strong>rr:</strong> {asText(selectedRecProvenance.expected_rr)} &nbsp; <strong>conf:</strong> {asText(selectedRecProvenance.confidence)}</div>
+                  <div><strong>timeframe:</strong> {asText(selectedRecProvenance.timeframe)} &nbsp; <strong>workflow source:</strong> {asText(selectedRecProvenance.workflow_source)}</div>
+                </>
+              ) : (
+                <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>Not promoted from a ranked queue candidate.</div>
+              )}
+              <div style={{ marginTop: 4 }}><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selectedRecommendation.recommendation_id}</span></div>
             </div>
           )}
         </Card>
