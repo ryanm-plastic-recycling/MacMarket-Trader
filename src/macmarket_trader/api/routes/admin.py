@@ -786,6 +786,31 @@ def run_strategy_schedule(schedule_id: int, _user=Depends(require_approved_user)
     return payload
 
 
+@user_router.get("/strategy-schedules/{schedule_id}/runs/{run_id}")
+def get_strategy_schedule_run(schedule_id: int, run_id: int, user=Depends(require_approved_user)):
+    schedule = strategy_report_repo.get_schedule(schedule_id)
+    if schedule is None or schedule.app_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    run = strategy_report_repo.get_run(run_id=run_id, schedule_id=schedule_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    p = run.payload or {}
+    return {
+        "id": run.id,
+        "schedule_id": run.schedule_id,
+        "status": run.status,
+        "delivered_to": run.delivered_to,
+        "created_at": run.created_at,
+        "trigger": p.get("trigger"),
+        "ran_at": p.get("ran_at"),
+        "source": p.get("source"),
+        "top_candidates": p.get("top_candidates", []),
+        "watchlist_only": p.get("watchlist_only", []),
+        "no_trade": p.get("no_trade", []),
+        "summary": p.get("summary", {}),
+    }
+
+
 @router.get("/users/pending")
 def pending_users(_admin=Depends(require_admin)):
     users = user_repo.list_by_status(ApprovalStatus.PENDING)

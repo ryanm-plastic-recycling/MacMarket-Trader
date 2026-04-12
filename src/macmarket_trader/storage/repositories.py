@@ -747,6 +747,15 @@ class StrategyReportRepository:
             stmt = select(StrategyReportRunModel).where(StrategyReportRunModel.schedule_id == schedule_id).order_by(StrategyReportRunModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
 
+    def get_run(self, *, run_id: int, schedule_id: int) -> StrategyReportRunModel | None:
+        with self.session_factory() as session:
+            return session.execute(
+                select(StrategyReportRunModel).where(
+                    StrategyReportRunModel.id == run_id,
+                    StrategyReportRunModel.schedule_id == schedule_id,
+                )
+            ).scalar_one_or_none()
+
     def mark_schedule_run(self, *, schedule_id: int, status: str, next_run_at: datetime, latest_run_id: int) -> None:
         with self.session_factory() as session:
             row = session.get(StrategyReportScheduleModel, schedule_id)
