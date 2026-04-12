@@ -129,17 +129,18 @@ export default function SchedulesPage() {
   }, [selected?.id, prefill.name, prefill.symbols.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function createOrUpdateSchedule(scheduleId?: number) {
-    const payload = {
-      name,
-      frequency,
-      run_time: runTime,
-      timezone,
-      market_mode: marketMode,
+    const scheduleConfig = {
       symbols: symbols.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean),
       enabled_strategies: ["Event Continuation", "Breakout / Prior-Day High", "Pullback / Trend Continuation"],
       top_n: topN,
+      market_mode: marketMode,
       ...(emailTarget.trim() ? { email_delivery_target: emailTarget.trim() } : {}),
     };
+    // Backend PUT only updates fields in ["name","frequency","run_time","timezone","email_target","enabled","payload"].
+    // Symbols/config must be nested under "payload" for updates; POST reads them flat.
+    const payload = scheduleId
+      ? { name, frequency, run_time: runTime, timezone, payload: scheduleConfig }
+      : { name, frequency, run_time: runTime, timezone, ...scheduleConfig };
     const result = await fetchWorkflowApi(
       scheduleId ? `/api/user/strategy-schedules/${scheduleId}` : "/api/user/strategy-schedules",
       {

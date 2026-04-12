@@ -66,6 +66,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       grid: { vertLines: { color: "#1f2a36" }, horzLines: { color: "#1f2a36" } },
       rightPriceScale: { borderColor: "#26303a" },
       timeScale: { borderColor: "#26303a" },
+      autoSize: true,
     };
 
     const priceChart = createChart(priceRef.current, { ...baseOptions, height: embedded ? 260 : 330 });
@@ -83,6 +84,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       shape: m.direction === "buy" ? "arrowUp" : "arrowDown",
       text: m.text,
     })));
+    priceChart.timeScale().fitContent();
 
     if (selectedIndicators.includes("haco")) {
       const hacoSeries = hacoChart.addHistogramSeries({ base: 0, color: "#21c06e" });
@@ -107,16 +109,7 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
     syncFrom(hacoChart, [priceChart, hacoltChart]);
     syncFrom(hacoltChart, [priceChart, hacoChart]);
 
-    const resizeObserver = new ResizeObserver(() => {
-      const width = priceRef.current?.clientWidth ?? 600;
-      priceChart.applyOptions({ width });
-      hacoChart.applyOptions({ width });
-      hacoltChart.applyOptions({ width });
-    });
-    resizeObserver.observe(priceRef.current);
-
     return () => {
-      resizeObserver.disconnect();
       priceChart.remove();
       hacoChart.remove();
       hacoltChart.remove();

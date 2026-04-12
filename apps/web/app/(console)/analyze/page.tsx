@@ -57,7 +57,7 @@ export default function AnalyzePage() {
   return <section className="op-stack">
     <PageHeader title="Symbol Analyze" subtitle="Fast triage workspace that complements Strategy Workbench." actions={<StatusBadge tone="neutral">{payload?.source ?? "source pending"}</StatusBadge>} />
     <Card>
-      <div className="op-row"><input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} /><button onClick={() => void load()}>Analyze</button></div>
+      <div className="op-row"><input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && void load()} /><button onClick={() => void load()}>Analyze</button></div>
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
     </Card>
     {error ? <ErrorState title="Analyze unavailable" hint={error} /> : null}

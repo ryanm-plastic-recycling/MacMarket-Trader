@@ -136,7 +136,7 @@ export default function Page() {
       if (chartApiRef.current) {
         chartApiRef.current.remove();
       }
-      const chart = createChart(chartRef.current, { height: 380, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
+      const chart = createChart(chartRef.current, { height: 380, autoSize: true, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
       chartApiRef.current = chart;
 
       const candles: Array<CandlestickData<Time> & { volume: number }> = payload.candles.slice(-180).map((c) => ({
@@ -161,6 +161,7 @@ export default function Page() {
           target.setData(candles.map((c) => ({ time: c.time, value: setupPayload.targets[0] })));
         }
       }
+      chart.timeScale().fitContent();
 
       setWorkbenchState(payload.fallback_mode ? "fallback_mode" : "ready");
       setFeedback({ state: "success", message: "Analysis loaded. Strategy and indicators are synced to one canonical bar series." });

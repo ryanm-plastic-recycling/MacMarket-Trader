@@ -233,13 +233,14 @@ export default function RecommendationsPage() {
         chartApiRef.current.remove();
         chartApiRef.current = null;
       }
-      const chart = createChart(chartRef.current, { height: 320, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
+      const chart = createChart(chartRef.current, { height: 320, autoSize: true, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
       chartApiRef.current = chart;
       const candles: Array<CandlestickData<Time> & { volume: number }> = payload.candles
         .slice(-120)
         .map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
       chart.addCandlestickSeries().setData(candles);
       applyIndicatorsToChart(chart, candles, selectedIndicators);
+      chart.timeScale().fitContent();
     }
     void renderChart();
     return () => {
