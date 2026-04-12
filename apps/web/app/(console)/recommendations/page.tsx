@@ -220,12 +220,19 @@ export default function RecommendationsPage() {
   }, [selectedIndicators]);
 
   useEffect(() => {
+    let cancelled = false;
     async function renderChart() {
       const chartSymbol = selectedRecommendation?.symbol ?? selectedQueue?.symbol;
       const timeframe = selectedQueue?.timeframe ?? "1D";
       if (!chartRef.current || !chartSymbol || fallbackDerived) return;
       const payload = await fetchHacoChart({ symbol: chartSymbol, timeframe, include_heikin_ashi: false });
-      if (chartApiRef.current) chartApiRef.current.remove();
+      // If the effect was cleaned up while fetchHacoChart was in flight, bail out
+      // before touching the chart ref — it may already be disposed by the cleanup.
+      if (cancelled) return;
+      if (chartApiRef.current) {
+        chartApiRef.current.remove();
+        chartApiRef.current = null;
+      }
       const chart = createChart(chartRef.current, { height: 320, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
       chartApiRef.current = chart;
       const candles: Array<CandlestickData<Time> & { volume: number }> = payload.candles
@@ -235,7 +242,13 @@ export default function RecommendationsPage() {
       applyIndicatorsToChart(chart, candles, selectedIndicators);
     }
     void renderChart();
-    return () => chartApiRef.current?.remove();
+    return () => {
+      cancelled = true;
+      if (chartApiRef.current) {
+        chartApiRef.current.remove();
+        chartApiRef.current = null;
+      }
+    };
   }, [selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, fallbackDerived, selectedIndicators]);
 
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);

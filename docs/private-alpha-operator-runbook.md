@@ -199,3 +199,122 @@ ENVIRONMENT=test AUTH_PROVIDER=mock pytest -q
 ```
 
 Phase 1 should not be marked closed unless these checks pass and the click path above is operator-usable.
+
+## 7) User persistence and DB safety
+
+### DB is never overwritten by a deploy run
+
+`scripts/deploy_windows.bat` runs robocopy with `/XF "*.sqlite" "*.sqlite3" "*.db"`.
+`macmarket_trader.db` at `C:\Dashboard\MacMarket-Trader\macmarket_trader.db` is **never touched by a deploy run**.
+All user rows, approval state, recommendation records, and replay history survive redeployment intact.
+
+### If the DB is ever lost: manual admin re-seeding procedure
+
+If `macmarket_trader.db` is deleted or corrupted, recreate the schema first:
+
+```bash
+python -m macmarket_trader.cli init-db
+```
+
+```powershell
+python -m macmarket_trader.cli init-db
+```
+
+Then insert a bootstrap admin row **before the first Clerk sign-in**. The `external_auth_user_id`
+must match the `sub` claim from your Clerk JWT (see next section for how to find it).
+
+```bash
+python -c "
+import sqlite3
+conn = sqlite3.connect('C:/Dashboard/MacMarket-Trader/macmarket_trader.db')
+conn.execute('''
+    INSERT INTO app_users (
+        external_auth_user_id,
+        email,
+        display_name,
+        approval_status,
+        app_role,
+        mfa_enabled,
+        created_at
+    ) VALUES (
+        'user_XXXXXXXXXXXXXXXXXX',
+        'you@example.com',
+        'Your Name',
+        'approved',
+        'admin',
+        0,
+        CURRENT_TIMESTAMP
+    )
+''')
+conn.commit()
+conn.close()
+print('Admin row inserted.')
+"
+```
+
+```powershell
+python -c "
+import sqlite3
+conn = sqlite3.connect(r'C:\Dashboard\MacMarket-Trader\macmarket_trader.db')
+conn.execute('''
+    INSERT INTO app_users (
+        external_auth_user_id,
+        email,
+        display_name,
+        approval_status,
+        app_role,
+        mfa_enabled,
+        created_at
+    ) VALUES (
+        'user_XXXXXXXXXXXXXXXXXX',
+        'you@example.com',
+        'Your Name',
+        'approved',
+        'admin',
+        0,
+        CURRENT_TIMESTAMP
+    )
+''')
+conn.commit()
+conn.close()
+print('Admin row inserted.')
+"
+```
+
+Sign in via Clerk after inserting the row. The first-login sync (`upsert_from_auth`) will match
+on `external_auth_user_id`, preserve `approval_status=approved` and `app_role=admin`, and fill in
+any identity fields from Clerk claims. Verify the result after sign-in:
+
+```bash
+python -c "
+import sqlite3
+conn = sqlite3.connect('C:/Dashboard/MacMarket-Trader/macmarket_trader.db')
+rows = conn.execute('SELECT id, email, approval_status, app_role FROM app_users').fetchall()
+for r in rows: print(r)
+conn.close()
+"
+```
+
+### Clerk external_auth_user_id = JWT sub claim
+
+The `external_auth_user_id` column in `app_users` is always the `sub` claim from the Clerk JWT.
+This is the only stable identifier — email and display name can change.
+
+To find your sub claim:
+- **Clerk dashboard** → Users → select user → copy the **User ID** field (format: `user_XXXXXXXXXXXXXXXXXX`)
+- **Or** decode any Clerk JWT: the middle base64 segment is the payload. Extract `sub` from it.
+
+Do not use email as the lookup key. Only `sub` is guaranteed stable across Clerk identity changes.
+
+### Warning: bootstrap_admin.py only works if users already exist in the DB
+
+`bootstrap_admin.py` (repo root) runs `UPDATE app_users SET approval_status='approved', app_role='admin' WHERE id = ?`.
+
+If the DB was just initialized and no user has signed in yet, the script will run without error
+but will update **zero rows silently** — it has no INSERT path.
+
+**Correct sequence:**
+1. If DB is fresh: use the INSERT command above to seed the admin row first.
+2. If the user has already signed in at least once (row exists): use `bootstrap_admin.py` to promote them.
+
+Running `bootstrap_admin.py` on an empty DB looks successful but does nothing.
