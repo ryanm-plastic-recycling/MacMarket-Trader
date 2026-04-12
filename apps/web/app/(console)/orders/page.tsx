@@ -65,9 +65,20 @@ export default function Page() {
     setStatus("staging paper order...");
     setBusy(true);
     const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
+    // Use the selected order's symbol if available, or fall back to the recommendation's symbol from query param.
+    // Never hardcode AAPL when a recommendation context is present.
+    const symbolHint = selected?.symbol ?? null;
+    const body: Record<string, unknown> = {};
+    if (requestedRecommendation) {
+      body.recommendation_id = requestedRecommendation;
+    } else if (symbolHint) {
+      body.symbol = symbolHint;
+    } else {
+      body.symbol = "AAPL";
+    }
     const result = await fetchWorkflowApi<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>(
       "/api/user/orders",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: "AAPL", recommendation_id: requestedRecommendation ?? undefined }) }
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
     if (!result.ok) {
       if (result.authPending) {
@@ -131,8 +142,14 @@ export default function Page() {
       </Card>
       <Card title="Selected order detail">
         {!selected ? <EmptyState title="Select an order" hint="Click a blotter row to inspect paper-broker fill details." /> : <div style={{ display: "grid", gap: 6 }}>
-          <div><strong>Order id:</strong> {selected.order_id}</div>
-          <div><strong>Recommendation id:</strong> {selected.recommendation_id || new URLSearchParams(searchKey).get("recommendation") || "pending linkage"}</div>
+          <div><strong>Order id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selected.order_id}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <strong>Recommendation:</strong>
+            {selected.recommendation_id
+              ? <a href={`/recommendations?recommendation=${encodeURIComponent(selected.recommendation_id)}`} style={{ color: "var(--op-accent, #4d8dff)", fontFamily: "monospace", fontSize: "0.8rem" }}>{selected.recommendation_id}</a>
+              : <span style={{ color: "var(--op-muted, #7a8999)" }}>pending linkage</span>
+            }
+          </div>
           <div><strong>Why this paper order exists:</strong> staged from approved recommendation path for operator verification before any live-route discussion.</div>
           <div><strong>Symbol/side:</strong> {selected.symbol} {selected.side}</div>
           <div><strong>Shares:</strong> {selected.shares}</div>

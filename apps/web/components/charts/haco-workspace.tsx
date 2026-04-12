@@ -146,10 +146,72 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
       </Card>
 
       <Card title="Signal summary">
-        <div>HACO state: {summary?.current_haco_state ?? "-"}</div>
-        <div>Latest flip: {summary?.latest_flip ?? "-"}</div>
-        <div>Flip recency (bars): {summary?.latest_flip_bars_ago ?? "-"}</div>
-        <div>HACOLT direction: {summary?.current_hacolt_direction ?? "-"}</div>
+        <div style={{ display: "grid", gap: 6 }}>
+          {/* HACO state */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem", minWidth: 130 }}>HACO state</span>
+            <span style={{
+              fontWeight: 600,
+              color: summary?.current_haco_state === "green" ? "#21c06e" : summary?.current_haco_state === "red" ? "#c64242" : "#9fb0c3",
+            }}>
+              {summary?.current_haco_state ?? "—"}
+            </span>
+          </div>
+          {/* HACOLT direction */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem", minWidth: 130 }}>HACOLT direction</span>
+            <span style={{
+              fontWeight: 600,
+              color: summary?.current_hacolt_direction === "up" ? "#4d8dff" : summary?.current_hacolt_direction === "down" ? "#7a4dc1" : "#9fb0c3",
+            }}>
+              {summary?.current_hacolt_direction ?? "—"}
+            </span>
+          </div>
+          {/* Latest flip */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem", minWidth: 130 }}>Latest flip</span>
+            <span>{summary?.latest_flip ?? "—"}</span>
+            {summary?.latest_flip_bars_ago != null ? (
+              <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>({summary.latest_flip_bars_ago} bar{summary.latest_flip_bars_ago === 1 ? "" : "s"} ago)</span>
+            ) : null}
+          </div>
+
+          {/* Alignment narrative */}
+          {summary ? (() => {
+            const state = summary.current_haco_state as string | undefined;
+            const lt = summary.current_hacolt_direction as string | undefined;
+            const barsAgo = summary.latest_flip_bars_ago as number | undefined;
+            const aligned = state === "green" && lt === "up";
+            const diverged = (state === "green" && lt === "down") || (state === "red" && lt === "up");
+            const stale = barsAgo != null && barsAgo > 5;
+            let narrative = "";
+            let narrativeColor = "#9fb0c3";
+            if (aligned) {
+              narrative = stale
+                ? `HACO is green and HACOLT is trending up — aligned bullish — but the last flip was ${String(barsAgo)} bars ago. Confirm momentum is still active before entering.`
+                : `HACO is green and HACOLT is trending up. Momentum and long-term trend are aligned. Favorable context for long continuation setups.`;
+              narrativeColor = "#21c06e";
+            } else if (diverged) {
+              narrative = state === "green"
+                ? `HACO recently flipped green but HACOLT is still trending down. Short-term momentum is bullish but the long-term trend context is not supportive — treat as a counter-trend signal; tighter stops.`
+                : `HACO is red but HACOLT is trending up. Short-term momentum is bearish inside an uptrend — may be a pullback opportunity rather than a reversal. Wait for HACO green before acting.`;
+              narrativeColor = "#f2a03f";
+            } else if (state === "red" && lt === "down") {
+              narrative = stale
+                ? `HACO is red and HACOLT is trending down — aligned bearish — but the last flip was ${String(barsAgo)} bars ago. Bearish context may be extended; confirm before adding short exposure.`
+                : `HACO is red and HACOLT is trending down. Both short-term momentum and long-term trend are bearish. Avoid long setups; this context favors no-trade or short candidates.`;
+              narrativeColor = "#c64242";
+            } else {
+              narrative = "Insufficient data to determine alignment narrative.";
+            }
+            return (
+              <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
+                <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)", marginBottom: 4 }}>ALIGNMENT</div>
+                <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5, color: narrativeColor }}>{narrative}</p>
+              </div>
+            );
+          })() : null}
+        </div>
       </Card>
     </div>
   );

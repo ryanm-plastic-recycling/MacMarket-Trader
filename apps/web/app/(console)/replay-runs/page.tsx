@@ -9,7 +9,27 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
-type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: any; post_step_snapshot: any };
+type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown> };
+
+function fmt(v: unknown, digits = 2): string {
+  if (v == null) return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return n.toFixed(digits);
+}
+
+function SnapshotRow({ label, pre, post, field, digits = 2 }: { label: string; pre: Record<string, unknown>; post: Record<string, unknown>; field: string; digits?: number }) {
+  const preVal = fmt(pre[field], digits);
+  const postVal = fmt(post[field], digits);
+  const changed = preVal !== postVal;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 4, fontSize: "0.82rem", padding: "2px 0" }}>
+      <span style={{ color: "var(--op-muted, #7a8999)" }}>{label}</span>
+      <span>{preVal}</span>
+      <span style={changed ? { color: Number(post[field]) > Number(pre[field]) ? "#4caf50" : "#f44336", fontWeight: 600 } : {}}>{postVal}</span>
+    </div>
+  );
+}
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -230,23 +250,29 @@ export default function Page() {
                   <strong>Step {s.step_index}</strong>
                   <StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge>
                   <span style={{ fontSize: 11, color: "#9fb0c3" }}>
-                    heat {s.post_step_snapshot?.current_heat ?? "-"} · notional {s.post_step_snapshot?.open_positions_notional ?? "-"}
+                    heat {String(s.post_step_snapshot.current_heat ?? "—")} · notional {String(s.post_step_snapshot.open_positions_notional ?? "—")}
                   </span>
                   <span style={{ marginLeft: "auto", fontSize: 11, color: "#9fb0c3" }}>{expandedStepId === s.id ? "▲ collapse" : "▼ expand"}</span>
                 </div>
                 {expandedStepId === s.id && (
-                  <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 4 }}>Pre-step snapshot</div>
-                      <pre style={{ fontSize: 10, whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
-                        {JSON.stringify(s.pre_step_snapshot, null, 2)}
-                      </pre>
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 4, fontSize: "0.75rem", color: "var(--op-muted, #7a8999)", marginBottom: 4, padding: "0 0 4px 0", borderBottom: "1px solid var(--op-border, #1e2d3d)" }}>
+                      <span>field</span><span>pre-step</span><span>post-step</span>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 4 }}>Post-step snapshot</div>
-                      <pre style={{ fontSize: 10, whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
-                        {JSON.stringify(s.post_step_snapshot, null, 2)}
-                      </pre>
+                    <SnapshotRow label="equity" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="equity" />
+                    <SnapshotRow label="cash" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="cash" />
+                    <SnapshotRow label="heat" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="current_heat" />
+                    <SnapshotRow label="open notional" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="open_positions_notional" />
+                    <SnapshotRow label="realized P&L" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="realized_pnl" />
+                    <SnapshotRow label="open positions" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="open_position_count" digits={0} />
+                    <SnapshotRow label="total fills" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="total_fills" digits={0} />
+                    {s.post_step_snapshot.rejection_reason ? (
+                      <div style={{ marginTop: 6, fontSize: "0.82rem", color: "var(--op-warn, #f2a03f)" }}>
+                        rejection: {String(s.post_step_snapshot.rejection_reason)}
+                      </div>
+                    ) : null}
+                    <div style={{ marginTop: 6, fontSize: "0.75rem", color: "var(--op-muted, #7a8999)" }}>
+                      rec id: <span style={{ fontFamily: "monospace" }}>{s.recommendation_id}</span>
                     </div>
                   </div>
                 )}

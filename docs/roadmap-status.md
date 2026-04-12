@@ -16,8 +16,8 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader has completed **Phase 2 — Alpha differentiators** and is entering **Phase 3 — Paid beta** as the active implementation scope.
-Phase 1 and Phase 2 form the operational baseline; Phase 3 delivers the capabilities that make the system worth paying for.
+MacMarket-Trader has completed **Phase 4 — Vendor integrations** and is entering **Phase 5 — Operator console polish** as the active implementation scope.
+Phases 1–4 form the operational baseline. Phase 5 delivers the polished operator surfaces that make the system credible as a paid tool.
 
 ## Core product pillars
 
@@ -315,7 +315,7 @@ Closed all five remaining Phase 2 gaps:
 - Removed Clerk session token customization (JWT template override) that was conflicting with the default token shape expected by the backend.
 - Configured backend CORS origin and Clerk issuer URL to reference the dev host explicitly instead of relying on environment-inherited defaults.
 
-### Phase 3 — Paid beta (now active)
+### Phase 3 — Paid beta (complete)
 Goal: something people would pay for as a research and trade-planning tool.
 
 Must-have:
@@ -327,6 +327,52 @@ Must-have:
 - stronger ranking model
 - onboarding and account quality
 - operational logs and audit trail
+
+## Phase 3 complete items
+
+### 2026-04-12 Phase 3 implementation pass
+
+- Added per-user watchlists with CRUD API and frontend management page.
+- Per-user strategy schedules with frequency, timezone, run_time, email_target, and top_n editing controls.
+- Email delivery with Resend adapter (`EMAIL_PROVIDER=resend`); console provider remains default for local dev.
+- Strategy report run history persisted per schedule; per-run candidate detail drill-in via `GET /strategy-schedules/{id}/runs/{runId}`.
+- Replay visualization: equity sparkline (SVG polyline over post-step equity), pass/fail summary bar, expandable per-step cards with pre/post snapshot JSON.
+- Ranking model strengthened with score breakdown, regime fit scoring, and provenance labels surfaced in queue and detail panes.
+- Onboarding status endpoint (`/user/onboarding-status`) tracking schedule, replay, and order completion milestones.
+- Audit trail: dashboard `recent_audit_events` combining email logs, approval events, and schedule run events sorted by timestamp.
+- 119 backend tests passing at Phase 3 close.
+
+### Phase 4 — Vendor integrations (complete)
+Goal: replace mock providers with vetted market/news/broker adapters; preserve all interfaces; keep research/live parity.
+
+Must-have:
+- replace mock providers with real adapters
+- preserve the same interfaces
+- keep research/live parity
+
+## Phase 4 complete items
+
+### 2026-04-12 Phase 4 implementation pass
+
+- `PolygonNewsProvider` scaffolded: fetches headline articles by ticker via Polygon News API; falls back to mock on missing API key.
+- `FredMacroCalendarProvider` scaffolded: fetches economic release calendar from FRED API; falls back to mock on missing API key.
+- `AlpacaBrokerProvider` scaffolded: implements broker interface (order placement, status, cancel) against Alpaca paper-trading endpoint; falls back gracefully.
+- Provider registry (`build_news_provider()`, `build_macro_calendar_provider()`, `build_broker_provider()`) wired in `registry.py`.
+- News/macro/broker provider settings (`NEWS_PROVIDER`, `MACRO_CALENDAR_PROVIDER`, `BROKER_PROVIDER`) added to `config.py`.
+- Auth → Clerk (`AUTH_PROVIDER=clerk`) and Email → Resend (`EMAIL_PROVIDER=resend`) already live from prior phases.
+- Market data → Polygon (`POLYGON_ENABLED=true + POLYGON_API_KEY`) scaffolded and activatable via env vars.
+- 119 backend tests passing at Phase 4 close.
+
+### Phase 5 — Operator console polish (now active)
+Goal: polished, operator-grade surfaces across all six console pages so the system is credible as a paid tool.
+
+Must-have:
+- recommendation explorer with chart level overlays (entry/stop/target price lines) and structured detail pane
+- replay explorer with readable step snapshots and attribution summary
+- order blotter with correct recommendation linkage and source-matched staging
+- HACO workspace with richer signal narrative and thesis alignment annotation
+- provider health with re-probe action and structured per-provider cards
+- admin approval views with correct audit event source
 
 ## Long-term direction
 

@@ -43,6 +43,44 @@ function asText(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function toNum(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+type RecLevels = { entryLow: number | null; entryHigh: number | null; stop: number | null; target1: number | null; target2: number | null };
+
+function extractLevels(rec: StoredRecommendation | null, queue: QueueCandidate | null): RecLevels {
+  const empty: RecLevels = { entryLow: null, entryHigh: null, stop: null, target1: null, target2: null };
+  if (rec) {
+    const p = rec.payload;
+    const entry = p.entry as Record<string, unknown> | undefined;
+    const inv = p.invalidation as Record<string, unknown> | undefined;
+    const tgts = p.targets as Record<string, unknown> | undefined;
+    return {
+      entryLow: toNum(entry?.zone_low ?? entry?.low),
+      entryHigh: toNum(entry?.zone_high ?? entry?.high),
+      stop: toNum(inv?.price),
+      target1: toNum(tgts?.target_1),
+      target2: toNum(tgts?.target_2),
+    };
+  }
+  if (queue) {
+    const ez = queue.entry_zone as Record<string, unknown> | undefined;
+    const inv = queue.invalidation as Record<string, unknown> | undefined;
+    const tgts = queue.targets;
+    return {
+      entryLow: toNum(ez?.low ?? ez?.zone_low),
+      entryHigh: toNum(ez?.high ?? ez?.zone_high),
+      stop: toNum((inv as Record<string, unknown> | undefined)?.price),
+      target1: Array.isArray(tgts) && tgts.length > 0 ? toNum(tgts[0]) : null,
+      target2: Array.isArray(tgts) && tgts.length > 1 ? toNum(tgts[1]) : null,
+    };
+  }
+  return empty;
+}
+
 export default function RecommendationsPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
@@ -259,8 +297,18 @@ export default function RecommendationsPage() {
       const candles: Array<CandlestickData<Time> & { volume: number }> = payload.candles
         .slice(-120)
         .map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
-      chart.addCandlestickSeries().setData(candles);
+      const priceSeries = chart.addCandlestickSeries();
+      priceSeries.setData(candles);
       applyIndicatorsToChart(chart, candles, selectedIndicators);
+
+      // Overlay entry zone, stop, and target price lines from current selection
+      const levels = extractLevels(selectedRecommendation, selectedQueue);
+      if (levels.entryLow != null) priceSeries.createPriceLine({ price: levels.entryLow, color: "#21c06e", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "entry low" });
+      if (levels.entryHigh != null) priceSeries.createPriceLine({ price: levels.entryHigh, color: "#21c06e", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "entry high" });
+      if (levels.stop != null) priceSeries.createPriceLine({ price: levels.stop, color: "#f44336", lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: "stop" });
+      if (levels.target1 != null) priceSeries.createPriceLine({ price: levels.target1, color: "#4caf50", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "T1" });
+      if (levels.target2 != null) priceSeries.createPriceLine({ price: levels.target2, color: "#4caf50", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "T2" });
+
       chart.timeScale().fitContent();
     }
     void renderChart();
@@ -271,7 +319,7 @@ export default function RecommendationsPage() {
         chartApiRef.current = null;
       }
     };
-  }, [selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, fallbackDerived, selectedIndicators]);
+  }, [selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, selectedRecommendation?.id, selectedQueueKey, fallbackDerived, selectedIndicators]);
 
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
   const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
@@ -402,44 +450,110 @@ export default function RecommendationsPage() {
         </Card>
 
         <Card title="Stored recommendation detail + lineage">
-          {!selectedRecommendation ? <EmptyState title="No stored recommendation selected" hint="Select a stored recommendation row to inspect persisted lineage." /> : (
-            <div className="op-detail-list">
-              <div><strong>symbol:</strong> {selectedRecommendation.symbol} &nbsp; <strong>created:</strong> {formatDate(selectedRecommendation.created_at)}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <strong>approved:</strong>
-                {(() => { const a = (selectedRecommendation.payload as Record<string, unknown>)?.approved; return a == null ? <span style={{ color: "var(--op-muted, #7a8999)" }}>—</span> : a ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>; })()}
-                <button
-                  onClick={() => void setApproval(true)}
-                  disabled={loading.approve || (selectedRecommendation.payload as Record<string, unknown>)?.approved === true}
-                  style={{ padding: "2px 10px", fontSize: "0.8rem" }}
-                >Approve</button>
-                <button
-                  onClick={() => void setApproval(false)}
-                  disabled={loading.approve || (selectedRecommendation.payload as Record<string, unknown>)?.approved === false}
-                  style={{ padding: "2px 10px", fontSize: "0.8rem" }}
-                >Reject</button>
+          {!selectedRecommendation ? <EmptyState title="No stored recommendation selected" hint="Select a stored recommendation row to inspect persisted lineage." /> : (() => {
+            const p = selectedRecommendation.payload as Record<string, unknown>;
+            const catalyst = p.catalyst as Record<string, unknown> | undefined;
+            const regime = p.regime as Record<string, unknown> | undefined;
+            const entry = p.entry as Record<string, unknown> | undefined;
+            const inv = p.invalidation as Record<string, unknown> | undefined;
+            const targets = p.targets as Record<string, unknown> | undefined;
+            const sizing = p.sizing as Record<string, unknown> | undefined;
+            const quality = p.quality as Record<string, unknown> | undefined;
+            const sep = { marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--op-border, #1e2d3d)" } as const;
+            const label = { fontSize: "0.78rem", color: "var(--op-muted, #7a8999)", marginBottom: 2 } as const;
+            return (
+              <div className="op-detail-list">
+                {/* Header */}
+                <div><strong>symbol:</strong> {selectedRecommendation.symbol} &nbsp; <strong>created:</strong> {formatDate(selectedRecommendation.created_at)}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <strong>approved:</strong>
+                  {p.approved == null ? <span style={{ color: "var(--op-muted, #7a8999)" }}>—</span> : p.approved ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>}
+                  <button onClick={() => void setApproval(true)} disabled={loading.approve || p.approved === true} style={{ padding: "2px 10px", fontSize: "0.8rem" }}>Approve</button>
+                  <button onClick={() => void setApproval(false)} disabled={loading.approve || p.approved === false} style={{ padding: "2px 10px", fontSize: "0.8rem" }}>Reject</button>
+                </div>
+                <div><strong>source:</strong> {selectedRecommendation.market_data_source ?? "-"}{selectedRecommendation.fallback_mode ? " (fallback)" : ""}</div>
+
+                {/* Thesis */}
+                {p.thesis ? <div style={{ paddingTop: 4 }}><strong>thesis:</strong> {asText(p.thesis)}</div> : null}
+                {p.rejection_reason ? <div style={{ color: "var(--op-warn, #f2a03f)" }}><strong>rejection reason:</strong> {asText(p.rejection_reason)}</div> : null}
+
+                {/* Catalyst */}
+                {catalyst ? (
+                  <div style={sep}>
+                    <div style={label}>CATALYST</div>
+                    <div><strong>type:</strong> {asText(catalyst.type)} &nbsp; <strong>novelty:</strong> {asText(catalyst.novelty)} &nbsp; <strong>source quality:</strong> {asText(catalyst.source_quality)}</div>
+                    {catalyst.timestamp ? <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>{String(catalyst.timestamp).slice(0, 19).replace("T", " ")} UTC</div> : null}
+                  </div>
+                ) : null}
+
+                {/* Regime */}
+                {regime ? (
+                  <div style={sep}>
+                    <div style={label}>REGIME</div>
+                    <div>
+                      <strong>market:</strong> {asText(regime.market_regime)} &nbsp;
+                      <strong>vol:</strong> {asText(regime.volatility_regime)} &nbsp;
+                      <strong>breadth:</strong> {asText(regime.breadth_state)}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Entry / Stop / Targets */}
+                <div style={sep}>
+                  <div style={label}>LEVELS</div>
+                  {entry ? (
+                    <>
+                      <div>
+                        <strong>entry zone:</strong>{" "}
+                        <span style={{ color: "#21c06e" }}>{asText(entry.zone_low ?? entry.low)} – {asText(entry.zone_high ?? entry.high)}</span>
+                      </div>
+                      {entry.trigger ? <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>trigger: {asText(entry.trigger)}</div> : null}
+                    </>
+                  ) : null}
+                  {inv ? (
+                    <div>
+                      <strong>stop:</strong>{" "}
+                      <span style={{ color: "#f44336" }}>{asText(inv.price)}</span>
+                      {inv.reason ? <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}> — {asText(inv.reason)}</span> : null}
+                    </div>
+                  ) : null}
+                  {targets ? (
+                    <div>
+                      <strong>targets:</strong>{" "}
+                      <span style={{ color: "#4caf50" }}>T1 {asText(targets.target_1)}</span>
+                      {targets.target_2 != null ? <span style={{ color: "#4caf50" }}> · T2 {asText(targets.target_2)}</span> : null}
+                      {targets.trailing_rule ? <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}> ({asText(targets.trailing_rule)})</span> : null}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Sizing + Quality */}
+                {(sizing ?? quality) ? (
+                  <div style={sep}>
+                    <div style={label}>SIZING &amp; QUALITY</div>
+                    {sizing ? <div><strong>shares:</strong> {asText(sizing.shares)} &nbsp; <strong>risk $:</strong> {asText(sizing.risk_dollars)} &nbsp; <strong>stop dist:</strong> {asText(sizing.stop_distance)}</div> : null}
+                    {quality ? <div><strong>expected RR:</strong> {asText(quality.expected_rr)} &nbsp; <strong>confidence:</strong> {asText(quality.confidence)} &nbsp; <strong>risk score:</strong> {asText(quality.risk_score)}</div> : null}
+                  </div>
+                ) : null}
+
+                {/* Queue lineage */}
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
+                  <strong>Queue lineage</strong>
+                </div>
+                {selectedRecProvenance ? (
+                  <>
+                    <div><strong>promoted from:</strong> Rank {asText(selectedRecProvenance.rank)} — {asText(selectedRecProvenance.strategy)} on {asText(selectedRecProvenance.symbol)}</div>
+                    <div><strong>queue status:</strong> {typeof selectedRecProvenance.status === "string" ? selectedRecProvenance.status.replace(/_/g, " ") : asText(selectedRecProvenance.status)}</div>
+                    <div><strong>queue score:</strong> {asText(selectedRecProvenance.score)} &nbsp; <strong>rr:</strong> {asText(selectedRecProvenance.expected_rr)} &nbsp; <strong>conf:</strong> {asText(selectedRecProvenance.confidence)}</div>
+                    <div><strong>timeframe:</strong> {asText(selectedRecProvenance.timeframe)} &nbsp; <strong>workflow source:</strong> {asText(selectedRecProvenance.workflow_source)}</div>
+                  </>
+                ) : (
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>Not promoted from a ranked queue candidate.</div>
+                )}
+                <div style={{ marginTop: 4 }}><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selectedRecommendation.recommendation_id}</span></div>
               </div>
-              <div><strong>source:</strong> {selectedRecommendation.market_data_source ?? "-"}{selectedRecommendation.fallback_mode ? " (fallback)" : ""}</div>
-              <div><strong>thesis:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.thesis)}</div>
-              <div><strong>entry:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.entry)}</div>
-              <div><strong>invalidation:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.invalidation)}</div>
-              <div><strong>targets:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.targets)}</div>
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
-                <strong>Queue lineage</strong>
-              </div>
-              {selectedRecProvenance ? (
-                <>
-                  <div><strong>promoted from:</strong> Rank {asText(selectedRecProvenance.rank)} — {asText(selectedRecProvenance.strategy)} on {asText(selectedRecProvenance.symbol)}</div>
-                  <div><strong>queue status:</strong> {typeof selectedRecProvenance.status === "string" ? selectedRecProvenance.status.replace(/_/g, " ") : asText(selectedRecProvenance.status)}</div>
-                  <div><strong>queue score:</strong> {asText(selectedRecProvenance.score)} &nbsp; <strong>rr:</strong> {asText(selectedRecProvenance.expected_rr)} &nbsp; <strong>conf:</strong> {asText(selectedRecProvenance.confidence)}</div>
-                  <div><strong>timeframe:</strong> {asText(selectedRecProvenance.timeframe)} &nbsp; <strong>workflow source:</strong> {asText(selectedRecProvenance.workflow_source)}</div>
-                </>
-              ) : (
-                <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>Not promoted from a ranked queue candidate.</div>
-              )}
-              <div style={{ marginTop: 4 }}><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selectedRecommendation.recommendation_id}</span></div>
-            </div>
-          )}
+            );
+          })()}
         </Card>
       </div>
 

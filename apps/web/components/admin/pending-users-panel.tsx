@@ -7,12 +7,20 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 
 type PendingUser = { id: number; email: string; display_name: string };
 type Invite = { id: number; email: string; display_name: string; status: string; invited_by: string; created_at: string; invite_token: string };
-type UserRow = { id: number; email: string; display_name: string; approval_status: string; last_seen_at: string | null };
+type UserRow = { id: number; email: string; display_name: string; approval_status: string; last_seen_at: string | null; created_at?: string };
+type AuditEvent = { event_type: string; timestamp: string | null; detail: string; status: string };
+
+function fmtTs(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 16).replace("T", " ");
+  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
 
 export function PendingUsersPanel() {
   const [users, setUsers] = useState<PendingUser[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [recentActivity, setRecentActivity] = useState<UserRow[]>([]);
+  const [recentActivity, setRecentActivity] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resultById, setResultById] = useState<Record<number, string>>({});
@@ -26,10 +34,10 @@ export function PendingUsersPanel() {
     setLoading(true);
     setError(null);
     setFeedback({ state: "loading", message: "Refreshing admin queue…" });
-    const [usersResponse, invitesResponse, allUsersResponse] = await Promise.all([
+    const [usersResponse, invitesResponse, dashboardResponse] = await Promise.all([
       fetchWorkflowApi<PendingUser>("/api/admin/users/pending"),
       fetchWorkflowApi<Invite>("/api/admin/invites"),
-      fetchWorkflowApi<UserRow>("/api/admin/users"),
+      fetchWorkflowApi<{ recent_audit_events?: AuditEvent[] }>("/api/user/dashboard"),
     ]);
 
     if (!usersResponse.ok) {
@@ -41,12 +49,8 @@ export function PendingUsersPanel() {
 
     setUsers(usersResponse.items);
     setInvites(invitesResponse.ok ? invitesResponse.items : []);
-    if (allUsersResponse.ok) {
-      const nonPending = allUsersResponse.items
-        .filter((u) => u.approval_status !== "pending")
-        .slice(-3)
-        .reverse();
-      setRecentActivity(nonPending);
+    if (dashboardResponse.ok && dashboardResponse.data?.recent_audit_events) {
+      setRecentActivity(dashboardResponse.data.recent_audit_events.slice(0, 5));
     }
     setFeedback({ state: "success", message: "Admin queue refreshed." });
     setLoading(false);
@@ -123,20 +127,22 @@ export function PendingUsersPanel() {
               </>}
         </Card>
         <Card title="Recent invites">
-          {invites.length === 0 ? <EmptyState title="No invites sent" hint="Use invite form above." /> : <table className="op-table"><thead><tr><th>created_at</th><th>email</th><th>status</th><th>invited_by</th></tr></thead><tbody>
-            {invites.map((invite) => <tr key={invite.id}><td>{invite.created_at}</td><td>{invite.email}</td><td>{invite.status}</td><td>{invite.invited_by}</td></tr>)}</tbody></table>}
+          {invites.length === 0 ? <EmptyState title="No invites sent" hint="Use invite form above." /> : <table className="op-table"><thead><tr><th>sent</th><th>email</th><th>status</th><th>invited by</th></tr></thead><tbody>
+            {invites.map((invite) => <tr key={invite.id}><td style={{ whiteSpace: "nowrap" }}>{fmtTs(invite.created_at)}</td><td>{invite.email}</td><td>{invite.status}</td><td>{invite.invited_by}</td></tr>)}</tbody></table>}
         </Card>
       </div>
 
       {recentActivity.length > 0 && (
-        <Card title="Recent activity">
-          <table className="op-table"><thead><tr><th>User</th><th>Email</th><th>Decision</th><th>Last seen</th></tr></thead><tbody>
-            {recentActivity.map((u) => <tr key={u.id}>
-              <td>{u.display_name || "Unknown"}</td>
-              <td>{u.email}</td>
-              <td><StatusBadge tone={activityTone(u.approval_status)}>{u.approval_status}</StatusBadge></td>
-              <td>{u.last_seen_at ? new Date(u.last_seen_at).toLocaleDateString() : "—"}</td>
-            </tr>)}
+        <Card title="Recent activity (last 5 audit events)">
+          <table className="op-table"><thead><tr><th>Time</th><th>Event</th><th>Detail</th><th>Status</th></tr></thead><tbody>
+            {recentActivity.map((evt, idx) => (
+              <tr key={idx}>
+                <td style={{ whiteSpace: "nowrap", fontSize: "0.82rem" }}>{fmtTs(evt.timestamp)}</td>
+                <td style={{ fontSize: "0.82rem" }}>{evt.event_type.replace(/_/g, " ")}</td>
+                <td style={{ fontSize: "0.82rem", color: "var(--op-muted, #7a8999)" }}>{evt.detail}</td>
+                <td><StatusBadge tone={activityTone(evt.status)}>{evt.status}</StatusBadge></td>
+              </tr>
+            ))}
           </tbody></table>
         </Card>
       )}
