@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SignOutButton } from "@clerk/nextjs";
 
@@ -20,18 +21,24 @@ function formatTimestamp(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
+type OnboardingStatus = { has_schedule: boolean; has_replay: boolean; has_order: boolean; has_viewed_haco: boolean | null; completed: number; total: number };
+
 export default function Page() {
   const [user, setUser] = useState<any>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState("dark");
   useEffect(() => {
     fetchWorkflowApi<any>("/api/user/me").then((r) => {
-      if (!r.ok) {
-        setError(r.error ?? "Unable to load account details.");
-        return;
-      }
+      if (!r.ok) { setError(r.error ?? "Unable to load account details."); return; }
       setError(null);
       setUser(r.data);
+    });
+    fetchWorkflowApi<OnboardingStatus>("/api/user/onboarding-status").then((r) => {
+      if (r.ok && r.data) {
+        const hacoViewed = typeof window !== "undefined" && window.localStorage.getItem("macmarket-haco-visited") === "true";
+        setOnboarding({ ...r.data, has_viewed_haco: hacoViewed });
+      }
     });
     setTheme(window.localStorage.getItem("macmarket-theme") === "light" ? "light" : "dark");
   }, []);
@@ -43,6 +50,27 @@ export default function Page() {
     </Card>
     {error ? <ErrorState title="Account unavailable" hint={error} /> : null}
     {user?.identity_warning ? <StatusBadge tone="warn">Identity data incomplete: {user.identity_warning}</StatusBadge> : null}
+    {onboarding && (
+      <Card title={`Onboarding progress — ${onboarding.completed + (onboarding.has_viewed_haco ? 1 : 0)}/${onboarding.total} complete`}>
+        <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "#2a3445", marginBottom: 12 }}>
+          <div style={{ flex: onboarding.completed + (onboarding.has_viewed_haco ? 1 : 0), background: "#4caf50", transition: "flex 0.3s" }} />
+          <div style={{ flex: onboarding.total - onboarding.completed - (onboarding.has_viewed_haco ? 1 : 0), background: "#2a3445" }} />
+        </div>
+        <div style={{ display: "grid", gap: 8 }}>
+          {[
+            { done: onboarding.has_schedule, label: "Create a scheduled strategy report", href: "/schedules" },
+            { done: onboarding.has_replay, label: "Run a replay", href: "/replay-runs" },
+            { done: onboarding.has_order, label: "Stage a paper order", href: "/orders" },
+            { done: !!onboarding.has_viewed_haco, label: "Review HACO context", href: "/haco-context" },
+          ].map(({ done, label, href }) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <StatusBadge tone={done ? "good" : "neutral"}>{done ? "done" : "pending"}</StatusBadge>
+              {done ? <span>{label}</span> : <Link href={href} style={{ color: "#7ec8f7" }}>{label}</Link>}
+            </div>
+          ))}
+        </div>
+      </Card>
+    )}
     <div className="op-grid-2">
       <Card title="Identity">
         <div>Email: {safeIdentity(user?.email)}</div>

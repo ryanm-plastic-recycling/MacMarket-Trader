@@ -17,5 +17,23 @@ class ResendEmailProvider(EmailProvider):
     def send(self, message: EmailMessage) -> str:
         if not self.api_key:
             raise ValueError("RESEND_API_KEY is not configured")
-        # SDK call intentionally deferred so local dev and tests remain dependency-light.
-        return f"resend-placeholder-{message.template_name}"
+        try:
+            import httpx  # available via test/runtime deps; kept as lazy import to avoid hard dep in non-resend mode
+            resp = httpx.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": self.from_email,
+                    "to": [message.to_email],
+                    "subject": message.subject,
+                    "text": message.body,
+                },
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            return str(resp.json().get("id") or f"resend-{message.template_name}")
+        except Exception as exc:
+            raise RuntimeError(f"Resend delivery failed: {exc}") from exc

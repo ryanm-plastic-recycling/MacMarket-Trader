@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from macmarket_trader.config import settings as _app_settings
 from macmarket_trader.data.providers.base import EmailMessage, EmailProvider
 from macmarket_trader.data.providers.registry import build_market_data_service
 from macmarket_trader.domain.enums import MarketMode
@@ -93,6 +94,7 @@ class StrategyReportService:
             "trigger": trigger,
             "ran_at": datetime.now(timezone.utc).isoformat(),
             "source": f"fallback ({last_source})" if last_fallback else last_source,
+            "email_provider": _app_settings.email_provider,
             "top_candidates": ranking["top_candidates"],
             "watchlist_only": ranking["watchlist_only"],
             "no_trade": ranking["no_trade"],

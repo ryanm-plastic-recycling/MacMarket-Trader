@@ -4,7 +4,11 @@
       "Bash(npm test:*)",
       "Bash(python -m pytest -q)",
       "Bash(python -c ':*)",
-      "Bash(.venv/Scripts/python.exe -m pytest -q)"
+      "Bash(.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(xargs grep:*)",
+      "Bash(python -m pytest tests/test_watchlists.py -v)",
+      "Bash(python -m pytest -q --tb=short)",
+      "Bash(python -m pytest tests/test_auth_approval_api.py -q --tb=short)"
     ]
   }
 }

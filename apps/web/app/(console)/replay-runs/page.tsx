@@ -23,6 +23,7 @@ export default function Page() {
   const [status, setStatus] = useState("idle");
   const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
+  const [expandedStepId, setExpandedStepId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
@@ -139,12 +140,30 @@ export default function Page() {
     return () => window.clearTimeout(timer);
   }, [feedback.state, feedback.message]);
 
-  const timelinePoints = steps.map((step) => ({
-    step: step.step_index,
-    pre: Number(step.pre_step_snapshot?.open_positions_notional ?? 0),
-    post: Number(step.post_step_snapshot?.open_positions_notional ?? 0),
-    pnlDelta: Number(step.post_step_snapshot?.equity ?? 0) - Number(step.pre_step_snapshot?.equity ?? 0),
-  }));
+  const approvedCount = steps.filter((s) => s.approved).length;
+  const rejectedCount = steps.length - approvedCount;
+
+  const equityPoints = steps.map((s) => Number(s.post_step_snapshot?.equity ?? 0)).filter((v) => v > 0);
+  const equitySvg = (() => {
+    if (equityPoints.length < 2) return null;
+    const W = 280; const H = 52; const pad = 4;
+    const minV = Math.min(...equityPoints);
+    const maxV = Math.max(...equityPoints);
+    const range = maxV - minV || 1;
+    const pts = equityPoints.map((v, i) => {
+      const x = pad + (i / (equityPoints.length - 1)) * (W - pad * 2);
+      const y = H - pad - ((v - minV) / range) * (H - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    const startColor = equityPoints[equityPoints.length - 1] >= equityPoints[0] ? "#4caf50" : "#f44336";
+    return (
+      <svg width={W} height={H} style={{ display: "block", margin: "8px 0" }}>
+        <polyline points={pts} fill="none" stroke={startColor} strokeWidth="2" strokeLinejoin="round" />
+        <text x={pad} y={H - 1} fontSize="9" fill="#9fb0c3">{minV.toFixed(0)}</text>
+        <text x={W - pad} y={H - 1} fontSize="9" fill="#9fb0c3" textAnchor="end">{maxV.toFixed(0)}</text>
+      </svg>
+    );
+  })();
 
   return <section className="op-stack">
     <PageHeader title="Replay workspace" subtitle="Run deterministic replay from recommendation context and inspect step-by-step risk transitions." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
@@ -172,29 +191,70 @@ export default function Page() {
       </Card>
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
-          <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource} · recommendation {new URLSearchParams(searchKey).get("recommendation") ?? "linked from selected run"}</div>
-          <div className="op-card" style={{ marginBottom: 8 }}>
-            <strong>Validation scope</strong>
-            <div>Originating setup/recommendation: {new URLSearchParams(searchKey).get("recommendation") ?? steps[0]?.recommendation_id ?? "selected run set"}.</div>
-            <div>Validated: deterministic approvals, heat transitions, and order-intent eligibility under source {selectedSource}.</div>
-          </div>
-          <div className="op-card" style={{ marginBottom: 8 }}>
-            <strong>Narrative summary</strong>
-            <div>
-              {selected.approved_count} / {selected.recommendation_count} recommendations approved, {selected.fill_count} fills,
-              ending heat {selected.ending_heat}, ending open notional {selected.ending_open_notional}.
+          <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource}</div>
+
+          {/* Pass/fail summary bar */}
+          {steps.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9fb0c3", marginBottom: 3 }}>
+                <span>approved {approvedCount}</span>
+                <span>rejected {rejectedCount}</span>
+                <span>fills {selected.fill_count}</span>
+                <span>heat {selected.ending_heat}</span>
+              </div>
+              <div style={{ display: "flex", height: 10, borderRadius: 4, overflow: "hidden", background: "#2a3445" }}>
+                {approvedCount > 0 && <div style={{ flex: approvedCount, background: "#4caf50" }} />}
+                {rejectedCount > 0 && <div style={{ flex: rejectedCount, background: "#f44336" }} />}
+              </div>
             </div>
+          )}
+
+          {/* Equity curve */}
+          {equitySvg && (
+            <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>
+              <div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 2 }}>Equity curve (post-step)</div>
+              {equitySvg}
+            </div>
+          )}
+
+          {/* Expandable step rows */}
+          <div style={{ display: "grid", gap: 6 }}>
+            {steps.map((s) => (
+              <div
+                key={s.id}
+                className="op-card"
+                style={{ padding: 8, cursor: "pointer" }}
+                onClick={() => setExpandedStepId(expandedStepId === s.id ? null : s.id)}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <strong>Step {s.step_index}</strong>
+                  <StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge>
+                  <span style={{ fontSize: 11, color: "#9fb0c3" }}>
+                    heat {s.post_step_snapshot?.current_heat ?? "-"} · notional {s.post_step_snapshot?.open_positions_notional ?? "-"}
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "#9fb0c3" }}>{expandedStepId === s.id ? "▲ collapse" : "▼ expand"}</span>
+                </div>
+                {expandedStepId === s.id && (
+                  <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 4 }}>Pre-step snapshot</div>
+                      <pre style={{ fontSize: 10, whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
+                        {JSON.stringify(s.pre_step_snapshot, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 4 }}>Post-step snapshot</div>
+                      <pre style={{ fontSize: 10, whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
+                        {JSON.stringify(s.post_step_snapshot, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-          <div style={{ display: "grid", gap: 8 }}>{steps.map((s) => <div key={s.id} className="op-card" style={{ padding: 8 }}>
-            <strong>Step {s.step_index}</strong> <StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge>
-            <div>Recommendation: {s.recommendation_id}</div>
-            <div>Pre heat/open notional: {s.pre_step_snapshot?.current_heat} / {s.pre_step_snapshot?.open_positions_notional}</div>
-            <div>Post heat/open notional: {s.post_step_snapshot?.current_heat} / {s.post_step_snapshot?.open_positions_notional}</div>
-          </div>)}</div>
-          {timelinePoints.length > 0 ? <div className="op-card" style={{ marginTop: 8 }}>
-            <strong>Entry vs exit notional timeline</strong>
-            {timelinePoints.map((point) => <div key={point.step}>Step {point.step}: {point.pre} → {point.post} (equity Δ {point.pnlDelta.toFixed(2)})</div>)}
-          </div> : null}
+
+          {steps.length === 0 && <EmptyState title="No steps" hint="Steps load after selecting a run row." />}
         </>}
       </Card>
     </div>

@@ -20,6 +20,7 @@ class RankedCandidate:
     market_mode: str
     timeframe: str
     status: str
+    conviction_tier: str
     score: float
     score_breakdown: dict[str, float]
     expected_rr: float
@@ -30,6 +31,46 @@ class RankedCandidate:
     invalidation: str
     targets: str
     reason_text: str
+
+
+def _regime_alignment_bonus(bars: list[Bar], strategy: str) -> float:
+    """Return a deterministic bonus [0.0, 0.08] based on simple trend/momentum alignment."""
+    if len(bars) < 5:
+        return 0.0
+    recent = bars[-5:]
+    closes = [b.close for b in recent]
+    # Uptrend: each close >= previous
+    up_count = sum(1 for i in range(1, len(closes)) if closes[i] >= closes[i - 1])
+    trend_ratio = up_count / (len(closes) - 1)
+    # Momentum strategies align with trend; mean-reversion aligns with counter-trend
+    if "Mean Reversion" in strategy:
+        alignment = 1.0 - trend_ratio
+    elif "Pullback" in strategy:
+        alignment = trend_ratio * 0.8
+    else:
+        alignment = trend_ratio
+    return round(alignment * 0.08, 4)
+
+
+def _recency_weight(bars: list[Bar]) -> float:
+    """Return a recency bonus [0.0, 0.06] — higher when latest close is near the recent high."""
+    if len(bars) < 10:
+        return 0.0
+    recent = bars[-10:]
+    high = max(b.high for b in recent)
+    low = min(b.low for b in recent)
+    rng = high - low or 0.01
+    last_close = recent[-1].close
+    position = (last_close - low) / rng  # 0 = at recent low, 1 = at recent high
+    return round(position * 0.06, 4)
+
+
+def _conviction_tier(score: float) -> str:
+    if score >= 0.72:
+        return "HIGH"
+    if score >= 0.62:
+        return "MEDIUM"
+    return "LOW"
 
 
 def _score_symbol(bars: list[Bar], strategy: str) -> dict[str, float]:
@@ -45,17 +86,21 @@ def _score_symbol(bars: list[Bar], strategy: str) -> dict[str, float]:
     catalyst_quality = 0.55
     volatility_fit = min(1.0, rel_volatility / 1.5)
     spread_penalty = 0.05 if liquidity > 0.5 else 0.18
+    regime_bonus = _regime_alignment_bonus(bars, strategy)
+    recency_bonus = _recency_weight(bars)
     expected_rr = round(1.2 + (strategy_fit * 1.1) + (volatility_fit * 0.35) - spread_penalty, 2)
     confidence = max(0.2, min(0.95, (strategy_fit + regime_fit + liquidity) / 3))
     score = (
-        strategy_fit * 0.24
-        + regime_fit * 0.18
-        + catalyst_quality * 0.12
-        + liquidity * 0.14
-        + volatility_fit * 0.14
+        strategy_fit * 0.22
+        + regime_fit * 0.17
+        + catalyst_quality * 0.11
+        + liquidity * 0.13
+        + volatility_fit * 0.13
         + confidence * 0.10
-        + min(1.0, expected_rr / 3) * 0.12
-        - spread_penalty * 0.16
+        + min(1.0, expected_rr / 3) * 0.10
+        - spread_penalty * 0.14
+        + regime_bonus
+        + recency_bonus
     )
     return {
         "strategy_fit_score": round(strategy_fit, 3),
@@ -64,6 +109,8 @@ def _score_symbol(bars: list[Bar], strategy: str) -> dict[str, float]:
         "liquidity_score": round(liquidity, 3),
         "volatility_suitability_score": round(volatility_fit, 3),
         "spread_slippage_penalty": round(spread_penalty, 3),
+        "regime_alignment_bonus": round(regime_bonus, 4),
+        "recency_weight": round(recency_bonus, 4),
         "expected_rr": expected_rr,
         "confidence": round(confidence, 3),
         "total_score": round(score, 3),
@@ -99,12 +146,15 @@ class DeterministicRankingEngine:
             workflow_source = f"fallback ({source})" if fallback_mode else source
             for entry in selected:
                 metrics = _score_symbol(bars, entry.display_name)
-                status = "top_candidate" if metrics["total_score"] >= 0.62 else "watchlist"
+                total = metrics["total_score"]
+                status = "top_candidate" if total >= 0.62 else "watchlist"
                 if metrics["confidence"] < 0.45:
                     status = "no_trade"
+                tier = _conviction_tier(total)
                 reason_text = (
                     f"{entry.display_name}: fit {metrics['strategy_fit_score']}, liquidity {metrics['liquidity_score']}, "
-                    f"volatility {metrics['volatility_suitability_score']}, confidence {metrics['confidence']}."
+                    f"volatility {metrics['volatility_suitability_score']}, confidence {metrics['confidence']}, "
+                    f"regime bonus {metrics['regime_alignment_bonus']}, recency {metrics['recency_weight']}."
                 )
                 output.append(
                     RankedCandidate(
@@ -118,7 +168,8 @@ class DeterministicRankingEngine:
                         market_mode=market_mode.value,
                         timeframe=timeframe,
                         status=status,
-                        score=metrics["total_score"],
+                        conviction_tier=tier,
+                        score=total,
                         score_breakdown={k: v for k, v in metrics.items() if k not in {"expected_rr", "confidence", "total_score"}},
                         expected_rr=metrics["expected_rr"],
                         confidence=metrics["confidence"],

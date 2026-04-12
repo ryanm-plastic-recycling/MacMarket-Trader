@@ -8,6 +8,7 @@ import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge }
 import { fetchWorkflowApi } from "@/lib/api-client";
 
 type Recommendation = { id: number; symbol: string; created_at: string; payload: any };
+type AuditEvent = { event_type: string; timestamp: string | null; detail: string; status: string };
 type DashboardPayload = {
   market_regime: string;
   last_refresh: string;
@@ -20,6 +21,7 @@ type DashboardPayload = {
   pending_admin_actions: Array<{ id: number; email: string; display_name: string }>;
   alerts: Array<{ kind: string; level: string; message: string }>;
   workflow_guide?: string[];
+  recent_audit_events?: AuditEvent[];
 };
 
 export default function Page() {
@@ -98,6 +100,26 @@ export default function Page() {
         <Card title="Pending admin actions">{data?.pending_admin_actions.map((u) => <div key={u.id}>{u.display_name} ({u.email})</div>)}</Card>
         <Card title="Alert / event log">{data?.alerts.map((a, idx) => <div key={idx}>[{a.level}] {a.message}</div>)}</Card>
       </div>
+
+      <Card title="Operational audit trail">
+        {(!data?.recent_audit_events || data.recent_audit_events.length === 0) ? (
+          <div style={{ color: "#9fb0c3" }}>No audit events recorded yet.</div>
+        ) : (
+          <table className="op-table">
+            <thead><tr><th>time</th><th>event</th><th>detail</th><th>status</th></tr></thead>
+            <tbody>
+              {data.recent_audit_events.map((ev, idx) => (
+                <tr key={idx}>
+                  <td style={{ whiteSpace: "nowrap", color: "#9fb0c3" }}>{ev.timestamp ? new Date(ev.timestamp).toLocaleString() : "—"}</td>
+                  <td><StatusBadge tone="neutral">{ev.event_type.replace("_", " ")}</StatusBadge></td>
+                  <td>{ev.detail}</td>
+                  <td><StatusBadge tone={ev.status === "sent" || ev.status === "ok" ? "good" : ev.status === "pending" ? "warn" : "neutral"}>{ev.status}</StatusBadge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
     </section>
   );
 }

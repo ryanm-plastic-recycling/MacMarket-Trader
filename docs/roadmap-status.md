@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-05
+Last updated: 2026-04-12
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -16,8 +16,8 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader is now executing **Phase 2 — Alpha differentiators** as the active implementation scope for this pass.
-Phase 1 hardening remains an operational baseline, while this pass focused on Phase 2 workflow value delivery.
+MacMarket-Trader has completed **Phase 2 — Alpha differentiators** and is entering **Phase 3 — Paid beta** as the active implementation scope.
+Phase 1 and Phase 2 form the operational baseline; Phase 3 delivers the capabilities that make the system worth paying for.
 
 ## Core product pillars
 
@@ -268,17 +268,54 @@ Completed in this pass:
 - Extended HACO workspace chart controls to include first-class workflow overlays on the price pane while preserving synced HACO/HACOLT strips.
 - Added backend tests for ranking engine output, recommendation queue API, promotion flow, and schedule summary/detail behavior.
 
-Remaining Phase 2 gaps (truthful):
-- Recommendations page still needs deeper persisted recommendation + ranked queue side-by-side lineage UX polish.
-- Analyze triage can be further improved with richer indicator scenario provenance and strategy-specific explainability text.
-- Schedules page still needs finer-grained editing controls (frequency/timezone/email target) and per-run detail drill-in.
-- Admin invite/onboarding surfaces still need stronger “recent activity + next action” operational guidance polish.
-- Additional frontend unit coverage for new client-side queue/schedule state helpers remains open.
+All remaining Phase 2 gaps closed in the 2026-04-12 closeout pass (see below).
 
-Started early (bounded, not Phase 3 complete):
+Started early (bounded, carried into Phase 3):
 - Ranking provenance payload structure is now rich enough to support later per-watchlist and multi-delivery expansion.
 
-### Phase 3 — Paid beta
+### 2026-04-12 Phase 2 closeout pass
+
+Closed all five remaining Phase 2 gaps:
+
+**Gap 1 — Recommendations page lineage UX**
+- Added `getPromotedQueueKeys` helper to identify which ranked queue candidates are already promoted.
+- Added queue summary strip to the Recommendations page showing pending / promoted / no-trade candidate counts at a glance.
+- Implemented status tiers (promoted / staged / no-trade) with visual differentiation across the candidate list.
+- Added promoted badges on queue candidates that already exist in the recommendation store.
+- Added human-readable provenance panel explaining why each candidate was ranked (score breakdown, regime fit, strategy signal).
+- Added contextual promote button that disables with tooltip when the candidate is already promoted.
+
+**Gap 2 — Analyze triage provenance**
+- Added `analyze-helpers.ts` with indicator provenance resolution and scenario label utilities.
+- Surfaced indicator provenance text on Symbol Analyze so each indicator's contribution is explained per candidate.
+- Added strategy-specific explainability text for all six strategy families (Event Continuation, Breakout, Pullback, Gap Follow-Through, Mean Reversion, HACO Context).
+- Wired `reason_text` and `thesis` into scoreboard rows on the Analyze page.
+
+**Gap 3 — Schedules editing controls + per-run drill-in**
+- Added frequency, run_time, timezone, email_target, and top_n editing controls to the schedule form.
+- Schedule form pre-populates all fields from the existing schedule record when editing.
+- Made run history rows clickable, expanding to a full candidate detail panel for that run.
+- Added backend `GET /strategy-schedules/{id}/runs/{runId}` endpoint returning the full candidate list for a specific run.
+
+**Gap 4 — Admin invite / onboarding polish**
+- Added “Action required” badge to the pending-users admin panel when unapproved invites are waiting.
+- Added “Recent activity” card showing last five admin events (invites sent, approvals, rejections) with timestamps.
+- Added empty-state guidance on the pending-users page when no pending users exist.
+
+**Gap 5 — Frontend unit coverage**
+- Added `analyze-helpers.test.ts` covering provenance resolution, strategy label helpers, and scoreboard formatting.
+- Frontend test count grew from 28 to 48 tests (Vitest).
+
+**Deploy fixes**
+- Fixed DB wipe bug: `conftest.py` now uses per-test transaction rollback for isolation instead of dropping and re-creating the DB file between tests; `deploy_windows.bat` now guards `init_db` with an existence check so existing production DBs are never wiped on redeploy.
+- Fixed frontend startup reliability: Next.js dev server now binds to `0.0.0.0` instead of `localhost` to avoid IPv6/IPv4 `TIME_WAIT` socket contention on Windows; health check URL pinned to `127.0.0.1`.
+
+**Auth fixes**
+- Added JWT verification leeway of 120 seconds to tolerate Clerk's 60-second session token window and local clock skew without spurious 401s.
+- Removed Clerk session token customization (JWT template override) that was conflicting with the default token shape expected by the backend.
+- Configured backend CORS origin and Clerk issuer URL to reference the dev host explicitly instead of relying on environment-inherited defaults.
+
+### Phase 3 — Paid beta (now active)
 Goal: something people would pay for as a research and trade-planning tool.
 
 Must-have:

@@ -27,8 +27,8 @@ Your project is a **research-first, event-driven trading intelligence console** 
 **Current phase status:**
 - ✅ Phase 0 (scaffold) — DONE
 - ✅ Phase 1 (domain model + hardening) — FUNCTIONALLY COMPLETE (78 backend tests pass)
-- 🔄 Phase 2 (alpha differentiators: Symbol Analyze, ranked queue, scheduled reports) — IN PROGRESS
-- ⬜ Phase 3 (paid beta)
+- ✅ Phase 2 (alpha differentiators: Symbol Analyze, ranked queue, scheduled reports) — COMPLETE
+- 🔄 Phase 3 (paid beta) — IN PROGRESS
 - ⬜ Phase 4 (vendor integrations: Polygon, real brokers)
 - ⬜ Phase 5 (full operator console polish)
 
@@ -411,6 +411,90 @@ cd "C:\Dashboard\MacMarket-Trader"
 | App URL | http://localhost:9500 |
 | Backend port | 9510 |
 | Frontend port | 9500 |
+
+---
+
+---
+
+## PART 9 — FIRST-TIME SETUP AND KNOWN ISSUES
+
+### After a fresh database: promote yourself to admin
+
+After `init-db` and your first Clerk sign-in, your account is created as `pending` / `user`.
+You must manually promote it to admin before the admin pages work.
+
+**Step 1 — Find your DB file** (default location in the deployed folder):
+```
+C:\Dashboard\MacMarket-Trader\macmarket_trader.db
+```
+
+**Step 2 — Sign in once through the browser** so the auth-sync creates your `app_users` row.
+
+**Step 3 — Promote your row** using PowerShell + Python (no sqlite3 CLI required on Windows):
+
+```powershell
+cd "C:\Dashboard\MacMarket-Trader"
+.\.venv\Scripts\activate
+python -c "
+import sqlite3
+conn = sqlite3.connect('macmarket_trader.db')
+conn.execute(\"UPDATE app_users SET app_role='admin', approval_status='approved' WHERE email='your@email.com'\")
+conn.commit()
+print('Rows updated:', conn.total_changes)
+conn.close()
+"
+```
+
+Columns involved: `app_role` (values: `user` / `admin`) and `approval_status` (values: `pending` / `approved` / `rejected`).
+
+> The deploy script never overwrites the DB, so this promotion survives all future deploys.
+
+---
+
+### EMAIL_PROVIDER=console — emails print to the backend terminal, not your inbox
+
+When `EMAIL_PROVIDER=console` is set in `.env`, all outbound emails (invites, strategy reports) are printed as formatted blocks in the backend terminal window (`backend.log` in the deployed folder).
+
+Look for lines starting with `[EMAIL CONSOLE]` in the backend output. The full invite link is logged there during the invite flow.
+
+---
+
+### Getting real email delivery (Resend)
+
+To send actual emails instead of logging them:
+
+1. Create an account at resend.com and get an API key.
+2. In `.env` (deployed folder):
+   ```
+   EMAIL_PROVIDER=resend
+   RESEND_API_KEY=re_...
+   ```
+3. Restart the backend. Strategy report emails and invites will now deliver to real inboxes.
+
+> The console provider remains the default for local dev. Never set `RESEND_API_KEY` in the dev folder's `.env`.
+
+---
+
+### Clerk session token lifetime and JWT leeway
+
+Clerk issues session tokens with a 60-second expiry window.
+The backend is configured with a **120-second JWT leeway** to absorb clock skew between the Clerk CDN and the local backend without producing spurious 401 errors.
+
+If you see repeated `401 / Invalid token` errors that clear on refresh, check:
+- That the backend is running and healthy (`http://localhost:9510/health`)
+- That your system clock is not significantly drifted from internet time
+- That `CLERK_SECRET_KEY` is set correctly in `apps/web/.env.local`
+
+---
+
+### Deploy script preserves the database on every run
+
+The `deploy-macmarket-trader.bat` script now guards the `init_db` step:
+
+- **If `macmarket_trader.db` already exists** — `init_db` is skipped. Your data, users, and schedules are preserved.
+- **If no DB file exists** — `init_db` runs to create a fresh schema.
+
+You should never lose production/operator data from a routine redeploy. To intentionally reset the DB, stop the backend, delete `macmarket_trader.db` manually, then redeploy.
 
 ---
 

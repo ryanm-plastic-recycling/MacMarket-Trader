@@ -102,6 +102,22 @@ def me(user=Depends(current_user)):
     }
 
 
+@user_router.get("/onboarding-status")
+def onboarding_status(user=Depends(require_approved_user)):
+    has_schedule = bool(strategy_report_repo.list_schedules_for_user(user.id))
+    has_replay = bool(replay_repo.list_runs(limit=1))
+    has_order = bool(order_repo.list_with_fills(limit=1))
+    completed = sum([has_schedule, has_replay, has_order])
+    return {
+        "has_schedule": has_schedule,
+        "has_replay": has_replay,
+        "has_order": has_order,
+        "has_viewed_haco": None,  # client-side via localStorage
+        "completed": completed,
+        "total": 4,
+    }
+
+
 @user_router.get("/dashboard")
 def dashboard(user=Depends(require_approved_user)):
     counts = dashboard_repo.summary_counts()
@@ -111,6 +127,40 @@ def dashboard(user=Depends(require_approved_user)):
     pending_users = user_repo.list_by_status(ApprovalStatus.PENDING)
     provider_health = provider_health_summary()
     latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
+
+    # Operational audit events — combine email logs, approval events, and schedule runs
+    email_events = [
+        {
+            "event_type": "email_sent",
+            "timestamp": row.sent_at.isoformat() if row.sent_at else None,
+            "detail": f"{row.template_name} → {row.destination}",
+            "status": row.status,
+        }
+        for row in email_repo.list_recent(limit=5)
+    ]
+    approval_events = [
+        {
+            "event_type": "user_approval",
+            "timestamp": row.created_at.isoformat() if row.created_at else None,
+            "detail": f"approval request: {row.status} ({row.note})",
+            "status": row.status,
+        }
+        for row in user_repo.list_recent_approval_requests(limit=5)
+    ]
+    schedule_run_events = [
+        {
+            "event_type": "schedule_run",
+            "timestamp": row.created_at.isoformat() if row.created_at else None,
+            "detail": f"schedule #{row.schedule_id} → {row.status} / {row.delivered_to}",
+            "status": row.status,
+        }
+        for row in strategy_report_repo.list_recent_runs_all(limit=5)
+    ]
+    all_events = sorted(
+        email_events + approval_events + schedule_run_events,
+        key=lambda e: e["timestamp"] or "",
+        reverse=True,
+    )[:10]
     return {
         "status": "ok",
         "last_refresh": utc_now().isoformat(),
@@ -173,6 +223,7 @@ def dashboard(user=Depends(require_approved_user)):
             "Run Replay to validate path-by-path risk transitions before staging paper execution.",
             "Use Orders to review fills and paper blotter outcomes.",
         ],
+        "recent_audit_events": all_events,
     }
 
 
@@ -691,6 +742,28 @@ def create_or_update_watchlist(req: dict[str, object], user=Depends(require_appr
     return {"id": row.id, "name": row.name, "symbols": row.symbols}
 
 
+@user_router.put("/watchlists/{watchlist_id}")
+def update_watchlist(watchlist_id: int, req: dict[str, object], user=Depends(require_approved_user)):
+    name_raw = req.get("name")
+    name = str(name_raw).strip() if name_raw is not None else None
+    symbols_raw = req.get("symbols")
+    symbols: list[str] | None = None
+    if symbols_raw is not None:
+        symbols = [str(item).upper() for item in symbols_raw if str(item).strip()]
+        if not symbols:
+            raise HTTPException(status_code=400, detail="watchlist requires symbols")
+    row = watchlist_repo.update(watchlist_id=watchlist_id, app_user_id=user.id, name=name, symbols=symbols)
+    if row is None:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    return {"id": row.id, "name": row.name, "symbols": row.symbols}
+
+
+@user_router.delete("/watchlists/{watchlist_id}")
+def delete_watchlist(watchlist_id: int, user=Depends(require_approved_user)):
+    deleted = watchlist_repo.delete(watchlist_id=watchlist_id, app_user_id=user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    return {"deleted": True}
 
 
 @user_router.get("/strategy-registry")
@@ -739,6 +812,7 @@ def list_strategy_schedules(user=Depends(require_approved_user)):
                         "status": run.status,
                         "delivered_to": run.delivered_to,
                         "created_at": run.created_at,
+                        "email_provider": (run.payload or {}).get("email_provider", "console"),
                         "summary": (run.payload or {}).get("summary"),
                     }
                     for run in runs

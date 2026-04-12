@@ -560,6 +560,11 @@ class UserRepository:
             stmt = select(AppUserModel).order_by(AppUserModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
 
+    def list_recent_approval_requests(self, limit: int = 10) -> list[UserApprovalRequestModel]:
+        with self.session_factory() as session:
+            stmt = select(UserApprovalRequestModel).order_by(UserApprovalRequestModel.created_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
+
     def set_approval_status(self, *, user_id: int, status: ApprovalStatus, approved_by: str, note: str) -> AppUserModel:
         from macmarket_trader.domain.time import utc_now
 
@@ -593,6 +598,11 @@ class EmailLogRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def list_recent(self, limit: int = 10) -> list[EmailDeliveryLogModel]:
+        with self.session_factory() as session:
+            stmt = select(EmailDeliveryLogModel).order_by(EmailDeliveryLogModel.sent_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
 
 
 class InviteRepository:
@@ -683,6 +693,32 @@ class WatchlistRepository:
             session.refresh(row)
             return row
 
+    def update(self, *, watchlist_id: int, app_user_id: int, name: str | None, symbols: list[str] | None) -> WatchlistModel | None:
+        with self.session_factory() as session:
+            row = session.execute(
+                select(WatchlistModel).where(WatchlistModel.id == watchlist_id, WatchlistModel.app_user_id == app_user_id)
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            if name is not None:
+                row.name = name
+            if symbols is not None:
+                row.symbols = symbols
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def delete(self, *, watchlist_id: int, app_user_id: int) -> bool:
+        with self.session_factory() as session:
+            row = session.execute(
+                select(WatchlistModel).where(WatchlistModel.id == watchlist_id, WatchlistModel.app_user_id == app_user_id)
+            ).scalar_one_or_none()
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
+
 
 class StrategyReportRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -763,6 +799,11 @@ class StrategyReportRepository:
     def list_runs(self, *, schedule_id: int, limit: int = 20) -> list[StrategyReportRunModel]:
         with self.session_factory() as session:
             stmt = select(StrategyReportRunModel).where(StrategyReportRunModel.schedule_id == schedule_id).order_by(StrategyReportRunModel.created_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
+
+    def list_recent_runs_all(self, limit: int = 10) -> list[StrategyReportRunModel]:
+        with self.session_factory() as session:
+            stmt = select(StrategyReportRunModel).order_by(StrategyReportRunModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
 
     def get_run(self, *, run_id: int, schedule_id: int) -> StrategyReportRunModel | None:

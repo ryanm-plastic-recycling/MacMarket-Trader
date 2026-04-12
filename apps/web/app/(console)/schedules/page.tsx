@@ -19,7 +19,7 @@ type Schedule = {
   payload?: { symbols?: string[]; enabled_strategies?: string[]; top_n?: number; email_delivery_target?: string; market_mode?: string };
   config_summary?: { market_mode: string; symbols_count: number; strategy_count: number; top_n: number; delivery_target: string };
   latest_payload_summary?: { top_candidate_count: number; watchlist_count: number; no_trade_count: number } | null;
-  history?: Array<{ id: number; status: string; delivered_to: string; created_at: string; summary?: { top_candidate_count?: number; watchlist_count?: number; no_trade_count?: number } }>;
+  history?: Array<{ id: number; status: string; delivered_to: string; created_at: string; email_provider?: string; summary?: { top_candidate_count?: number; watchlist_count?: number; no_trade_count?: number } }>;
 };
 
 type RunCandidate = {
@@ -48,6 +48,8 @@ type RunDetail = {
   no_trade: Array<{ symbol: string; strategy: string; reason_text: string }>;
   summary: { top_candidate_count?: number; watchlist_count?: number; no_trade_count?: number };
 };
+
+type Watchlist = { id: number; name: string; symbols: string[]; created_at: string };
 
 const TIMEZONES = [
   "America/New_York",
@@ -79,6 +81,13 @@ export default function SchedulesPage() {
   const [emailTarget, setEmailTarget] = useState("");
   const [topN, setTopN] = useState(5);
 
+  // Watchlist state
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
+  const [wlName, setWlName] = useState("My Watchlist");
+  const [wlSymbols, setWlSymbols] = useState("");
+  const [editingWlId, setEditingWlId] = useState<number | null>(null);
+  const [wlFeedback, setWlFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+
   // Run detail state
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
@@ -98,7 +107,46 @@ export default function SchedulesPage() {
     setFeedback({ state: "success", message: "Schedules loaded" });
   }
 
-  useEffect(() => { void load(); }, []);
+  async function loadWatchlists() {
+    const result = await fetchWorkflowApi<Watchlist>("/api/user/watchlists");
+    if (result.ok) setWatchlists(result.items);
+  }
+
+  async function saveWatchlist() {
+    setWlFeedback({ state: "loading", message: "Saving..." });
+    const body = {
+      name: wlName.trim() || "My Watchlist",
+      symbols: wlSymbols.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean),
+    };
+    const url = editingWlId ? `/api/user/watchlists/${editingWlId}` : "/api/user/watchlists";
+    const result = await fetchWorkflowApi(url, {
+      method: editingWlId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!result.ok) { setWlFeedback({ state: "error", message: result.error ?? "Save failed" }); return; }
+    setWlFeedback({ state: "success", message: editingWlId ? "Watchlist updated" : "Watchlist created" });
+    setEditingWlId(null);
+    setWlName("My Watchlist");
+    setWlSymbols("");
+    await loadWatchlists();
+  }
+
+  async function deleteWatchlist(id: number) {
+    setWlFeedback({ state: "loading", message: "Deleting..." });
+    const result = await fetchWorkflowApi(`/api/user/watchlists/${id}`, { method: "DELETE" });
+    if (!result.ok) { setWlFeedback({ state: "error", message: result.error ?? "Delete failed" }); return; }
+    setWlFeedback({ state: "success", message: "Watchlist deleted" });
+    await loadWatchlists();
+  }
+
+  function startEditWatchlist(wl: Watchlist) {
+    setEditingWlId(wl.id);
+    setWlName(wl.name);
+    setWlSymbols(wl.symbols.join(","));
+  }
+
+  useEffect(() => { void load(); void loadWatchlists(); }, []);
 
   // URL prefill: populate name/symbols from query params (create flow from analysis page)
   useEffect(() => {
@@ -212,6 +260,21 @@ export default function SchedulesPage() {
         <div className="op-row">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Schedule name" />
           <input value={symbols} onChange={(e) => setSymbols(e.target.value)} placeholder="AAPL,MSFT,NVDA" style={{ minWidth: 260 }} />
+          {watchlists.length > 0 && (
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                const wl = watchlists.find((w) => w.id === Number(e.target.value));
+                if (wl) setSymbols(wl.symbols.join(","));
+                e.currentTarget.value = "";
+              }}
+            >
+              <option value="" disabled>Apply watchlist…</option>
+              {watchlists.map((wl) => (
+                <option key={wl.id} value={wl.id}>{wl.name} ({wl.symbols.length})</option>
+              ))}
+            </select>
+          )}
           <select value={marketMode} onChange={(e) => setMarketMode(e.target.value as MarketMode)}>
             <option value="equities">equities</option>
             <option value="options">options (research preview)</option>
@@ -262,6 +325,45 @@ export default function SchedulesPage() {
           </button>
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
+      </Card>
+
+      <Card title={editingWlId ? `Edit watchlist: ${wlName}` : "Watchlists"}>
+        <div className="op-row">
+          <input value={wlName} onChange={(e) => setWlName(e.target.value)} placeholder="Watchlist name" />
+          <input
+            value={wlSymbols}
+            onChange={(e) => setWlSymbols(e.target.value)}
+            placeholder="AAPL,MSFT,NVDA"
+            style={{ minWidth: 260 }}
+          />
+          <button onClick={() => void saveWatchlist()}>{editingWlId ? "Update" : "Create"}</button>
+          {editingWlId && (
+            <button onClick={() => { setEditingWlId(null); setWlName("My Watchlist"); setWlSymbols(""); }}>
+              Cancel
+            </button>
+          )}
+        </div>
+        <InlineFeedback state={wlFeedback.state} message={wlFeedback.message} />
+        {watchlists.length === 0 ? (
+          <EmptyState title="No watchlists" hint="Create a named symbol list to quickly populate schedule forms." />
+        ) : (
+          <table className="op-table">
+            <thead><tr><th>Name</th><th>Symbols</th><th>Actions</th></tr></thead>
+            <tbody>
+              {watchlists.map((wl) => (
+                <tr key={wl.id}>
+                  <td>{wl.name}</td>
+                  <td style={{ maxWidth: 400 }}>{wl.symbols.join(", ")}</td>
+                  <td className="op-row">
+                    <button onClick={() => setSymbols(wl.symbols.join(","))}>Apply to form</button>
+                    <button onClick={() => startEditWatchlist(wl)}>Edit</button>
+                    <button onClick={() => void deleteWatchlist(wl.id)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
 
       {error ? <ErrorState title="Schedules unavailable" hint={error} /> : null}
@@ -318,7 +420,7 @@ export default function SchedulesPage() {
               <div><strong>top_n:</strong> {selected.config_summary?.top_n ?? selected.payload?.top_n ?? 5}</div>
               <table className="op-table">
                 <thead>
-                  <tr><th>Run</th><th>Status</th><th>Delivered to</th><th>Summary</th></tr>
+                  <tr><th>Run</th><th>Status</th><th>Delivery</th><th>Delivered to</th><th>Summary</th></tr>
                 </thead>
                 <tbody>
                   {(selected.history ?? []).map((run) => (
@@ -330,6 +432,7 @@ export default function SchedulesPage() {
                     >
                       <td>{run.created_at}</td>
                       <td>{run.status}</td>
+                      <td><StatusBadge tone={run.email_provider === "resend" ? "good" : "neutral"}>{run.email_provider ?? "console"}</StatusBadge></td>
                       <td>{run.delivered_to}</td>
                       <td>top {run.summary?.top_candidate_count ?? 0} / watch {run.summary?.watchlist_count ?? 0} / no-trade {run.summary?.no_trade_count ?? 0}</td>
                     </tr>
