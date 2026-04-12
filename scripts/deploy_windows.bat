@@ -146,12 +146,17 @@ if errorlevel 1 (
   goto :FAIL_POP
 )
 
-echo [INFO] Initializing database...
-python -c "from macmarket_trader.storage.db import init_db; init_db()"
-if errorlevel 1 (
-  echo [ERROR] Database initialization failed.
-  set "RC=1"
-  goto :FAIL_POP
+echo [INFO] Checking database state...
+if not exist "%DST%\macmarket_trader.db" (
+  echo [INFO] No existing database found. Initializing fresh schema...
+  python -c "from macmarket_trader.storage.db import init_db; init_db()"
+  if errorlevel 1 (
+    echo [ERROR] Database initialization failed.
+    set "RC=1"
+    goto :FAIL_POP
+  )
+) else (
+  echo [INFO] Existing database preserved. Skipping init_db.
 )
 
 if "%RUN_TESTS%"=="1" (
