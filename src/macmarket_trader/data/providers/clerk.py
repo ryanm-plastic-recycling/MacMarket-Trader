@@ -37,7 +37,7 @@ class ClerkAuthProvider(AuthProvider):
             issuer=self.issuer,
             audience=self.audience,
             options=options,
-            leeway=timedelta(seconds=30),
+            leeway=timedelta(seconds=120),
         )
         if not isinstance(claims, dict):
             raise ValueError("Invalid Clerk claims payload")
