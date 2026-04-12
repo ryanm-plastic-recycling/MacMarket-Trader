@@ -26,7 +26,16 @@ from macmarket_trader.storage.db import engine
 
 @pytest.fixture(autouse=True)
 def reset_sqlite_schema() -> None:
-    """Reset schema per test to prevent cross-test sqlite state leakage."""
+    """Reset schema per test to prevent cross-test sqlite state leakage.
+
+    drop_all/create_all run on one connection, but the pool may still hold
+    other connections that pre-date the schema change.  engine.dispose()
+    closes all idle pooled connections so every test receives a fresh
+    connection that reflects the just-recreated schema.  Active connections
+    (e.g. those held by a module-level TestClient startup) are invalidated
+    and discarded when next returned to the pool.
+    """
     with engine.begin() as conn:
         Base.metadata.drop_all(conn)
         Base.metadata.create_all(conn)
+    engine.dispose()

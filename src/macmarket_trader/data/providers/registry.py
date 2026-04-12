@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from macmarket_trader.config import settings
-from macmarket_trader.data.providers.base import AuthProvider, EmailProvider
+from macmarket_trader.data.providers.base import AuthProvider, BrokerProvider, EmailProvider, MacroCalendarProvider, NewsProvider
 from macmarket_trader.data.providers.market_data import MarketDataService
+from macmarket_trader.data.providers.broker import AlpacaBrokerProvider
 from macmarket_trader.data.providers.clerk import ClerkAuthProvider
-from macmarket_trader.data.providers.mock import ConsoleEmailProvider, MockAuthProvider
+from macmarket_trader.data.providers.macro_calendar import FredMacroCalendarProvider
+from macmarket_trader.data.providers.mock import ConsoleEmailProvider, MockAuthProvider, MockBrokerProvider, MockMacroCalendarProvider, MockNewsProvider
+from macmarket_trader.data.providers.news import PolygonNewsProvider
 from macmarket_trader.data.providers.resend import ResendEmailProvider
 
 
@@ -30,6 +33,27 @@ def build_email_provider() -> EmailProvider:
     if mode == "resend":
         return ResendEmailProvider(api_key=settings.resend_api_key, from_email=settings.resend_from_email)
     raise ValueError(f"Unsupported EMAIL_PROVIDER mode: {settings.email_provider}")
+
+
+def build_news_provider() -> NewsProvider:
+    mode = settings.news_provider.strip().lower()
+    if mode == "polygon":
+        return PolygonNewsProvider()
+    return MockNewsProvider()
+
+
+def build_macro_calendar_provider() -> MacroCalendarProvider:
+    mode = settings.macro_calendar_provider.strip().lower()
+    if mode == "fred":
+        return FredMacroCalendarProvider()
+    return MockMacroCalendarProvider()
+
+
+def build_broker_provider() -> BrokerProvider:
+    mode = settings.broker_provider.strip().lower()
+    if mode == "alpaca":
+        return AlpacaBrokerProvider()
+    return MockBrokerProvider()
 
 
 _market_data_service: MarketDataService | None = None

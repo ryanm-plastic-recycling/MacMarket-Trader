@@ -8,7 +8,16 @@
       "Bash(xargs grep:*)",
       "Bash(python -m pytest tests/test_watchlists.py -v)",
       "Bash(python -m pytest -q --tb=short)",
-      "Bash(python -m pytest tests/test_auth_approval_api.py -q --tb=short)"
+      "Bash(python -m pytest tests/test_auth_approval_api.py -q --tb=short)",
+      "Bash(python -m pytest tests/test_phase4_providers.py -q)",
+      "Bash(python -m pytest -q --ignore=tests/test_auth_approval_api.py --tb=short)",
+      "Bash(python -m pytest tests/test_auth_approval_api.py tests/test_health.py -q --tb=long)",
+      "Bash(python -m pytest tests/test_auth_approval_api.py tests/test_charts_api.py -q --tb=long)",
+      "Bash(python -m pytest tests/test_auth_approval_api.py tests/test_charts_api.py --tb=short)",
+      "Bash(python -m pytest --collect-only -q)",
+      "Bash(python -m pytest tests/test_auth_approval_api.py::test_unauthenticated_access_denied --tb=long -p no:warnings -v)",
+      "Bash(python -m pytest --tb=long -p no:warnings -q)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

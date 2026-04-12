@@ -47,6 +47,21 @@ class Settings(BaseSettings):
     polygon_timeout_seconds: int = 8
     workflow_demo_fallback: bool = False
 
+    # news provider config
+    news_provider: str = "mock"
+    news_polygon_max_articles: int = 10
+    news_cache_ttl_seconds: int = 300
+
+    # macro calendar provider config
+    macro_calendar_provider: str = "mock"
+    fred_api_key: str = ""
+    fred_base_url: str = "https://api.stlouisfed.org/fred"
+    fred_timeout_seconds: int = 8
+
+    # broker provider config
+    broker_provider: str = "mock"
+    alpaca_paper_base_url: str = "https://paper-api.alpaca.markets"
+
     # deterministic recommendation quality gates
     min_expected_rr: float = 1.4
     max_event_continuation_volatility: float = 0.045

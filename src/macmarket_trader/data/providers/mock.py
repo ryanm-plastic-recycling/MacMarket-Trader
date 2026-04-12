@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from statistics import mean
 
 from macmarket_trader.data.providers.base import (
     AuthProvider,
+    BrokerProvider,
     EmailMessage,
     EmailProvider,
     MacroCalendarProvider,
@@ -67,3 +68,17 @@ class MockAuthProvider(AuthProvider):
         if token == "user-token":
             return {"sub": "clerk_user", "email": "user@example.com", "name": "User", "role": "user", "mfa": False}
         raise ValueError("Invalid auth token")
+
+
+class MockBrokerProvider(BrokerProvider):
+    def place_paper_order(self, symbol: str, side: str, shares: int, limit_price: float) -> dict[str, object]:
+        return {
+            "order_id": f"mock-{symbol.lower()}-{side.lower()}",
+            "symbol": symbol.upper(),
+            "side": side.lower(),
+            "shares": shares,
+            "limit_price": limit_price,
+            "status": "accepted",
+            "submitted_at": datetime.now(tz=UTC).isoformat(),
+            "provider": "mock",
+        }
