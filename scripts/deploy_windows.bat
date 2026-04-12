@@ -244,7 +244,7 @@ start "MacMarket-Trader API" /MIN /D "%DST%" "%DST%\.venv\Scripts\python.exe" -m
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Starting frontend...
-  start "MacMarket-Trader WEB" /MIN /D "%WEB_DIR%" npm.cmd run start -- --hostname %FRONTEND_HOST% --port %FRONTEND_PORT%
+  start "MacMarket-Trader WEB" /MIN /D "%WEB_DIR%" cmd /c "npm.cmd run start -- --hostname %FRONTEND_HOST% --port %FRONTEND_PORT% >> \"%FRONTEND_LOG%\" 2>&1"
 )
 
 echo [INFO] Waiting for backend health...
@@ -259,7 +259,7 @@ if errorlevel 1 (
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Waiting for frontend root...
-  call :WaitForHttp "http://%FRONTEND_HOST%:%FRONTEND_PORT%/" "frontend root" "120"
+  call :WaitForHttp "http://%FRONTEND_HOST%:%FRONTEND_PORT%/" "frontend root" "300"
   if errorlevel 1 (
     echo [ERROR] Frontend did not respond in time.
     call :ShowLogTail "%FRONTEND_LOG%" "frontend"
