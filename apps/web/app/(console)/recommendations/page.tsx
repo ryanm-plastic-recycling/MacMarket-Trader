@@ -57,7 +57,7 @@ export default function RecommendationsPage() {
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
   const [symbols, setSymbols] = useState("AAPL,MSFT,NVDA,AMZN");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false });
+  const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, approve: false });
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
 
@@ -176,6 +176,27 @@ export default function RecommendationsPage() {
     if (selectedQueue) {
       window.location.assign(`/orders?symbol=${selectedQueue.symbol}`);
     }
+  }
+
+  async function setApproval(approved: boolean) {
+    if (!selectedRecommendation?.recommendation_id) return;
+    setLoading((prev) => ({ ...prev, approve: true }));
+    setFeedback({ state: "loading", message: approved ? "Approving recommendation…" : "Rejecting recommendation…" });
+    const result = await fetchWorkflowApi<{ recommendation_id: string; approved: boolean }>(
+      `/api/user/recommendations/${selectedRecommendation.recommendation_id}/approve`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved }),
+      },
+    );
+    setLoading((prev) => ({ ...prev, approve: false }));
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Approval update failed" });
+      return;
+    }
+    setFeedback({ state: "success", message: approved ? "Recommendation approved." : "Recommendation rejected." });
+    await loadRecommendations({ selectRecommendationUid: selectedRecommendation.recommendation_id });
   }
 
   useEffect(() => {
@@ -384,7 +405,20 @@ export default function RecommendationsPage() {
           {!selectedRecommendation ? <EmptyState title="No stored recommendation selected" hint="Select a stored recommendation row to inspect persisted lineage." /> : (
             <div className="op-detail-list">
               <div><strong>symbol:</strong> {selectedRecommendation.symbol} &nbsp; <strong>created:</strong> {formatDate(selectedRecommendation.created_at)}</div>
-              <div><strong>approved:</strong> {(() => { const a = (selectedRecommendation.payload as Record<string, unknown>)?.approved; return a == null ? "-" : a ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>; })()}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <strong>approved:</strong>
+                {(() => { const a = (selectedRecommendation.payload as Record<string, unknown>)?.approved; return a == null ? <span style={{ color: "var(--op-muted, #7a8999)" }}>—</span> : a ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>; })()}
+                <button
+                  onClick={() => void setApproval(true)}
+                  disabled={loading.approve || (selectedRecommendation.payload as Record<string, unknown>)?.approved === true}
+                  style={{ padding: "2px 10px", fontSize: "0.8rem" }}
+                >Approve</button>
+                <button
+                  onClick={() => void setApproval(false)}
+                  disabled={loading.approve || (selectedRecommendation.payload as Record<string, unknown>)?.approved === false}
+                  style={{ padding: "2px 10px", fontSize: "0.8rem" }}
+                >Reject</button>
+              </div>
               <div><strong>source:</strong> {selectedRecommendation.market_data_source ?? "-"}{selectedRecommendation.fallback_mode ? " (fallback)" : ""}</div>
               <div><strong>thesis:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.thesis)}</div>
               <div><strong>entry:</strong> {asText((selectedRecommendation.payload as Record<string, unknown>)?.entry)}</div>

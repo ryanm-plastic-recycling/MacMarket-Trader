@@ -240,11 +240,12 @@ popd
 echo.
 echo [INFO] Starting backend...
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
-start "MacMarket-Trader API" /MIN /D "%DST%" "%DST%\.venv\Scripts\python.exe" -m uvicorn macmarket_trader.api.main:app --host %BACKEND_HOST% --port %BACKEND_PORT%
+start "MacMarket-Trader API" /MIN /D "%DST%" cmd /c "\"%DST%\.venv\Scripts\python.exe\" -m uvicorn macmarket_trader.api.main:app --host %BACKEND_HOST% --port %BACKEND_PORT% >> \"%BACKEND_LOG%\" 2>&1"
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Starting frontend...
-  start "MacMarket-Trader WEB" /MIN /D "%WEB_DIR%" cmd /c "npm.cmd run start -- --hostname %FRONTEND_HOST% --port %FRONTEND_PORT% >> \"%FRONTEND_LOG%\" 2>&1"
+  timeout /t 5 /nobreak >nul
+  start "MacMarket-Trader WEB" /MIN /D "%WEB_DIR%" cmd /c "npm.cmd run start -- --hostname 0.0.0.0 --port %FRONTEND_PORT% >> \"%FRONTEND_LOG%\" 2>&1"
 )
 
 echo [INFO] Waiting for backend health...
@@ -259,7 +260,7 @@ if errorlevel 1 (
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Waiting for frontend root...
-  call :WaitForHttp "http://%FRONTEND_HOST%:%FRONTEND_PORT%/" "frontend root" "300"
+  call :WaitForHttp "http://127.0.0.1:%FRONTEND_PORT%/" "frontend root" "300"
   if errorlevel 1 (
     echo [ERROR] Frontend did not respond in time.
     call :ShowLogTail "%FRONTEND_LOG%" "frontend"

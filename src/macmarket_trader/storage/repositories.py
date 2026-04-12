@@ -96,6 +96,24 @@ class RecommendationRepository:
             row.payload = payload
             session.commit()
 
+    def set_approved(self, recommendation_uid: str, *, approved: bool) -> "RecommendationModel | None":
+        with self.session_factory() as session:
+            row = session.execute(
+                select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            payload = dict(row.payload or {})
+            payload["approved"] = approved
+            if not approved:
+                payload.setdefault("rejection_reason", "operator_rejected")
+            else:
+                payload.pop("rejection_reason", None)
+            row.payload = payload
+            session.commit()
+            session.refresh(row)
+            return row
+
 
 
 class OrderRepository:

@@ -355,6 +355,20 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
     }
 
 
+@user_router.patch("/recommendations/{recommendation_uid}/approve")
+def set_recommendation_approved(recommendation_uid: str, req: dict[str, object], _user=Depends(require_approved_user)):
+    approved = bool(req.get("approved", True))
+    row = recommendation_repo.set_approved(recommendation_uid, approved=approved)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    payload = row.payload or {}
+    return {
+        "recommendation_id": row.recommendation_id,
+        "approved": payload.get("approved"),
+        "rejection_reason": payload.get("rejection_reason"),
+    }
+
+
 @user_router.get("/replay-runs")
 def replay_runs(_user=Depends(require_approved_user)):
     rows = replay_repo.list_runs()
