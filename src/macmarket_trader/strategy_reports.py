@@ -110,6 +110,17 @@ class StrategyReportService:
 
         target_email = str(settings.get("email_delivery_target") or schedule.email_target)
         ran_at = str(payload.get("ran_at") or datetime.now(timezone.utc).isoformat())
+
+        # Build the subject line: "MacMarket · {name} · Apr 13 · 5 candidates"
+        try:
+            _ran_dt = datetime.fromisoformat(ran_at.replace("Z", "+00:00")).astimezone(timezone.utc)
+            _date_label = f"{_ran_dt.strftime('%b')} {_ran_dt.day}"
+        except Exception:  # noqa: BLE001
+            _date_label = ran_at[:10]
+        _top_count = int((payload.get("summary") or {}).get("top_candidate_count", 0))
+        _count_label = f"{_top_count} candidate{'s' if _top_count != 1 else ''}"
+        subject = f"MacMarket \u00b7 {schedule.name} \u00b7 {_date_label} \u00b7 {_count_label}"
+
         email_html = render_strategy_report_html(
             schedule_name=schedule.name,
             ran_at=ran_at,
@@ -131,7 +142,7 @@ class StrategyReportService:
         message_id = self.email_provider.send(
             EmailMessage(
                 to_email=target_email,
-                subject=f"MacMarket strategy report \u00b7 {schedule.name}",
+                subject=subject,
                 body=email_text,
                 template_name="strategy_report",
                 html=email_html,
