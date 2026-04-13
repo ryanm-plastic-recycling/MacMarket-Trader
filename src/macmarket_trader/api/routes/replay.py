@@ -14,6 +14,6 @@ replay_engine = ReplayEngine(service=RecommendationService())
 @router.post("/run", response_model=ReplayRunResponse)
 def run_replay(req: ReplayRunRequest, _user=Depends(require_approved_user)) -> ReplayRunResponse:
     try:
-        return replay_engine.run(req)
+        return replay_engine.run(req, app_user_id=_user.id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

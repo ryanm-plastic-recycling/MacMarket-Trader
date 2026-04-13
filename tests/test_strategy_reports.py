@@ -6,6 +6,7 @@ from sqlalchemy import select
 from macmarket_trader.api.main import app
 from macmarket_trader.domain.enums import MarketMode
 from macmarket_trader.domain.models import AppUserModel, StrategyReportRunModel
+from macmarket_trader.domain.schemas import ExpectedRange
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import EmailLogRepository, StrategyReportRepository
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
@@ -134,6 +135,53 @@ def test_analysis_setup_accepts_market_mode_and_returns_preview_for_options() ->
     assert payload['status'] == 'planned_research_preview'
     assert payload['execution_enabled'] is False
     assert payload['option_structure']['type'] == 'iron_condor'
+    assert payload['expected_range']['status'] == 'computed'
+    assert payload['expected_range']['method'] == 'iv_1sigma'
+    assert payload['expected_range']['lower_bound'] < payload['expected_range']['upper_bound']
+
+
+def test_expected_range_schema_serialization_contract() -> None:
+    payload = ExpectedRange(
+        method='atm_straddle_mid',
+        horizon_value=30,
+        horizon_unit='calendar_days',
+        reference_price_type='underlying_last',
+        absolute_move=4.2,
+        percent_move=2.1,
+        lower_bound=196.0,
+        upper_bound=204.4,
+        status='computed',
+        reason=None,
+    ).model_dump(mode='json')
+    assert payload['method'] == 'atm_straddle_mid'
+    assert payload['horizon_value'] == 30
+    assert payload['status'] == 'computed'
+
+
+def test_analysis_setup_expected_range_blocked_reason_for_low_iv() -> None:
+    _seed_and_approve_user()
+    resp = client.get(
+        '/user/analysis/setup',
+        params={'req_symbol': 'LOWIV', 'market_mode': 'options', 'strategy': 'Iron Condor'},
+        headers={'Authorization': 'Bearer user-token'},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['expected_range']['status'] == 'blocked'
+    assert payload['expected_range']['reason'] == 'insufficient_iv_quality'
+
+
+def test_analysis_setup_expected_range_omitted_reason_for_non_iron_condor() -> None:
+    _seed_and_approve_user()
+    resp = client.get(
+        '/user/analysis/setup',
+        params={'req_symbol': 'AAPL', 'market_mode': 'options', 'strategy': 'Covered Call Preview'},
+        headers={'Authorization': 'Bearer user-token'},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['expected_range']['status'] == 'omitted'
+    assert payload['expected_range']['reason'] == 'strategy_not_configured_for_expected_range_preview'
 
 
 def test_analysis_setup_returns_preview_for_crypto() -> None:

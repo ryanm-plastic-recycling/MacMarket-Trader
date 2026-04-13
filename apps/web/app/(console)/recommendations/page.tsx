@@ -328,7 +328,7 @@ export default function RecommendationsPage() {
     <section className="op-stack">
       <PageHeader
         title="Recommendations"
-        subtitle="Flagship review workspace for ranked queue candidates and persisted recommendation lineage."
+        subtitle="Step 2 of the guided paper-trade flow: review and promote Analysis setups (equities live-prep only)."
         actions={<StatusBadge tone={fallbackDerived ? "warn" : "neutral"}>{fallbackDerived ? "Fallback workflow context" : "Provider workflow context"}</StatusBadge>}
       />
 

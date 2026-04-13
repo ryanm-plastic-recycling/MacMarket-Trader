@@ -65,6 +65,7 @@ class RecommendationService:
         portfolio: PortfolioSnapshot | None,
         market_mode: MarketMode = MarketMode.EQUITIES,
         user_is_approved: bool = False,
+        app_user_id: int | None = None,
     ) -> TradeRecommendation:
         portfolio_state = portfolio or PortfolioSnapshot()
         if market_mode != MarketMode.EQUITIES:
@@ -196,7 +197,7 @@ class RecommendationService:
         )
         self.audit_engine.record(rec)
         if self.persist_audit:
-            self.recommendation_repository.create(rec)
+            self.recommendation_repository.create(rec, app_user_id=app_user_id)
         return rec
 
     def to_order_intent(self, rec: TradeRecommendation) -> OrderIntent:
@@ -209,9 +210,9 @@ class RecommendationService:
             limit_price=limit_price,
         )
 
-    def persist_order(self, order: OrderRecord, notes: str = "") -> None:
+    def persist_order(self, order: OrderRecord, notes: str = "", *, app_user_id: int | None = None) -> None:
         if self.persist_audit:
-            self.order_repository.create(order, notes=notes)
+            self.order_repository.create(order, notes=notes, app_user_id=app_user_id)
 
     def persist_fill(self, fill: FillRecord) -> None:
         if self.persist_audit:

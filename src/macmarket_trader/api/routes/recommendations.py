@@ -24,6 +24,7 @@ def generate_recommendation(req: RecommendationGenerateRequest, _user=Depends(re
             portfolio=req.portfolio,
             market_mode=req.market_mode,
             user_is_approved=user_is_approved,
+            app_user_id=_user.id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

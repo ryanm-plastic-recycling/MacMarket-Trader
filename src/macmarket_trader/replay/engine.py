@@ -22,7 +22,7 @@ class ReplayEngine:
         self.portfolio_engine = PortfolioEngine()
         self.replay_repository = replay_repository or ReplayRepository(SessionLocal)
 
-    def run(self, req: ReplayRunRequest) -> ReplayRunResponse:
+    def run(self, req: ReplayRunRequest, *, app_user_id: int | None = None) -> ReplayRunResponse:
         recs = []
         orders = []
         fills = []
@@ -39,13 +39,14 @@ class ReplayEngine:
                 event=None,
                 portfolio=portfolio_state,
                 market_mode=req.market_mode,
+                app_user_id=app_user_id,
             )
             recs.append(rec)
             if rec.approved:
                 approved += 1
                 intent = self.service.to_order_intent(rec)
                 order, fill = self.broker.execute(intent)
-                self.service.persist_order(order, notes="replay_fill")
+                self.service.persist_order(order, notes="replay_fill", app_user_id=app_user_id)
                 self.service.persist_fill(fill)
                 orders.append(order)
                 fills.append(fill)
@@ -66,6 +67,7 @@ class ReplayEngine:
                 fill_count=len(fills),
                 ending_heat=portfolio_state.current_heat,
                 ending_open_notional=portfolio_state.open_positions_notional,
+                app_user_id=app_user_id,
             )
             for step_index, (step_rec, snapshots) in enumerate(zip(recs, step_snapshots, strict=True)):
                 pre_snapshot, post_snapshot = snapshots

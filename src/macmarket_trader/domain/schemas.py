@@ -321,6 +321,21 @@ class OptionStructureContext(BaseModel):
     breakeven_high: float | None = None
 
 
+class ExpectedRange(BaseModel):
+    method: Literal["iv_1sigma", "atm_straddle_mid"] | None = None
+    horizon_value: int | None = None
+    horizon_unit: Literal["calendar_days", "trading_days", "hours"] | None = None
+    reference_price_type: str | None = None
+    absolute_move: float | None = None
+    percent_move: float | None = None
+    lower_bound: float | None = None
+    upper_bound: float | None = None
+    snapshot_timestamp: datetime | None = None
+    provenance_notes: str | None = None
+    status: Literal["computed", "blocked", "omitted"] = "omitted"
+    reason: str | None = None
+
+
 class CryptoMarketContext(BaseModel):
     venue: str
     quote_currency: str = "USD"

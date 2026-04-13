@@ -102,6 +102,8 @@ Options research mode requires chain-aware and structure-aware contracts (not eq
 
 Initial options strategy planning includes defined-risk structures first (including **Iron Condor**), while covered calls stay later due to inventory/assignment modeling dependencies.
 
+When options research preview setup payloads expose an expected move, the normalized backend contract is `expected_range` with explicit method-tagged provenance (`iv_1sigma` or `atm_straddle_mid`) and status (`computed`, `blocked`, `omitted`). Expected range must stay separate from breakevens/payoff math and must not imply live options execution support.
+
 ### Crypto research mode (planned)
 
 Crypto mode requires dedicated 24/7 and derivatives-aware risk logic:
