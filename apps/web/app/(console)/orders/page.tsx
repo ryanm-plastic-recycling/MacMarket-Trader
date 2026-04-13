@@ -3,23 +3,29 @@
 import { useAuth } from "@clerk/nextjs";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
+import { GuidedStepRail } from "@/components/guided-step-rail";
+import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 
 type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
+  const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
   const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
+  const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
@@ -52,7 +58,12 @@ export default function Page() {
     setFeedback({ state: "success", message: "Orders updated." });
     setOrders(result.items);
     const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
-    setSelectedOrderId((prev) => prev ?? result.items.find((order) => order.recommendation_id === requestedRecommendation)?.order_id ?? result.items[0]?.order_id ?? null);
+    const requestedOrder = new URLSearchParams(searchKey).get("order");
+    setSelectedOrderId((prev) => prev
+      ?? result.items.find((order) => order.order_id === requestedOrder)?.order_id
+      ?? result.items.find((order) => order.recommendation_id === requestedRecommendation)?.order_id
+      ?? result.items[0]?.order_id
+      ?? null);
     setDataSource((result.items[0]?.fallback_mode ? `fallback (${result.items[0]?.market_data_source ?? "provider"})` : (result.items[0]?.market_data_source ?? "provider")) ?? "workflow pending");
     setBusy(false);
   }
@@ -99,6 +110,18 @@ export default function Page() {
     const fallbackMode = result.data?.fallback_mode ?? false;
     const sourceName = result.data?.market_data_source ?? "provider";
     setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
+    if (result.data?.order_id) {
+      setSelectedOrderId(result.data.order_id);
+      const query = buildGuidedQuery({
+        guided: guidedState.guided,
+        symbol: selected?.symbol ?? guidedState.symbol,
+        strategy: guidedState.strategy,
+        recommendationId: requestedRecommendation ?? guidedState.recommendationId,
+        replayRunId: guidedState.replayRunId,
+        orderId: result.data.order_id,
+      });
+      router.replace(`/orders?${query}`);
+    }
     setStatus("paper order staged");
     setFeedback({ state: "success", message: "Paper order staged." });
     await load();
@@ -117,6 +140,19 @@ export default function Page() {
 
   return <section className="op-stack">
     <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
+    {guidedState.guided ? (
+      <Card title="Guided flow progress">
+        <GuidedStepRail current="Paper Order" />
+      </Card>
+    ) : null}
+    {guidedState.guided ? (
+      <Card title="Next action">
+        <div>Review the staged paper order and confirm linkage to the recommendation + replay lineage before any further routing decisions.</div>
+        <div className="op-row" style={{ marginTop: 8 }}>
+          <button onClick={() => selected?.order_id && setSelectedOrderId(selected.order_id)} disabled={!selected}>Review staged paper order</button>
+        </div>
+      </Card>
+    ) : null}
     <Card title="Blotter mode">
       Generated from recommendation workflow bars sourced from: <strong>{dataSource}</strong>. This is paper-only execution for operator review.
     </Card>
@@ -141,6 +177,7 @@ export default function Page() {
         </table>
       </Card>
       <Card title="Selected order detail">
+        {guidedState.guided ? <div className="op-row" style={{ marginBottom: 8 }}><button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button></div> : null}
         {!selected ? <EmptyState title="Select an order" hint="Click a blotter row to inspect paper-broker fill details." /> : <div style={{ display: "grid", gap: 6 }}>
           <div><strong>Order id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selected.order_id}</span></div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -151,14 +188,20 @@ export default function Page() {
             }
           </div>
           <div><strong>Why this paper order exists:</strong> staged from approved recommendation path for operator verification before any live-route discussion.</div>
-          <div><strong>Symbol/side:</strong> {selected.symbol} {selected.side}</div>
-          <div><strong>Shares:</strong> {selected.shares}</div>
-          <div><strong>Limit:</strong> {selected.limit_price}</div>
-          <div><strong>Status:</strong> {selected.status}</div>
-          <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)}</div>
-          <div><strong>Created at:</strong> {selected.created_at}</div>
-          <div><strong>Fills:</strong></div>
-          {selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}
+          {!guidedState.guided || showOperatorDetail ? (
+            <>
+              <div><strong>Symbol/side:</strong> {selected.symbol} {selected.side}</div>
+              <div><strong>Shares:</strong> {selected.shares}</div>
+              <div><strong>Limit:</strong> {selected.limit_price}</div>
+              <div><strong>Status:</strong> {selected.status}</div>
+              <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)}</div>
+              <div><strong>Created at:</strong> {selected.created_at}</div>
+              <div><strong>Fills:</strong></div>
+              {selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}
+            </>
+          ) : (
+            <div style={{ color: "var(--op-muted, #7a8999)" }}>Advanced operator fields are collapsed in guided mode.</div>
+          )}
         </div>}
       </Card>
     </div>

@@ -34,6 +34,25 @@ Still open:
 - `atm_straddle_mid` expected-range method is contract-allowed but not yet produced by live preview logic.
 - Options/crypto recommendation promotion and downstream execution-prep remain explicitly blocked outside equities live-prep mode.
 
+### 2026-04-13 guided continuity + strategy validation hardening (this pass)
+
+Completed in this pass:
+- `/user/analysis/setup` now returns explicit `400` validation when a supplied strategy label is not valid for the selected `market_mode`, including supported strategy display names in the error payload.
+- Preserved default-first-strategy behavior only when no strategy query parameter is supplied.
+- Added backend tests for invalid strategy/mode combinations and valid crypto strategy label resolution.
+- Guided continuity state now threads across Analysis → Recommendations → Replay → Orders (`symbol`, `strategy`, `recommendation`, `replay_run`, `order`) via explicit guided query params.
+- Added guided step rail + guided next-action cards on Recommendations, Replay, and Orders with one canonical CTA per page:
+  - Recommendations: **Run replay**
+  - Replay: **Stage paper order**
+  - Orders: **Review staged paper order**
+- In guided mode, advanced/operator detail defaults to collapsed state on Recommendations, Replay, and Orders.
+- Recommendations guided UX now explicitly calls out that queue promotion is equities-only and that options/crypto currently stop at research preview.
+- Expected move copy now explicitly states `iv_1sigma` as the current preview method, with tests for omitted-method behavior.
+- Replaced FastAPI startup `on_event` with lifespan-based runtime validation.
+
+Still open:
+- `atm_straddle_mid` expected-range method remains contract-allowed but not yet emitted by preview logic.
+
 ## Core product pillars
 
 ### 1. Strategy Workbench

@@ -140,6 +140,45 @@ def test_analysis_setup_accepts_market_mode_and_returns_preview_for_options() ->
     assert payload['expected_range']['lower_bound'] < payload['expected_range']['upper_bound']
 
 
+def test_analysis_setup_invalid_strategy_for_market_mode_returns_400_with_supported_labels() -> None:
+    _seed_and_approve_user()
+    resp = client.get(
+        '/user/analysis/setup',
+        params={'req_symbol': 'AAPL', 'market_mode': 'options', 'strategy': 'Event Continuation'},
+        headers={'Authorization': 'Bearer user-token'},
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert "Unsupported strategy" in payload['detail']['error']
+    assert 'Iron Condor' in payload['detail']['supported_strategies']
+    assert 'Covered Call Preview' in payload['detail']['supported_strategies']
+
+
+def test_analysis_setup_defaults_to_first_strategy_only_when_strategy_not_supplied() -> None:
+    _seed_and_approve_user()
+    resp = client.get(
+        '/user/analysis/setup',
+        params={'req_symbol': 'BTCUSD', 'market_mode': 'crypto'},
+        headers={'Authorization': 'Bearer user-token'},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['market_mode'] == 'crypto'
+    assert payload['strategy'] == 'Crypto Spot Breakout'
+
+
+def test_analysis_setup_accepts_valid_crypto_strategy_label() -> None:
+    _seed_and_approve_user()
+    resp = client.get(
+        '/user/analysis/setup',
+        params={'req_symbol': 'BTCUSD', 'market_mode': 'crypto', 'strategy': 'Funding Extreme Reversion'},
+        headers={'Authorization': 'Bearer user-token'},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['strategy'] == 'Funding Extreme Reversion'
+
+
 def test_expected_range_schema_serialization_contract() -> None:
     payload = ExpectedRange(
         method='atm_straddle_mid',
@@ -182,6 +221,7 @@ def test_analysis_setup_expected_range_omitted_reason_for_non_iron_condor() -> N
     payload = resp.json()
     assert payload['expected_range']['status'] == 'omitted'
     assert payload['expected_range']['reason'] == 'strategy_not_configured_for_expected_range_preview'
+    assert payload['expected_range']['method'] is None
 
 
 def test_analysis_setup_returns_preview_for_crypto() -> None:
