@@ -15,6 +15,7 @@ class EmailMessage:
     subject: str
     body: str
     template_name: str
+    html: str | None = None
 
 
 class MarketDataProvider(ABC):

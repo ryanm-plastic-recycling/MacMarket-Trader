@@ -51,11 +51,12 @@ class MockMacroCalendarProvider(MacroCalendarProvider):
 
 class ConsoleEmailProvider(EmailProvider):
     def send(self, message: EmailMessage) -> str:
+        html_note = f" [+html {len(message.html)} chars]" if message.html else ""
         print(
             "[console-email] "
             f"to={message.to_email} "
             f"template={message.template_name} "
-            f"subject={message.subject} "
+            f"subject={message.subject}{html_note} "
             f"body={message.body}"
         )
         return "console-local"

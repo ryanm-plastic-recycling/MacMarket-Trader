@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -8,6 +7,7 @@ from macmarket_trader.config import settings as _app_settings
 from macmarket_trader.data.providers.base import EmailMessage, EmailProvider
 from macmarket_trader.data.providers.registry import build_market_data_service
 from macmarket_trader.domain.enums import MarketMode
+from macmarket_trader.email_templates import render_strategy_report_html, render_strategy_report_text
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.strategy_registry import list_strategies
 from macmarket_trader.storage.repositories import (
@@ -108,14 +108,33 @@ class StrategyReportService:
             delivered_to=str(settings.get("email_delivery_target") or schedule.email_target),
         )
 
-        body = json.dumps(payload, indent=2)
         target_email = str(settings.get("email_delivery_target") or schedule.email_target)
+        ran_at = str(payload.get("ran_at") or datetime.now(timezone.utc).isoformat())
+        email_html = render_strategy_report_html(
+            schedule_name=schedule.name,
+            ran_at=ran_at,
+            source=str(payload.get("source") or "fallback"),
+            top_candidates=list(payload.get("top_candidates") or []),
+            watchlist_only=list(payload.get("watchlist_only") or []),
+            no_trade=list(payload.get("no_trade") or []),
+            summary=dict(payload.get("summary") or {}),
+        )
+        email_text = render_strategy_report_text(
+            schedule_name=schedule.name,
+            ran_at=ran_at,
+            source=str(payload.get("source") or "fallback"),
+            top_candidates=list(payload.get("top_candidates") or []),
+            watchlist_only=list(payload.get("watchlist_only") or []),
+            no_trade=list(payload.get("no_trade") or []),
+            summary=dict(payload.get("summary") or {}),
+        )
         message_id = self.email_provider.send(
             EmailMessage(
                 to_email=target_email,
-                subject=f"MacMarket strategy report · {schedule.name}",
-                body=body,
+                subject=f"MacMarket strategy report \u00b7 {schedule.name}",
+                body=email_text,
                 template_name="strategy_report",
+                html=email_html,
             )
         )
         self.email_log_repo.create(schedule.app_user_id, "strategy_report", target_email, "sent", message_id)

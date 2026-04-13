@@ -19,18 +19,21 @@ class ResendEmailProvider(EmailProvider):
             raise ValueError("RESEND_API_KEY is not configured")
         try:
             import httpx  # available via test/runtime deps; kept as lazy import to avoid hard dep in non-resend mode
+            payload: dict[str, object] = {
+                "from": self.from_email,
+                "to": [message.to_email],
+                "subject": message.subject,
+                "text": message.body,
+            }
+            if message.html:
+                payload["html"] = message.html
             resp = httpx.post(
                 "https://api.resend.com/emails",
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "from": self.from_email,
-                    "to": [message.to_email],
-                    "subject": message.subject,
-                    "text": message.body,
-                },
+                json=payload,
                 timeout=10.0,
             )
             resp.raise_for_status()
