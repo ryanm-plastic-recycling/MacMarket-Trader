@@ -118,7 +118,7 @@ REGISTRY: list[StrategyRegistryEntry] = [
     ),
     StrategyRegistryEntry(
         strategy_id="covered_call",
-        display_name="Covered Call",
+        display_name="Covered Call Preview",
         market_mode=MarketMode.OPTIONS,
         status="planned",
         summary="Yield-oriented overlay requiring stock inventory + assignment-aware risk modeling.",
@@ -159,7 +159,7 @@ REGISTRY: list[StrategyRegistryEntry] = [
     ),
     StrategyRegistryEntry(
         strategy_id="crypto_funding_extreme_reversion",
-        display_name="Crypto Funding Extreme Reversion",
+        display_name="Funding Extreme Reversion",
         market_mode=MarketMode.CRYPTO,
         status="research_only",
         summary="Mean reversion research setup around extreme funding + crowded positioning signals.",
