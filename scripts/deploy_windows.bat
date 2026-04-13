@@ -260,7 +260,7 @@ if errorlevel 1 (
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Waiting for frontend root...
-  call :WaitForHttp "http://127.0.0.1:%FRONTEND_PORT%/" "frontend root" "300"
+  call :WaitForHttp "http://127.0.0.1:%FRONTEND_PORT%/sign-in" "frontend sign-in" "300"
   if errorlevel 1 (
     echo [ERROR] Frontend did not respond in time.
     call :ShowLogTail "%FRONTEND_LOG%" "frontend"

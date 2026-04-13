@@ -9,5 +9,12 @@ export async function GET(request: Request) {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
+  if (!response.ok) {
+    const text = await response.text();
+    return NextResponse.json(
+      { detail: text || "Backend error" },
+      { status: response.status }
+    );
+  }
   return NextResponse.json(await response.json(), { status: response.status });
 }
