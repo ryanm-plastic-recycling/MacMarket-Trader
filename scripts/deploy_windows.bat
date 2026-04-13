@@ -240,17 +240,17 @@ popd
 echo.
 echo [INFO] Starting backend...
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
-start "MacMarket-Trader API" /MIN /D "%DST%" cmd /c "\"%DST%\.venv\Scripts\python.exe\" -m uvicorn macmarket_trader.api.main:app --host %BACKEND_HOST% --port %BACKEND_PORT% >> \"%BACKEND_LOG%\" 2>&1"
+start "MacMarket-Trader API" /MIN /D "%DST%" cmd /c ""%DST%\.venv\Scripts\python.exe" -m uvicorn macmarket_trader.api.main:app --host %BACKEND_HOST% --port %BACKEND_PORT% >> "%BACKEND_LOG%" 2>&1"
 
 if exist "%WEB_DIR%\package.json" (
   echo [INFO] Starting frontend...
   timeout /t 5 /nobreak >nul
-  start "MacMarket-Trader WEB" /MIN /D "%WEB_DIR%" cmd /c "npm.cmd run start -- --hostname 0.0.0.0 --port %FRONTEND_PORT% >> \"%FRONTEND_LOG%\" 2>&1"
+  start "MacMarket-Trader WEB" /MIN /D "%WEB_DIR%" cmd /c "npm.cmd run start -- --hostname 0.0.0.0 --port %FRONTEND_PORT% >> "%FRONTEND_LOG%" 2>&1"
 )
 
 echo [INFO] Waiting for backend health...
-timeout /t 2 /nobreak >nul
-call :WaitForHttp "http://%BACKEND_HOST%:%BACKEND_PORT%/health" "backend /health" "90"
+timeout /t 10 /nobreak >nul
+call :WaitForHttp "http://%BACKEND_HOST%:%BACKEND_PORT%/health" "backend /health" "180"
 if errorlevel 1 (
   echo [ERROR] Backend health check did not pass in time.
   call :ShowLogTail "%BACKEND_LOG%" "backend"
