@@ -641,14 +641,27 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
 @user_router.get("/analysis/setup")
 def analysis_setup(
     req_symbol: str = "AAPL",
-    strategy: str = "Event Continuation",
+    strategy: str | None = None,
     timeframe: str = "1D",
     market_mode: MarketMode = MarketMode.EQUITIES,
     _user=Depends(require_approved_user),
 ):
     symbol = req_symbol.upper()
     strategies = list_strategies(market_mode)
-    strategy_entry = get_strategy_by_display_name(strategy, market_mode=market_mode) or (strategies[0] if strategies else None)
+    strategy_supplied = strategy is not None and strategy.strip() != ""
+    if strategy_supplied:
+        strategy_entry = get_strategy_by_display_name(str(strategy), market_mode=market_mode)
+        if strategy_entry is None:
+            supported = [entry.display_name for entry in strategies]
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": f"Unsupported strategy '{strategy}' for market_mode '{market_mode.value}'.",
+                    "supported_strategies": supported,
+                },
+            )
+    else:
+        strategy_entry = strategies[0] if strategies else None
     if strategy_entry is None:
         raise HTTPException(status_code=400, detail="No strategies configured for selected market mode")
 

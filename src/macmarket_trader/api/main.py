@@ -1,5 +1,8 @@
 """FastAPI application entry point."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,8 +15,14 @@ from macmarket_trader.api.routes.replay import router as replay_router
 from macmarket_trader.config import settings, validate_auth_runtime_configuration
 from macmarket_trader.logging_config import configure_logging
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    validate_auth_runtime_configuration(settings)
+    yield
+
+
 configure_logging()
-app = FastAPI(title="MacMarket-Trader API", version="0.1.0")
+app = FastAPI(title="MacMarket-Trader API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins,
@@ -28,8 +37,3 @@ app.include_router(charts_router)
 
 app.include_router(user_router)
 app.include_router(admin_router)
-
-
-@app.on_event("startup")
-def validate_runtime_configuration() -> None:
-    validate_auth_runtime_configuration(settings)

@@ -12,6 +12,8 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { fetchHacoChart } from "@/lib/haco-api";
 import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
+import { GuidedStepRail } from "@/components/guided-step-rail";
+import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import {
   getPromotedQueueKeys,
   getRankingProvenance,
@@ -98,8 +100,10 @@ export default function RecommendationsPage() {
   const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, approve: false });
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
+  const [showOperatorDetail, setShowOperatorDetail] = useState(false);
 
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
+  const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
 
   const selectedQueue = useMemo(
     () => queue.find((item) => `${item.symbol}-${item.strategy}-${item.rank}` === selectedQueueKey) ?? null,
@@ -197,22 +201,38 @@ export default function RecommendationsPage() {
   }
 
   function openReplay() {
-    if (selectedRecommendation?.recommendation_id) {
-      window.location.assign(`/replay-runs?symbol=${selectedRecommendation.symbol}&recommendation=${selectedRecommendation.recommendation_id}`);
-      return;
-    }
-    if (selectedQueue) {
-      window.location.assign(`/replay-runs?symbol=${selectedQueue.symbol}`);
-    }
+    const symbol = selectedRecommendation?.symbol ?? selectedQueue?.symbol ?? guidedState.symbol;
+    const strategy = selectedQueue?.strategy
+      ?? (typeof selectedRecProvenance?.strategy === "string" ? selectedRecProvenance.strategy : guidedState.strategy);
+    const recommendationId = selectedRecommendation?.recommendation_id ?? guidedState.recommendationId;
+    const query = buildGuidedQuery({
+      guided: guidedState.guided,
+      symbol,
+      strategy,
+      recommendationId,
+    });
+    window.location.assign(`/replay-runs?${query}`);
   }
 
   function openOrders() {
+    const symbol = selectedRecommendation?.symbol ?? selectedQueue?.symbol ?? guidedState.symbol;
+    const strategy = selectedQueue?.strategy
+      ?? (typeof selectedRecProvenance?.strategy === "string" ? selectedRecProvenance.strategy : guidedState.strategy);
+    const recommendationId = selectedRecommendation?.recommendation_id ?? guidedState.recommendationId;
+    const query = buildGuidedQuery({
+      guided: guidedState.guided,
+      symbol,
+      strategy,
+      recommendationId,
+    });
+    window.location.assign(`/orders?${query}`);
+  }
+
+  function openReplayGuidedCta() {
     if (selectedRecommendation?.recommendation_id) {
-      window.location.assign(`/orders?recommendation=${selectedRecommendation.recommendation_id}`);
-      return;
-    }
-    if (selectedQueue) {
-      window.location.assign(`/orders?symbol=${selectedQueue.symbol}`);
+      openReplay();
+    } else if (selectedQueue) {
+      openReplay();
     }
   }
 
@@ -331,6 +351,22 @@ export default function RecommendationsPage() {
         subtitle="Step 2 of the guided paper-trade flow: review and promote Analysis setups (equities live-prep only)."
         actions={<StatusBadge tone={fallbackDerived ? "warn" : "neutral"}>{fallbackDerived ? "Fallback workflow context" : "Provider workflow context"}</StatusBadge>}
       />
+      {guidedState.guided ? (
+        <Card title="Guided flow progress">
+          <GuidedStepRail current="Recommendation" />
+          <div style={{ marginTop: 8 }}>
+            Recommendations queue is equities-only in Phase 1. Options/crypto stop at research preview because replay/order semantics are not mode-native yet.
+          </div>
+        </Card>
+      ) : null}
+      {guidedState.guided ? (
+        <Card title="Next action">
+          <div>Run replay for the selected recommendation to validate deterministic path behavior before staging paper orders.</div>
+          <div className="op-row" style={{ marginTop: 8 }}>
+            <button onClick={openReplayGuidedCta} disabled={!selectedQueue && !selectedRecommendation}>Run replay</button>
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <div className="op-row">
@@ -338,7 +374,7 @@ export default function RecommendationsPage() {
           <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
           <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
           <button onClick={openReplay} disabled={!selectedQueue && !selectedRecommendation}>Open Replay</button>
-          <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Open Orders</button>
+          {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Open Orders</button> : null}
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadQueue()} />
       </Card>
@@ -414,6 +450,7 @@ export default function RecommendationsPage() {
 
       <div className="op-grid-2">
         <Card title="Queue candidate detail">
+          {guidedState.guided ? <div className="op-row" style={{ marginBottom: 8 }}><button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button></div> : null}
           {!selectedQueue ? <EmptyState title="No queue selection" hint="Select a queue row to review deterministic ranking detail." /> : (
             <div className="op-detail-list">
               <div><strong>rank:</strong> {selectedQueue.rank}</div>
@@ -421,21 +458,27 @@ export default function RecommendationsPage() {
               <div><strong>strategy:</strong> {selectedQueue.strategy}</div>
               <div><strong>timeframe:</strong> {selectedQueue.timeframe}</div>
               <div><strong>market_mode:</strong> {selectedQueue.market_mode ?? "equities"}</div>
-              <div><strong>workflow source:</strong> {selectedQueue.workflow_source}{selectedQueue.source && selectedQueue.source !== selectedQueue.workflow_source ? ` (${selectedQueue.source})` : ""}</div>
-              <div><strong>status:</strong> {selectedQueue.status.replace(/_/g, " ")}</div>
-              <div><strong>score:</strong> {selectedQueue.score}</div>
-              <div><strong>expected rr:</strong> {selectedQueue.expected_rr} &nbsp; <strong>confidence:</strong> {selectedQueue.confidence}</div>
-              <div><strong>thesis:</strong> {selectedQueue.thesis}</div>
-              <div><strong>reason:</strong> {selectedQueue.reason_text}</div>
-              <div><strong>trigger:</strong> {asText(selectedQueue.trigger)}</div>
-              <div><strong>entry zone:</strong> {asText(selectedQueue.entry_zone)}</div>
-              <div><strong>invalidation:</strong> {asText(selectedQueue.invalidation)}</div>
-              <div><strong>targets:</strong> {asText(selectedQueue.targets)}</div>
-              {selectedQueue.score_breakdown ? (
-                <div><strong>score breakdown:</strong>{" "}
-                  {Object.entries(selectedQueue.score_breakdown).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}
-                </div>
-              ) : null}
+              {!guidedState.guided || showOperatorDetail ? (
+                <>
+                  <div><strong>workflow source:</strong> {selectedQueue.workflow_source}{selectedQueue.source && selectedQueue.source !== selectedQueue.workflow_source ? ` (${selectedQueue.source})` : ""}</div>
+                  <div><strong>status:</strong> {selectedQueue.status.replace(/_/g, " ")}</div>
+                  <div><strong>score:</strong> {selectedQueue.score}</div>
+                  <div><strong>expected rr:</strong> {selectedQueue.expected_rr} &nbsp; <strong>confidence:</strong> {selectedQueue.confidence}</div>
+                  <div><strong>thesis:</strong> {selectedQueue.thesis}</div>
+                  <div><strong>reason:</strong> {selectedQueue.reason_text}</div>
+                  <div><strong>trigger:</strong> {asText(selectedQueue.trigger)}</div>
+                  <div><strong>entry zone:</strong> {asText(selectedQueue.entry_zone)}</div>
+                  <div><strong>invalidation:</strong> {asText(selectedQueue.invalidation)}</div>
+                  <div><strong>targets:</strong> {asText(selectedQueue.targets)}</div>
+                  {selectedQueue.score_breakdown ? (
+                    <div><strong>score breakdown:</strong>{" "}
+                      {Object.entries(selectedQueue.score_breakdown).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div style={{ color: "var(--op-muted, #7a8999)" }}>Advanced operator ranking detail is collapsed in guided mode.</div>
+              )}
               <div style={{ marginTop: 12, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
                 {promotedKeys.has(`${selectedQueue.symbol}-${selectedQueue.strategy}-${selectedQueue.rank}`) ? (
                   <StatusBadge tone="good">Already promoted to recommendation</StatusBadge>
@@ -562,7 +605,7 @@ export default function RecommendationsPage() {
           <StatusBadge tone={fallbackDerived ? "warn" : "good"}>workflow source: {selectedSource}</StatusBadge>
           {fallbackDerived ? <StatusBadge tone="warn">Chart overlays disabled to avoid mixed provider/fallback context.</StatusBadge> : null}
         </div>
-        <IndicatorSelector selected={selectedIndicators} onChange={setSelectedIndicators} enabledIds={FIRST_CLASS_WORKFLOW_INDICATORS} />
+        {!guidedState.guided || showOperatorDetail ? <IndicatorSelector selected={selectedIndicators} onChange={setSelectedIndicators} enabledIds={FIRST_CLASS_WORKFLOW_INDICATORS} /> : null}
         {fallbackDerived ? <EmptyState title="Chart overlays disabled" hint="Selected queue/recommendation was generated from fallback bars, so provider-backed chart overlays stay disabled." /> : <div ref={chartRef} />}
       </Card>
     </section>

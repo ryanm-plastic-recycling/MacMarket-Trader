@@ -3,10 +3,13 @@
 import { useAuth } from "@clerk/nextjs";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
+import { GuidedStepRail } from "@/components/guided-step-rail";
+import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown> };
@@ -33,8 +36,10 @@ function SnapshotRow({ label, pre, post, field, digits = 2 }: { label: string; p
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
+  const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -44,6 +49,7 @@ export default function Page() {
   const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
   const [expandedStepId, setExpandedStepId] = useState<number | null>(null);
+  const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
@@ -80,7 +86,12 @@ export default function Page() {
     setFeedback({ state: "success", message: "Replay runs updated." });
     setRuns(result.items);
     const requestedSymbol = new URLSearchParams(searchKey).get("symbol");
-    setSelectedRunId((prev) => prev ?? result.items.find((run) => run.symbol === requestedSymbol)?.id ?? result.items[0]?.id ?? null);
+    const requestedRun = new URLSearchParams(searchKey).get("replay_run");
+    setSelectedRunId((prev) => prev
+      ?? result.items.find((run) => String(run.id) === requestedRun)?.id
+      ?? result.items.find((run) => run.symbol === requestedSymbol)?.id
+      ?? result.items[0]?.id
+      ?? null);
     setBusy(false);
   }
 
@@ -118,8 +129,20 @@ export default function Page() {
     setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("replay complete");
     setFeedback({ state: "success", message: "Replay run completed." });
+    setSelectedRunId(run.data?.id ?? null);
     await loadRuns();
     setBusy(false);
+  }
+
+  function openOrdersNextAction() {
+    const query = buildGuidedQuery({
+      guided: guidedState.guided,
+      symbol: selected?.symbol ?? guidedState.symbol,
+      strategy: guidedState.strategy,
+      recommendationId: guidedState.recommendationId,
+      replayRunId: selectedRunId != null ? String(selectedRunId) : guidedState.replayRunId,
+    });
+    router.push(`/orders?${query}`);
   }
 
   async function loadSteps(runId: number) {
@@ -187,6 +210,19 @@ export default function Page() {
 
   return <section className="op-stack">
     <PageHeader title="Replay workspace" subtitle="Run deterministic replay from recommendation context and inspect step-by-step risk transitions." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
+    {guidedState.guided ? (
+      <Card title="Guided flow progress">
+        <GuidedStepRail current="Replay" />
+      </Card>
+    ) : null}
+    {guidedState.guided ? (
+      <Card title="Next action">
+        <div>After confirming replay path quality, stage a paper order linked to this recommendation lineage.</div>
+        <div className="op-row" style={{ marginTop: 8 }}>
+          <button onClick={openOrdersNextAction}>Stage paper order</button>
+        </div>
+      </Card>
+    ) : null}
     <Card title="What replay is for">
       Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{selectedSource}</strong>.
       <div>A good run keeps risk controls deterministic, preserves source coherence, and shows explainable approval/rejection outcomes at each step.</div>
@@ -238,6 +274,11 @@ export default function Page() {
           )}
 
           {/* Expandable step rows */}
+          {guidedState.guided ? (
+            <div className="op-row" style={{ marginBottom: 8 }}>
+              <button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button>
+            </div>
+          ) : null}
           <div style={{ display: "grid", gap: 6 }}>
             {steps.map((s) => (
               <div
@@ -254,7 +295,7 @@ export default function Page() {
                   </span>
                   <span style={{ marginLeft: "auto", fontSize: 11, color: "#9fb0c3" }}>{expandedStepId === s.id ? "▲ collapse" : "▼ expand"}</span>
                 </div>
-                {expandedStepId === s.id && (
+                {(expandedStepId === s.id && (!guidedState.guided || showOperatorDetail)) && (
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
                     <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 4, fontSize: "0.75rem", color: "var(--op-muted, #7a8999)", marginBottom: 4, padding: "0 0 4px 0", borderBottom: "1px solid var(--op-border, #1e2d3d)" }}>
                       <span>field</span><span>pre-step</span><span>post-step</span>

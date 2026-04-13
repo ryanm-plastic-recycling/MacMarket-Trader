@@ -16,7 +16,7 @@ import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework"
 import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
 import { fetchStrategyRegistry, filterStrategiesByMode, type MarketMode, type StrategyRegistryEntry } from "@/lib/strategy-registry";
 import { GuidedStepRail } from "@/components/guided-step-rail";
-import { GUIDED_FLOW_LABEL } from "@/lib/guided-workflow";
+import { buildGuidedQuery, GUIDED_FLOW_LABEL, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
 
 const SUPPORTED_TIMEFRAMES = ["1D", "4H", "1H"] as const;
@@ -94,7 +94,8 @@ export default function Page() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
-  const guidedMode = searchParams.get("guided") === "1";
+  const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
+  const guidedMode = guidedState.guided;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -272,7 +273,15 @@ export default function Page() {
     const recommendationId =
       (result.raw as Record<string, unknown> | null)?.recommendation_id as string | undefined
       ?? (result.data as { recommendation_id?: string } | null)?.recommendation_id;
-    if (recommendationId) router.push(`/recommendations?recommendation=${recommendationId}`);
+    if (recommendationId) {
+      const query = buildGuidedQuery({
+        guided: guidedMode,
+        symbol: appliedSymbol,
+        strategy: appliedStrategy,
+        recommendationId,
+      });
+      router.push(`/recommendations?${query}`);
+    }
   }
 
   const setupSummary = useMemo(() => {
