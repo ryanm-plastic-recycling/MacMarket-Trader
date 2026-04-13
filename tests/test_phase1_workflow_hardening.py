@@ -155,3 +155,30 @@ def test_degraded_provider_reports_blocked_or_demo_fallback_explicitly(monkeypat
     fallback = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
     assert fallback.status_code == 200
     assert fallback.json()['provider_health']['workflow_execution_mode'] == 'demo_fallback'
+
+
+def test_onboarding_status_is_user_scoped_for_replay_and_orders() -> None:
+    _approve_user()
+    client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+    with SessionLocal() as session:
+        second = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        second.approval_status = 'approved'
+        session.commit()
+
+    create_rec = client.post(
+        '/user/recommendations/generate',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'symbol': 'AAPL', 'event_text': 'Guided flow seed event'},
+    )
+    recommendation_id = create_rec.json()['id']
+    client.post('/user/replay-runs', headers={'Authorization': 'Bearer user-token'}, json={'symbol': 'AAPL'})
+    client.post('/user/orders', headers={'Authorization': 'Bearer user-token'}, json={'recommendation_id': recommendation_id})
+
+    first = client.get('/user/onboarding-status', headers={'Authorization': 'Bearer user-token'})
+    second = client.get('/user/onboarding-status', headers={'Authorization': 'Bearer admin-token'})
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()['has_replay'] is True
+    assert first.json()['has_order'] is True
+    assert second.json()['has_replay'] is False
+    assert second.json()['has_order'] is False

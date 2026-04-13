@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-12
+Last updated: 2026-04-13
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -18,6 +18,21 @@ The defensible edge is:
 ## Current Status
 MacMarket-Trader has completed **Phase 4 — Vendor integrations** and is entering **Phase 5 — Operator console polish** as the active implementation scope.
 Phases 1–4 form the operational baseline. Phase 5 delivers the polished operator surfaces that make the system credible as a paid tool.
+
+### 2026-04-13 guided-first-run + expected-range contract pass (this pass)
+
+Completed in this pass:
+- Onboarding completion checks are now user-scoped for replay/order milestones (no global completion leakage across operators).
+- Added user-lineage persistence (`app_user_id`) for recommendations, replay runs, and orders, threaded through create paths and scoped listing routes.
+- Dashboard now presents one canonical primary entry CTA: **Start guided paper trade** -> `/analysis?guided=1`.
+- Guided analysis mode adds a visible step rail (**Analyze -> Recommendation -> Replay -> Paper Order**) and keeps advanced operator details behind an explicit toggle.
+- Onboarding checklist moved out of Account and surfaced in Dashboard/guided workflow entry context.
+- Added first-class options research-preview `expected_range` contract output on `/user/analysis/setup` (status + reason aware).
+- Options expected move preview stays method-tagged and deterministic (`iv_1sigma`), explicitly separate from option structure/breakeven math.
+
+Still open:
+- `atm_straddle_mid` expected-range method is contract-allowed but not yet produced by live preview logic.
+- Options/crypto recommendation promotion and downstream execution-prep remain explicitly blocked outside equities live-prep mode.
 
 ## Core product pillars
 

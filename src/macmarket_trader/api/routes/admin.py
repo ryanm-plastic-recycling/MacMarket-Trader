@@ -11,7 +11,7 @@ from macmarket_trader.data.providers.market_data import DeterministicFallbackMar
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
-from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest, TradeRecommendation
+from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, ExpectedRange, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest, TradeRecommendation
 from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
@@ -45,6 +45,47 @@ strategy_report_service = StrategyReportService(
 )
 preview_market_data_provider = DeterministicFallbackMarketDataProvider()
 ranking_engine = DeterministicRankingEngine()
+
+
+def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | None, dte: int) -> ExpectedRange:
+    reference = round(latest_close, 2)
+    if iv_snapshot is None:
+        return ExpectedRange(
+            status="blocked",
+            reason="missing_iv_snapshot",
+            horizon_value=dte,
+            horizon_unit="calendar_days",
+            reference_price_type="underlying_last",
+            snapshot_timestamp=utc_now(),
+            provenance_notes="Expected range requires IV input from options chain quality checks.",
+        )
+    if iv_snapshot < 0.08:
+        return ExpectedRange(
+            status="blocked",
+            reason="insufficient_iv_quality",
+            method="iv_1sigma",
+            horizon_value=dte,
+            horizon_unit="calendar_days",
+            reference_price_type="underlying_last",
+            snapshot_timestamp=utc_now(),
+            provenance_notes="IV snapshot too low-quality for deterministic expected range contract.",
+        )
+
+    absolute_move = round(reference * iv_snapshot * ((dte / 365) ** 0.5), 2)
+    percent_move = round((absolute_move / reference) * 100, 2) if reference > 0 else None
+    return ExpectedRange(
+        method="iv_1sigma",
+        horizon_value=dte,
+        horizon_unit="calendar_days",
+        reference_price_type="underlying_last",
+        absolute_move=absolute_move,
+        percent_move=percent_move,
+        lower_bound=round(reference - absolute_move, 2),
+        upper_bound=round(reference + absolute_move, 2),
+        snapshot_timestamp=utc_now(),
+        provenance_notes="Research preview only. Computed from IV 1-sigma method; not execution support.",
+        status="computed",
+    )
 
 
 def _safe_identity_value(value: str | None) -> str | None:
@@ -105,8 +146,8 @@ def me(user=Depends(current_user)):
 @user_router.get("/onboarding-status")
 def onboarding_status(user=Depends(require_approved_user)):
     has_schedule = bool(strategy_report_repo.list_schedules_for_user(user.id))
-    has_replay = bool(replay_repo.list_runs(limit=1))
-    has_order = bool(order_repo.list_with_fills(limit=1))
+    has_replay = bool(replay_repo.list_runs(limit=1, app_user_id=user.id))
+    has_order = bool(order_repo.list_with_fills(limit=1, app_user_id=user.id))
     completed = sum([has_schedule, has_replay, has_order])
     return {
         "has_schedule": has_schedule,
@@ -121,9 +162,9 @@ def onboarding_status(user=Depends(require_approved_user)):
 @user_router.get("/dashboard")
 def dashboard(user=Depends(require_approved_user)):
     counts = dashboard_repo.summary_counts()
-    recommendations = recommendation_repo.list_recent(limit=5)
-    replay_runs = replay_repo.list_runs(limit=5)
-    orders = order_repo.list_with_fills(limit=5)
+    recommendations = recommendation_repo.list_recent(limit=5, app_user_id=user.id)
+    replay_runs = replay_repo.list_runs(limit=5, app_user_id=user.id)
+    orders = order_repo.list_with_fills(limit=5, app_user_id=user.id)
     pending_users = user_repo.list_by_status(ApprovalStatus.PENDING)
     provider_health = provider_health_summary()
     latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
@@ -219,7 +260,7 @@ def dashboard(user=Depends(require_approved_user)):
         ],
         "quick_links": ["/charts/haco", "/admin/users/pending", "/recommendations"],
         "workflow_guide": [
-            "Start in Recommendations to generate a deterministic setup from current market data mode.",
+            "Start guided paper trade from Dashboard or Analysis to run the canonical Analyze → Recommendation → Replay → Paper Order flow.",
             "Run Replay to validate path-by-path risk transitions before staging paper execution.",
             "Use Orders to review fills and paper blotter outcomes.",
         ],
@@ -229,7 +270,7 @@ def dashboard(user=Depends(require_approved_user)):
 
 @user_router.get("/recommendations")
 def list_recommendations(_user=Depends(require_approved_user)):
-    rows = recommendation_repo.list_recent()
+    rows = recommendation_repo.list_recent(app_user_id=_user.id)
     if not rows and settings.environment.lower() in {"dev", "local", "test"}:
         seed_bars, _, _ = _workflow_bars("AAPL")
         seed_rec = recommendation_service.generate(
@@ -240,7 +281,7 @@ def list_recommendations(_user=Depends(require_approved_user)):
             portfolio=PortfolioSnapshot(),
         )
         recommendation_repo.attach_workflow_metadata(seed_rec.recommendation_id, market_data_source="seed", fallback_mode=False)
-        rows = recommendation_repo.list_recent()
+        rows = recommendation_repo.list_recent(app_user_id=_user.id)
     return [
         {
             "id": row.id,
@@ -298,6 +339,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         portfolio=PortfolioSnapshot(),
         market_mode=MarketMode.EQUITIES,
         user_is_approved=user_is_approved,
+        app_user_id=_user.id,
     )
 
     ranking_provenance = {
@@ -364,6 +406,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
             portfolio=PortfolioSnapshot(),
             market_mode=market_mode,
             user_is_approved=user_is_approved,
+            app_user_id=_user.id,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -422,7 +465,7 @@ def set_recommendation_approved(recommendation_uid: str, req: dict[str, object],
 
 @user_router.get("/replay-runs")
 def replay_runs(_user=Depends(require_approved_user)):
-    rows = replay_repo.list_runs()
+    rows = replay_repo.list_runs(app_user_id=_user.id)
     if not rows and settings.environment.lower() in {"dev", "local", "test"}:
         seed_bars, _, _ = _workflow_bars("AAPL")
         replay_engine.run(
@@ -431,9 +474,10 @@ def replay_runs(_user=Depends(require_approved_user)):
                 event_texts=["Deterministic replay seed event one.", "Deterministic replay seed event two."],
                 bars=seed_bars,
                 portfolio=PortfolioSnapshot(),
-            )
+            ),
+            app_user_id=_user.id,
         )
-        rows = replay_repo.list_runs()
+        rows = replay_repo.list_runs(app_user_id=_user.id)
     output: list[dict[str, object]] = []
     for row in rows:
         source = "workflow_snapshot_unavailable"
@@ -482,7 +526,8 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
                 event_texts=[str(text) for text in event_texts],
                 bars=bars,
                 portfolio=PortfolioSnapshot(),
-            )
+            ),
+            app_user_id=_user.id,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -495,7 +540,7 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         ) from exc
     for rec in response.recommendations:
         recommendation_repo.attach_workflow_metadata(rec.recommendation_id, market_data_source=source, fallback_mode=fallback_mode)
-    latest_run = replay_repo.list_runs(limit=1)
+    latest_run = replay_repo.list_runs(limit=1, app_user_id=_user.id)
     return {
         "id": latest_run[0].id if latest_run else None,
         "symbol": symbol,
@@ -524,7 +569,7 @@ def replay_steps(run_id: int, _user=Depends(require_approved_user)):
 
 @user_router.get("/orders")
 def list_orders(_user=Depends(require_approved_user)):
-    orders = order_repo.list_with_fills()
+    orders = order_repo.list_with_fills(app_user_id=_user.id)
     if not orders and settings.environment.lower() in {"dev", "local", "test"}:
         seed_bars, _, _ = _workflow_bars("AAPL")
         rec = recommendation_service.generate(
@@ -533,13 +578,14 @@ def list_orders(_user=Depends(require_approved_user)):
             event_text="Deterministic paper-order seed for operator blotter readiness.",
             event=None,
             portfolio=PortfolioSnapshot(),
+            app_user_id=_user.id,
         )
         if rec.approved:
             intent = recommendation_service.to_order_intent(rec)
             order, fill = paper_broker.execute(intent)
-            recommendation_service.persist_order(order, notes="seed_order|source=seed|fallback=false")
+            recommendation_service.persist_order(order, notes="seed_order|source=seed|fallback=false", app_user_id=_user.id)
             recommendation_service.persist_fill(fill)
-        orders = order_repo.list_with_fills()
+        orders = order_repo.list_with_fills(app_user_id=_user.id)
     return orders
 
 
@@ -568,13 +614,18 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
             event_text="Operator staged deterministic paper order from recommendations workflow.",
             event=None,
             portfolio=PortfolioSnapshot(),
+            app_user_id=_user.id,
         )
 
     if not rec.approved:
         raise HTTPException(status_code=409, detail=rec.rejection_reason or "Recommendation was no-trade; order not staged.")
     intent = recommendation_service.to_order_intent(rec)
     order, fill = paper_broker.execute(intent)
-    recommendation_service.persist_order(order, notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}")
+    recommendation_service.persist_order(
+        order,
+        notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}",
+        app_user_id=_user.id,
+    )
     recommendation_service.persist_fill(fill)
     return {
         "order_id": order.order_id,
@@ -641,7 +692,8 @@ def analysis_setup(
             }
         )
     if market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "iron_condor":
-        payload["option_structure"] = {
+        iv_snapshot = 0.05 if symbol.startswith("LOW") else 0.24
+        option_structure = {
             "type": "iron_condor",
             "expiration": "2026-05-15",
             "legs": [
@@ -656,11 +708,27 @@ def analysis_setup(
             "breakeven_low": 193.65,
             "breakeven_high": 211.35,
             "dte": 42,
-            "iv_snapshot": 0.24,
+            "iv_snapshot": iv_snapshot,
             "theta_context": 0.07,
             "vega_context": -0.11,
             "event_blockers": ["Avoid binary events inside 7 DTE window", "Review earnings/macro event calendar"],
         }
+        payload["option_structure"] = option_structure
+        payload["expected_range"] = _build_options_expected_range(
+            latest_close=latest.close,
+            iv_snapshot=option_structure["iv_snapshot"],
+            dte=option_structure["dte"],
+        ).model_dump(mode="json")
+    elif market_mode == MarketMode.OPTIONS:
+        payload["expected_range"] = ExpectedRange(
+            status="omitted",
+            reason="strategy_not_configured_for_expected_range_preview",
+            horizon_value=30,
+            horizon_unit="calendar_days",
+            reference_price_type="underlying_last",
+            snapshot_timestamp=utc_now(),
+            provenance_notes="Expected range preview currently scoped to Iron Condor research setup only.",
+        ).model_dump(mode="json")
     if market_mode == MarketMode.CRYPTO:
         payload["crypto_context"] = {
             "venue": "preview_unwired",

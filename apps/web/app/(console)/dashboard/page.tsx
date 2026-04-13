@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { HacoWorkspace } from "@/components/charts/haco-workspace";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { GUIDED_ENTRY_PATH, GUIDED_FLOW_LABEL } from "@/lib/guided-workflow";
 import { fetchWorkflowApi } from "@/lib/api-client";
 
 type Recommendation = { id: number; symbol: string; created_at: string; payload: any };
@@ -23,11 +24,13 @@ type DashboardPayload = {
   workflow_guide?: string[];
   recent_audit_events?: AuditEvent[];
 };
+type OnboardingStatus = { has_schedule: boolean; has_replay: boolean; has_order: boolean; has_viewed_haco: boolean | null; completed: number; total: number };
 
 export default function Page() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "loading", message: "Loading operator dashboard…" });
   const [error, setError] = useState<string | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
 
   useEffect(() => {
     fetchWorkflowApi<DashboardPayload>("/api/user/dashboard").then((result) => {
@@ -40,6 +43,12 @@ export default function Page() {
       setError(result.error ?? "Unable to load dashboard.");
       setFeedback({ state: "error", message: result.error ?? "Unable to load dashboard." });
     });
+    fetchWorkflowApi<OnboardingStatus>("/api/user/onboarding-status").then((r) => {
+      if (r.ok && r.data) {
+        const hacoViewed = typeof window !== "undefined" && window.localStorage.getItem("macmarket-haco-visited") === "true";
+        setOnboarding({ ...r.data, has_viewed_haco: hacoViewed });
+      }
+    });
   }, []);
 
   const latest = useMemo(() => data?.active_recommendations[0] ?? null, [data]);
@@ -48,17 +57,25 @@ export default function Page() {
     <section style={{ display: "grid", gap: 12 }}>
       <PageHeader
         title="Operator dashboard"
-        subtitle="Start at Strategy Workbench, then move through Recommendations → Replay → Paper Orders."
+        subtitle="Canonical private-alpha path: Analyze → Recommendation → Replay → Paper Order."
         actions={<>
           <StatusBadge tone="neutral">{data?.market_regime ?? "loading"}</StatusBadge>
-          <Link href="/analysis"><button>Start in workbench</button></Link>
-          <Link href="/recommendations"><button>Open recommendations</button></Link>
-          <Link href="/replay-runs"><button>Run replay</button></Link>
+          <Link href={GUIDED_ENTRY_PATH}><button>{GUIDED_FLOW_LABEL}</button></Link>
         </>}
       />
       <InlineFeedback state={feedback.state} message={feedback.message} />
       {error ? <ErrorState title="Dashboard unavailable" hint={error} /> : null}
       {!error && !data ? <EmptyState title="Waiting for dashboard data" hint="Refresh after your auth session initializes." /> : null}
+      {onboarding ? (
+        <Card title={`Onboarding checklist — ${onboarding.completed + (onboarding.has_viewed_haco ? 1 : 0)}/${onboarding.total}`}>
+          <div className="op-grid-2">
+            <div>{onboarding.has_replay ? "✅" : "◻"} Run a replay</div>
+            <div>{onboarding.has_order ? "✅" : "◻"} Stage a paper order</div>
+            <div>{onboarding.has_schedule ? "✅" : "◻"} Create a strategy schedule</div>
+            <div>{onboarding.has_viewed_haco ? "✅" : "◻"} Review HACO context</div>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="op-grid-4">
         <Card title="Account role"><StatusBadge tone="neutral">{data?.account.app_role ?? "-"}</StatusBadge></Card>

@@ -37,11 +37,12 @@ class RecommendationRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
-    def create(self, recommendation: TradeRecommendation) -> RecommendationModel:
+    def create(self, recommendation: TradeRecommendation, *, app_user_id: int | None = None) -> RecommendationModel:
         payload = recommendation.model_dump(mode="json")
         with self.session_factory() as session:
             row = RecommendationModel(
                 recommendation_id=recommendation.recommendation_id,
+                app_user_id=app_user_id,
                 symbol=recommendation.symbol,
                 payload=payload,
             )
@@ -53,9 +54,12 @@ class RecommendationRepository:
             session.refresh(row)
             return row
 
-    def list_recent(self, limit: int = 200) -> list[RecommendationModel]:
+    def list_recent(self, limit: int = 200, *, app_user_id: int | None = None) -> list[RecommendationModel]:
         with self.session_factory() as session:
-            stmt = select(RecommendationModel).order_by(RecommendationModel.created_at.desc()).limit(limit)
+            stmt = select(RecommendationModel)
+            if app_user_id is not None:
+                stmt = stmt.where(RecommendationModel.app_user_id == app_user_id)
+            stmt = stmt.order_by(RecommendationModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
 
     def get_by_id(self, recommendation_id: int) -> RecommendationModel | None:
@@ -120,10 +124,11 @@ class OrderRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
-    def create(self, order: OrderRecord, notes: str = "") -> OrderModel:
+    def create(self, order: OrderRecord, notes: str = "", *, app_user_id: int | None = None) -> OrderModel:
         with self.session_factory() as session:
             row = OrderModel(
                 order_id=order.order_id,
+                app_user_id=app_user_id,
                 recommendation_id=order.recommendation_id,
                 symbol=order.symbol,
                 status=order.status.value,
@@ -137,9 +142,12 @@ class OrderRepository:
             session.refresh(row)
             return row
 
-    def list_with_fills(self, limit: int = 200) -> list[dict[str, object]]:
+    def list_with_fills(self, limit: int = 200, *, app_user_id: int | None = None) -> list[dict[str, object]]:
         with self.session_factory() as session:
-            orders = list(session.execute(select(OrderModel).order_by(OrderModel.created_at.desc()).limit(limit)).scalars())
+            stmt = select(OrderModel)
+            if app_user_id is not None:
+                stmt = stmt.where(OrderModel.app_user_id == app_user_id)
+            orders = list(session.execute(stmt.order_by(OrderModel.created_at.desc()).limit(limit)).scalars())
             if not orders:
                 return []
             fills = list(session.execute(select(FillModel)).scalars())
@@ -214,12 +222,14 @@ class ReplayRepository:
         recommendation_count: int,
         approved_count: int,
         fill_count: int,
-        ending_heat: float,
-        ending_open_notional: float,
+                ending_heat: float,
+                ending_open_notional: float,
+                app_user_id: int | None = None,
     ) -> ReplayRunModel:
         with self.session_factory() as session:
             row = ReplayRunModel(
                 symbol=symbol,
+                app_user_id=app_user_id,
                 recommendation_count=recommendation_count,
                 approved_count=approved_count,
                 fill_count=fill_count,
@@ -254,9 +264,12 @@ class ReplayRepository:
             session.refresh(row)
             return row
 
-    def list_runs(self, limit: int = 200) -> list[ReplayRunModel]:
+    def list_runs(self, limit: int = 200, *, app_user_id: int | None = None) -> list[ReplayRunModel]:
         with self.session_factory() as session:
-            stmt = select(ReplayRunModel).order_by(ReplayRunModel.created_at.desc()).limit(limit)
+            stmt = select(ReplayRunModel)
+            if app_user_id is not None:
+                stmt = stmt.where(ReplayRunModel.app_user_id == app_user_id)
+            stmt = stmt.order_by(ReplayRunModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
 
     def list_steps_for_run(self, replay_run_id: int) -> list[ReplayStepModel]:

@@ -92,6 +92,7 @@ class RecommendationModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     recommendation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    app_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id"), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     payload: Mapped[dict[str, object]] = mapped_column(JSON)
@@ -111,6 +112,7 @@ class OrderModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     order_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    app_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id"), nullable=True, index=True)
     recommendation_id: Mapped[str] = mapped_column(String(64), index=True)
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     status: Mapped[str] = mapped_column(String(24), index=True)
@@ -146,6 +148,7 @@ class ReplayRunModel(Base):
     __tablename__ = "replay_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    app_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id"), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     recommendation_count: Mapped[int] = mapped_column(Integer)
     approved_count: Mapped[int] = mapped_column(Integer)
