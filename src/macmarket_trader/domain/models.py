@@ -114,6 +114,7 @@ class OrderModel(Base):
     order_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     app_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id"), nullable=True, index=True)
     recommendation_id: Mapped[str] = mapped_column(String(64), index=True)
+    replay_run_id: Mapped[int | None] = mapped_column(ForeignKey("replay_runs.id"), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     status: Mapped[str] = mapped_column(String(24), index=True)
     side: Mapped[str] = mapped_column(String(8))
@@ -149,6 +150,7 @@ class ReplayRunModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     app_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_users.id"), nullable=True, index=True)
+    recommendation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     recommendation_count: Mapped[int] = mapped_column(Integer)
     approved_count: Mapped[int] = mapped_column(Integer)

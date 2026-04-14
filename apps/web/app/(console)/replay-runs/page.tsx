@@ -10,6 +10,7 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
+import { WorkflowBanner } from "@/components/workflow-banner";
 
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown> };
@@ -54,6 +55,7 @@ export default function Page() {
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
   const selectedSource = selected ? (selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? "provider")) : dataSource;
+  const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
 
   async function loadRuns() {
     if (!authReady) {
@@ -103,9 +105,15 @@ export default function Page() {
     setStatus("running replay...");
     setBusy(true);
     const preferredSymbol = new URLSearchParams(searchKey).get("symbol") ?? selected?.symbol ?? "AAPL";
+    const body: Record<string, unknown> = { symbol: preferredSymbol, market_mode: guidedState.marketMode ?? "equities" };
+    if (guidedState.guided) {
+      body.guided = true;
+      if (guidedState.recommendationId) body.recommendation_id = guidedState.recommendationId;
+      if (guidedState.strategy) body.strategy = guidedState.strategy;
+    }
     const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean }>(
       "/api/user/replay-runs",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: preferredSymbol }) }
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
     if (!run.ok) {
       if (run.authPending) {
@@ -139,6 +147,8 @@ export default function Page() {
       guided: guidedState.guided,
       symbol: selected?.symbol ?? guidedState.symbol,
       strategy: guidedState.strategy,
+      marketMode: guidedState.marketMode ?? "equities",
+      source: selectedSource,
       recommendationId: guidedState.recommendationId,
       replayRunId: selectedRunId != null ? String(selectedRunId) : guidedState.replayRunId,
     });
@@ -210,6 +220,20 @@ export default function Page() {
 
   return <section className="op-stack">
     <PageHeader title="Replay workspace" subtitle="Run deterministic replay from recommendation context and inspect step-by-step risk transitions." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
+    <WorkflowBanner
+      current="Replay"
+      state={{
+        ...guidedState,
+        symbol: selected?.symbol ?? guidedState.symbol,
+        source: selectedSource,
+        replayRunId: selectedRunId != null ? String(selectedRunId) : guidedState.replayRunId,
+      }}
+      backHref="/recommendations"
+      backLabel="Back to Recommendation"
+      nextHref="/orders"
+      nextLabel="Stage paper order"
+      compact={!guidedState.guided}
+    />
     {guidedState.guided ? (
       <Card title="Guided flow progress">
         <GuidedStepRail current="Replay" />
@@ -218,8 +242,9 @@ export default function Page() {
     {guidedState.guided ? (
       <Card title="Next action">
         <div>After confirming replay path quality, stage a paper order linked to this recommendation lineage.</div>
+        {unsupportedGuidedMode ? <ErrorState title="Research preview stops here" hint="Options and crypto are research preview only. Guided progression into Paper Orders is disabled outside equities." /> : null}
         <div className="op-row" style={{ marginTop: 8 }}>
-          <button onClick={openOrdersNextAction}>Stage paper order</button>
+          <button onClick={openOrdersNextAction} disabled={unsupportedGuidedMode}>Stage paper order</button>
         </div>
       </Card>
     ) : null}
@@ -230,7 +255,7 @@ export default function Page() {
     {!authReady ? <Card title="Auth status">Initializing authenticated session before replay data requests.</Card> : null}
     <Card>
       <div className="op-row">
-        <button onClick={() => void runReplay()} disabled={busy}>{busy ? "Running…" : "Run replay"}</button>
+        <button onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : "Run replay"}</button>
         <button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button>
       </div>
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} />

@@ -18,6 +18,7 @@ import { fetchStrategyRegistry, filterStrategiesByMode, type MarketMode, type St
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, GUIDED_FLOW_LABEL, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
+import { WorkflowBanner } from "@/components/workflow-banner";
 
 const SUPPORTED_TIMEFRAMES = ["1D", "4H", "1H"] as const;
 
@@ -274,6 +275,8 @@ export default function Page() {
         guided: guidedMode,
         symbol: appliedSymbol,
         strategy: appliedStrategy,
+        marketMode: appliedMarketMode,
+        source: setup?.workflow_source ?? source,
         recommendationId,
       });
       router.push(`/recommendations?${query}`);
@@ -287,6 +290,19 @@ export default function Page() {
 
   return <section className="op-stack">
     <PageHeader title="Trade Setup" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
+    <WorkflowBanner
+      current="Analyze"
+      state={{
+        ...guidedState,
+        symbol: appliedSymbol,
+        strategy: appliedStrategy,
+        marketMode: appliedMarketMode,
+        source: setup?.workflow_source ?? source,
+      }}
+      nextHref="/recommendations"
+      nextLabel="Go to Recommendation"
+      compact={!guidedMode}
+    />
     {guidedMode ? <Card title={GUIDED_FLOW_LABEL}><GuidedStepRail current="Analyze" /></Card> : null}
     <Card title="Operator workflow guidance">
       <ol>

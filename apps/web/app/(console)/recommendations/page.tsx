@@ -14,6 +14,7 @@ import { fetchHacoChart } from "@/lib/haco-api";
 import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
+import { WorkflowBanner } from "@/components/workflow-banner";
 import {
   getPromotedQueueKeys,
   getRankingProvenance,
@@ -209,6 +210,8 @@ export default function RecommendationsPage() {
       guided: guidedState.guided,
       symbol,
       strategy,
+      marketMode: guidedState.marketMode ?? selectedQueue?.market_mode ?? "equities",
+      source: selectedSource,
       recommendationId,
     });
     window.location.assign(`/replay-runs?${query}`);
@@ -223,6 +226,8 @@ export default function RecommendationsPage() {
       guided: guidedState.guided,
       symbol,
       strategy,
+      marketMode: guidedState.marketMode ?? selectedQueue?.market_mode ?? "equities",
+      source: selectedSource,
       recommendationId,
     });
     window.location.assign(`/orders?${query}`);
@@ -343,6 +348,7 @@ export default function RecommendationsPage() {
 
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
   const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
+  const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
 
   return (
     <section className="op-stack">
@@ -350,6 +356,22 @@ export default function RecommendationsPage() {
         title="Recommendations"
         subtitle="Step 2 of the guided paper-trade flow: review and promote Analysis setups (equities live-prep only)."
         actions={<StatusBadge tone={fallbackDerived ? "warn" : "neutral"}>{fallbackDerived ? "Fallback workflow context" : "Provider workflow context"}</StatusBadge>}
+      />
+      <WorkflowBanner
+        current="Recommendation"
+        state={{
+          ...guidedState,
+          symbol: selectedRecommendation?.symbol ?? selectedQueue?.symbol ?? guidedState.symbol,
+          strategy: selectedQueue?.strategy ?? guidedState.strategy,
+          marketMode: guidedState.marketMode ?? selectedQueue?.market_mode ?? "equities",
+          source: selectedSource,
+          recommendationId: selectedRecommendation?.recommendation_id ?? guidedState.recommendationId,
+        }}
+        backHref="/analysis"
+        backLabel="Back to Analyze"
+        nextHref="/replay-runs"
+        nextLabel="Run replay"
+        compact={!guidedState.guided}
       />
       {guidedState.guided ? (
         <Card title="Guided flow progress">
@@ -362,8 +384,9 @@ export default function RecommendationsPage() {
       {guidedState.guided ? (
         <Card title="Next action">
           <div>Run replay for the selected recommendation to validate deterministic path behavior before staging paper orders.</div>
+          {unsupportedGuidedMode ? <ErrorState title="Research preview stops here" hint="Options and crypto are research preview only. Guided progression into Replay and Paper Orders is disabled outside equities." /> : null}
           <div className="op-row" style={{ marginTop: 8 }}>
-            <button onClick={openReplayGuidedCta} disabled={!selectedQueue && !selectedRecommendation}>Run replay</button>
+            <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode || (!selectedQueue && !selectedRecommendation)}>Run replay</button>
           </div>
         </Card>
       ) : null}

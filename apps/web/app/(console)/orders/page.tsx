@@ -10,6 +10,7 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
+import { WorkflowBanner } from "@/components/workflow-banner";
 
 type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
@@ -29,6 +30,7 @@ export default function Page() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
+  const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
 
   async function load() {
     if (!authReady) {
@@ -87,6 +89,11 @@ export default function Page() {
     } else {
       body.symbol = "AAPL";
     }
+    body.market_mode = guidedState.marketMode ?? "equities";
+    if (guidedState.guided) {
+      body.guided = true;
+      if (guidedState.replayRunId) body.replay_run_id = Number(guidedState.replayRunId);
+    }
     const result = await fetchWorkflowApi<{ order_id: string; market_data_source?: string; fallback_mode?: boolean }>(
       "/api/user/orders",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
@@ -118,6 +125,7 @@ export default function Page() {
         strategy: guidedState.strategy,
         recommendationId: requestedRecommendation ?? guidedState.recommendationId,
         replayRunId: guidedState.replayRunId,
+        source: dataSource,
         orderId: result.data.order_id,
       });
       router.replace(`/orders?${query}`);
@@ -140,6 +148,18 @@ export default function Page() {
 
   return <section className="op-stack">
     <PageHeader title="Orders blotter" subtitle="Paper/dev execution only. No live trading route is exposed." actions={<StatusBadge tone="neutral">{busy ? "working…" : status}</StatusBadge>} />
+    <WorkflowBanner
+      current="Paper Order"
+      state={{
+        ...guidedState,
+        symbol: selected?.symbol ?? guidedState.symbol,
+        source: dataSource,
+        orderId: selected?.order_id ?? guidedState.orderId,
+      }}
+      backHref="/replay-runs"
+      backLabel="Back to Replay"
+      compact={!guidedState.guided}
+    />
     {guidedState.guided ? (
       <Card title="Guided flow progress">
         <GuidedStepRail current="Paper Order" />
@@ -148,6 +168,7 @@ export default function Page() {
     {guidedState.guided ? (
       <Card title="Next action">
         <div>Review the staged paper order and confirm linkage to the recommendation + replay lineage before any further routing decisions.</div>
+        {unsupportedGuidedMode ? <ErrorState title="Research preview mode" hint="Options and crypto remain research preview only. Guided execution-prep is disabled." /> : null}
         <div className="op-row" style={{ marginTop: 8 }}>
           <button onClick={() => selected?.order_id && setSelectedOrderId(selected.order_id)} disabled={!selected}>Review staged paper order</button>
         </div>
@@ -162,7 +183,7 @@ export default function Page() {
     {!authReady ? <Card title="Auth status">Initializing authenticated session before orders API requests.</Card> : null}
     <Card>
       <div className="op-row">
-        <button onClick={() => void stagePaperOrder()} disabled={busy}>{busy ? "Staging..." : "Stage paper order"}</button>
+        <button onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode}>{busy ? "Staging..." : "Stage paper order"}</button>
         <button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh blotter"}</button>
       </div>
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />

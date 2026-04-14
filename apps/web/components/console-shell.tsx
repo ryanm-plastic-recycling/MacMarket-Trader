@@ -1,24 +1,48 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLockup } from "@/components/brand-lockup";
+import { isActivePath } from "@/lib/console-nav";
 
-const links = [
-  ["/dashboard", "Dashboard"],
-  ["/analysis", "Trade Setup"],
-  ["/analyze", "Symbol Analyze"],
-  ["/recommendations", "Recommendations"],
-  ["/schedules", "Scheduled Reports"],
-  ["/replay-runs", "Replay"],
-  ["/orders", "Orders"],
-  ["/charts/haco", "HACO Context"],
-  ["/admin/pending-users", "Admin / Invites"],
-  ["/admin/users", "Admin / Users"],
-  ["/admin/provider-health", "Provider Health"],
-  ["/account", "Account"],
+const navSections = [
+  {
+    title: "Workflow",
+    links: [
+      ["/dashboard", "Dashboard"],
+      ["/analysis", "Analyze"],
+      ["/recommendations", "Recommendation"],
+      ["/replay-runs", "Replay"],
+      ["/orders", "Paper Order"],
+    ],
+  },
+  {
+    title: "Research",
+    links: [
+      ["/analyze", "Symbol Snapshot"],
+      ["/charts/haco", "HACO Context"],
+    ],
+  },
+  {
+    title: "Reports",
+    links: [["/schedules", "Scheduled Reports"]],
+  },
+  {
+    title: "Admin",
+    links: [
+      ["/admin/pending-users", "Admin / Invites"],
+      ["/admin/users", "Admin / Users"],
+      ["/admin/provider-health", "Provider Health"],
+      ["/account", "Account"],
+    ],
+  },
 ] as const;
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
   return (
     <div className="op-shell">
       <aside className="op-aside">
@@ -27,8 +51,14 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           <p className="op-brand-caption">Invite-only private alpha console</p>
         </div>
         <nav className="op-nav">
-          {links.map(([href, label]) => (
-            <Link key={href} href={href}>{label}</Link>
+          {navSections.map((section) => (
+            <div key={section.title}>
+              <div className="op-nav-section-title">{section.title}</div>
+              {section.links.map(([href, label]) => {
+                const active = isActivePath(pathname, href);
+                return <Link key={href} href={href} className={active ? "is-active" : ""}>{label}</Link>;
+              })}
+            </div>
           ))}
         </nav>
       </aside>
@@ -36,7 +66,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         <header className="op-topbar">
           <div className="op-topbar-brand">
             <BrandLockup compact />
-            <span>Workflow: Trade Setup → Recommendations → Replay → Paper Orders</span>
+            <span>Workflow: Analyze → Recommendation → Replay → Paper Order</span>
           </div>
           <ThemeToggle />
         </header>
