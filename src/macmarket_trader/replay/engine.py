@@ -22,7 +22,17 @@ class ReplayEngine:
         self.portfolio_engine = PortfolioEngine()
         self.replay_repository = replay_repository or ReplayRepository(SessionLocal)
 
-    def run(self, req: ReplayRunRequest, *, app_user_id: int | None = None) -> ReplayRunResponse:
+    def run(
+        self,
+        req: ReplayRunRequest,
+        *,
+        app_user_id: int | None = None,
+        source_recommendation_id: str | None = None,
+        source_strategy: str | None = None,
+        source_market_mode: str | None = None,
+        source_market_data_source: str | None = None,
+        source_fallback_mode: bool | None = None,
+    ) -> ReplayRunResponse:
         recs = []
         orders = []
         fills = []
@@ -63,6 +73,11 @@ class ReplayEngine:
             run = self.replay_repository.create_run(
                 symbol=req.symbol,
                 recommendation_id=recs[0].recommendation_id if recs else None,
+                source_recommendation_id=source_recommendation_id,
+                source_strategy=source_strategy,
+                source_market_mode=source_market_mode,
+                source_market_data_source=source_market_data_source,
+                source_fallback_mode=source_fallback_mode,
                 recommendation_count=len(recs),
                 approved_count=approved,
                 fill_count=len(fills),

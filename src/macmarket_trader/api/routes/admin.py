@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
+from macmarket_trader.api.routes.workflow_lineage import extract_recommendation_key_levels, extract_recommendation_strategy
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
@@ -418,6 +419,8 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         rec.recommendation_id,
         market_data_source=source,
         fallback_mode=fallback_mode,
+        market_mode=promote_market_mode.value,
+        source_strategy=strategy,
     )
     recommendation_repo.attach_ranking_provenance(
         rec.recommendation_id,
@@ -460,6 +463,17 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         rec.recommendation_id,
         market_data_source=source,
         fallback_mode=fallback_mode,
+        market_mode=market_mode.value,
+        source_strategy=str(req.get("strategy") or ""),
+    )
+    recommendation_repo.attach_ranking_provenance(
+        rec.recommendation_id,
+        ranking_provenance={
+            "strategy": req.get("strategy"),
+            "market_mode": market_mode.value,
+            "workflow_source": source,
+            "source": source,
+        },
     )
     return {
         "id": rec.recommendation_id,
@@ -523,14 +537,17 @@ def replay_runs(_user=Depends(require_approved_user)):
                 "id": row.id,
                 "symbol": row.symbol,
                 "recommendation_id": row.recommendation_id,
+                "source_recommendation_id": row.source_recommendation_id,
+                "source_strategy": row.source_strategy,
+                "source_market_mode": row.source_market_mode,
                 "recommendation_count": row.recommendation_count,
                 "approved_count": row.approved_count,
                 "fill_count": row.fill_count,
                 "ending_heat": row.ending_heat,
                 "ending_open_notional": row.ending_open_notional,
                 "created_at": row.created_at,
-                "market_data_source": source,
-                "fallback_mode": fallback_mode,
+                "market_data_source": row.source_market_data_source or source,
+                "fallback_mode": row.source_fallback_mode if row.source_fallback_mode is not None else fallback_mode,
             }
         )
     return output
@@ -546,13 +563,18 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         raise HTTPException(status_code=409, detail="Guided mode only supports equities execution-prep. Options/crypto remain research preview only.")
     if guided and not recommendation_id:
         raise HTTPException(status_code=400, detail="Guided replay requires recommendation_id.")
+    source_strategy = str(req.get("strategy")).strip() if req.get("strategy") else None
+    source_market_mode = market_mode.value
     if recommendation_id:
         rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
         if rec_row is None:
             raise HTTPException(status_code=404, detail="Recommendation not found for replay.")
         symbol = rec_row.symbol
+        workflow = (rec_row.payload or {}).get("workflow", {}) if rec_row else {}
+        source_strategy = extract_recommendation_strategy(rec_row.payload or {}) or source_strategy
+        source_market_mode = str(workflow.get("market_mode") or source_market_mode)
     if not symbol:
-        symbol = "AAPL"
+        raise HTTPException(status_code=400, detail="symbol is required when recommendation_id is not provided.")
     event_texts = req.get("event_texts")
     if not isinstance(event_texts, list) or not event_texts:
         event_texts = [
@@ -569,48 +591,103 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
             portfolio=PortfolioSnapshot(),
         ),
         app_user_id=_user.id,
+        source_recommendation_id=recommendation_id or None,
+        source_strategy=source_strategy,
+        source_market_mode=source_market_mode,
+        source_market_data_source=source,
+        source_fallback_mode=fallback_mode,
     )
     for rec in response.recommendations:
-        recommendation_repo.attach_workflow_metadata(rec.recommendation_id, market_data_source=source, fallback_mode=fallback_mode)
+        recommendation_repo.attach_workflow_metadata(
+            rec.recommendation_id,
+            market_data_source=source,
+            fallback_mode=fallback_mode,
+            market_mode=market_mode.value,
+            source_strategy=source_strategy or "",
+        )
     latest_run = replay_repo.list_runs(limit=1, app_user_id=_user.id)
     run_id = latest_run[0].id if latest_run else None
     run_row = latest_run[0] if latest_run else None
     key_levels: dict[str, object] = {}
+    thesis: str | None = None
     if recommendation_id:
         rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
         payload = (rec_row.payload or {}) if rec_row else {}
-        entry = payload.get("entry", {}) if isinstance(payload, dict) else {}
-        invalidation = payload.get("invalidation", {}) if isinstance(payload, dict) else {}
-        targets = payload.get("targets", {}) if isinstance(payload, dict) else {}
-        key_levels = {"entry": entry, "invalidation": invalidation, "targets": targets}
+        key_levels = extract_recommendation_key_levels(payload)
+        thesis = payload.get("thesis") if isinstance(payload.get("thesis"), str) else None
     return {
         "id": run_id,
         "symbol": symbol,
         "recommendation_id": recommendation_id or (run_row.recommendation_id if run_row else None),
+        "source_recommendation_id": recommendation_id or (run_row.source_recommendation_id if run_row else None),
         "market_mode": market_mode.value,
         "summary_metrics": response.summary_metrics.model_dump(mode="json"),
         "market_data_source": source,
         "fallback_mode": fallback_mode,
-        "strategy": req.get("strategy"),
+        "strategy": source_strategy,
         "source": source,
+        "thesis": thesis,
         "key_levels": key_levels,
+    }
+
+
+@user_router.get("/replay-runs/{run_id}")
+def replay_run_detail(run_id: int, _user=Depends(require_approved_user)):
+    run = replay_repo.get_run(run_id, app_user_id=_user.id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Replay run not found")
+    source_rec = recommendation_repo.get_by_recommendation_uid(run.source_recommendation_id) if run.source_recommendation_id else None
+    source_payload = (source_rec.payload or {}) if source_rec else {}
+    return {
+        "id": run.id,
+        "symbol": run.symbol,
+        "source_recommendation_id": run.source_recommendation_id,
+        "source_strategy": run.source_strategy,
+        "source_market_mode": run.source_market_mode,
+        "market_data_source": run.source_market_data_source,
+        "fallback_mode": run.source_fallback_mode,
+        "summary_metrics": {
+            "recommendation_count": run.recommendation_count,
+            "approved_count": run.approved_count,
+            "fill_count": run.fill_count,
+            "ending_heat": run.ending_heat,
+            "ending_open_notional": run.ending_open_notional,
+        },
+        "created_at": run.created_at,
+        "thesis": source_payload.get("thesis"),
+        "key_levels": extract_recommendation_key_levels(source_payload),
     }
 
 
 @user_router.get("/replay-runs/{run_id}/steps")
 def replay_steps(run_id: int, _user=Depends(require_approved_user)):
+    run = replay_repo.get_run(run_id, app_user_id=_user.id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Replay run not found")
     rows = replay_repo.list_steps_for_run(run_id)
-    return [
-        {
-            "id": row.id,
-            "step_index": row.step_index,
-            "recommendation_id": row.recommendation_id,
-            "approved": row.approved,
-            "pre_step_snapshot": row.pre_step_snapshot,
-            "post_step_snapshot": row.post_step_snapshot,
-        }
-        for row in rows
-    ]
+    output = []
+    for row in rows:
+        rec_row = recommendation_repo.get_by_recommendation_uid(row.recommendation_id)
+        payload = (rec_row.payload or {}) if rec_row else {}
+        quality = payload.get("quality") if isinstance(payload.get("quality"), dict) else {}
+        output.append(
+            {
+                "id": row.id,
+                "step_index": row.step_index,
+                "recommendation_id": row.recommendation_id,
+                "approved": row.approved,
+                "rejection_reason": payload.get("rejection_reason"),
+                "thesis": payload.get("thesis"),
+                "entry": payload.get("entry"),
+                "invalidation": payload.get("invalidation"),
+                "targets": payload.get("targets"),
+                "quality": quality.get("expected_rr"),
+                "confidence": quality.get("confidence"),
+                "pre_step_snapshot": row.pre_step_snapshot,
+                "post_step_snapshot": row.post_step_snapshot,
+            }
+        )
+    return output
 
 
 @user_router.get("/orders")
@@ -627,12 +704,14 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     rec: TradeRecommendation
     source = "workflow_snapshot_unavailable"
     fallback_mode = False
-    symbol = str(req.get("symbol") or "AAPL").upper()
+    symbol = str(req.get("symbol") or "").upper()
     market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
     if guided and market_mode != MarketMode.EQUITIES:
         raise HTTPException(status_code=409, detail="Guided mode only supports equities execution-prep. Options/crypto remain research preview only.")
     if guided and not recommendation_id:
         raise HTTPException(status_code=400, detail="Guided order staging requires recommendation_id.")
+    if guided and replay_run_id is None:
+        raise HTTPException(status_code=400, detail="Guided order staging requires replay_run_id for auditable lineage.")
 
     if recommendation_id:
         rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
@@ -644,6 +723,8 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         source = str(workflow.get("market_data_source") or source)
         fallback_mode = bool(workflow.get("fallback_mode", False))
     else:
+        if not symbol:
+            raise HTTPException(status_code=400, detail="symbol is required when recommendation_id is not provided.")
         bars, source, fallback_mode = _workflow_bars(symbol)
         rec = recommendation_service.generate(
             symbol=symbol,

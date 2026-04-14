@@ -19,6 +19,23 @@ The defensible edge is:
 MacMarket-Trader has completed **Phase 4 — Vendor integrations** and is entering **Phase 5 — Operator console polish** as the active implementation scope.
 Phases 1–4 form the operational baseline. Phase 5 delivers the polished operator surfaces that make the system credible as a paid tool.
 
+### 2026-04-14 replay/orders lineage + guided coherence + sidebar layout pass (this pass)
+
+Completed in this pass:
+- Fixed console sidebar structure to render explicit vertical nav sections (`Workflow`, `Research`, `Reports`, `Admin`) and added overflow-safe main/content/header layout guards (`min-width: 0`, wrapping topbar title).
+- Tightened guided Recommendations progression so replay CTA now requires a persisted recommendation in guided mode; queue promotion is the primary CTA until lineage is persisted.
+- Added replay source-lineage persistence fields on `replay_runs` (source recommendation id, strategy, market mode, source, fallback mode) via Alembic migration and threaded those values through replay creation.
+- Added shared backend lineage helper for extracting source strategy + key levels from persisted recommendation payloads.
+- Added replay detail endpoint (`GET /user/replay-runs/{run_id}`) with source lineage, summary metrics, thesis, and key levels.
+- Enriched replay steps endpoint payload with recommendation context fields (`rejection_reason`, thesis, levels, quality/confidence) while preserving per-step recommendation ids.
+- Scoped replay detail/steps reads to the owning approved user and removed guided symbol fallback behavior (no silent AAPL fallback for guided replay/order prep).
+- Updated guided Orders staging contract to require both `recommendation_id` and `replay_run_id` for auditable lineage.
+- Added Next API proxy route for replay-run detail and updated Replay/Orders/Recommendations workflow surfaces to keep guided context threading and disable next-step actions when lineage is incomplete.
+
+Still open:
+- Additional guided-mode UX polish for fully collapsible secondary history tables on Replay/Orders remains iterative.
+- Playwright coverage for the enhanced guided lineage hero cards and replay/order immediate post-create hydration remains open.
+
 ### 2026-04-13 guided-first-run + expected-range contract pass (this pass)
 
 Completed in this pass:

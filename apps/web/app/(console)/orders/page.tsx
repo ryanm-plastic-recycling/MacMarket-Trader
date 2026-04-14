@@ -12,7 +12,7 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 
-type Order = { order_id: string; recommendation_id: string; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
+type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -86,12 +86,19 @@ export default function Page() {
     // Never hardcode AAPL when a recommendation context is present.
     const symbolHint = selected?.symbol ?? guidedState.symbol ?? null;
     const body: Record<string, unknown> = {};
+    if (guidedState.guided && !requestedRecommendation) {
+      setError("Guided order staging requires recommendation lineage.");
+      setBusy(false);
+      return;
+    }
     if (requestedRecommendation) {
       body.recommendation_id = requestedRecommendation;
     } else if (symbolHint) {
       body.symbol = symbolHint;
     } else {
-      body.symbol = "AAPL";
+      setError("Provide symbol context for non-guided order staging.");
+      setBusy(false);
+      return;
     }
     body.market_mode = guidedState.marketMode ?? "equities";
     if (guidedState.guided) {
@@ -162,6 +169,8 @@ export default function Page() {
       }}
       backHref="/replay-runs"
       backLabel="Back to Replay"
+      nextDisabled={guidedState.guided && (!guidedState.recommendationId || !guidedState.replayRunId)}
+      nextDisabledReason="Guided paper orders require both recommendation and replay lineage."
       compact={!guidedState.guided}
     />
     {guidedState.guided ? (
@@ -197,6 +206,13 @@ export default function Page() {
         </button>
       </Card>
     )}
+    {guidedState.guided ? (
+      <Card title="Paper order ticket">
+        <div><strong>symbol:</strong> {selected?.symbol ?? guidedState.symbol ?? "—"} · <strong>side:</strong> {selected?.side ?? "—"} · <strong>shares:</strong> {selected?.shares ?? "—"} · <strong>limit:</strong> {selected?.limit_price ?? "—"}</div>
+        <div><strong>recommendation:</strong> {selected?.recommendation_id ?? guidedState.recommendationId ?? "—"} · <strong>replay run:</strong> {selected?.replay_run_id ?? guidedState.replayRunId ?? "—"} · <strong>status:</strong> {selected?.status ?? "pending"}</div>
+        <div><strong>source:</strong> {selected?.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected?.market_data_source ?? dataSource)}</div>
+      </Card>
+    ) : null}
     <Card title="Blotter mode">
       Generated from recommendation workflow bars sourced from: <strong>{dataSource}</strong>. This is paper-only execution for operator review.
     </Card>
@@ -214,7 +230,7 @@ export default function Page() {
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
     {orders.length === 0 && !error ? (
       <div className="op-stack">
-        <EmptyState title="No orders yet" hint="Run replay first, then click 'Stage Simulated Paper Order'. Paper orders are simulated — no real money is involved." />
+        <EmptyState title="No orders yet" hint={guidedState.guided ? `No order staged yet for ${guidedState.recommendationId ?? "active recommendation"} / ${guidedState.replayRunId ?? "active replay"}.` : "Run replay first, then click 'Stage Simulated Paper Order'. Paper orders are simulated — no real money is involved."} />
         <div><a href="/replay-runs" className="op-btn op-btn-primary" style={{ display: "inline-flex" }}>→ Go to Replay</a></div>
       </div>
     ) : null}
@@ -236,6 +252,7 @@ export default function Page() {
               : <span style={{ color: "var(--op-muted, #7a8999)" }}>pending linkage</span>
             }
           </div>
+          <div><strong>Replay run:</strong> {selected.replay_run_id ?? "—"}</div>
           <div><strong>Why this paper order exists:</strong> staged from approved recommendation path for operator verification before any live-route discussion.</div>
           {!guidedState.guided || showOperatorDetail ? (
             <>

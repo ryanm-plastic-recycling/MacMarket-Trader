@@ -3,6 +3,7 @@
 import { createChart, type CandlestickData, type IChartApi, type Time } from "lightweight-charts";
 import { useAuth } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
@@ -87,6 +88,7 @@ function extractLevels(rec: StoredRecommendation | null, queue: QueueCandidate |
 export default function RecommendationsPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
@@ -199,6 +201,17 @@ export default function RecommendationsPage() {
     setFeedback({ state: "success", message: "Queue candidate promoted to stored recommendation." });
     const promotedRecommendationId = result.data?.recommendation_id;
     await loadRecommendations({ selectRecommendationUid: promotedRecommendationId });
+    if (guidedState.guided && promotedRecommendationId) {
+      const query = buildGuidedQuery({
+        ...guidedState,
+        symbol: selectedQueue?.symbol ?? guidedState.symbol,
+        strategy: selectedQueue?.strategy ?? guidedState.strategy,
+        marketMode: guidedState.marketMode ?? selectedQueue?.market_mode ?? "equities",
+        source: selectedQueue?.workflow_source ?? guidedState.source,
+        recommendationId: promotedRecommendationId,
+      });
+      router.replace(`/recommendations?${query}`);
+    }
   }
 
   function openReplay() {
@@ -214,7 +227,7 @@ export default function RecommendationsPage() {
       source: selectedSource,
       recommendationId,
     });
-    window.location.assign(`/replay-runs?${query}`);
+    router.push(`/replay-runs?${query}`);
   }
 
   function openOrders() {
@@ -230,13 +243,11 @@ export default function RecommendationsPage() {
       source: selectedSource,
       recommendationId,
     });
-    window.location.assign(`/orders?${query}`);
+    router.push(`/orders?${query}`);
   }
 
   function openReplayGuidedCta() {
     if (selectedRecommendation?.recommendation_id) {
-      openReplay();
-    } else if (selectedQueue) {
       openReplay();
     }
   }
@@ -371,6 +382,8 @@ export default function RecommendationsPage() {
         backLabel="Back to Analyze"
         nextHref="/replay-runs"
         nextLabel="Run replay"
+        nextDisabled={guidedState.guided && !selectedRecommendation?.recommendation_id}
+        nextDisabledReason="Guided replay requires a persisted recommendation. Promote the selected queue candidate first."
         compact={!guidedState.guided}
       />
       {guidedState.guided ? (
@@ -383,10 +396,16 @@ export default function RecommendationsPage() {
       ) : null}
       {guidedState.guided ? (
         <Card title="Next action">
-          <div>Run replay for the selected recommendation to validate deterministic path behavior before staging paper orders.</div>
+          <div>{selectedRecommendation?.recommendation_id ? "Run replay for the active persisted recommendation to validate deterministic path behavior before staging paper orders." : "Promote the selected queue candidate to persist lineage, then run replay."}</div>
           {unsupportedGuidedMode ? <ErrorState title="Research preview stops here" hint="Options and crypto are research preview only. Guided progression into Replay and Paper Orders is disabled outside equities." /> : null}
           <div className="op-row" style={{ marginTop: 8 }}>
-            <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode || (!selectedQueue && !selectedRecommendation)}>Run replay</button>
+            {selectedRecommendation?.recommendation_id ? (
+              <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Run replay</button>
+            ) : (
+              <button onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote}>
+                {loading.promote ? "Promoting…" : "Promote to recommendation"}
+              </button>
+            )}
           </div>
         </Card>
       ) : null}
@@ -396,7 +415,7 @@ export default function RecommendationsPage() {
           <input value={symbols} onChange={(e) => setSymbols(e.target.value.toUpperCase())} style={{ minWidth: 320 }} placeholder="AAPL,MSFT,NVDA" />
           <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
           <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
-          <button onClick={openReplay} disabled={!selectedQueue && !selectedRecommendation}>Open Replay</button>
+          <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Open Replay</button>
           {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Open Orders</button> : null}
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadQueue()} />

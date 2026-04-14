@@ -12,8 +12,9 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 
-type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null };
-type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown> };
+type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null; source_recommendation_id?: string | null; source_strategy?: string | null };
+type RunDetail = Run & { source_recommendation_id?: string | null; source_strategy?: string | null; source_market_mode?: string | null; thesis?: string | null; key_levels?: { entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null } | null; summary_metrics?: Record<string, number> | null };
+type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; rejection_reason?: string | null; thesis?: string | null; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; quality?: number | null; confidence?: number | null; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown> };
 
 function fmt(v: unknown, digits = 2): string {
   if (v == null) return "—";
@@ -44,6 +45,7 @@ export default function Page() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
@@ -89,8 +91,10 @@ export default function Page() {
     setRuns(result.items);
     const requestedSymbol = new URLSearchParams(searchKey).get("symbol");
     const requestedRun = new URLSearchParams(searchKey).get("replay_run");
+    const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
     setSelectedRunId((prev) => prev
       ?? result.items.find((run) => String(run.id) === requestedRun)?.id
+      ?? result.items.find((run) => run.source_recommendation_id === requestedRecommendation)?.id
       ?? result.items.find((run) => run.symbol === requestedSymbol)?.id
       ?? result.items[0]?.id
       ?? null);
@@ -104,14 +108,19 @@ export default function Page() {
     }
     setStatus("running replay...");
     setBusy(true);
-    const preferredSymbol = new URLSearchParams(searchKey).get("symbol") ?? selected?.symbol ?? "AAPL";
+    const preferredSymbol = new URLSearchParams(searchKey).get("symbol") ?? selected?.symbol ?? guidedState.symbol;
+    if (!preferredSymbol) {
+      setError("Select a symbol or pass recommendation lineage before running replay.");
+      setBusy(false);
+      return;
+    }
     const body: Record<string, unknown> = { symbol: preferredSymbol, market_mode: guidedState.marketMode ?? "equities" };
     if (guidedState.guided) {
       body.guided = true;
       if (guidedState.recommendationId) body.recommendation_id = guidedState.recommendationId;
       if (guidedState.strategy) body.strategy = guidedState.strategy;
     }
-    const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean }>(
+    const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean; summary_metrics?: Record<string, number>; thesis?: string; key_levels?: Record<string, unknown> }>(
       "/api/user/replay-runs",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
@@ -137,7 +146,32 @@ export default function Page() {
     setDataSource(fallbackMode ? `fallback (${sourceName})` : sourceName);
     setStatus("replay complete");
     setFeedback({ state: "success", message: "Replay run completed." });
-    setSelectedRunId(run.data?.id ?? null);
+    const newRunId = run.data?.id ?? null;
+    setSelectedRunId(newRunId);
+    const query = buildGuidedQuery({
+      ...guidedState,
+      symbol: preferredSymbol,
+      source: sourceName,
+      replayRunId: newRunId != null ? String(newRunId) : guidedState.replayRunId,
+    });
+    router.replace(`/replay-runs?${query}`);
+    setRunDetail(run.data ? {
+      id: run.data.id,
+      symbol: preferredSymbol,
+      created_at: new Date().toISOString(),
+      recommendation_count: Number(run.data.summary_metrics?.recommendation_count ?? 0),
+      approved_count: Number(run.data.summary_metrics?.approved_count ?? 0),
+      fill_count: Number(run.data.summary_metrics?.fill_count ?? 0),
+      ending_heat: Number(run.data.summary_metrics?.ending_heat ?? 0),
+      ending_open_notional: Number(run.data.summary_metrics?.ending_open_notional ?? 0),
+      market_data_source: sourceName,
+      fallback_mode: fallbackMode,
+      source_recommendation_id: guidedState.recommendationId,
+      source_strategy: guidedState.strategy,
+      thesis: typeof run.data.thesis === "string" ? run.data.thesis : null,
+      key_levels: run.data.key_levels as RunDetail["key_levels"],
+      summary_metrics: run.data.summary_metrics as Record<string, number> | null,
+    } : null);
     await loadRuns();
     setBusy(false);
   }
@@ -179,6 +213,10 @@ export default function Page() {
     setStepError(null);
     setError(null);
     setSteps(result.items);
+    const detail = await fetchWorkflowApi<RunDetail>(`/api/user/replay-runs/${runId}`);
+    if (detail.ok) {
+      setRunDetail(detail.data ?? null);
+    }
     setBusy(false);
   }
 
@@ -232,6 +270,8 @@ export default function Page() {
       backLabel="Back to Recommendation"
       nextHref="/orders"
       nextLabel="Stage paper order"
+      nextDisabled={guidedState.guided && (!guidedState.recommendationId || !selectedRunId)}
+      nextDisabledReason="Guided orders require both persisted recommendation and replay run lineage."
       compact={!guidedState.guided}
     />
     {guidedState.guided ? (
@@ -252,6 +292,13 @@ export default function Page() {
       Use replay to validate whether a recommendation logic path behaves consistently before staging paper orders. Current run mode: <strong>{selectedSource}</strong>.
       <div>A good run keeps risk controls deterministic, preserves source coherence, and shows explainable approval/rejection outcomes at each step.</div>
     </Card>
+    {guidedState.guided ? (
+      <Card title="Replaying recommendation">
+        <div><strong>symbol:</strong> {runDetail?.symbol ?? selected?.symbol ?? guidedState.symbol ?? "—"} · <strong>strategy:</strong> {runDetail?.source_strategy ?? guidedState.strategy ?? "—"}</div>
+        <div><strong>source recommendation:</strong> {runDetail?.source_recommendation_id ?? guidedState.recommendationId ?? "—"} · <strong>source:</strong> {selectedSource}</div>
+        {runDetail?.thesis ? <div><strong>thesis:</strong> {runDetail.thesis}</div> : null}
+      </Card>
+    ) : null}
     {!authReady ? <Card title="Auth status">Initializing authenticated session before replay data requests.</Card> : null}
     <Card>
       <div className="op-row">
@@ -291,7 +338,7 @@ export default function Page() {
           )}
 
           {/* Equity curve */}
-          {equitySvg && (
+          {equitySvg && new Set(equityPoints).size > 1 && (
             <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>
               <div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 2 }}>Equity curve (post-step)</div>
               {equitySvg}
@@ -326,17 +373,14 @@ export default function Page() {
                       <span>field</span><span>pre-step</span><span>post-step</span>
                     </div>
                     <SnapshotRow label="equity" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="equity" />
-                    <SnapshotRow label="cash" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="cash" />
                     <SnapshotRow label="heat" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="current_heat" />
                     <SnapshotRow label="open notional" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="open_positions_notional" />
-                    <SnapshotRow label="realized P&L" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="realized_pnl" />
-                    <SnapshotRow label="open positions" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="open_position_count" digits={0} />
-                    <SnapshotRow label="total fills" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="total_fills" digits={0} />
-                    {s.post_step_snapshot.rejection_reason ? (
+                    {s.rejection_reason ? (
                       <div style={{ marginTop: 6, fontSize: "0.82rem", color: "var(--op-warn, #f2a03f)" }}>
-                        rejection: {String(s.post_step_snapshot.rejection_reason)}
+                        rejection: {String(s.rejection_reason)}
                       </div>
                     ) : null}
+                    {s.thesis ? <div style={{ marginTop: 6, fontSize: "0.82rem" }}><strong>thesis:</strong> {s.thesis}</div> : null}
                     <div style={{ marginTop: 6, fontSize: "0.75rem", color: "var(--op-muted, #7a8999)" }}>
                       rec id: <span style={{ fontFamily: "monospace" }}>{s.recommendation_id}</span>
                     </div>
