@@ -10,9 +10,11 @@ Rules:
 
 from __future__ import annotations
 
+import base64
 import html as _html
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +35,61 @@ _YELLOW = "#f0c040"
 _TEXT_PRIMARY = "#f0f4f8"
 _TEXT_SECONDARY = "#8892a4"
 _TEXT_MUTED = "#4a5568"
+
+
+# ---------------------------------------------------------------------------
+# Logo loader
+# ---------------------------------------------------------------------------
+
+def _load_logo_base64() -> str | None:
+    """Return a data URI for the brand lockup PNG, or None if the file is not found.
+
+    Resolves relative to this module's location:
+        <repo-root>/apps/web/public/brand/square_console_ticks_lockup_light.png
+    """
+    try:
+        logo_path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "apps" / "web" / "public" / "brand"
+            / "square_console_ticks_lockup_light.png"
+        )
+        data = logo_path.read_bytes()
+        encoded = base64.b64encode(data).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# Module-level cache — encode once per process start.
+_LOGO_DATA_URI: str | None = _load_logo_base64()
+
+
+def _logo_img(width: int = 200) -> str:
+    """Return an <img> tag using the embedded logo, or the CSS text lockup fallback."""
+    if _LOGO_DATA_URI:
+        return (
+            f'<img src="{_LOGO_DATA_URI}" alt="MacMarket Trader" width="{width}" '
+            f'style="display:block;max-width:{width}px;height:auto;border:0;" />'
+        )
+    # CSS fallback: table-based monogram + name lockup
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0">'
+        f'<tr>'
+        f'<td align="center" valign="middle" width="46" '
+        f'style="width:46px;height:46px;line-height:46px;background-color:{_BG_DARK};'
+        f'border:2px solid {_GREEN};border-radius:50%;'
+        f'font-family:Georgia,serif;font-size:22px;font-weight:700;color:{_TEXT_PRIMARY};">M</td>'
+        f'<td width="12" style="width:12px;">&nbsp;</td>'
+        f'<td valign="middle">'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:28px;font-weight:700;'
+        f'color:{_TEXT_PRIMARY};line-height:1;">MacMarket</p>'
+        f'<p style="margin:2px 0 0 1px;font-family:Arial,sans-serif;font-size:12px;'
+        f'font-weight:700;letter-spacing:3px;color:{_GREEN};text-transform:uppercase;'
+        f'line-height:1;">TRADER</p>'
+        f'</td>'
+        f'</tr>'
+        f'</table>'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -109,22 +166,8 @@ def _header(schedule_name: str, ran_at: str, source: str) -> str:
     date_str = _fmt_dt(ran_at)
     return (
         f'<tr><td style="background-color:{_BG_CARD};padding:28px 28px 22px 28px;">'
-        # Logo lockup: monogram circle + brand name
-        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">'
-        f'<tr>'
-        f'<td align="center" valign="middle" width="46" '
-        f'style="width:46px;height:46px;line-height:46px;background-color:{_BG_DARK};'
-        f'border:2px solid {_GREEN};border-radius:50%;'
-        f'font-family:Georgia,serif;font-size:22px;font-weight:700;color:{_TEXT_PRIMARY};">M</td>'
-        f'<td width="12" style="width:12px;">&nbsp;</td>'
-        f'<td valign="middle">'
-        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:28px;font-weight:700;'
-        f'color:{_TEXT_PRIMARY};line-height:1;">MacMarket</p>'
-        f'<p style="margin:2px 0 0 1px;font-family:Arial,sans-serif;font-size:12px;'
-        f'font-weight:700;letter-spacing:3px;color:{_GREEN};text-transform:uppercase;line-height:1;">TRADER</p>'
-        f'</td>'
-        f'</tr>'
-        f'</table>'
+        # Logo
+        f'<div style="margin:0 0 12px 0;">{_logo_img(200)}</div>'
         # Subtitle
         f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:10px;'
         f'font-weight:600;letter-spacing:2px;color:{_TEXT_SECONDARY};text-transform:uppercase;">'
@@ -513,8 +556,7 @@ def render_invite_html(
     body_rows = (
         # header
         f'<tr><td style="background-color:{_BG_CARD};padding:28px 28px 22px 28px;">'
-        f'<p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:10px;'
-        f'font-weight:700;letter-spacing:3px;color:{_GREEN};text-transform:uppercase;">MacMarket Trader</p>'
+        f'<div style="margin:0 0 14px 0;">{_logo_img(180)}</div>'
         f'<h1 style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:22px;'
         f'font-weight:700;color:{_TEXT_PRIMARY};line-height:1.2;">You&rsquo;re invited to the private alpha</h1>'
         f'<p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:{_TEXT_SECONDARY};">'
