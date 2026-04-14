@@ -281,8 +281,13 @@ class PolygonMarketDataProvider(MarketDataProvider):
         tf = timeframe.upper()
         now = datetime.now(tz=UTC)
         if tf == "1H":
-            start = now - timedelta(hours=max(limit, 1) + 2)
+            # add 24h buffer to account for market hours gaps
+            start = now - timedelta(hours=max(limit, 1) + 24)
             return 1, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))
+        if tf == "4H":
+            # 4H bars: each bar = 4 calendar hours; buffer 2 bars
+            start = now - timedelta(hours=max(limit, 1) * 4 + 8)
+            return 4, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))
         if tf == "1M":
             start = now - timedelta(minutes=max(limit, 1) + 5)
             return 1, "minute", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))

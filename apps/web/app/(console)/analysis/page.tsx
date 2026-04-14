@@ -290,7 +290,7 @@ export default function Page() {
   }, [setup]);
 
   return <section className="op-stack">
-    <PageHeader title="Analysis / Strategy Workbench" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
+    <PageHeader title="Trade Setup" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
     {guidedMode ? <Card title={GUIDED_FLOW_LABEL}><GuidedStepRail current="Analyze" /></Card> : null}
     <Card title="Operator workflow guidance">
       <ol>

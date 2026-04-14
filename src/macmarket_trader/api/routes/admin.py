@@ -16,6 +16,7 @@ from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
+from macmarket_trader.email_templates import render_invite_html
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
@@ -1055,19 +1056,35 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
 def create_invite(req: InviteCreateRequest, admin=Depends(require_admin)):
     invited_user = user_repo.create_or_update_invited_pending_user(email=req.email, display_name=req.display_name)
     invite = invite_repo.create(email=req.email, display_name=req.display_name, invited_by=admin.email)
-    invite_url = f"{settings.cors_allowed_origins[0]}/sign-up?invite_token={invite.invite_token}&email={req.email.strip().lower()}"
+    invite_url = (
+        f"{settings.app_base_url.rstrip('/')}/sign-up"
+        f"?invite_token={invite.invite_token}&email={req.email.strip().lower()}"
+    )
+    invite_html = render_invite_html(
+        to_email=req.email.strip().lower(),
+        invite_url=invite_url,
+        display_name=req.display_name or "",
+        invited_by=admin.email,
+    )
+    plain_body = (
+        f"You have been invited to MacMarket-Trader private alpha.\n"
+        f"Use this invite link to sign in/up via Clerk: {invite_url}\n"
+        "After sign-in your local app account remains pending until admin approval."
+    )
     message = EmailMessage(
         to_email=req.email.strip().lower(),
-        subject="MacMarket-Trader private alpha invite",
-        body=(
-            f"You have been invited to MacMarket-Trader private alpha.\n"
-            f"Use this invite link to sign in/up via Clerk: {invite_url}\n"
-            "After sign-in your local app account remains pending until admin approval."
-        ),
+        subject="MacMarket-Trader — you're invited to the private alpha",
+        body=plain_body,
+        html=invite_html,
         template_name="private_alpha_invite",
     )
-    provider_id = email_provider.send(message)
-    email_repo.create(invited_user.id, "private_alpha_invite", invited_user.email, "sent", provider_id)
+    email_status = "sent"
+    provider_id: str | None = None
+    try:
+        provider_id = email_provider.send(message)
+    except Exception:
+        email_status = "failed"
+    email_repo.create(invited_user.id, "private_alpha_invite", invited_user.email, email_status, provider_id or "")
     return {"invite_id": invite.id, "status": invite.status, "email": invite.email, "invite_token": invite.invite_token}
 
 

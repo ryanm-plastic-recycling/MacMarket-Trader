@@ -5,7 +5,7 @@ import { BrandLockup } from "@/components/brand-lockup";
 
 const links = [
   ["/dashboard", "Dashboard"],
-  ["/analysis", "Strategy Workbench"],
+  ["/analysis", "Trade Setup"],
   ["/analyze", "Symbol Analyze"],
   ["/recommendations", "Recommendations"],
   ["/schedules", "Scheduled Reports"],
@@ -36,7 +36,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         <header className="op-topbar">
           <div className="op-topbar-brand">
             <BrandLockup compact />
-            <span>Workflow: Strategy Workbench → Recommendations → Replay → Paper Orders</span>
+            <span>Workflow: Trade Setup → Recommendations → Replay → Paper Orders</span>
           </div>
           <ThemeToggle />
         </header>

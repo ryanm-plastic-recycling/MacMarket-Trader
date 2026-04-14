@@ -19,10 +19,13 @@ def _resolve_bars(symbol: str, timeframe: str, request_bars: list[Bar]) -> tuple
     if request_bars:
         return request_bars, "request_bars", False
 
+    _limit_by_tf = {"1H": 400, "4H": 200, "1D": 120}
+    limit = _limit_by_tf.get(timeframe.upper(), 120)
+
     provider_bars, provider_source, provider_fallback = market_data_service.historical_bars(
         symbol=symbol,
         timeframe=timeframe,
-        limit=120,
+        limit=limit,
     )
     if provider_bars:
         return provider_bars, provider_source, provider_fallback
@@ -46,7 +49,7 @@ def _resolve_bars(symbol: str, timeframe: str, request_bars: list[Bar]) -> tuple
             False,
         )
 
-    return market_data_service.historical_bars(symbol=symbol, timeframe=timeframe, limit=120)
+    return market_data_service.historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
 
 
 @router.post("/haco", response_model=HacoChartPayload)

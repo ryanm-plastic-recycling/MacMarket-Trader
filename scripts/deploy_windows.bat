@@ -156,7 +156,13 @@ if not exist "%DST%\macmarket_trader.db" (
     goto :FAIL_POP
   )
 ) else (
-  echo [INFO] Existing database preserved. Skipping init_db.
+  echo [INFO] Existing database found. Applying schema updates...
+  python -c "from macmarket_trader.storage.db import apply_schema_updates; added = apply_schema_updates(); print('[INFO] Schema columns added:', added) if added else print('[INFO] Schema already current.')"
+  if errorlevel 1 (
+    echo [ERROR] Schema update failed.
+    set "RC=1"
+    goto :FAIL_POP
+  )
 )
 
 if "%RUN_TESTS%"=="1" (

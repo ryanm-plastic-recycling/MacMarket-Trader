@@ -474,3 +474,91 @@ def render_strategy_report_text(
     ]
 
     return "\n".join(lines)
+
+
+def render_invite_html(
+    *,
+    to_email: str,
+    invite_url: str,
+    display_name: str = "",
+    invited_by: str = "",
+) -> str:
+    """Return a branded dark-theme HTML invite email."""
+    greeting = f"Hi {_e(display_name)}," if display_name else "Hi,"
+    sender_line = (
+        f'<p style="margin:12px 0 0 0;font-family:Arial,sans-serif;font-size:13px;'
+        f'color:{_TEXT_SECONDARY};">Invited by: {_e(invited_by)}</p>'
+        if invited_by
+        else ""
+    )
+    body_rows = (
+        # header
+        f'<tr><td style="background-color:{_BG_CARD};padding:28px 28px 22px 28px;">'
+        f'<p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:10px;'
+        f'font-weight:700;letter-spacing:3px;color:{_GREEN};text-transform:uppercase;">MacMarket Trader</p>'
+        f'<h1 style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:22px;'
+        f'font-weight:700;color:{_TEXT_PRIMARY};line-height:1.2;">You&rsquo;re invited to the private alpha</h1>'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:{_TEXT_SECONDARY};">'
+        f'Invite-only · Early access · Operator console'
+        f'</p>'
+        f'</td></tr>'
+        # accent line
+        f'<tr><td style="background-color:{_GREEN};height:2px;font-size:0;line-height:0;">&nbsp;</td></tr>'
+        # body
+        f'<tr><td style="background-color:{_BG_CARD};padding:28px;">'
+        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};">{greeting}</p>'
+        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_SECONDARY};line-height:1.6;">'
+        f'You have been personally invited to <strong style="color:{_TEXT_PRIMARY};">MacMarket Trader</strong>, '
+        f'an invite-only private alpha for professional operators. '
+        f'Click the button below to accept your invite and complete sign-up via Clerk.'
+        f'</p>'
+        # CTA button
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">'
+        f'<tr><td style="background-color:{_GREEN};border-radius:4px;text-align:center;">'
+        f'<a href="{_e(invite_url)}" '
+        f'style="display:inline-block;font-family:Arial,sans-serif;font-size:14px;font-weight:700;'
+        f'color:#000000;text-decoration:none;padding:12px 28px;border-radius:4px;">'
+        f'Accept Invite &amp; Sign Up</a>'
+        f'</td></tr></table>'
+        f'<p style="margin:16px 0 0 0;font-family:Arial,sans-serif;font-size:11px;color:{_TEXT_MUTED};line-height:1.5;">'
+        f'If the button does not work, copy and paste this link into your browser:<br>'
+        f'<span style="color:{_TEXT_SECONDARY};word-break:break-all;">{_e(invite_url)}</span>'
+        f'</p>'
+        f'{sender_line}'
+        f'</td></tr>'
+        # note
+        f'<tr><td style="background-color:{_BG_DARK};padding:16px 28px;border-top:1px solid {_BORDER};">'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:11px;color:{_TEXT_MUTED};line-height:1.5;">'
+        f'After sign-in your account will be pending admin approval before full access is granted. '
+        f'This invite link is single-use and tied to your email address.'
+        f'</p>'
+        f'</td></tr>'
+        # footer
+        f'<tr><td style="background-color:{_BG_CARD};padding:16px 28px;border-top:1px solid {_BORDER};">'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};text-align:center;">'
+        f'MacMarket Trader &nbsp;&middot;&nbsp; Invite-only private alpha'
+        f'&nbsp;&middot;&nbsp; Not financial advice. Operator use only.'
+        f'</p>'
+        f'</td></tr>'
+    )
+    return (
+        "<!DOCTYPE html>"
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        "<title>MacMarket Trader — You're invited</title>"
+        "</head>"
+        f'<body style="margin:0;padding:0;background-color:{_BG_PAGE};">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="background-color:{_BG_PAGE};">'
+        f'<tr><td align="center" style="padding:20px 12px;">'
+        f'<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+        f'style="max-width:600px;width:100%;border:1px solid {_BORDER};border-radius:6px;overflow:hidden;">'
+        + body_rows
+        + "</table>"
+        "</td></tr>"
+        "</table>"
+        "</body>"
+        "</html>"
+    )

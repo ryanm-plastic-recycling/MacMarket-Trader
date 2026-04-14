@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     email_provider: str = "console"
     cors_allowed_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:9500", "http://localhost:9500"])
 
+    app_base_url: str = "http://localhost:9500"
+
     resend_api_key: str = ""
     resend_from_email: str = "noreply@macmarket-trader.local"
 

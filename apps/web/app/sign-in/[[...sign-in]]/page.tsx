@@ -6,7 +6,7 @@ export default function Page() {
   return (
     <main className="auth-shell">
       <BrandLockup />
-      <p>Operator sign-in · Strategy Workbench → Recommendations → Replay → Paper Orders</p>
+      <p>Operator sign-in · Trade Setup → Recommendations → Replay → Paper Orders</p>
       <SignIn />
     </main>
   );
