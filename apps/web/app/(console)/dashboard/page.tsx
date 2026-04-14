@@ -7,6 +7,7 @@ import { HacoWorkspace } from "@/components/charts/haco-workspace";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { GUIDED_ENTRY_PATH, GUIDED_FLOW_LABEL } from "@/lib/guided-workflow";
 import { fetchWorkflowApi } from "@/lib/api-client";
+import { WorkflowBanner } from "@/components/workflow-banner";
 
 type Recommendation = { id: number; symbol: string; created_at: string; payload: any };
 type AuditEvent = { event_type: string; timestamp: string | null; detail: string; status: string };
@@ -65,6 +66,7 @@ export default function Page() {
           <Link href={GUIDED_ENTRY_PATH}><button>{GUIDED_FLOW_LABEL}</button></Link>
         </>}
       />
+      <WorkflowBanner current="Analyze" state={{ guided: false }} nextHref="/analysis" nextLabel="Start from Analyze" compact />
       <InlineFeedback state={feedback.state} message={feedback.message} />
       {error ? <ErrorState title="Dashboard unavailable" hint={error} /> : null}
       {!error && !data ? <EmptyState title="Waiting for dashboard data" hint="Refresh after your auth session initializes." /> : null}

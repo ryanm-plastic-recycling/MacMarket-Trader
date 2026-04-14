@@ -94,6 +94,24 @@ Completed in this pass:
 Still open:
 - `atm_straddle_mid` expected-range method remains contract-allowed but not yet emitted by preview logic.
 
+### 2026-04-14 guided workflow banner + lineage hardening pass (this pass)
+
+Completed in this pass:
+- Added a shared workflow banner component across Dashboard, Analysis, Recommendations, Replay, and Orders with explicit step-state segmentation and selected-context strip.
+- Added pathname-based active-route sidebar behavior and grouped IA sections: Workflow, Research, Reports, Admin.
+- Unified core naming in console nav to Analyze, Recommendation, Replay, Paper Order; demoted non-core routes to supporting sections.
+- Expanded guided continuity query contract to preserve `market_mode` and `source` in addition to symbol/strategy/lineage IDs.
+- Removed silent first-load seed behavior on `/user/recommendations`, `/user/replay-runs`, and `/user/orders`; empty states are now honest.
+- Hardened guided-mode execution-prep truth: options/crypto are blocked from replay/order progression with explicit 409 responses and UI explanation cards.
+- `/user/recommendations/generate` now returns explicit `recommendation_id` field.
+- Added replay/order lineage persistence foundations:
+  - `replay_runs.recommendation_id`
+  - `orders.replay_run_id`
+  - replay and order create responses now include richer lineage summary fields.
+
+Started early (foundation, not phase advance):
+- Workflow banner styling and button variant primitives (`primary`, `secondary`, `ghost`, `destructive`) introduced for guided visual hierarchy.
+
 ## Core product pillars
 
 ### 1. Strategy Workbench

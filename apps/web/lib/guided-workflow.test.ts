@@ -11,12 +11,14 @@ describe("guided workflow entry", () => {
   });
 
   it("parses and rebuilds guided continuity query state", () => {
-    const params = new URLSearchParams("guided=1&symbol=AAPL&strategy=Event+Continuation&recommendation=rec-1&replay_run=12&order=ord-7");
+    const params = new URLSearchParams("guided=1&symbol=AAPL&strategy=Event+Continuation&market_mode=equities&source=polygon&recommendation=rec-1&replay_run=12&order=ord-7");
     const state = parseGuidedFlowState(params);
     expect(state).toEqual({
       guided: true,
       symbol: "AAPL",
       strategy: "Event Continuation",
+      marketMode: "equities",
+      source: "polygon",
       recommendationId: "rec-1",
       replayRunId: "12",
       orderId: "ord-7",
@@ -25,6 +27,8 @@ describe("guided workflow entry", () => {
     expect(rebuilt.get("guided")).toBe("1");
     expect(rebuilt.get("symbol")).toBe("AAPL");
     expect(rebuilt.get("strategy")).toBe("Event Continuation");
+    expect(rebuilt.get("market_mode")).toBe("equities");
+    expect(rebuilt.get("source")).toBe("polygon");
     expect(rebuilt.get("recommendation")).toBe("rec-1");
     expect(rebuilt.get("replay_run")).toBe("12");
     expect(rebuilt.get("order")).toBe("ord-7");

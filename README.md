@@ -572,6 +572,8 @@ Current operator workflow remains:
 3. Replay
 4. Paper Orders
 
+Guided mode is now the primary first-run path for this workflow: operators should move one selected idea through **Analyze → Recommendation → Replay → Paper Order** with explicit context continuity (symbol, strategy, market mode, source, lineage IDs). Explorer mode preserves advanced tables and bulk/operator-depth controls without changing deterministic workflow truth.
+
 The charting layer now includes an **indicator registry/config framework** so indicators are operator-selectable rather than hardcoded per page. Indicator selections persist via stable local preferences and are available across:
 
 - Strategy Workbench / Analysis
@@ -602,9 +604,9 @@ to execute due schedules locally, from cron, or from Windows Task Scheduler.
 
 With `EMAIL_PROVIDER=console`, strategy report payloads are printed clearly in console logs for local testing.
 
-## Symbol Analyze workspace
+## Symbol Snapshot workspace
 
-A dedicated **Symbol Analyze** page provides fast pre-recommendation context:
+A dedicated **Symbol Snapshot** page provides fast pre-recommendation context:
 
 - market regime snapshot
 - technical summary

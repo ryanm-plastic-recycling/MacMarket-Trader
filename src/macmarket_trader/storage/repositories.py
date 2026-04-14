@@ -125,11 +125,17 @@ class OrderRepository:
         self.session_factory = session_factory
 
     def create(self, order: OrderRecord, notes: str = "", *, app_user_id: int | None = None) -> OrderModel:
+        replay_run_id: int | None = None
+        if notes and "replay_run_id=" in notes:
+            parts = {segment.split("=", 1)[0]: segment.split("=", 1)[1] for segment in notes.split("|") if "=" in segment}
+            raw = parts.get("replay_run_id")
+            replay_run_id = int(raw) if raw and raw.isdigit() else None
         with self.session_factory() as session:
             row = OrderModel(
                 order_id=order.order_id,
                 app_user_id=app_user_id,
                 recommendation_id=order.recommendation_id,
+                replay_run_id=replay_run_id,
                 symbol=order.symbol,
                 status=order.status.value,
                 side=order.side.value,
@@ -160,10 +166,14 @@ class OrderRepository:
                 order_fills = sorted(fills_by_order.get(order.order_id, []), key=lambda item: item.timestamp)
                 source = None
                 fallback_mode = None
+                replay_run_id = order.replay_run_id
                 if order.notes and "|source=" in order.notes:
                     parts = {segment.split("=", 1)[0]: segment.split("=", 1)[1] for segment in order.notes.split("|") if "=" in segment}
                     source = parts.get("source")
                     fallback_mode = parts.get("fallback") == "true"
+                    raw_run_id = parts.get("replay_run_id")
+                    if replay_run_id is None and raw_run_id and raw_run_id.isdigit():
+                        replay_run_id = int(raw_run_id)
                 if source is None and order.recommendation_id:
                     rec = session.execute(
                         select(RecommendationModel).where(RecommendationModel.recommendation_id == order.recommendation_id)
@@ -176,6 +186,7 @@ class OrderRepository:
                     {
                         "order_id": order.order_id,
                         "recommendation_id": order.recommendation_id,
+                        "replay_run_id": replay_run_id,
                         "symbol": order.symbol,
                         "status": order.status,
                         "side": order.side,
@@ -219,6 +230,7 @@ class ReplayRepository:
         self,
         *,
         symbol: str,
+        recommendation_id: str | None,
         recommendation_count: int,
         approved_count: int,
         fill_count: int,
@@ -230,6 +242,7 @@ class ReplayRepository:
             row = ReplayRunModel(
                 symbol=symbol,
                 app_user_id=app_user_id,
+                recommendation_id=recommendation_id,
                 recommendation_count=recommendation_count,
                 approved_count=approved_count,
                 fill_count=fill_count,

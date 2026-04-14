@@ -48,6 +48,8 @@ body { background: var(--bg); color: var(--text); font-family: Inter, Arial, san
 .op-nav { display: grid; gap: 8px; }
 .op-nav a { color: var(--link); text-decoration: none; padding: 6px 8px; border-radius: 6px; }
 .op-nav a:hover { background: var(--nav-hover); }
+.op-nav a.is-active { background: var(--active-row); font-weight: 600; }
+.op-nav-section-title { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin: 12px 0 4px; }
 
 .op-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .op-page-header h1 { margin: 0; font-size: 24px; }
@@ -82,6 +84,21 @@ input, select, button, textarea { background: var(--input-bg); color: var(--text
 button { cursor: pointer; }
 button:disabled { opacity: .6; cursor: not-allowed; }
 .op-theme-toggle { min-width: 92px; }
+.op-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-weight: 600; color: var(--text); }
+.op-btn-primary { background: #2d62c9; border-color: #3b78ee; color: #fff; }
+.op-btn-secondary { background: #162332; }
+.op-btn-ghost { background: transparent; color: var(--muted); }
+.op-btn-destructive { background: #4b1f1f; border-color: #7c4040; color: #ffb3b3; }
+
+.op-workflow-banner { border: 1px solid var(--card-border); border-radius: 10px; background: var(--card-bg); padding: 14px; display: grid; gap: 10px; z-index: 20; }
+.op-workflow-banner.is-sticky { position: sticky; top: 0; }
+.op-workflow-steps { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.op-workflow-step { border: 1px solid var(--border); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; font-weight: 600; }
+.op-workflow-step.is-completed { border-color: #2f6f45; color: #7ee787; }
+.op-workflow-step.is-current { border-color: #3b78ee; background: #162332; }
+.op-workflow-step.is-pending { opacity: .75; }
+.op-workflow-context { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
+.op-workflow-actions { display: flex; justify-content: space-between; align-items: center; }
 
 @media (max-width: 1200px) {
   .op-grid-2, .op-grid-3, .op-grid-4, .op-shell { grid-template-columns: 1fr; }

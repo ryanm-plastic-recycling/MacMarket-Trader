@@ -330,17 +330,6 @@ def dashboard(user=Depends(require_approved_user)):
 @user_router.get("/recommendations")
 def list_recommendations(_user=Depends(require_approved_user)):
     rows = recommendation_repo.list_recent(app_user_id=_user.id)
-    if not rows and settings.environment.lower() in {"dev", "local", "test"}:
-        seed_bars, _, _ = _workflow_bars("AAPL")
-        seed_rec = recommendation_service.generate(
-            symbol="AAPL",
-            bars=seed_bars,
-            event_text="Deterministic seeded recommendation for local operator-console readiness.",
-            event=None,
-            portfolio=PortfolioSnapshot(),
-        )
-        recommendation_repo.attach_workflow_metadata(seed_rec.recommendation_id, market_data_source="seed", fallback_mode=False)
-        rows = recommendation_repo.list_recent(app_user_id=_user.id)
     return [
         {
             "id": row.id,
@@ -474,6 +463,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
     )
     return {
         "id": rec.recommendation_id,
+        "recommendation_id": rec.recommendation_id,
         "symbol": rec.symbol,
         "approved": rec.approved,
         "outcome": rec.outcome,
@@ -516,18 +506,6 @@ def set_recommendation_approved(recommendation_uid: str, req: dict[str, object],
 @user_router.get("/replay-runs")
 def replay_runs(_user=Depends(require_approved_user)):
     rows = replay_repo.list_runs(app_user_id=_user.id)
-    if not rows and settings.environment.lower() in {"dev", "local", "test"}:
-        seed_bars, _, _ = _workflow_bars("AAPL")
-        replay_engine.run(
-            ReplayRunRequest(
-                symbol="AAPL",
-                event_texts=["Deterministic replay seed event one.", "Deterministic replay seed event two."],
-                bars=seed_bars,
-                portfolio=PortfolioSnapshot(),
-            ),
-            app_user_id=_user.id,
-        )
-        rows = replay_repo.list_runs(app_user_id=_user.id)
     output: list[dict[str, object]] = []
     for row in rows:
         source = "workflow_snapshot_unavailable"
@@ -544,6 +522,7 @@ def replay_runs(_user=Depends(require_approved_user)):
             {
                 "id": row.id,
                 "symbol": row.symbol,
+                "recommendation_id": row.recommendation_id,
                 "recommendation_count": row.recommendation_count,
                 "approved_count": row.approved_count,
                 "fill_count": row.fill_count,
@@ -559,8 +538,21 @@ def replay_runs(_user=Depends(require_approved_user)):
 
 @user_router.post("/replay-runs")
 def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)):
-    symbol = str(req.get("symbol") or "AAPL").upper()
+    guided = bool(req.get("guided"))
+    recommendation_id = str(req.get("recommendation_id") or "").strip()
+    symbol = str(req.get("symbol") or "").upper()
     market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
+    if guided and market_mode != MarketMode.EQUITIES:
+        raise HTTPException(status_code=409, detail="Guided mode only supports equities execution-prep. Options/crypto remain research preview only.")
+    if guided and not recommendation_id:
+        raise HTTPException(status_code=400, detail="Guided replay requires recommendation_id.")
+    if recommendation_id:
+        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+        if rec_row is None:
+            raise HTTPException(status_code=404, detail="Recommendation not found for replay.")
+        symbol = rec_row.symbol
+    if not symbol:
+        symbol = "AAPL"
     event_texts = req.get("event_texts")
     if not isinstance(event_texts, list) or not event_texts:
         event_texts = [
@@ -581,13 +573,27 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
     for rec in response.recommendations:
         recommendation_repo.attach_workflow_metadata(rec.recommendation_id, market_data_source=source, fallback_mode=fallback_mode)
     latest_run = replay_repo.list_runs(limit=1, app_user_id=_user.id)
+    run_id = latest_run[0].id if latest_run else None
+    run_row = latest_run[0] if latest_run else None
+    key_levels: dict[str, object] = {}
+    if recommendation_id:
+        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+        payload = (rec_row.payload or {}) if rec_row else {}
+        entry = payload.get("entry", {}) if isinstance(payload, dict) else {}
+        invalidation = payload.get("invalidation", {}) if isinstance(payload, dict) else {}
+        targets = payload.get("targets", {}) if isinstance(payload, dict) else {}
+        key_levels = {"entry": entry, "invalidation": invalidation, "targets": targets}
     return {
-        "id": latest_run[0].id if latest_run else None,
+        "id": run_id,
         "symbol": symbol,
+        "recommendation_id": recommendation_id or (run_row.recommendation_id if run_row else None),
         "market_mode": market_mode.value,
         "summary_metrics": response.summary_metrics.model_dump(mode="json"),
         "market_data_source": source,
         "fallback_mode": fallback_mode,
+        "strategy": req.get("strategy"),
+        "source": source,
+        "key_levels": key_levels,
     }
 
 
@@ -609,33 +615,24 @@ def replay_steps(run_id: int, _user=Depends(require_approved_user)):
 
 @user_router.get("/orders")
 def list_orders(_user=Depends(require_approved_user)):
-    orders = order_repo.list_with_fills(app_user_id=_user.id)
-    if not orders and settings.environment.lower() in {"dev", "local", "test"}:
-        seed_bars, _, _ = _workflow_bars("AAPL")
-        rec = recommendation_service.generate(
-            symbol="AAPL",
-            bars=seed_bars,
-            event_text="Deterministic paper-order seed for operator blotter readiness.",
-            event=None,
-            portfolio=PortfolioSnapshot(),
-            app_user_id=_user.id,
-        )
-        if rec.approved:
-            intent = recommendation_service.to_order_intent(rec)
-            order, fill = paper_broker.execute(intent)
-            recommendation_service.persist_order(order, notes="seed_order|source=seed|fallback=false", app_user_id=_user.id)
-            recommendation_service.persist_fill(fill)
-        orders = order_repo.list_with_fills(app_user_id=_user.id)
-    return orders
+    return order_repo.list_with_fills(app_user_id=_user.id)
 
 
 @user_router.post("/orders")
 def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
+    guided = bool(req.get("guided"))
     recommendation_id = str(req.get("recommendation_id") or "").strip()
+    replay_run_id_raw = req.get("replay_run_id")
+    replay_run_id = int(replay_run_id_raw) if isinstance(replay_run_id_raw, int) or (isinstance(replay_run_id_raw, str) and replay_run_id_raw.isdigit()) else None
     rec: TradeRecommendation
     source = "workflow_snapshot_unavailable"
     fallback_mode = False
     symbol = str(req.get("symbol") or "AAPL").upper()
+    market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
+    if guided and market_mode != MarketMode.EQUITIES:
+        raise HTTPException(status_code=409, detail="Guided mode only supports equities execution-prep. Options/crypto remain research preview only.")
+    if guided and not recommendation_id:
+        raise HTTPException(status_code=400, detail="Guided order staging requires recommendation_id.")
 
     if recommendation_id:
         rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
@@ -663,14 +660,20 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     order, fill = paper_broker.execute(intent)
     recommendation_service.persist_order(
         order,
-        notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}",
+        notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}|replay_run_id={replay_run_id or ''}",
         app_user_id=_user.id,
     )
     recommendation_service.persist_fill(fill)
     return {
         "order_id": order.order_id,
+        "recommendation_id": rec.recommendation_id,
+        "replay_run_id": replay_run_id,
         "symbol": order.symbol,
+        "side": order.side.value,
+        "shares": order.shares,
+        "limit_price": order.limit_price,
         "status": order.status.value,
+        "source": source,
         "market_data_source": source,
         "fallback_mode": fallback_mode,
     }

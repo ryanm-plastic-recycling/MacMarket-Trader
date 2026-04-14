@@ -62,6 +62,7 @@ class ReplayEngine:
         if self.service.persist_audit:
             run = self.replay_repository.create_run(
                 symbol=req.symbol,
+                recommendation_id=recs[0].recommendation_id if recs else None,
                 recommendation_count=len(recs),
                 approved_count=approved,
                 fill_count=len(fills),

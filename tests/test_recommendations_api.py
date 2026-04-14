@@ -111,6 +111,7 @@ def test_user_generation_non_equity_generates_recommendation() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert "id" in payload
+    assert payload["recommendation_id"] == payload["id"]
     assert payload["market_mode"] == "options"
 
 
