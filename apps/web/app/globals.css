@@ -85,19 +85,21 @@ button { cursor: pointer; }
 button:disabled { opacity: .6; cursor: not-allowed; }
 .op-theme-toggle { min-width: 92px; }
 .op-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-weight: 600; color: var(--text); }
-.op-btn-primary { background: #2d62c9; border-color: #3b78ee; color: #fff; }
+.op-btn-primary { background: #21c06e; border-color: #27d97a; color: #0b1219; }
 .op-btn-secondary { background: #162332; }
 .op-btn-ghost { background: transparent; color: var(--muted); }
 .op-btn-destructive { background: #4b1f1f; border-color: #7c4040; color: #ffb3b3; }
 
-.op-workflow-banner { border: 1px solid var(--card-border); border-radius: 10px; background: var(--card-bg); padding: 14px; display: grid; gap: 10px; z-index: 20; }
+.op-workflow-banner { background: #0d1f2d; border: 1px solid #1e3a5f; border-radius: 10px; padding: 16px; display: grid; gap: 12px; z-index: 20; }
 .op-workflow-banner.is-sticky { position: sticky; top: 0; }
 .op-workflow-steps { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
-.op-workflow-step { border: 1px solid var(--border); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; font-weight: 600; }
-.op-workflow-step.is-completed { border-color: #2f6f45; color: #7ee787; }
-.op-workflow-step.is-current { border-color: #3b78ee; background: #162332; }
-.op-workflow-step.is-pending { opacity: .75; }
-.op-workflow-context { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
+.op-workflow-step { border: 1px solid var(--border); border-radius: 8px; padding: 12px 8px; text-align: center; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+.op-workflow-step.is-completed { border-color: #21c06e; color: #21c06e; background: rgba(33,192,110,0.08); }
+.op-workflow-step.is-completed::before { content: "✓ "; }
+.op-workflow-step.is-current { border-color: #21c06e; background: rgba(33,192,110,0.15); color: #fff; box-shadow: 0 0 0 2px rgba(33,192,110,0.3); }
+.op-workflow-step.is-pending { opacity: 0.5; color: var(--muted); }
+.op-workflow-context { display: flex; flex-wrap: wrap; gap: 6px; }
+.op-workflow-context span { background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: var(--text); }
 .op-workflow-actions { display: flex; justify-content: space-between; align-items: center; }
 
 @media (max-width: 1200px) {

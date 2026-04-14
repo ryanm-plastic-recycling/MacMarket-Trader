@@ -27,6 +27,10 @@ export default function Page() {
   const [dataSource, setDataSource] = useState("workflow pending");
   const [busy, setBusy] = useState(false);
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
+  const [explainerDismissed, setExplainerDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("macmarket-orders-explainer-dismissed") === "1";
+  });
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
@@ -80,7 +84,7 @@ export default function Page() {
     const requestedRecommendation = new URLSearchParams(searchKey).get("recommendation");
     // Use the selected order's symbol if available, or fall back to the recommendation's symbol from query param.
     // Never hardcode AAPL when a recommendation context is present.
-    const symbolHint = selected?.symbol ?? null;
+    const symbolHint = selected?.symbol ?? guidedState.symbol ?? null;
     const body: Record<string, unknown> = {};
     if (requestedRecommendation) {
       body.recommendation_id = requestedRecommendation;
@@ -174,6 +178,25 @@ export default function Page() {
         </div>
       </Card>
     ) : null}
+    {!explainerDismissed && (
+      <Card title="Paper Trading Blotter">
+        <p style={{margin: "0 0 8px 0"}}>
+          Paper orders are <strong>simulated</strong> — no real money is involved. This is the final step in the workflow before you would consider a live trade.
+        </p>
+        <p style={{margin: "0 0 8px 0"}}>
+          Review the order ticket carefully: check the symbol, side, shares, limit price, stop, and targets match your recommendation before staging.
+        </p>
+        <button
+          onClick={() => {
+            localStorage.setItem("macmarket-orders-explainer-dismissed", "1");
+            setExplainerDismissed(true);
+          }}
+          className="op-btn op-btn-ghost"
+        >
+          Got it, don&apos;t show again
+        </button>
+      </Card>
+    )}
     <Card title="Blotter mode">
       Generated from recommendation workflow bars sourced from: <strong>{dataSource}</strong>. This is paper-only execution for operator review.
     </Card>
@@ -183,13 +206,18 @@ export default function Page() {
     {!authReady ? <Card title="Auth status">Initializing authenticated session before orders API requests.</Card> : null}
     <Card>
       <div className="op-row">
-        <button onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode}>{busy ? "Staging..." : "Stage paper order"}</button>
+        <button onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode}>{busy ? "Staging..." : "Stage Simulated Paper Order (no real money)"}</button>
         <button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh blotter"}</button>
       </div>
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
     </Card>
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
-    {orders.length === 0 && !error ? <EmptyState title="No orders yet" hint="Stage a deterministic paper order to populate the blotter." /> : null}
+    {orders.length === 0 && !error ? (
+      <div className="op-stack">
+        <EmptyState title="No orders yet" hint="Run replay first, then click 'Stage Simulated Paper Order'. Paper orders are simulated — no real money is involved." />
+        <div><a href="/replay-runs" className="op-btn op-btn-primary" style={{ display: "inline-flex" }}>→ Go to Replay</a></div>
+      </div>
+    ) : null}
     <div className="op-grid-2">
       <Card title="Order table">
         <table className="op-table">
