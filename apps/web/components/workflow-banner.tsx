@@ -12,6 +12,8 @@ type Props = {
   backHref?: string;
   backLabel?: string;
   compact?: boolean;
+  nextDisabled?: boolean;
+  nextDisabledReason?: string;
 };
 
 function stepTone(step: GuidedStep, current: GuidedStep): "completed" | "current" | "pending" {
@@ -22,8 +24,18 @@ function stepTone(step: GuidedStep, current: GuidedStep): "completed" | "current
   return "pending";
 }
 
-export function WorkflowBanner({ current, state, nextHref, nextLabel, backHref, backLabel, compact = false }: Props) {
+export function WorkflowBanner({ current, state, nextHref, nextLabel, backHref, backLabel, compact = false, nextDisabled = false, nextDisabledReason }: Props) {
   const query = buildGuidedQuery(state);
+  const chips: string[] = [];
+  if (state.symbol) chips.push(`symbol: ${state.symbol}`);
+  if (state.strategy) chips.push(`strategy: ${state.strategy}`);
+  if (state.marketMode) chips.push(`market: ${state.marketMode}`);
+  if (state.source) chips.push(`source: ${state.source}`);
+  if (state.recommendationId) chips.push(`rec: ${state.recommendationId}`);
+  if (state.replayRunId) chips.push(`replay: ${state.replayRunId}`);
+  if (state.orderId) chips.push(`order: ${state.orderId}`);
+  const missingLineage = state.guided && (!state.recommendationId || (current === "Paper Order" && !state.replayRunId));
+  const disabledLabel = nextDisabledReason ?? "Complete required lineage in this step first.";
 
   return (
     <section className={`op-workflow-banner ${state.guided ? "is-sticky" : ""} ${compact ? "is-compact" : ""}`} data-testid="workflow-banner">
@@ -35,17 +47,12 @@ export function WorkflowBanner({ current, state, nextHref, nextLabel, backHref, 
         ))}
       </div>
       <div className="op-workflow-context">
-        <span>symbol: {state.symbol ?? "-"}</span>
-        <span>strategy: {state.strategy ?? "-"}</span>
-        <span>market: {state.marketMode ?? "equities"}</span>
-        <span>source: {state.source ?? "-"}</span>
-        <span>rec: {state.recommendationId ?? "-"}</span>
-        <span>replay: {state.replayRunId ?? "-"}</span>
-        <span>order: {state.orderId ?? "-"}</span>
+        {chips.map((chip) => <span key={chip}>{chip}</span>)}
+        {missingLineage ? <span>lineage incomplete</span> : null}
       </div>
       <div className="op-workflow-actions">
         {backHref && backLabel ? <Link className="op-btn op-btn-ghost" href={`${backHref}?${query}`}>{backLabel}</Link> : <span />}
-        {nextHref && nextLabel ? <Link className="op-btn op-btn-primary" href={`${nextHref}?${query}`}>{nextLabel}</Link> : null}
+        {nextHref && nextLabel ? (nextDisabled ? <button className="op-btn op-btn-primary" disabled title={disabledLabel}>{nextLabel}</button> : <Link className="op-btn op-btn-primary" href={`${nextHref}?${query}`}>{nextLabel}</Link>) : null}
       </div>
     </section>
   );

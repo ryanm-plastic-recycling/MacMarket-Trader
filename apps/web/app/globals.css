@@ -42,16 +42,18 @@ body { background: var(--bg); color: var(--text); font-family: Inter, Arial, san
 .op-brand-lockup-compact { width: 120px; }
 .op-brand-caption { color: var(--muted); margin-top: 12px; font-size: 13px; }
 .op-topbar-brand { display: inline-flex; align-items: center; gap: 12px; }
-.op-main { display: grid; grid-template-rows: auto 1fr; }
+.op-main { display: grid; grid-template-rows: auto 1fr; min-width: 0; }
 .op-topbar { border-bottom: 1px solid var(--border); padding: 12px 18px; background: var(--topbar-bg); color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.op-content { padding: 18px; display: grid; gap: 12px; }
+.op-content { padding: 18px; display: grid; gap: 12px; min-width: 0; }
 .op-nav { display: grid; gap: 8px; }
-.op-nav a { color: var(--link); text-decoration: none; padding: 6px 8px; border-radius: 6px; }
+.op-nav-section { display: grid; gap: 4px; }
+.op-nav-links { display: grid; gap: 4px; }
+.op-nav a { color: var(--link); text-decoration: none; padding: 6px 8px; border-radius: 6px; display: block; width: 100%; }
 .op-nav a:hover { background: var(--nav-hover); }
 .op-nav a.is-active { background: var(--active-row); font-weight: 600; }
 .op-nav-section-title { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin: 12px 0 4px; }
 
-.op-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.op-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
 .op-page-header h1 { margin: 0; font-size: 24px; }
 .op-page-header p { margin: 6px 0 0; color: var(--muted); }
 .op-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -101,6 +103,7 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .op-workflow-context { display: flex; flex-wrap: wrap; gap: 6px; }
 .op-workflow-context span { background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: var(--text); }
 .op-workflow-actions { display: flex; justify-content: space-between; align-items: center; }
+.op-topbar-brand span { white-space: normal; overflow-wrap: anywhere; }
 
 @media (max-width: 1200px) {
   .op-grid-2, .op-grid-3, .op-grid-4, .op-shell { grid-template-columns: 1fr; }

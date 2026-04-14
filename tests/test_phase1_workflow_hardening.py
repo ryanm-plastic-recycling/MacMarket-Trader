@@ -196,6 +196,41 @@ def test_guided_mode_blocks_non_equity_replay_and_order_paths() -> None:
     assert order.status_code == 409
 
 
+def test_guided_replay_and_order_require_full_lineage() -> None:
+    _approve_user()
+    replay_missing_rec = client.post('/user/replay-runs', headers={'Authorization': 'Bearer user-token'}, json={'guided': True, 'symbol': 'AAPL'})
+    assert replay_missing_rec.status_code == 400
+    order_missing_rec = client.post('/user/orders', headers={'Authorization': 'Bearer user-token'}, json={'guided': True, 'symbol': 'AAPL', 'replay_run_id': 1})
+    assert order_missing_rec.status_code == 400
+    order_missing_run = client.post('/user/orders', headers={'Authorization': 'Bearer user-token'}, json={'guided': True, 'recommendation_id': 'rec_fake'})
+    assert order_missing_run.status_code == 400
+
+
+def test_replay_detail_and_steps_return_enriched_lineage() -> None:
+    _approve_user()
+    created = client.post(
+        '/user/recommendations/generate',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'symbol': 'MSFT', 'strategy': 'Event Continuation', 'event_text': 'lineage seed'},
+    )
+    recommendation_id = created.json()['recommendation_id']
+    replay = client.post('/user/replay-runs', headers={'Authorization': 'Bearer user-token'}, json={'guided': True, 'recommendation_id': recommendation_id})
+    run_id = replay.json()['id']
+
+    detail = client.get(f'/user/replay-runs/{run_id}', headers={'Authorization': 'Bearer user-token'})
+    assert detail.status_code == 200
+    assert detail.json()['source_recommendation_id'] == recommendation_id
+    assert 'key_levels' in detail.json()
+
+    steps = client.get(f'/user/replay-runs/{run_id}/steps', headers={'Authorization': 'Bearer user-token'})
+    assert steps.status_code == 200
+    assert isinstance(steps.json(), list)
+    if steps.json():
+        first = steps.json()[0]
+        assert 'rejection_reason' in first
+        assert 'thesis' in first
+
+
 def test_empty_workflow_routes_do_not_seed_records() -> None:
     _approve_user()
     recs = client.get('/user/recommendations', headers={'Authorization': 'Bearer user-token'})

@@ -72,7 +72,15 @@ class RecommendationRepository:
                 select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
             ).scalar_one_or_none()
 
-    def attach_workflow_metadata(self, recommendation_id: str, *, market_data_source: str, fallback_mode: bool) -> None:
+    def attach_workflow_metadata(
+        self,
+        recommendation_id: str,
+        *,
+        market_data_source: str,
+        fallback_mode: bool,
+        market_mode: str | None = None,
+        source_strategy: str | None = None,
+    ) -> None:
         with self.session_factory() as session:
             row = session.execute(
                 select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_id)
@@ -82,6 +90,10 @@ class RecommendationRepository:
             payload = dict(row.payload or {})
             workflow = dict(payload.get("workflow") or {})
             workflow.update({"market_data_source": market_data_source, "fallback_mode": fallback_mode})
+            if market_mode:
+                workflow["market_mode"] = market_mode
+            if source_strategy:
+                workflow["source_strategy"] = source_strategy
             payload["workflow"] = workflow
             row.payload = payload
             session.commit()
@@ -231,6 +243,11 @@ class ReplayRepository:
         *,
         symbol: str,
         recommendation_id: str | None,
+        source_recommendation_id: str | None = None,
+        source_strategy: str | None = None,
+        source_market_mode: str | None = None,
+        source_market_data_source: str | None = None,
+        source_fallback_mode: bool | None = None,
         recommendation_count: int,
         approved_count: int,
         fill_count: int,
@@ -243,6 +260,11 @@ class ReplayRepository:
                 symbol=symbol,
                 app_user_id=app_user_id,
                 recommendation_id=recommendation_id,
+                source_recommendation_id=source_recommendation_id,
+                source_strategy=source_strategy,
+                source_market_mode=source_market_mode,
+                source_market_data_source=source_market_data_source,
+                source_fallback_mode=source_fallback_mode,
                 recommendation_count=recommendation_count,
                 approved_count=approved_count,
                 fill_count=fill_count,
@@ -289,6 +311,13 @@ class ReplayRepository:
         with self.session_factory() as session:
             stmt = select(ReplayStepModel).where(ReplayStepModel.replay_run_id == replay_run_id).order_by(ReplayStepModel.step_index.asc())
             return list(session.execute(stmt).scalars())
+
+    def get_run(self, replay_run_id: int, *, app_user_id: int | None = None) -> ReplayRunModel | None:
+        with self.session_factory() as session:
+            stmt = select(ReplayRunModel).where(ReplayRunModel.id == replay_run_id)
+            if app_user_id is not None:
+                stmt = stmt.where(ReplayRunModel.app_user_id == app_user_id)
+            return session.execute(stmt).scalar_one_or_none()
 
 
 class UserRepository:

@@ -52,13 +52,15 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="op-nav">
           {navSections.map((section) => (
-            <div key={section.title}>
+            <section key={section.title} className="op-nav-section">
               <div className="op-nav-section-title">{section.title}</div>
-              {section.links.map(([href, label]) => {
-                const active = isActivePath(pathname, href);
-                return <Link key={href} href={href} className={active ? "is-active" : ""}>{label}</Link>;
-              })}
-            </div>
+              <div className="op-nav-links">
+                {section.links.map(([href, label]) => {
+                  const active = isActivePath(pathname, href);
+                  return <Link key={href} href={href} className={active ? "is-active" : ""}>{label}</Link>;
+                })}
+              </div>
+            </section>
           ))}
         </nav>
       </aside>
