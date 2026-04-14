@@ -322,7 +322,7 @@ class OptionStructureContext(BaseModel):
 
 
 class ExpectedRange(BaseModel):
-    method: Literal["iv_1sigma", "atm_straddle_mid"] | None = None
+    method: Literal["iv_1sigma", "atm_straddle_mid", "equity_realized_vol_1sigma", "equity_atr_projection", "crypto_realized_vol_1sigma"] | None = None
     horizon_value: int | None = None
     horizon_unit: Literal["calendar_days", "trading_days", "hours"] | None = None
     reference_price_type: str | None = None

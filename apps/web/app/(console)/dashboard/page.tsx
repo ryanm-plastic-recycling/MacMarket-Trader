@@ -31,6 +31,8 @@ export default function Page() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "loading", message: "Loading operator dashboard…" });
   const [error, setError] = useState<string | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
+  // True while the first data fetch is in flight — shows "Loading..." instead of "-"
+  const loading = !data && feedback.state === "loading";
 
   useEffect(() => {
     fetchWorkflowApi<DashboardPayload>("/api/user/dashboard").then((result) => {
@@ -59,7 +61,7 @@ export default function Page() {
         title="Operator dashboard"
         subtitle="Canonical private-alpha path: Analyze → Recommendation → Replay → Paper Order."
         actions={<>
-          <StatusBadge tone="neutral">{data?.market_regime ?? "loading"}</StatusBadge>
+          <StatusBadge tone="neutral">{data?.market_regime ?? (loading ? "Loading..." : "-")}</StatusBadge>
           <Link href={GUIDED_ENTRY_PATH}><button>{GUIDED_FLOW_LABEL}</button></Link>
         </>}
       />
@@ -78,15 +80,15 @@ export default function Page() {
       ) : null}
 
       <div className="op-grid-4">
-        <Card title="Account role"><StatusBadge tone="neutral">{data?.account.app_role ?? "-"}</StatusBadge></Card>
-        <Card title="Approval"><StatusBadge tone={data?.account.approval_status === "approved" ? "good" : "warn"}>{data?.account.approval_status ?? "-"}</StatusBadge></Card>
+        <Card title="Account role"><StatusBadge tone="neutral">{data?.account.app_role ?? (loading ? "Loading..." : "-")}</StatusBadge></Card>
+        <Card title="Approval"><StatusBadge tone={data?.account.approval_status === "approved" ? "good" : "warn"}>{data?.account.approval_status ?? (loading ? "Loading..." : "-")}</StatusBadge></Card>
         <Card title="Provider summary">
-          <StatusBadge tone={data?.provider_health.workflow_execution_mode === "provider" ? "good" : "warn"}>{data?.provider_health.workflow_execution_mode ?? "-"}</StatusBadge>
+          <StatusBadge tone={data?.provider_health.workflow_execution_mode === "provider" ? "good" : "warn"}>{data?.provider_health.workflow_execution_mode ?? (loading ? "Loading..." : "-")}</StatusBadge>
           <div style={{ marginTop: 8, color: "#9fb0c3" }}>
-            configured: {data?.provider_health.configured_provider ?? "-"} · reads: {data?.provider_health.effective_read_mode ?? "-"}
+            configured: {data?.provider_health.configured_provider ?? (loading ? "Loading..." : "-")} · reads: {data?.provider_health.effective_read_mode ?? (loading ? "Loading..." : "-")}
           </div>
         </Card>
-        <Card title="Last refresh">{data?.last_refresh ?? "-"}</Card>
+        <Card title="Last refresh">{data?.last_refresh ?? (loading ? "Loading..." : "-")}</Card>
       </div>
 
       <div className="op-grid-2">

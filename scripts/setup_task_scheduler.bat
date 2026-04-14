@@ -148,19 +148,62 @@ if %ERRORLEVEL% == 0 (
 )
 
 REM ============================================================
+REM  TASK 4 — MacMarket-Cloudflare-Tunnel
+REM  Trigger: ONLOGON (current user — cloudflared needs user credentials)
+REM  Working directory: C:\cloudflared
+REM  Only created if it does not already exist.
+REM ============================================================
+
+set TASK_NAME=MacMarket-Cloudflare-Tunnel
+set TUNNEL_SCRIPT=%BASE_DIR%\scripts\start_cloudflare_tunnel.bat
+
+echo.
+echo [4/4] Checking for existing task "%TASK_NAME%"...
+schtasks /query /tn "%TASK_NAME%" >nul 2>&1
+
+if %ERRORLEVEL% == 0 (
+    echo       Task already exists — skipping creation.
+) else (
+    echo       Creating "%TASK_NAME%"...
+    REM Run as current user so cloudflared reads credentials from %USERPROFILE%\.cloudflared\
+    REM /sc ONLOGON fires at user logon (equivalent to "on startup" for an interactive session).
+    schtasks /create /tn "%TASK_NAME%" ^
+        /tr "\"%TUNNEL_SCRIPT%\"" ^
+        /sc ONLOGON ^
+        /ru "%USERDOMAIN%\%USERNAME%" ^
+        /f
+    if %ERRORLEVEL% neq 0 (
+        echo ERROR: Failed to create "%TASK_NAME%". Run this script as Administrator.
+        exit /b 1
+    )
+    echo       Created.
+
+    REM Set working directory to C:\cloudflared via PowerShell.
+    powershell -NoProfile -Command ^
+        "$t = Get-ScheduledTask -TaskName '%TASK_NAME%'; ^
+         $t.Actions[0].WorkingDirectory = 'C:\cloudflared'; ^
+         Set-ScheduledTask -InputObject $t" >nul 2>&1
+    if %ERRORLEVEL% neq 0 (
+        echo WARNING: Could not set working directory for "%TASK_NAME%" via PowerShell.
+    )
+)
+
+REM ============================================================
 
 echo.
 echo ============================================================
 echo  All tasks configured. Summary:
 echo.
-echo  MacMarket-Strategy-Reports  — weekdays 08:30 (SYSTEM)
-echo  MacMarket-Backend-Startup   — on boot, port 9510 (SYSTEM)
-echo  MacMarket-Frontend-Startup  — on boot, port 9500 (SYSTEM)
+echo  MacMarket-Strategy-Reports     — weekdays 08:30 (SYSTEM)
+echo  MacMarket-Backend-Startup      — on boot, port 9510 (SYSTEM)
+echo  MacMarket-Frontend-Startup     — on boot, port 9500 (SYSTEM)
+echo  MacMarket-Cloudflare-Tunnel    — on logon, current user
 echo.
 echo  Verify with:
-echo    schtasks /query /tn "MacMarket-Strategy-Reports" /v /fo LIST
-echo    schtasks /query /tn "MacMarket-Backend-Startup"  /v /fo LIST
-echo    schtasks /query /tn "MacMarket-Frontend-Startup" /v /fo LIST
+echo    schtasks /query /tn "MacMarket-Strategy-Reports"    /v /fo LIST
+echo    schtasks /query /tn "MacMarket-Backend-Startup"     /v /fo LIST
+echo    schtasks /query /tn "MacMarket-Frontend-Startup"    /v /fo LIST
+echo    schtasks /query /tn "MacMarket-Cloudflare-Tunnel"   /v /fo LIST
 echo ============================================================
 echo.
 

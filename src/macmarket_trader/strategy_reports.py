@@ -110,15 +110,27 @@ class StrategyReportService:
         target_email = str(settings.get("email_delivery_target") or schedule.email_target)
         ran_at = str(payload.get("ran_at") or datetime.now(timezone.utc).isoformat())
 
-        # Build the subject line: "MacMarket · {name} · Apr 13 · 5 candidates"
+        # Build the subject line: "MacMarket · Apr 13 · Top: NVDA (0.93) + 4 more"
         try:
             _ran_dt = datetime.fromisoformat(ran_at.replace("Z", "+00:00")).astimezone(timezone.utc)
             _date_label = f"{_ran_dt.strftime('%b')} {_ran_dt.day}"
         except Exception:  # noqa: BLE001
             _date_label = ran_at[:10]
-        _top_count = int((payload.get("summary") or {}).get("top_candidate_count", 0))
-        _count_label = f"{_top_count} candidate{'s' if _top_count != 1 else ''}"
-        subject = f"MacMarket \u00b7 {schedule.name} \u00b7 {_date_label} \u00b7 {_count_label}"
+        _top_candidates = list(payload.get("top_candidates") or [])
+        _top_count = int((payload.get("summary") or {}).get("top_candidate_count", len(_top_candidates)))
+        if _top_candidates:
+            _first = _top_candidates[0]
+            _top_sym = str(_first.get("symbol") or "")
+            _top_score = _first.get("score")
+            _score_str = f"{_top_score:.2f}" if isinstance(_top_score, (int, float)) else ""
+            _top_label = f"{_top_sym} ({_score_str})" if _score_str else _top_sym
+            _remaining = _top_count - 1
+            if _remaining > 0:
+                subject = f"MacMarket \u00b7 {_date_label} \u00b7 Top: {_top_label} + {_remaining} more"
+            else:
+                subject = f"MacMarket \u00b7 {_date_label} \u00b7 Top: {_top_label}"
+        else:
+            subject = f"MacMarket \u00b7 {_date_label} \u00b7 No candidates"
 
         email_html = render_strategy_report_html(
             schedule_name=schedule.name,

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from macmarket_trader.api.main import app
 from macmarket_trader.domain.models import AppUserModel
-from macmarket_trader.storage.db import SessionLocal, init_db
+from macmarket_trader.storage.db import SessionLocal
 
 
 client = TestClient(app)
@@ -30,10 +30,6 @@ def _bars() -> list[dict[str, object]]:
         }
         for i in range(25)
     ]
-
-
-def setup_module() -> None:
-    init_db()
 
 
 def test_unauthenticated_access_denied() -> None:

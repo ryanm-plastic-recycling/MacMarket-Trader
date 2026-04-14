@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-13
+Last updated: 2026-04-14
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -49,6 +49,47 @@ Completed in this pass:
 - Recommendations guided UX now explicitly calls out that queue promotion is equities-only and that options/crypto currently stop at research preview.
 - Expected move copy now explicitly states `iv_1sigma` as the current preview method, with tests for omitted-method behavior.
 - Replaced FastAPI startup `on_event` with lifespan-based runtime validation.
+
+Still open:
+- `atm_straddle_mid` expected-range method remains contract-allowed but not yet emitted by preview logic.
+
+### 2026-04-14 test stabilization + ops polish + UI fixes pass
+
+Completed in this pass:
+
+**Test suite stabilization (Pass 1)**
+- Rewrote `tests/conftest.py` to use `StaticPool` in-memory SQLite engine (`sqlite://`) patched into `macmarket_trader.storage.db` before any route modules are imported.
+- Root cause: file-based `macmarket_trader_test.db` with `engine.dispose()` caused intermittent "database is locked" / "no such table" errors on consecutive runs because module-level `TestClient(app)` singletons held pool connection references across test collection.
+- StaticPool shares one connection so DDL (`drop_all`/`create_all`) never contends with pool connections; every test starts from a clean schema via `autouse` fixture.
+- Removed redundant `setup_module()` / `init_db()` call in `test_auth_approval_api.py` that was superseded by the conftest fixture.
+- Extended `ExpectedRange.method` Literal in `domain/schemas.py` to include `equity_realized_vol_1sigma`, `equity_atr_projection`, and `crypto_realized_vol_1sigma` — previously caused `ValidationError` in the full-operator e2e path.
+- Result: 131 tests pass cleanly on three consecutive `pytest -q` runs with no flakes.
+
+**Cloudflare Tunnel Windows service (Pass 2)**
+- Created `scripts/start_cloudflare_tunnel.bat`: kills any existing `cloudflared.exe` processes, waits 2 seconds, then runs `cloudflared tunnel run macmarket-trader` in the foreground from `C:\cloudflared`.
+- Added 4th task "MacMarket-Cloudflare-Tunnel" to `scripts/setup_task_scheduler.bat` using `ONLOGON` trigger (not ONSTART/SYSTEM) so cloudflared runs as the current user and can read `%USERPROFILE%\.cloudflared\` credentials.
+- Working directory set to `C:\cloudflared` via PowerShell after task creation.
+
+**Strategy-specific trade levels (Pass 3)**
+- Rewrote equities section of `analysis_setup()` in `api/routes/admin.py` so each strategy family produces visually distinct entry zones, invalidation prices, targets, trigger text, and confidence values:
+  - `breakout_prior_day_high`: entry at prior.high ± 0.1%, target = prior.high + 1–1.8× prior range, confidence=0.69
+  - `pullback_trend_continuation`: entry near 7-day low, ATR-based stop, confidence=0.66
+  - `gap_follow_through`: entry near open gap level, gap-up confidence=0.62 vs. flat=0.55
+  - `mean_reversion`: entry below close (0.978–0.990×), target near 10-day mean, confidence=0.55
+  - `haco_context`: entry near close ±0.3%, confidence=0.67
+  - Default (event_continuation): entry just above close (1.001–1.007×), larger targets, confidence=0.71
+
+**Equity realized-vol expected range (Pass 3)**
+- Added `_build_equity_expected_range()` to `api/routes/admin.py`: computes log-return realized volatility from up to 20 recent daily closes, then `spot * annualized_vol * sqrt(horizon_trading_days / 252)` for the 5-trading-day horizon.
+- Returns `status="omitted"` when fewer than 3 bars available; `status="blocked"` when realized vol is zero.
+- Result: `/user/analysis/setup` now returns `expected_range` for equities instead of "preview unavailable."
+
+**Email subject format (Pass 3)**
+- Changed strategy report email subject from `"MacMarket · {schedule_name} · Apr 13 · 5 candidates"` to `"MacMarket · Apr 13 · Top: NVDA (0.93) + 4 more"` format, surfacing the top-ranked symbol and score directly in the subject line.
+
+**Dashboard loading skeleton (Pass 3)**
+- Added `const loading = !data && feedback.state === "loading"` sentinel to `dashboard/page.tsx`.
+- All four stat cards (Account role, Approval, Provider summary, Last refresh) now show `"Loading..."` instead of `"-"` during initial data fetch.
 
 Still open:
 - `atm_straddle_mid` expected-range method remains contract-allowed but not yet emitted by preview logic.

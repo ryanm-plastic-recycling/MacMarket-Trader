@@ -1,5 +1,6 @@
 """Admin approval and operator routes."""
 
+import math
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -85,6 +86,63 @@ def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | N
         upper_bound=round(reference + absolute_move, 2),
         snapshot_timestamp=utc_now(),
         provenance_notes="Research preview only. Computed from IV 1-sigma method; not execution support.",
+        status="computed",
+    )
+
+
+def _build_equity_expected_range(bars: list[Bar], *, horizon_trading_days: int = 5) -> ExpectedRange:
+    """Compute equity_realized_vol_1sigma expected range from bar history.
+
+    Formula: spot_price * realized_vol_annualized * sqrt(horizon_trading_days / 252)
+    where realized_vol_annualized = daily_log_return_stddev * sqrt(252).
+    Uses up to 20 daily closes to estimate recent realized volatility.
+    """
+    closes = [b.close for b in bars]
+    if len(closes) < 3:
+        return ExpectedRange(
+            status="omitted",
+            reason="insufficient_bar_history",
+            horizon_value=horizon_trading_days,
+            horizon_unit="trading_days",
+            reference_price_type="spot_last",
+            snapshot_timestamp=utc_now(),
+            provenance_notes="Need at least 3 bars to compute realized volatility.",
+        )
+    # Use the most recent 20 closes to estimate short-term realized vol
+    recent = closes[-21:]
+    log_returns = [math.log(recent[i] / recent[i - 1]) for i in range(1, len(recent))]
+    n = len(log_returns)
+    mean_ret = sum(log_returns) / n
+    variance = sum((r - mean_ret) ** 2 for r in log_returns) / max(n - 1, 1)
+    daily_vol = math.sqrt(variance)
+    if daily_vol <= 0:
+        return ExpectedRange(
+            status="blocked",
+            reason="zero_realized_volatility",
+            horizon_value=horizon_trading_days,
+            horizon_unit="trading_days",
+            reference_price_type="spot_last",
+            snapshot_timestamp=utc_now(),
+            provenance_notes="Realized volatility computed to zero — bars may be synthetic or flat.",
+        )
+    annualized_vol = daily_vol * math.sqrt(252)
+    spot = round(closes[-1], 2)
+    absolute_move = round(spot * annualized_vol * math.sqrt(horizon_trading_days / 252), 2)
+    percent_move = round((absolute_move / spot) * 100, 2) if spot > 0 else None
+    return ExpectedRange(
+        method="equity_realized_vol_1sigma",
+        horizon_value=horizon_trading_days,
+        horizon_unit="trading_days",
+        reference_price_type="spot_last",
+        absolute_move=absolute_move,
+        percent_move=percent_move,
+        lower_bound=round(spot - absolute_move, 2),
+        upper_bound=round(spot + absolute_move, 2),
+        snapshot_timestamp=utc_now(),
+        provenance_notes=(
+            f"Realized vol from {n}-day log-return history. "
+            "Regular-hours session only; scheduled events may dominate actual range."
+        ),
         status="computed",
     )
 
@@ -651,8 +709,86 @@ def analysis_setup(
 
     latest = bars[-1]
     prior = bars[-2] if len(bars) > 1 else bars[-1]
-    entry_low = round(latest.close * 0.995, 2)
-    entry_high = round(latest.close * 1.005, 2)
+
+    # ── Strategy-specific level computation for equities ─────────────────────
+    # Levels vary meaningfully by strategy so changing strategy on the same
+    # symbol updates the workbench display with a different plan.
+    sid = strategy_entry.strategy_id
+
+    if sid == "breakout_prior_day_high":
+        # Entry cluster at prior-day high; target is range extension above breakout
+        prior_range = round(prior.high - prior.low, 2)
+        entry_low = round(prior.high * 0.999, 2)
+        entry_high = round(prior.high * 1.003, 2)
+        invalidation_price = round(prior.high - prior_range * 0.5, 2)
+        targets = [round(prior.high + prior_range, 2), round(prior.high + prior_range * 1.8, 2)]
+        trigger = "Break and close above prior-day high with RVOL >= 1.5"
+        confidence = 0.69
+        active_reason = "Price closing above prior-day high confirms breakout readiness" if latest.close > prior.high else "Price below prior-day high — breakout not confirmed"
+
+    elif sid == "pullback_trend_continuation":
+        # Entry near multi-day support zone; tighter stop below recent low
+        recent_low = round(min(b.low for b in bars[-7:]), 2)
+        atr_proxy = round(sum(b.high - b.low for b in bars[-14:]) / 14, 2)
+        entry_low = round(recent_low * 1.002, 2)
+        entry_high = round(recent_low * 1.008, 2)
+        invalidation_price = round(recent_low - atr_proxy * 0.5, 2)
+        targets = [round(latest.close * 1.015, 2), round(latest.close * 1.03, 2)]
+        trigger = "Pullback to support with volume declining, then RVOL recovery >= 1.2"
+        confidence = 0.66
+        active_reason = "Price holding above recent support zone" if latest.close > recent_low * 1.005 else "Price testing support — wait for stabilization"
+
+    elif sid == "gap_follow_through":
+        # Entry based on gap from prior close; stop below gap fill level
+        gap_pct = (latest.open - prior.close) / prior.close if prior.close > 0 else 0
+        is_gap_up = gap_pct > 0.005
+        if is_gap_up:
+            entry_low = round(latest.open * 0.998, 2)
+            entry_high = round(latest.open * 1.004, 2)
+            invalidation_price = round(prior.close * 0.998, 2)
+            targets = [round(latest.close * 1.025, 2), round(latest.close * 1.05, 2)]
+            trigger = "Gap acceptance in first 30 min; no fill of gap; RVOL >= 1.6"
+            confidence = 0.62
+        else:
+            entry_low = round(latest.close * 0.994, 2)
+            entry_high = round(latest.close * 1.002, 2)
+            invalidation_price = round(latest.low * 0.997, 2)
+            targets = [round(latest.close * 1.02, 2), round(latest.close * 1.04, 2)]
+            trigger = "No meaningful gap; wait for intraday breakout with RVOL >= 1.4"
+            confidence = 0.55
+        active_reason = "Gap-up structure present — continuation bias" if is_gap_up else "Flat open — standard continuation conditions apply"
+
+    elif sid == "mean_reversion":
+        # Counter-trend entry near extended low; target closer to recent mean
+        recent_avg = round(sum(b.close for b in bars[-10:]) / 10, 2)
+        entry_low = round(latest.close * 0.978, 2)
+        entry_high = round(latest.close * 0.990, 2)
+        invalidation_price = round(latest.low * 0.992, 2)
+        targets = [round(recent_avg, 2), round(recent_avg * 1.01, 2)]
+        trigger = "Close below lower Bollinger band with RSI < 30 and RVOL spike >= 1.8"
+        confidence = 0.55
+        active_reason = "Extended below 10-day average — mean reversion setup window active" if latest.close < recent_avg * 0.98 else "Price near mean — wait for further extension"
+
+    elif sid == "haco_context":
+        # Near-VWAP entry based on HACO signal alignment
+        entry_low = round(latest.close * 0.997, 2)
+        entry_high = round(latest.close * 1.003, 2)
+        invalidation_price = round(prior.low * 0.994, 2)
+        targets = [round(latest.close * 1.018, 2), round(latest.close * 1.035, 2)]
+        trigger = "HACO bullish flip with HACOLT uptrend; enter near session VWAP"
+        confidence = 0.67
+        active_reason = "HACO trend context favorable" if latest.close >= prior.close else "HACO context — confirm flip before entry"
+
+    else:
+        # Default: Event Continuation and any unrecognized equities strategy
+        entry_low = round(latest.close * 1.001, 2)
+        entry_high = round(latest.close * 1.007, 2)
+        invalidation_price = round(prior.low * 0.995, 2)
+        targets = [round(latest.close * 1.025, 2), round(latest.close * 1.05, 2)]
+        trigger = "Hold above prior day high with RVOL >= 1.3 and catalyst still active"
+        confidence = 0.71
+        active_reason = "Post-catalyst continuation setup active" if latest.close >= prior.close else "Catalyst momentum not yet confirmed"
+
     payload = {
         "symbol": symbol,
         "market_mode": market_mode.value,
@@ -661,14 +797,19 @@ def analysis_setup(
         "strategy_metadata": strategy_entry.model_dump(mode="json"),
         "workflow_source": f"fallback ({source})" if fallback_mode else source,
         "active": latest.close >= prior.close,
-        "active_reason": "Price structure is above prior close and volume is stable" if latest.close >= prior.close else "Momentum confirmation not present",
-        "trigger": "Hold above prior day high with RVOL >= 1.3",
+        "active_reason": active_reason,
+        "trigger": trigger,
         "entry_zone": {"low": entry_low, "high": entry_high},
-        "invalidation": {"price": round(prior.low * 0.995, 2), "reason": "Loss of prior session support"},
-        "targets": [round(latest.close * 1.02, 2), round(latest.close * 1.04, 2)],
-        "confidence": 0.64,
+        "invalidation": {"price": invalidation_price, "reason": "Loss of prior session support"},
+        "targets": targets,
+        "confidence": confidence,
         "filters": ["breadth_supportive", "liquidity_ok", "volatility_moderate"],
     }
+
+    # Equities expected range: equity_realized_vol_1sigma from bar history
+    if market_mode == MarketMode.EQUITIES:
+        payload["expected_range"] = _build_equity_expected_range(bars, horizon_trading_days=5).model_dump(mode="json")
+
     if market_mode == MarketMode.OPTIONS:
         payload["operator_disclaimer"] = "Options research — paper only. Not execution support."
     elif market_mode == MarketMode.CRYPTO:
