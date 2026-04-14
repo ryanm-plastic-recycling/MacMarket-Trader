@@ -100,7 +100,7 @@ def test_user_generation_blocks_hidden_fallback_when_provider_expected(monkeypat
     assert "hidden demo fallback" in response.json()["detail"]
 
 
-def test_user_generation_non_equity_returns_planned_preview_error() -> None:
+def test_user_generation_non_equity_generates_recommendation() -> None:
     client = TestClient(app)
     _approve_default_user(client)
     response = client.post(
@@ -108,9 +108,9 @@ def test_user_generation_non_equity_returns_planned_preview_error() -> None:
         headers={"Authorization": "Bearer user-token"},
         json={"symbol": "AAPL", "market_mode": "options", "event_text": "Iron condor research setup"},
     )
-    assert response.status_code == 409
-    payload = response.json()["detail"]
-    assert payload["status"] == "planned_research_preview"
+    assert response.status_code == 200
+    payload = response.json()
+    assert "id" in payload
     assert payload["market_mode"] == "options"
 
 

@@ -332,13 +332,14 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
     event_text = str(req.get("thesis") or f"Queue promotion for {strategy}")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
+    promote_market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
     rec = recommendation_service.generate(
         symbol=symbol,
         bars=bars,
         event_text=event_text,
         event=None,
         portfolio=PortfolioSnapshot(),
-        market_mode=MarketMode.EQUITIES,
+        market_mode=promote_market_mode,
         user_is_approved=user_is_approved,
         app_user_id=_user.id,
     )
@@ -398,26 +399,16 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     bars, source, fallback_mode = _workflow_bars(symbol)
-    try:
-        rec = recommendation_service.generate(
-            symbol=symbol,
-            bars=bars,
-            event_text=event_text,
-            event=None,
-            portfolio=PortfolioSnapshot(),
-            market_mode=market_mode,
-            user_is_approved=user_is_approved,
-            app_user_id=_user.id,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "status": "planned_research_preview",
-                "market_mode": market_mode.value,
-                "message": str(exc),
-            },
-        ) from exc
+    rec = recommendation_service.generate(
+        symbol=symbol,
+        bars=bars,
+        event_text=event_text,
+        event=None,
+        portfolio=PortfolioSnapshot(),
+        market_mode=market_mode,
+        user_is_approved=user_is_approved,
+        app_user_id=_user.id,
+    )
     recommendation_repo.attach_workflow_metadata(
         rec.recommendation_id,
         market_data_source=source,
@@ -519,26 +510,16 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
             "Deterministic follow-through check for replay flow.",
         ]
     bars, source, fallback_mode = _workflow_bars(symbol)
-    try:
-        response = replay_engine.run(
-            ReplayRunRequest(
-                symbol=symbol,
-                market_mode=market_mode,
-                event_texts=[str(text) for text in event_texts],
-                bars=bars,
-                portfolio=PortfolioSnapshot(),
-            ),
-            app_user_id=_user.id,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "status": "planned_research_preview",
-                "market_mode": market_mode.value,
-                "message": str(exc),
-            },
-        ) from exc
+    response = replay_engine.run(
+        ReplayRunRequest(
+            symbol=symbol,
+            market_mode=market_mode,
+            event_texts=[str(text) for text in event_texts],
+            bars=bars,
+            portfolio=PortfolioSnapshot(),
+        ),
+        app_user_id=_user.id,
+    )
     for rec in response.recommendations:
         recommendation_repo.attach_workflow_metadata(rec.recommendation_id, market_data_source=source, fallback_mode=fallback_mode)
     latest_run = replay_repo.list_runs(limit=1, app_user_id=_user.id)
@@ -666,12 +647,7 @@ def analysis_setup(
     if strategy_entry is None:
         raise HTTPException(status_code=400, detail="No strategies configured for selected market mode")
 
-    if market_mode == MarketMode.EQUITIES:
-        bars, source, fallback_mode = _workflow_bars(symbol, limit=120)
-    else:
-        bars = preview_market_data_provider.fetch_historical_bars(symbol=symbol, timeframe=timeframe, limit=120)
-        source = "planned_preview_fallback"
-        fallback_mode = True
+    bars, source, fallback_mode = _workflow_bars(symbol, limit=120)
 
     latest = bars[-1]
     prior = bars[-2] if len(bars) > 1 else bars[-1]
@@ -693,35 +669,35 @@ def analysis_setup(
         "confidence": 0.64,
         "filters": ["breadth_supportive", "liquidity_ok", "volatility_moderate"],
     }
-    if market_mode != MarketMode.EQUITIES:
-        payload.update(
-            {
-                "status": "planned_research_preview",
-                "execution_enabled": False,
-                "operator_guidance": (
-                    "Mode is planned research preview only in Phase 1. "
-                    "Use setup notes and risk context; do not stage live recommendation generation."
-                ),
-                "required_data_inputs": strategy_entry.required_data_inputs,
-            }
-        )
+    if market_mode == MarketMode.OPTIONS:
+        payload["operator_disclaimer"] = "Options research — paper only. Not execution support."
+    elif market_mode == MarketMode.CRYPTO:
+        payload["operator_disclaimer"] = "Crypto research — paper only. Not execution support."
+
     if market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "iron_condor":
-        iv_snapshot = 0.05 if symbol.startswith("LOW") else 0.24
+        # Use a low IV for LOWIV test symbol to exercise the IV quality gate
+        iv_snapshot = 0.05 if symbol.upper().startswith("LOW") else 0.24
+        short_put = round(latest.close * 0.955, 2)
+        long_put = round(latest.close * 0.930, 2)
+        short_call = round(latest.close * 1.045, 2)
+        long_call = round(latest.close * 1.070, 2)
+        net_credit = round(latest.close * 0.0067, 2)
+        width = round(short_put - long_put, 2)
         option_structure = {
             "type": "iron_condor",
-            "expiration": "2026-05-15",
+            "expiration": "2026-05-16",
             "legs": [
-                {"action": "buy", "right": "put", "strike": 190.0, "label": "lower long put"},
-                {"action": "sell", "right": "put", "strike": 195.0, "label": "short put"},
-                {"action": "sell", "right": "call", "strike": 210.0, "label": "short call"},
-                {"action": "buy", "right": "call", "strike": 215.0, "label": "higher long call"},
+                {"action": "buy", "right": "put", "strike": long_put, "label": "lower long put"},
+                {"action": "sell", "right": "put", "strike": short_put, "label": "short put"},
+                {"action": "sell", "right": "call", "strike": short_call, "label": "short call"},
+                {"action": "buy", "right": "call", "strike": long_call, "label": "higher long call"},
             ],
-            "net_credit": 1.35,
-            "max_profit": 135.0,
-            "max_loss": 365.0,
-            "breakeven_low": 193.65,
-            "breakeven_high": 211.35,
-            "dte": 42,
+            "net_credit": net_credit,
+            "max_profit": round(net_credit * 100, 2),
+            "max_loss": round((width - net_credit) * 100, 2),
+            "breakeven_low": round(short_put - net_credit, 2),
+            "breakeven_high": round(short_call + net_credit, 2),
+            "dte": 33,
             "iv_snapshot": iv_snapshot,
             "theta_context": 0.07,
             "vega_context": -0.11,
@@ -730,10 +706,63 @@ def analysis_setup(
         payload["option_structure"] = option_structure
         payload["expected_range"] = _build_options_expected_range(
             latest_close=latest.close,
-            iv_snapshot=option_structure["iv_snapshot"],
+            iv_snapshot=iv_snapshot,
+            dte=option_structure["dte"],
+        ).model_dump(mode="json")
+    elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bull_call_debit_spread":
+        iv_snapshot = 0.25
+        long_call = round(latest.close * 1.02, 2)
+        short_call = round(latest.close * 1.06, 2)
+        debit = round(latest.close * 0.012, 2)
+        width = round(short_call - long_call, 2)
+        option_structure = {
+            "type": "bull_call_debit_spread",
+            "expiration": "2026-05-16",
+            "legs": [
+                {"action": "buy", "right": "call", "strike": long_call, "label": "long call"},
+                {"action": "sell", "right": "call", "strike": short_call, "label": "short call"},
+            ],
+            "net_debit": debit,
+            "max_profit": round((width - debit) * 100, 2),
+            "max_loss": round(debit * 100, 2),
+            "breakeven_high": round(long_call + debit, 2),
+            "dte": 33,
+            "iv_snapshot": iv_snapshot,
+        }
+        payload["option_structure"] = option_structure
+        payload["expected_range"] = _build_options_expected_range(
+            latest_close=latest.close,
+            iv_snapshot=iv_snapshot,
+            dte=option_structure["dte"],
+        ).model_dump(mode="json")
+    elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bear_put_debit_spread":
+        iv_snapshot = 0.25
+        long_put = round(latest.close * 0.98, 2)
+        short_put = round(latest.close * 0.94, 2)
+        debit = round(latest.close * 0.012, 2)
+        width = round(long_put - short_put, 2)
+        option_structure = {
+            "type": "bear_put_debit_spread",
+            "expiration": "2026-05-16",
+            "legs": [
+                {"action": "buy", "right": "put", "strike": long_put, "label": "long put"},
+                {"action": "sell", "right": "put", "strike": short_put, "label": "short put"},
+            ],
+            "net_debit": debit,
+            "max_profit": round((width - debit) * 100, 2),
+            "max_loss": round(debit * 100, 2),
+            "breakeven_low": round(long_put - debit, 2),
+            "dte": 33,
+            "iv_snapshot": iv_snapshot,
+        }
+        payload["option_structure"] = option_structure
+        payload["expected_range"] = _build_options_expected_range(
+            latest_close=latest.close,
+            iv_snapshot=iv_snapshot,
             dte=option_structure["dte"],
         ).model_dump(mode="json")
     elif market_mode == MarketMode.OPTIONS:
+        # Covered Call requires inventory modeling — expected range omitted pending that data
         payload["expected_range"] = ExpectedRange(
             status="omitted",
             reason="strategy_not_configured_for_expected_range_preview",
@@ -741,17 +770,17 @@ def analysis_setup(
             horizon_unit="calendar_days",
             reference_price_type="underlying_last",
             snapshot_timestamp=utc_now(),
-            provenance_notes="Expected range preview currently scoped to Iron Condor research setup only.",
+            provenance_notes="Expected range for this strategy requires inventory and assignment context not yet wired.",
         ).model_dump(mode="json")
     if market_mode == MarketMode.CRYPTO:
         payload["crypto_context"] = {
-            "venue": "preview_unwired",
+            "venue": "spot",
             "quote_currency": "USD",
             "mark_price": round(latest.close, 2),
             "index_price": round(latest.close * 0.998, 2),
-            "funding_rate": "preview_only_not_live",
-            "basis": "preview_only_not_live",
-            "open_interest": "preview_only_not_live",
+            "funding_rate": "unavailable",
+            "basis": "unavailable",
+            "open_interest": "unavailable",
             "liquidation_buffer_pct": 6.5,
         }
     return payload

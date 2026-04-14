@@ -11,6 +11,10 @@ import pytest
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("AUTH_PROVIDER", "mock")
 os.environ.setdefault("EMAIL_PROVIDER", "console")
+# Disable live market data providers in tests so _workflow_bars uses the deterministic
+# fallback without triggering the provider-unavailable 503 guard.
+os.environ.setdefault("POLYGON_ENABLED", "false")
+os.environ.setdefault("MARKET_DATA_ENABLED", "false")
 # Redirect to an isolated test database before any app module is imported.
 # settings = Settings() and engine = build_engine() are module-level singletons
 # in config.py and storage/db.py — they read DATABASE_URL exactly once at import

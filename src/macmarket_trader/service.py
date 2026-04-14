@@ -68,10 +68,6 @@ class RecommendationService:
         app_user_id: int | None = None,
     ) -> TradeRecommendation:
         portfolio_state = portfolio or PortfolioSnapshot()
-        if market_mode != MarketMode.EQUITIES:
-            raise ValueError(
-                f"{market_mode.value} mode is not enabled yet for live recommendation generation. Use analysis research preview."
-            )
         structured_event = event or self.extractor.extract(symbol=symbol, text=event_text or "")
         technical_context = self.provider.build_technical_context(bars)
         regime = self.regime_engine.classify(bars)

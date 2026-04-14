@@ -56,7 +56,7 @@ def test_strategy_schedule_create_and_run_now() -> None:
         run_row = session.execute(select(StrategyReportRunModel).where(StrategyReportRunModel.schedule_id == schedule_id)).scalar_one()
         assert run_row.status == 'sent'
 
-def test_strategy_schedule_non_equity_mode_blocks_run_cleanly() -> None:
+def test_strategy_schedule_non_equity_mode_runs_successfully() -> None:
     _seed_and_approve_user()
     create = client.post(
         '/user/strategy-schedules',
@@ -76,8 +76,10 @@ def test_strategy_schedule_non_equity_mode_blocks_run_cleanly() -> None:
     schedule_id = create.json()['id']
 
     run_now = client.post(f'/user/strategy-schedules/{schedule_id}/run', headers={'Authorization': 'Bearer user-token'})
-    assert run_now.status_code == 409
-    assert 'planned research preview' in run_now.json()['detail']
+    assert run_now.status_code == 200
+    payload = run_now.json()
+    assert 'top_candidates' in payload
+    assert 'queue' in payload
 
 
 def test_strategy_report_due_runner_selects_due_schedules() -> None:
@@ -122,7 +124,7 @@ def test_symbol_analyze_response_shape() -> None:
     assert 'levels' in payload
 
 
-def test_analysis_setup_accepts_market_mode_and_returns_preview_for_options() -> None:
+def test_analysis_setup_accepts_market_mode_and_returns_setup_for_options() -> None:
     _seed_and_approve_user()
     resp = client.get(
         '/user/analysis/setup',
@@ -132,8 +134,8 @@ def test_analysis_setup_accepts_market_mode_and_returns_preview_for_options() ->
     assert resp.status_code == 200
     payload = resp.json()
     assert payload['market_mode'] == 'options'
-    assert payload['status'] == 'planned_research_preview'
-    assert payload['execution_enabled'] is False
+    assert 'operator_disclaimer' in payload
+    assert 'Options research' in payload['operator_disclaimer']
     assert payload['option_structure']['type'] == 'iron_condor'
     assert payload['expected_range']['status'] == 'computed'
     assert payload['expected_range']['method'] == 'iv_1sigma'
@@ -224,7 +226,7 @@ def test_analysis_setup_expected_range_omitted_reason_for_non_iron_condor() -> N
     assert payload['expected_range']['method'] is None
 
 
-def test_analysis_setup_returns_preview_for_crypto() -> None:
+def test_analysis_setup_returns_functional_setup_for_crypto() -> None:
     _seed_and_approve_user()
     resp = client.get(
         '/user/analysis/setup',
@@ -234,9 +236,10 @@ def test_analysis_setup_returns_preview_for_crypto() -> None:
     assert resp.status_code == 200
     payload = resp.json()
     assert payload['market_mode'] == 'crypto'
-    assert payload['status'] == 'planned_research_preview'
-    assert payload['execution_enabled'] is False
+    assert 'operator_disclaimer' in payload
+    assert 'Crypto research' in payload['operator_disclaimer']
     assert 'crypto_context' in payload
+    assert payload['crypto_context']['mark_price'] > 0
 
 
 def test_strategy_schedule_list_includes_run_summary() -> None:

@@ -109,8 +109,27 @@ def _header(schedule_name: str, ran_at: str, source: str) -> str:
     date_str = _fmt_dt(ran_at)
     return (
         f'<tr><td style="background-color:{_BG_CARD};padding:28px 28px 22px 28px;">'
-        f'<p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:10px;'
-        f'font-weight:700;letter-spacing:3px;color:{_GREEN};text-transform:uppercase;">MacMarket Trader</p>'
+        # Logo lockup: monogram circle + brand name
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">'
+        f'<tr>'
+        f'<td align="center" valign="middle" width="46" '
+        f'style="width:46px;height:46px;line-height:46px;background-color:{_BG_DARK};'
+        f'border:2px solid {_GREEN};border-radius:50%;'
+        f'font-family:Georgia,serif;font-size:22px;font-weight:700;color:{_TEXT_PRIMARY};">M</td>'
+        f'<td width="12" style="width:12px;">&nbsp;</td>'
+        f'<td valign="middle">'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:28px;font-weight:700;'
+        f'color:{_TEXT_PRIMARY};line-height:1;">MacMarket</p>'
+        f'<p style="margin:2px 0 0 1px;font-family:Arial,sans-serif;font-size:12px;'
+        f'font-weight:700;letter-spacing:3px;color:{_GREEN};text-transform:uppercase;line-height:1;">TRADER</p>'
+        f'</td>'
+        f'</tr>'
+        f'</table>'
+        # Subtitle
+        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:10px;'
+        f'font-weight:600;letter-spacing:2px;color:{_TEXT_SECONDARY};text-transform:uppercase;">'
+        f'Morning Strategy Intelligence</p>'
+        # Schedule name + meta
         f'<h1 style="margin:0 0 12px 0;font-family:Arial,sans-serif;font-size:23px;'
         f'font-weight:700;color:{_TEXT_PRIMARY};line-height:1.2;">{_e(schedule_name)}</h1>'
         f'<p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:{_TEXT_SECONDARY};">'

@@ -180,7 +180,7 @@ export default function Page() {
       chart.addCandlestickSeries().setData(candles);
       applyIndicatorsToChart(chart, candles, selectedIndicators);
 
-      if (setupPayload?.entry_zone && nextMode === "equities") {
+      if (setupPayload?.entry_zone) {
         const entry = chart.addLineSeries({ color: "#6ea8fe", lineWidth: 2 });
         const stop = chart.addLineSeries({ color: "#ff8b8b", lineStyle: LineStyle.Dashed, lineWidth: 2 });
         const target = chart.addLineSeries({ color: "#7ee787", lineStyle: LineStyle.Dotted, lineWidth: 2 });
@@ -247,10 +247,6 @@ export default function Page() {
   }
 
   async function createRecommendation() {
-    if (appliedMarketMode !== "equities") {
-      setFeedback({ state: "error", message: "Create recommendation is disabled for planned research preview modes (options/crypto)." });
-      return;
-    }
     setFeedback({ state: "loading", message: "Creating recommendation from workbench setup…" });
     const result = await fetchWorkflowApi<{ recommendation_id?: string; data?: { recommendation_id?: string } }>(
       "/api/user/recommendations/generate",
@@ -320,7 +316,8 @@ export default function Page() {
         <div><label>Strategy</label><select value={draftStrategy} onChange={(e) => setDraftStrategy(e.target.value)}>{strategiesForDraftMode.map((entry) => <option key={entry.strategy_id} value={entry.display_name}>{entry.display_name}</option>)}</select></div>
         <div className="op-row" style={{ alignItems: "end" }}><button data-testid="analysis-refresh-button" onClick={() => void refreshAnalysis()}>Refresh analysis</button></div>
       </div>
-      {draftMarketMode !== "equities" ? <StatusBadge tone="warn">planned research preview</StatusBadge> : null}
+      {draftMarketMode === "options" ? <StatusBadge tone="warn">Options research — paper only</StatusBadge> : null}
+      {draftMarketMode === "crypto" ? <StatusBadge tone="warn">Crypto research — paper only</StatusBadge> : null}
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void refreshAnalysis()} />
     </Card>
 
@@ -353,7 +350,7 @@ export default function Page() {
             <div><strong>Targets:</strong> {setup?.targets?.join(" / ") ?? "-"}</div>
           </>
         )}
-        <div className="op-row" style={{ marginTop: 8 }}><button data-testid="analysis-create-recommendation-button" disabled={appliedMarketMode !== "equities"} onClick={() => void createRecommendation()}>{appliedMarketMode === "equities" ? "Create recommendation from setup" : "Preview-only mode (recommendation promotion blocked)"}</button></div>
+        <div className="op-row" style={{ marginTop: 8 }}><button data-testid="analysis-create-recommendation-button" onClick={() => void createRecommendation()}>Create recommendation from setup</button></div>
       </Card>
       <Card title="Expected move">
         {setup?.expected_range ? (
@@ -365,7 +362,7 @@ export default function Page() {
             {setup.expected_range.reason ? <div><strong>Reason:</strong> {setup.expected_range.reason}</div> : null}
             <div>{formatExpectedMoveSummary(setup.expected_range)}</div>
           </>
-        ) : <div>Expected move preview unavailable for this setup.</div>}
+        ) : <div>Expected move data unavailable for this setup.</div>}
       </Card>
     </div>
 

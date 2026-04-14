@@ -599,7 +599,7 @@ def test_workflow5_provider_health() -> None:
     assert isinstance(market_data_entry["operational_impact"], str)
     assert len(market_data_entry["operational_impact"]) > 0
 
-    # Status must be a known sentinel
-    assert market_data_entry["status"] in {"ok", "error", "degraded"}, (
+    # Status must be a known sentinel ("warning" is the fallback-provider state)
+    assert market_data_entry["status"] in {"ok", "warning", "error", "degraded"}, (
         f"Unexpected market_data status: {market_data_entry['status']!r}"
     )

@@ -127,15 +127,13 @@ class DeterministicRankingEngine:
         timeframe: str,
         top_n: int = 5,
     ) -> dict[str, object]:
-        if market_mode != MarketMode.EQUITIES:
-            raise ValueError(
-                f"Ranking queue market_mode '{market_mode.value}' is planned research preview only and not runnable for live workflows."
-            )
-
-        allowed = {entry.display_name: entry for entry in list_strategies(MarketMode.EQUITIES)}
+        allowed = {entry.display_name: entry for entry in list_strategies(market_mode)}
         selected: list[StrategyRegistryEntry] = [allowed[name] for name in strategies if name in allowed]
         if not selected:
-            selected = [allowed["Event Continuation"]]
+            fallback_entry = next(iter(allowed.values()), None)
+            if fallback_entry is None:
+                return {"queue": [], "top_candidates": [], "watchlist_only": [], "no_trade": [], "summary": {"total": 0, "top_candidate_count": 0, "watchlist_count": 0, "no_trade_count": 0}}
+            selected = [fallback_entry]
 
         output: list[RankedCandidate] = []
         for symbol, (bars, source, fallback_mode) in bars_by_symbol.items():

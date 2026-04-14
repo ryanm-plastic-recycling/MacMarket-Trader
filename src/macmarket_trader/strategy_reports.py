@@ -56,19 +56,18 @@ class StrategyReportService:
             raise ValueError("schedule not found")
         settings = dict(schedule.payload or {})
         market_mode = MarketMode(str(settings.get("market_mode") or MarketMode.EQUITIES.value))
-        if market_mode != MarketMode.EQUITIES:
-            raise ValueError(
-                f"Strategy schedule market_mode '{market_mode.value}' is planned research preview only and not runnable in Phase 1."
-            )
         symbols = [str(item).upper() for item in settings.get("symbols", []) if str(item).strip()]
         strategies = [str(item) for item in settings.get("enabled_strategies", []) if str(item).strip()]
-        allowed = {entry.display_name for entry in list_strategies(MarketMode.EQUITIES)}
+        allowed = {entry.display_name for entry in list_strategies(market_mode)}
         strategies = [strategy for strategy in strategies if strategy in allowed]
         top_n = int(settings.get("top_n", 5))
         if not symbols:
             raise ValueError("schedule requires at least one symbol")
         if not strategies:
-            strategies = ["Event Continuation"]
+            default_strategy = next(iter(allowed), None)
+            strategies = [default_strategy] if default_strategy else []
+        if not strategies:
+            raise ValueError("no runnable strategies configured for this market mode")
 
         bars_by_symbol = {}
         last_source = "provider"
