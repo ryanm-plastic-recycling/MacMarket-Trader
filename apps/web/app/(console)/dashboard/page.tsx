@@ -116,10 +116,22 @@ export default function Page() {
       </Card>
 
       <div className="op-grid-4">
-        <Card title="Recent replay runs">{data?.recent_replay_runs.map((r) => <div key={r.id}>{r.symbol} • {r.recommendation_count}/{r.approved_count}</div>)}</Card>
-        <Card title="Recent orders">{data?.recent_orders.map((o) => <div key={o.order_id}>{o.symbol} • {o.side} • {o.status}</div>)}</Card>
-        <Card title="Pending admin actions">{data?.pending_admin_actions.map((u) => <div key={u.id}>{u.display_name} ({u.email})</div>)}</Card>
-        <Card title="Alert / event log">{data?.alerts.map((a, idx) => <div key={idx}>[{a.level}] {a.message}</div>)}</Card>
+        <Card title="Recent replay runs">
+          {data && data.recent_replay_runs.length === 0 ? <div style={{ color: "#9fb0c3", fontSize: "0.85rem" }}>No replay runs yet. Run your first replay from the <Link href="/replay-runs">Replay workspace</Link>.</div> : null}
+          {data?.recent_replay_runs.map((r) => <div key={r.id}>{r.symbol} • {r.recommendation_count}/{r.approved_count}</div>)}
+        </Card>
+        <Card title="Recent orders">
+          {data && data.recent_orders.length === 0 ? <div style={{ color: "#9fb0c3", fontSize: "0.85rem" }}>No paper orders yet. Stage your first order from the <Link href="/orders">Orders workspace</Link>.</div> : null}
+          {data?.recent_orders.map((o) => <div key={o.order_id}>{o.symbol} • {o.side} • {o.status}</div>)}
+        </Card>
+        <Card title="Pending admin actions">
+          {data && data.pending_admin_actions.length === 0 ? <div style={{ color: "#9fb0c3", fontSize: "0.85rem" }}>No pending approvals.</div> : null}
+          {data?.pending_admin_actions.map((u) => <div key={u.id}>{u.display_name} ({u.email})</div>)}
+        </Card>
+        <Card title="Alert / event log">
+          {data && data.alerts.length === 0 ? <div style={{ color: "#9fb0c3", fontSize: "0.85rem" }}>No active alerts.</div> : null}
+          {data?.alerts.map((a, idx) => <div key={idx}>[{a.level}] {a.message}</div>)}
+        </Card>
       </div>
 
       <Card title="Operational audit trail">

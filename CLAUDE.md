@@ -153,8 +153,8 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Current Phase Status
 
-**CURRENT PHASE: Phase 5 — Operator console polish (active)**
-Phases 0–4: Complete. 137 backend tests passing. `npx tsc --noEmit` clean.
+**CURRENT PHASE: Phases 1–6 complete. Operational readiness for second private-alpha operator.**
+141 backend pytest tests passing. `npx tsc --noEmit` clean.
 
 ### Completed this session (2026-04-15)
 
@@ -207,7 +207,34 @@ Phases 0–4: Complete. 137 backend tests passing. `npx tsc --noEmit` clean.
 - Frontend `StrategyRegistryEntry` type: added `description?: string` and `regime_fit?: string`
 - Analysis page: `selectedStrategyEntry` useMemo + inline description block below Strategy `<select>` (muted text, description + `· regime_fit`)
 
+**Phase 6 — Close-trade lifecycle (equities paper trading)**
+- `paper_positions` lifecycle: buy order stage creates open position row (`create_position` on `PaperPortfolioRepository`)
+- `POST /user/orders/{order_id}/close`: finds order + position, creates `paper_trades` row with `realized_pnl`, closes position, marks order "closed"
+- Portfolio-summary endpoint wired to real data: `lifecycle_status: "active"`, `unrealized_pnl: null`, `win_rate: null` when no closed trades
+- Orders page: "Close position" button (op-btn-destructive) → inline close_price input → Confirm close → shows P&L (green/red); resets on order selection change
+- Portfolio card redesigned to `op-grid-4`: Open positions / Open notional / Realized P&L (colored) / Win rate
+- `apps/web/app/api/user/orders/[orderId]/close/route.ts` proxy added
+- 4 new backend tests; 141 total. `npx tsc --noEmit` clean.
+
+**Scheduled reports polish — output clarity + action links**
+- Schedule list: last run shown as relative time ("2 hours ago" / "Never run"); top candidate count as colored StatusBadge (green/>0, amber/0, "—"/never run)
+- Run history rows: summary format changed to `N top · N watch · N no-trade`
+- Top candidates detail panel: "Analyze in guided mode →" link per row → `/analysis?guided=1&symbol=X&strategy=Y` (op-btn-secondary)
+- Empty state (no schedules): operator-useful title + description + "Create your first schedule" CTA scrolls to create form via ref
+- No backend changes (data already in endpoint response)
+
+**Operational readiness audit (Option B — second operator readiness)**
+- Deploy script: PASS — `pip install -e ".[dev]"`, `apply_schema_updates()`, ports 9510/9500 all current
+- Runbook: UPDATED — Phase 1 → Phase 5/6 throughout; section 3 now covers full Phase 5/6 guided flow, close-trade, and schedules; new section 8 (Clerk config requirements); new section 9 (Onboarding a second operator checklist)
+- Invite flow: PASS — sign-up, pending-approval, admin panel, console gate all functional; Clerk config requirements documented
+- Data isolation: ALL PASS — all 7 entities (recommendations, replay runs, orders, paper positions, paper trades, onboarding status, schedules) scoped by `app_user_id`
+- Empty states FIXED: dashboard "Recent replay runs" / "Recent orders" / "Pending admin actions" / "Alert log" all show muted hints when empty; replay runs table and orders table show centered hint rows when zero rows
+
 ---
+
+## Important implementation constraints
+
+- Order `side` field uses `Direction` enum: `"long"` (not `"buy"`) and `"short"` (not `"sell"`). Check `order.side.value == "long"` for buy-side position creation.
 
 ## Open Items
 
@@ -217,8 +244,8 @@ Phases 0–4: Complete. 137 backend tests passing. `npx tsc --noEmit` clean.
 
 ---
 
-## Not started (Phase 6 scope — do not touch yet)
+## Not started (deferred — do not touch yet)
 
 - Options/crypto replay mode-native semantics
 - `atm_straddle_mid` expected-range method
-- Full close-trade lifecycle accounting (`paper_positions` / `paper_trades` scaffold exists, UI not built)
+- Fetch realized_pnl from paper_trades DB on page load (currently only shown in session via `closeResults` state — page refresh loses it)

@@ -724,8 +724,50 @@ def paper_portfolio_summary(_user=Depends(require_approved_user)):
     summary = paper_portfolio_repo.summary(app_user_id=_user.id)
     return {
         **summary,
-        "lifecycle_status": "scaffolded",
-        "notes": "Position/trade lifecycle accounting endpoints are enabled. Realized P&L remains zero until close-trade lifecycle writes are connected.",
+        "lifecycle_status": "active",
+        "unrealized_pnl": None,
+        "win_rate": summary["win_rate"] if summary["closed_trade_count"] > 0 else None,
+    }
+
+
+@user_router.post("/orders/{order_id}/close")
+def close_order(order_id: str, req: dict[str, object], _user=Depends(require_approved_user)):
+    close_price_raw = req.get("close_price")
+    if close_price_raw is None:
+        raise HTTPException(status_code=400, detail="close_price is required.")
+    close_price = float(close_price_raw)
+    order_row = order_repo.get_by_order_id(order_id, app_user_id=_user.id)
+    if order_row is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    if order_row.status == "closed":
+        raise HTTPException(status_code=409, detail="Order is already closed.")
+    position = paper_portfolio_repo.get_open_position(app_user_id=_user.id, symbol=order_row.symbol)
+    now = utc_now()
+    avg_entry = position.average_price if position is not None else order_row.limit_price
+    quantity = position.quantity if position is not None else float(order_row.shares)
+    opened_at = position.opened_at if position is not None else order_row.created_at
+    realized_pnl = (close_price - avg_entry) * quantity
+    paper_portfolio_repo.create_trade(
+        app_user_id=_user.id,
+        symbol=order_row.symbol,
+        side=order_row.side,
+        entry_price=avg_entry,
+        exit_price=close_price,
+        quantity=quantity,
+        realized_pnl=realized_pnl,
+        opened_at=opened_at,
+        closed_at=now,
+    )
+    if position is not None:
+        paper_portfolio_repo.close_position(position_id=position.id, closed_at=now)
+    order_repo.set_status(order_id, status="closed")
+    return {
+        "order_id": order_id,
+        "symbol": order_row.symbol,
+        "realized_pnl": round(realized_pnl, 2),
+        "entry_price": round(avg_entry, 2),
+        "close_price": round(close_price, 2),
+        "shares": int(quantity),
     }
 
 
@@ -792,6 +834,14 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         app_user_id=_user.id,
     )
     recommendation_service.persist_fill(fill)
+    if order.side.value == "long":
+        paper_portfolio_repo.create_position(
+            app_user_id=_user.id,
+            symbol=order.symbol,
+            side=order.side.value,
+            quantity=float(order.shares),
+            average_price=order.limit_price,
+        )
     return {
         "order_id": order.order_id,
         "recommendation_id": rec.recommendation_id,

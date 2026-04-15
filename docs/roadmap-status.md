@@ -16,8 +16,114 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader has completed **Phase 4 — Vendor integrations** and is entering **Phase 5 — Operator console polish** as the active implementation scope.
-Phases 1–4 form the operational baseline. Phase 5 delivers the polished operator surfaces that make the system credible as a paid tool.
+MacMarket-Trader has completed **Phases 1–6** (including close-trade lifecycle and schedules polish) and is entering **operational readiness** for a second private-alpha operator.
+The system is verified: 141 backend tests passing, TypeScript clean, all 7 user-scoped entities isolated by `app_user_id`.
+
+### 2026-04-15 Operational readiness audit — Option B (second operator readiness)
+
+Completed in this pass:
+
+**Audit 1 — Deploy script currency: PASS**
+- `scripts/deploy_windows.bat` verified current: `pip install -e ".[dev]"` matches `pyproject.toml`, uses `apply_schema_updates()` (not Alembic), ports 9510/9500 correct.
+
+**Audit 2 — Runbook currency: UPDATED**
+- `docs/private-alpha-operator-runbook.md` updated: title and all "Phase 1" references updated to "Phase 5/6".
+- Section 3 (click-path verification) updated to include close-trade lifecycle, schedules, and guided flow details.
+- Section 4 (private-alpha scope) updated to reflect Phase 5/6 reality.
+- Section 6 (validation commands) updated with `npx tsc --noEmit` step.
+- New **Section 8**: Clerk configuration requirements (environment config, not code).
+- New **Section 9**: "Onboarding a second operator — checklist" (invite send, approval, first login, guided walkthrough, data isolation confirmation).
+
+**Audit 3 — Invite flow: PASS (no code gaps)**
+- `/sign-up` → Clerk SignUp renders ✅
+- `/pending-approval` → correct copy ✅
+- `/admin/pending-users` → admin-gated, shows approve/reject ✅
+- Console layout gate: `pending` → `/pending-approval`, `rejected`/`suspended` → `/access-denied` ✅
+- After approval, operator accesses console without re-login on next page load ✅
+- Clerk config requirements documented in runbook section 8
+
+**Audit 4 — Data isolation: ALL PASS**
+All 7 user-scoped entities verified with `app_user_id` WHERE clause in backend queries:
+- Recommendations ✅ · Replay runs ✅ · Orders ✅ · Paper positions ✅ · Paper trades ✅ · Onboarding status ✅ · Strategy schedules ✅
+
+**Audit 5 — Empty states for brand-new operator: FIXED**
+- Dashboard: "Recent replay runs" and "Recent orders" cards now show muted hint text with links when empty.
+- Dashboard: "Pending admin actions" and "Alert / event log" show "No pending approvals." / "No active alerts." when empty.
+- Replay runs table: empty tbody now shows a centered hint row ("No replay runs yet. Click 'Run replay now'…").
+- Orders table: empty tbody now shows a centered hint row ("No paper orders yet. Click 'Stage paper order now'…").
+- Schedules empty state already fixed in previous session — confirmed still good.
+
+**Test counts after this pass:**
+- Backend: 141 pytest tests passing (unchanged)
+- `npx tsc --noEmit` clean (unchanged)
+
+### 2026-04-15 Scheduled reports polish — output clarity + action links
+
+Completed in this pass:
+
+**Change 1 — Schedule list: last run outcome**
+- `toRelativeTime()` helper added; schedule table "Last" column now shows relative time ("2 hours ago" / "Never run") using `latest_run_at ?? history[0].created_at` with `next_run_at` on the second line in muted text.
+- "Latest summary" column replaced with a styled `StatusBadge`: green (`tone="good"`) when `top_candidate_count > 0`, amber (`tone="warn"`) when 0, "—" when never run.
+
+**Change 2 — Run history rows: scannable summary**
+- Run history row summary format changed from `top N / watch N / no-trade N` to `N top · N watch · N no-trade` (number-first, `·` separator).
+
+**Change 3 — Candidate detail panel: guided workflow action link**
+- Top candidates table: added "Action" column with `<Link>` styled as `op-btn op-btn-secondary` — "Analyze in guided mode →" linking to `/analysis?guided=1&symbol={symbol}&strategy={strategy}`.
+
+**Change 4 — Empty state: first schedule guidance**
+- Replaced generic empty state with: title "No scheduled reports yet", operator-useful description, and "Create your first schedule" CTA button that scrolls to the create form (via `createFormRef`).
+
+No backend changes needed — `latest_run_at` and `latest_payload_summary.top_candidate_count` were already in the schedule list endpoint response.
+
+`npx tsc --noEmit` clean. 141 backend pytest tests passing (no backend changes).
+
+### 2026-04-15 Phase 6 — close-trade lifecycle (equities paper trading)
+
+Completed in this pass:
+
+**Backend: Change 1 — paper_positions lifecycle on order stage**
+- `PaperPortfolioRepository.create_position()` added; called from `stage_order` when `order.side.value == "long"`.
+- Creates a `paper_positions` row with `symbol`, `side`, `quantity`, `average_price`, `open_notional`, `status="open"`, scoped to `app_user_id`.
+
+**Backend: Change 2 — explicit close position endpoint**
+- `POST /user/orders/{order_id}/close` added to `admin.py`.
+- Accepts `{ close_price: float }`. Finds order (scoped to user) and open position by symbol.
+- Calculates `realized_pnl = (close_price - avg_entry) * quantity`.
+- Creates `paper_trades` row; closes position (status="closed"); updates order status to "closed".
+- Returns `{ order_id, symbol, realized_pnl, entry_price, close_price, shares }`.
+- New repository methods: `get_open_position`, `close_position`, `create_trade` on `PaperPortfolioRepository`; `get_by_order_id`, `set_status` on `OrderRepository`.
+
+**Backend: Change 3 — portfolio-summary endpoint wired to real data**
+- Replaced stub return (`lifecycle_status: "scaffolded"`, stale notes) with `lifecycle_status: "active"`, `unrealized_pnl: null` (no live feed), `win_rate: null` when no closed trades.
+
+**Frontend: Change 4 — Close position button on Orders page**
+- "Close position" button (op-btn-destructive) shown in selected order detail panel when `status !== "closed"`.
+- Click expands inline input pre-filled with limit_price + "Confirm close" / "Cancel" buttons.
+- POST to `/api/user/orders/{orderId}/close`; on success stores result in `closeResults` map, reloads orders + portfolio summary.
+- When `status === "closed"`: shows "Closed — P&L: +$X.XX" or "Closed — P&L: -$X.XX" in green/red.
+- `closeInputVisible` resets when selected order changes.
+
+**Frontend: Change 5 — Portfolio summary card redesigned**
+- Card title: "Paper portfolio".
+- `op-grid-4` layout: Open positions / Open notional / Realized P&L (colored) / Win rate (% or "—").
+- Removed stub notes line. `PortfolioSummary` type updated: `unrealized_pnl: number | null`, `win_rate: number | null`.
+
+**Frontend: Change 6 — Next.js API proxy route for close**
+- `apps/web/app/api/user/orders/[orderId]/close/route.ts` created (POST proxy, same pattern as other workflow routes).
+
+**Backend tests (4 new, 141 total):**
+- `test_paper_order_stage_creates_open_position`: verifies PaperPositionModel row created after buy order.
+- `test_close_position_calculates_realized_pnl`: verifies realized_pnl math + order status "closed".
+- `test_portfolio_summary_reflects_closed_trades`: verifies summary endpoint returns lifecycle_status="active", unrealized_pnl=null, closed_trade_count >= 1.
+- `test_win_rate_calculation`: one winner + one loser → win_rate between 0 and 1.
+
+`npx tsc --noEmit` clean. 141 backend pytest tests passing.
+
+Still open:
+- Broader component-level frontend tests for guided hero variants.
+- `atm_straddle_mid` expected-range method (Phase 6 scope).
+- Full close-trade UI for existing closed orders without in-session closeResults (currently shows "Position closed" for DB-closed orders without local state).
 
 ### 2026-04-15 Strategy selector description + regime hints
 

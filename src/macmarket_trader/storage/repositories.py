@@ -217,6 +217,20 @@ class OrderRepository:
                 )
             return output
 
+    def get_by_order_id(self, order_id: str, *, app_user_id: int | None = None) -> OrderModel | None:
+        with self.session_factory() as session:
+            stmt = select(OrderModel).where(OrderModel.order_id == order_id)
+            if app_user_id is not None:
+                stmt = stmt.where(OrderModel.app_user_id == app_user_id)
+            return session.execute(stmt).scalar_one_or_none()
+
+    def set_status(self, order_id: str, *, status: str) -> None:
+        with self.session_factory() as session:
+            row = session.execute(select(OrderModel).where(OrderModel.order_id == order_id)).scalar_one_or_none()
+            if row is not None:
+                row.status = status
+                session.commit()
+
 
 class FillRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -360,6 +374,70 @@ class PaperPortfolioRepository:
                 "closed_trade_count": closed_count,
                 "win_rate": float((wins / closed_count) if closed_count else 0.0),
             }
+
+    def get_open_position(self, *, app_user_id: int, symbol: str) -> PaperPositionModel | None:
+        with self.session_factory() as session:
+            return session.execute(
+                select(PaperPositionModel).where(
+                    PaperPositionModel.app_user_id == app_user_id,
+                    PaperPositionModel.symbol == symbol,
+                    PaperPositionModel.status == "open",
+                )
+            ).scalar_one_or_none()
+
+    def create_position(self, *, app_user_id: int, symbol: str, side: str, quantity: float, average_price: float) -> PaperPositionModel:
+        with self.session_factory() as session:
+            row = PaperPositionModel(
+                app_user_id=app_user_id,
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                average_price=average_price,
+                open_notional=quantity * average_price,
+                status="open",
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def close_position(self, *, position_id: int, closed_at: datetime) -> None:
+        with self.session_factory() as session:
+            row = session.get(PaperPositionModel, position_id)
+            if row is not None:
+                row.status = "closed"
+                row.closed_at = closed_at
+                session.commit()
+
+    def create_trade(
+        self,
+        *,
+        app_user_id: int,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        exit_price: float,
+        quantity: float,
+        realized_pnl: float,
+        opened_at: datetime,
+        closed_at: datetime,
+    ) -> PaperTradeModel:
+        with self.session_factory() as session:
+            row = PaperTradeModel(
+                app_user_id=app_user_id,
+                symbol=symbol,
+                side=side,
+                entry_price=entry_price,
+                exit_price=exit_price,
+                quantity=quantity,
+                realized_pnl=realized_pnl,
+                opened_at=opened_at,
+                closed_at=closed_at,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
 
 
 class UserRepository:

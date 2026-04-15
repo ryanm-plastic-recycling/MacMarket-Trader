@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from macmarket_trader.api.main import app
 from macmarket_trader.api.routes import admin as admin_routes
-from macmarket_trader.domain.models import AppUserModel
+from macmarket_trader.domain.models import AppUserModel, PaperPositionModel, PaperTradeModel
 from macmarket_trader.storage.db import SessionLocal, init_db
 
 
@@ -274,3 +274,131 @@ def test_empty_workflow_routes_do_not_seed_records() -> None:
     assert recs.status_code == 200 and isinstance(recs.json(), list)
     assert runs.status_code == 200 and isinstance(runs.json(), list)
     assert orders.status_code == 200 and isinstance(orders.json(), list)
+
+
+def _stage_order_via_replay(symbol: str = 'GOOGL') -> dict:
+    """Helper: generate rec → replay → stage order. Returns stage_order JSON."""
+    _approve_user()
+    rec = client.post(
+        '/user/recommendations/generate',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'symbol': symbol, 'strategy': 'Event Continuation', 'timeframe': '1D', 'market_mode': 'equities', 'event_text': 'close-trade lifecycle seed'},
+    )
+    assert rec.status_code == 200, rec.text
+    recommendation_id = rec.json()['recommendation_id']
+
+    replay = client.post(
+        '/user/replay-runs',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'guided': True, 'recommendation_id': recommendation_id},
+    )
+    assert replay.status_code == 200, replay.text
+    replay_payload = replay.json()
+    assert replay_payload['has_stageable_candidate'] is True
+    run_id = replay_payload['id']
+
+    order = client.post(
+        '/user/orders',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'guided': True, 'recommendation_id': recommendation_id, 'replay_run_id': run_id},
+    )
+    assert order.status_code == 200, order.text
+    return order.json()
+
+
+def test_paper_order_stage_creates_open_position() -> None:
+    order_payload = _stage_order_via_replay(symbol='GOOGL')
+    order_id = order_payload['order_id']
+    symbol = order_payload['symbol']
+    assert order_payload['side'] == 'long'
+
+    with SessionLocal() as session:
+        positions = list(session.execute(
+            select(PaperPositionModel).where(
+                PaperPositionModel.symbol == symbol,
+                PaperPositionModel.status == 'open',
+            )
+        ).scalars())
+    assert len(positions) >= 1
+    pos = positions[-1]
+    assert pos.quantity > 0
+    assert pos.average_price == order_payload['limit_price']
+    assert pos.side == 'long'
+
+
+def test_close_position_calculates_realized_pnl() -> None:
+    order_payload = _stage_order_via_replay(symbol='NVDA')
+    order_id = order_payload['order_id']
+    entry_price = order_payload['limit_price']
+    shares = order_payload['shares']
+    close_price = entry_price + 5.0
+    expected_pnl = round((close_price - entry_price) * shares, 2)
+
+    resp = client.post(
+        f'/user/orders/{order_id}/close',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'close_price': close_price},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body['order_id'] == order_id
+    assert body['realized_pnl'] == expected_pnl
+    assert body['entry_price'] == round(entry_price, 2)
+    assert body['close_price'] == round(close_price, 2)
+
+    # Order status updated to closed
+    orders = client.get('/user/orders', headers={'Authorization': 'Bearer user-token'})
+    closed = next((o for o in orders.json() if o['order_id'] == order_id), None)
+    assert closed is not None
+    assert closed['status'] == 'closed'
+
+
+def test_portfolio_summary_reflects_closed_trades() -> None:
+    order_payload = _stage_order_via_replay(symbol='META')
+    order_id = order_payload['order_id']
+    entry_price = order_payload['limit_price']
+    close_price = entry_price + 3.0
+
+    client.post(
+        f'/user/orders/{order_id}/close',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'close_price': close_price},
+    )
+
+    summary_resp = client.get('/user/orders/portfolio-summary', headers={'Authorization': 'Bearer user-token'})
+    assert summary_resp.status_code == 200
+    summary = summary_resp.json()
+    assert summary['lifecycle_status'] == 'active'
+    assert summary['unrealized_pnl'] is None
+    assert summary['closed_trade_count'] >= 1
+    assert summary['realized_pnl'] > 0  # profitable trade
+
+
+def test_win_rate_calculation() -> None:
+    # Stage and close a winning trade
+    win_order = _stage_order_via_replay(symbol='MSFT')
+    win_id = win_order['order_id']
+    win_entry = win_order['limit_price']
+    client.post(
+        f'/user/orders/{win_id}/close',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'close_price': win_entry + 10.0},  # profit
+    )
+
+    # Stage and close a losing trade
+    loss_order = _stage_order_via_replay(symbol='TSLA')
+    loss_id = loss_order['order_id']
+    loss_entry = loss_order['limit_price']
+    client.post(
+        f'/user/orders/{loss_id}/close',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'close_price': loss_entry - 10.0},  # loss
+    )
+
+    summary_resp = client.get('/user/orders/portfolio-summary', headers={'Authorization': 'Bearer user-token'})
+    assert summary_resp.status_code == 200
+    summary = summary_resp.json()
+    assert summary['closed_trade_count'] >= 2
+    assert summary['win_rate'] is not None
+    # win_rate must be between 0 and 1 exclusive (we have both winner and loser)
+    assert 0.0 < summary['win_rate'] < 1.0

@@ -1,10 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import type { MarketMode } from "@/lib/strategy-registry";
+
+function toRelativeTime(dateStr: string | undefined | null): string {
+  if (!dateStr) return "Never run";
+  const date = new Date(dateStr);
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
 
 type Schedule = {
   id: number;
@@ -61,6 +75,7 @@ const TIMEZONES = [
 
 export default function SchedulesPage() {
   const searchParams = useSearchParams();
+  const createFormRef = useRef<HTMLDivElement | null>(null);
   const prefill = useMemo(() => ({
     symbols: (searchParams.get("symbols") ?? "").split(",").map((item) => item.trim().toUpperCase()).filter(Boolean),
     name: (searchParams.get("name") ?? "").trim(),
@@ -256,7 +271,7 @@ export default function SchedulesPage() {
         actions={<StatusBadge tone="neutral">EMAIL_PROVIDER=console/local is explicit</StatusBadge>}
       />
 
-      <Card title="Create / update schedule">
+      <div ref={createFormRef}><Card title="Create / update schedule">
         <div className="op-row">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Schedule name" />
           <input value={symbols} onChange={(e) => setSymbols(e.target.value)} placeholder="AAPL,MSFT,NVDA" style={{ minWidth: 260 }} />
@@ -325,7 +340,7 @@ export default function SchedulesPage() {
           </button>
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
-      </Card>
+      </Card></div>
 
       <Card title={editingWlId ? `Edit watchlist: ${wlName}` : "Watchlists"}>
         <div className="op-row">
@@ -371,7 +386,15 @@ export default function SchedulesPage() {
       <div className="op-grid-2">
         <Card title="Active schedules">
           {rows.length === 0 ? (
-            <EmptyState title="No schedules" hint="Create a schedule to start recurring ranked scans." />
+            <div>
+              <EmptyState
+                title="No scheduled reports yet"
+                hint="Scheduled reports rank your watchlist daily and surface top candidates with explicit entry levels, stops, and targets. Create a schedule to get a ranked candidate list on a recurring basis."
+              />
+              <div className="op-row" style={{ marginTop: 8 }}>
+                <button onClick={() => createFormRef.current?.scrollIntoView({ behavior: "smooth" })}>Create your first schedule</button>
+              </div>
+            </div>
           ) : (
             <table className="op-table">
               <thead>
@@ -392,9 +415,16 @@ export default function SchedulesPage() {
                       {row.frequency} @ {row.run_time} {row.timezone}<br />
                       {row.config_summary?.market_mode ?? row.payload?.market_mode} · {(row.payload?.symbols ?? []).join(", ")}
                     </td>
-                    <td>{row.latest_run_at ?? "-"}<br />{row.next_run_at ?? "-"}</td>
                     <td>
-                      top {row.latest_payload_summary?.top_candidate_count ?? 0} · watch {row.latest_payload_summary?.watchlist_count ?? 0} · no-trade {row.latest_payload_summary?.no_trade_count ?? 0}
+                      {toRelativeTime(row.latest_run_at ?? row.history?.[0]?.created_at)}<br />
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>next: {row.next_run_at ? new Date(row.next_run_at).toLocaleString() : "—"}</span>
+                    </td>
+                    <td>
+                      {(row.latest_run_at ?? row.history?.[0]?.created_at)
+                        ? <StatusBadge tone={(row.latest_payload_summary?.top_candidate_count ?? 0) > 0 ? "good" : "warn"}>
+                            {row.latest_payload_summary?.top_candidate_count ?? 0} top candidate{(row.latest_payload_summary?.top_candidate_count ?? 0) === 1 ? "" : "s"}
+                          </StatusBadge>
+                        : <span style={{ color: "var(--text-muted, #8b9cb3)" }}>—</span>}
                     </td>
                     <td className="op-row">
                       <button onClick={(e) => { e.stopPropagation(); void toggleSchedule(row); }}>
@@ -434,7 +464,7 @@ export default function SchedulesPage() {
                       <td>{run.status}</td>
                       <td><StatusBadge tone={run.email_provider === "resend" ? "good" : "neutral"}>{run.email_provider ?? "console"}</StatusBadge></td>
                       <td>{run.delivered_to}</td>
-                      <td>top {run.summary?.top_candidate_count ?? 0} / watch {run.summary?.watchlist_count ?? 0} / no-trade {run.summary?.no_trade_count ?? 0}</td>
+                      <td>{run.summary?.top_candidate_count ?? 0} top · {run.summary?.watchlist_count ?? 0} watch · {run.summary?.no_trade_count ?? 0} no-trade</td>
                     </tr>
                   ))}
                 </tbody>
@@ -457,7 +487,7 @@ export default function SchedulesPage() {
               <div><strong>Top candidates ({runDetail.top_candidates.length})</strong></div>
               <table className="op-table">
                 <thead>
-                  <tr><th>#</th><th>Symbol</th><th>Strategy</th><th>Score</th><th>RR</th><th>Entry zone</th><th>Thesis</th></tr>
+                  <tr><th>#</th><th>Symbol</th><th>Strategy</th><th>Score</th><th>RR</th><th>Entry zone</th><th>Thesis</th><th>Action</th></tr>
                 </thead>
                 <tbody>
                   {runDetail.top_candidates.map((c) => (
@@ -469,6 +499,7 @@ export default function SchedulesPage() {
                       <td>{c.expected_rr?.toFixed(2) ?? "-"}</td>
                       <td>{c.entry_zone ?? "-"}</td>
                       <td>{c.thesis ?? "-"}</td>
+                      <td><Link href={`/analysis?guided=1&symbol=${c.symbol}&strategy=${encodeURIComponent(c.strategy)}`} className="op-btn op-btn-secondary" style={{ whiteSpace: "nowrap" }}>Analyze in guided mode →</Link></td>
                     </tr>
                   ))}
                 </tbody>

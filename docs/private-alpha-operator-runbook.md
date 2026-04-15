@@ -1,14 +1,15 @@
-# Private Alpha Operator Runbook (Phase 1)
+# Private Alpha Operator Runbook (Phase 5/6)
 
-Last updated: 2026-04-04
+Last updated: 2026-04-15
 
-This runbook is for internal operators validating the **Phase 1 product center**:
+This runbook is for internal operators validating the **Phase 5/6 product center**:
 
 1. Analysis / Strategy Workbench
 2. Recommendations
 3. Replay
-4. Paper Orders
-5. Provider Health truth checks
+4. Paper Orders (including close-trade lifecycle)
+5. Strategy Schedules
+6. Provider Health truth checks
 
 ## 1) Local start checklist
 
@@ -85,60 +86,88 @@ Provider/source truth is represented in three fields:
   - Explicit deterministic fallback bars are active.
   - This is acceptable for local/dev testing only.
 
-## 3) Operator click-path verification (Phase 1 gate)
+## 3) Operator click-path verification (Phase 5/6 guided flow)
+
+The canonical path is **Analysis → Recommendations → Replay → Paper Orders**.
+All steps pass context forward via URL query params (`guided=1`, `symbol`, `strategy`, `recommendation`, `replay_run`, `order`).
+The WorkflowBanner at the top of each page shows the active lineage as chips.
 
 ### A. Analysis (`/analysis`)
 
 Verify:
-- symbol, strategy, timeframe selectors work.
+- Symbol, strategy, timeframe selectors work.
+- Strategy selector shows description and regime hint below the dropdown.
 - **Refresh analysis** loads setup + chart.
-- workflow source badge is visible.
-- create-recommendation CTA is enabled for equities mode.
+- Workflow source badge is visible.
+- Create-recommendation CTA is enabled for equities mode.
+- Clicking "Create recommendation" navigates to Recommendations with full guided query.
 
 ### B. Recommendations (`/recommendations`)
 
 Verify:
-- queue loads deterministically.
-- selected recommendation detail shows symbol/strategy/timeframe/source.
-- source label is explicit (`provider` or `fallback (...)`).
-- replay/order CTAs open with recommendation context query params.
+- Queue loads deterministically.
+- In guided mode, queue collapses by default with a "View recommendation queue (N)" toggle.
+- Selected recommendation detail shows symbol/strategy/timeframe/source.
+- Source label is explicit (`provider` or `fallback (...)`).
+- "Make active" and "Save as alternative" are distinct actions (not the same button).
+- Replay CTA passes recommendation lineage query params forward.
 
 ### C. Replay (`/replay-runs`)
 
 Verify:
-- run completes and appears in run table.
-- selected run shows source mode and recommendation relationship.
-- steps panel remains usable even if a single steps fetch fails.
+- Run completes and appears in run table.
+- Selected run shows source mode and recommendation relationship.
+- Steps panel renders approved (green left border) / rejected (red left border) rows.
+- Stageability warning block (`op-error`) appears when `has_stageable_candidate === false`.
+- Steps panel remains usable even if a single steps fetch fails.
+- "Go to Paper Order step" button is active after a run with a stageable candidate.
 
 ### D. Orders (`/orders`)
 
 Verify:
-- stage order produces paper order row.
-- selected order preserves recommendation linkage and workflow source.
-- blotter explicitly states paper/dev only.
+- Stage order produces paper order row.
+- Selected order preserves recommendation linkage and workflow source.
+- Paper portfolio summary card shows: Open positions / Open notional / Realized P&L / Win rate.
+- "Close position" button appears for open orders; inline price input → "Confirm close" → P&L displayed.
+- After close, the order status changes to "closed" and P&L shows green/red.
+- Blotter explicitly states paper/dev only.
 
-### E. Provider Health (`/admin/provider-health`)
+### E. Strategy Schedules (`/schedules`)
 
 Verify:
-- configured provider + effective read mode + workflow execution mode are visible.
-- operational impact text matches current mode (`provider`, `demo_fallback`, `blocked`).
-- dashboard provider summary matches provider-health truth values.
+- Schedule table shows relative time for last run (e.g., "2 hours ago").
+- Top candidate badge shows classification count.
+- Run history column shows `N top · N watch · N no-trade` format.
+- Top candidates panel includes "Analyze in guided mode →" action link per candidate.
+- Empty state (no schedules) shows an operator-useful CTA, not a blank page.
+
+### F. Provider Health (`/admin/provider-health`)
+
+Verify:
+- Configured provider + effective read mode + workflow execution mode are visible.
+- Operational impact text matches current mode (`provider`, `demo_fallback`, `blocked`).
+- Dashboard provider summary matches provider-health truth values.
 
 ## 4) What is private-alpha quality vs production-ready
 
-### Private-alpha ready (Phase 1 scope)
+### Private-alpha ready (Phase 5/6 scope)
 
-- invite-gated operator workflow
-- deterministic analysis → recommendation → replay → paper-order path
-- explicit provider/fallback truth and blocked-mode behavior
-- identity reconciliation that preserves local approval/role authority
+- Invite-gated operator workflow with full Clerk + local DB approval loop
+- Deterministic 4-step guided path: Analysis → Recommendations → Replay → Paper Orders
+- Close-trade lifecycle: positions opened on stage, closed with explicit action, realized P&L recorded
+- Strategy schedules: create/run/inspect with guided-mode action links on top candidates
+- Explicit provider/fallback truth and blocked-mode behavior
+- Identity reconciliation that preserves local approval/role authority
+- Data isolation: all user data scoped to `app_user_id` — second operator sees only their own records
+- 141 backend pytest tests + 48 Vitest frontend tests + 8 Playwright e2e tests passing
 
 ### Intentionally deferred (not production-ready)
 
-- options/crypto execution workflows (research preview only)
-- brokerage/live order integrations
-- public-facing onboarding
-- full cross-environment browser automation execution in CI (core Phase 1 click-path and provider-parity browser regressions now exist)
+- Options/crypto execution workflows (research preview only)
+- Brokerage/live order integrations
+- `atm_straddle_mid` expected-range method
+- Public-facing onboarding
+- Realized P&L persistence across page reload (currently in-session state only)
 
 ## 5) Common local recovery playbook
 
@@ -178,16 +207,17 @@ python scripts/reconcile_duplicate_users.py
 
 Then sign out/in and verify `/admin/users` contains one canonical row per user with preserved role/approval.
 
-## 6) Phase 1 validation commands
+## 6) Validation commands
 
 ```bash
 pytest -q
-cd apps/web && npm test && npm run build
+cd apps/web && npx tsc --noEmit && npm test && npm run build
 ```
 
 ```powershell
 pytest -q
 Set-Location apps/web
+npx tsc --noEmit
 npm test
 npm run build
 ```
@@ -198,7 +228,7 @@ If pytest picks up a non-test auth mode from a local `.env`, force test mode inl
 ENVIRONMENT=test AUTH_PROVIDER=mock pytest -q
 ```
 
-Phase 1 should not be marked closed unless these checks pass and the click path above is operator-usable.
+Phase 5/6 private-alpha readiness requires: 141 pytest tests passing, clean TypeScript build, and the full guided click-path above completing without errors for at least one operator.
 
 ## 7) User persistence and DB safety
 
@@ -318,3 +348,107 @@ but will update **zero rows silently** — it has no INSERT path.
 2. If the user has already signed in at least once (row exists): use `bootstrap_admin.py` to promote them.
 
 Running `bootstrap_admin.py` on an empty DB looks successful but does nothing.
+
+---
+
+## 8) Clerk configuration requirements (environment, not code)
+
+These settings must be configured in the **Clerk dashboard** before a second operator can sign up and be approved. They are environment config — not wired in code.
+
+### Required Clerk dashboard settings
+
+| Setting | Value | Where |
+|---|---|---|
+| Sign-up allowed | Enabled | Clerk dashboard → User & Authentication → Email, Phone, Username |
+| Email address required | Yes | Same section |
+| Sign-in identifiers | Email address | Same section |
+| Redirect after sign-up | `/pending-approval` | Clerk dashboard → Paths → After sign-up |
+| Redirect after sign-in | `/dashboard` | Clerk dashboard → Paths → After sign-in |
+| JWT templates | None required (default Clerk JWT claims are sufficient) | — |
+
+### Sign-up flow for a new operator
+
+1. New operator navigates to `/sign-up` and creates a Clerk account.
+2. After sign-up, they are redirected to `/pending-approval` (pending approval page).
+3. Console layout gate checks `approval_status` from local DB. If `pending`, gate holds at `/pending-approval`.
+4. Admin logs in, navigates to `/admin/pending-users`, and approves the new operator.
+5. After approval, the operator can sign in and access the console without re-login (next page load checks the updated status).
+6. Operator lands on `/dashboard` with the onboarding checklist and guided workflow CTA visible.
+
+### If the `/admin/invites` page is configured
+
+The invite send flow (if wired to an email provider) sends a Clerk invite link. To enable:
+- Set `EMAIL_PROVIDER=resend` (or equivalent) and `EMAIL_FROM=...` in backend `.env`.
+- Clerk invite links bypass the sign-up page and go directly to account creation.
+- The approval flow is the same: new user starts as `pending` and must be approved.
+
+---
+
+## 9) Onboarding a second operator — checklist
+
+Use this checklist when onboarding an additional operator to the private-alpha console.
+
+### Pre-flight (admin)
+
+- [ ] Backend `.env` has `ENVIRONMENT=local` (or `production`) and `AUTH_PROVIDER=clerk`
+- [ ] Clerk dashboard has sign-up enabled (see section 8)
+- [ ] Admin is signed in and can reach `/admin/pending-users`
+- [ ] Deploy script has been run and the system is healthy (`pytest -q` clean, services up)
+
+### Step 1 — Invite send (optional but recommended)
+
+- [ ] Navigate to `/admin/invites` (if the invite flow is wired)
+- [ ] Enter the new operator's email and send invite
+- [ ] Confirm the invite email arrives (check `EMAIL_PROVIDER` setting)
+- [ ] **OR** share the `/sign-up` URL directly with the operator
+
+### Step 2 — New operator sign-up
+
+- [ ] Operator navigates to `/sign-up` and creates a Clerk account
+- [ ] After sign-up, operator is redirected to `/pending-approval`
+- [ ] Operator sees "Your account is pending approval" copy (not a blank page)
+
+### Step 3 — Admin approval
+
+- [ ] Admin navigates to `/admin/pending-users`
+- [ ] New operator row appears with Approve / Reject actions
+- [ ] Admin clicks **Approve**
+- [ ] Verify: `SELECT id, email, approval_status, app_role FROM app_users` shows `approved` for new user
+
+### Step 4 — First login as new operator
+
+- [ ] Operator refreshes or re-navigates — console layout clears the pending gate
+- [ ] Operator lands on `/dashboard`
+- [ ] Onboarding checklist is visible (all steps unchecked for a brand-new account)
+- [ ] Guided workflow CTA ("Start guided workflow") is visible
+
+### Step 5 — Guided workflow walkthrough
+
+- [ ] Operator clicks guided workflow CTA → lands on `/analysis?guided=1`
+- [ ] Operator selects a symbol + strategy, refreshes analysis, creates a recommendation
+- [ ] Recommendation appears in queue at `/recommendations?guided=1&...`
+- [ ] Operator promotes the recommendation and proceeds to Replay
+- [ ] Replay run completes at `/replay-runs?guided=1&...` with stageable candidate
+- [ ] Operator stages a paper order at `/orders?guided=1&...`
+- [ ] Paper order row appears in order history; portfolio summary card updates
+
+### Step 6 — Data isolation confirmation
+
+Run these SQL queries on the deployed DB to confirm the new operator's data is scoped:
+
+```bash
+python -c "
+import sqlite3
+conn = sqlite3.connect('C:/Dashboard/MacMarket-Trader/macmarket_trader.db')
+# Confirm user IDs
+rows = conn.execute('SELECT id, email, approval_status FROM app_users').fetchall()
+for r in rows: print(r)
+# Confirm recommendations scoped to new operator's ID (replace N with their id)
+# rows = conn.execute('SELECT id, app_user_id FROM recommendations WHERE app_user_id = N').fetchall()
+# Confirm replay runs scoped
+# rows = conn.execute('SELECT id, app_user_id FROM replay_runs WHERE app_user_id = N').fetchall()
+conn.close()
+"
+```
+
+All 7 user-scoped entities (recommendations, replay runs, orders, paper positions, paper trades, onboarding status, strategy schedules) are verified to filter by `app_user_id` in code — no cross-operator data leakage is possible.

@@ -14,7 +14,8 @@ import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickOrderSelection } from "@/lib/workflow-selection";
 
 type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
-type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number; realized_pnl: number; closed_trade_count: number; win_rate: number; lifecycle_status?: string; notes?: string };
+type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
+type CloseResult = { order_id: string; symbol: string; realized_pnl: number; entry_price: number; close_price: number; shares: number };
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -32,6 +33,9 @@ export default function Page() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
   const [replayOutcome, setReplayOutcome] = useState<{ has_stageable_candidate: boolean; stageable_reason?: string | null } | null>(null);
+  const [closeInputVisible, setCloseInputVisible] = useState(false);
+  const [closePriceInput, setClosePriceInput] = useState("");
+  const [closeResults, setCloseResults] = useState<Record<string, CloseResult>>({});
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
@@ -159,6 +163,31 @@ export default function Page() {
     setBusy(false);
   }
 
+  async function closePosition(orderId: string) {
+    const price = parseFloat(closePriceInput);
+    if (isNaN(price) || price <= 0) {
+      setFeedback({ state: "error", message: "Enter a valid close price." });
+      return;
+    }
+    setBusy(true);
+    setFeedback({ state: "loading", message: "Closing position…" });
+    const result = await fetchWorkflowApi<CloseResult>(
+      `/api/user/orders/${orderId}/close`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ close_price: price }) },
+    );
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Close position failed." });
+      setBusy(false);
+      return;
+    }
+    if (result.data) setCloseResults((prev) => ({ ...prev, [orderId]: result.data! }));
+    setCloseInputVisible(false);
+    setClosePriceInput("");
+    setFeedback({ state: "success", message: "Position closed." });
+    await load();
+    setBusy(false);
+  }
+
   useEffect(() => {
     if (!authReady) return;
     void load();
@@ -176,6 +205,8 @@ export default function Page() {
 
   useEffect(() => {
     if (!selectedOrderId) return;
+    setCloseInputVisible(false);
+    setClosePriceInput("");
     detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [selectedOrderId]);
 
@@ -199,16 +230,21 @@ export default function Page() {
     />
     {guidedState.guided ? <Card title="Guided flow progress"><GuidedStepRail current="Paper Order" /></Card> : null}
     {portfolioSummary ? (
-      <Card title="Paper portfolio summary">
-        <div className="op-row" style={{ flexWrap: "wrap", gap: 12 }}>
-          <span>Open positions: <strong>{portfolioSummary.open_positions}</strong></span>
-          <span>Open notional: <strong>{portfolioSummary.total_open_notional.toFixed(2)}</strong></span>
-          <span>Unrealized P&L: <strong>{portfolioSummary.unrealized_pnl.toFixed(2)}</strong></span>
-          <span>Realized P&L: <strong>{portfolioSummary.realized_pnl.toFixed(2)}</strong></span>
-          <span>Closed trades: <strong>{portfolioSummary.closed_trade_count}</strong></span>
-          <span>Win rate: <strong>{(portfolioSummary.win_rate * 100).toFixed(1)}%</strong></span>
+      <Card title="Paper portfolio">
+        <div className="op-grid-4">
+          <div><div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Open positions</div><strong>{portfolioSummary.open_positions}</strong></div>
+          <div><div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Open notional</div><strong>${portfolioSummary.total_open_notional.toFixed(2)}</strong></div>
+          <div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Realized P&L</div>
+            <strong style={{ color: portfolioSummary.realized_pnl > 0 ? "#21c06e" : portfolioSummary.realized_pnl < 0 ? "#f44336" : "inherit" }}>
+              {portfolioSummary.realized_pnl >= 0 ? "+" : ""}{portfolioSummary.realized_pnl.toFixed(2)}
+            </strong>
+          </div>
+          <div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Win rate</div>
+            <strong>{portfolioSummary.win_rate != null ? `${(portfolioSummary.win_rate * 100).toFixed(1)}%` : "—"}</strong>
+          </div>
         </div>
-        {portfolioSummary.notes ? <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)" }}>{portfolioSummary.notes}</div> : null}
       </Card>
     ) : null}
 
@@ -250,7 +286,10 @@ export default function Page() {
         <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
         <table className="op-table" style={{ marginTop: guidedState.guided ? 8 : 0 }}>
           <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>shares</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>limit/fill</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>broker status</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fill count</th></tr></thead>
-          <tbody>{orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td><StatusBadge tone={o.side === "buy" ? "good" : "warn"}>{o.side}</StatusBadge></td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}</tbody>
+          <tbody>
+            {orders.length === 0 && !busy ? <tr><td colSpan={7} style={{ color: "#9fb0c3", textAlign: "center", padding: "16px 8px" }}>No paper orders yet. Click "Stage paper order now" above to create your first order.</td></tr> : null}
+            {orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td><StatusBadge tone={o.side === "buy" ? "good" : "warn"}>{o.side}</StatusBadge></td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}
+          </tbody>
         </table>
         </div>
       </Card>
@@ -267,6 +306,25 @@ export default function Page() {
             <div><strong>Status:</strong> {selected.status}</div>
             <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)}</div>
             {(!guidedState.guided || showOperatorDetail) ? <><div><strong>Created at:</strong> {selected.created_at}</div><div><strong>Fills:</strong></div>{selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}</> : null}
+            {selected.status === "closed" ? (
+              <div style={{ marginTop: 6, fontWeight: 600, color: closeResults[selected.order_id]?.realized_pnl != null && closeResults[selected.order_id].realized_pnl >= 0 ? "#21c06e" : "#f44336" }}>
+                {closeResults[selected.order_id]
+                  ? `Closed — P&L: ${closeResults[selected.order_id].realized_pnl >= 0 ? "+" : ""}$${Math.abs(closeResults[selected.order_id].realized_pnl).toFixed(2)}`
+                  : "Position closed"}
+              </div>
+            ) : (
+              <div style={{ marginTop: 6 }}>
+                {!closeInputVisible ? (
+                  <button className="op-btn op-btn-destructive" onClick={() => { setCloseInputVisible(true); setClosePriceInput(String(selected.limit_price)); }} disabled={busy}>Close position</button>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <input type="number" step="0.01" value={closePriceInput} onChange={(e) => setClosePriceInput(e.target.value)} style={{ width: 120 }} placeholder="Close price" />
+                    <button className="op-btn op-btn-destructive" onClick={() => void closePosition(selected.order_id)} disabled={busy}>{busy ? "Closing…" : "Confirm close"}</button>
+                    <button onClick={() => { setCloseInputVisible(false); setClosePriceInput(""); }} disabled={busy}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>}
         </div>
       </Card>
