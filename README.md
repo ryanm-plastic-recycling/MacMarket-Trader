@@ -500,7 +500,7 @@ The codebase should define typed contracts for:
 ## Current roadmap status and alpha milestone
 
 - Detailed status tracking lives in `docs/roadmap-status.md`.
-- Current project milestone remains **Phase 1 — Private alpha hardening** with focus on workflow trust, auth stability, source coherence, and operator-grade guidance.
+- Phases 0–4 are complete. Current active scope is **Phase 5 — Operator console polish**: polished, operator-grade surfaces across all six console pages so the system is credible as a paid tool.
 
 ## Success criteria for v1
 

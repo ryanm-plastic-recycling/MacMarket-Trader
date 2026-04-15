@@ -377,6 +377,8 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required to promote queue candidate")
 
+    action = str(req.get("action") or "make_active")
+
     bars, source, fallback_mode = _workflow_bars(symbol)
     event_text = str(req.get("thesis") or f"Queue promotion for {strategy}")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
@@ -394,6 +396,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
     )
 
     ranking_provenance = {
+        "action": action,
         "rank": req.get("rank"),
         "symbol": symbol,
         "strategy": strategy,
@@ -435,6 +438,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         "recommendation_id": rec.recommendation_id,
         "symbol": rec.symbol,
         "strategy": strategy,
+        "action": action,
         "market_data_source": workflow.get("market_data_source", source),
         "fallback_mode": bool(workflow.get("fallback_mode", fallback_mode)),
         "ranking_provenance": workflow.get("ranking_provenance", ranking_provenance),

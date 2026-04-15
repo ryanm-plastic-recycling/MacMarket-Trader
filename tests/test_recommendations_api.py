@@ -186,3 +186,32 @@ def test_user_ranked_queue_candidate_can_be_promoted() -> None:
     assert listing.status_code == 200
     match = next(row for row in listing.json() if row["id"] == promoted["id"])
     assert match["payload"]["workflow"]["ranking_provenance"]["reason_text"] == candidate["reason_text"]
+
+
+def test_user_ranked_queue_candidate_can_be_saved_as_alternative() -> None:
+    client = TestClient(app)
+    _approve_default_user(client)
+    queue = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["AAPL"], "market_mode": "equities"},
+    )
+    assert queue.status_code == 200
+    candidate = queue.json()["queue"][0]
+
+    promote = client.post(
+        "/user/recommendations/queue/promote",
+        headers={"Authorization": "Bearer user-token"},
+        json={**candidate, "action": "save_alternative"},
+    )
+    assert promote.status_code == 200
+    result = promote.json()
+    assert result["symbol"] == "AAPL"
+    assert result["recommendation_id"]
+    assert result["action"] == "save_alternative"
+
+    detail = client.get(f"/user/recommendations/{result['id']}", headers={"Authorization": "Bearer user-token"})
+    assert detail.status_code == 200
+    workflow = detail.json()["payload"]["workflow"]
+    assert workflow["ranking_provenance"]["action"] == "save_alternative"
+    assert workflow["ranking_provenance"]["symbol"] == candidate["symbol"]

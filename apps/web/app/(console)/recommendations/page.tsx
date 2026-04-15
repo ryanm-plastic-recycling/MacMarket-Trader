@@ -100,7 +100,7 @@ export default function RecommendationsPage() {
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
   const [symbols, setSymbols] = useState("AAPL,MSFT,NVDA,AMZN");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, approve: false });
+  const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, saveAlt: false, approve: false });
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
@@ -192,7 +192,7 @@ export default function RecommendationsPage() {
     const result = await fetchWorkflowApi<{ recommendation_id: string }>("/api/user/recommendations/queue/promote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(selectedQueue),
+      body: JSON.stringify({ ...selectedQueue, action: "make_active" }),
     });
     setLoading((prev) => ({ ...prev, promote: false }));
 
@@ -216,6 +216,29 @@ export default function RecommendationsPage() {
       });
       router.replace(`/recommendations?${query}`);
     }
+  }
+
+  async function saveAlternative() {
+    if (!selectedQueue) return;
+    setLoading((prev) => ({ ...prev, saveAlt: true }));
+    setFeedback({ state: "loading", message: "Saving queue candidate as alternative recommendation…" });
+    const result = await fetchWorkflowApi<{ recommendation_id: string }>("/api/user/recommendations/queue/promote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...selectedQueue, action: "save_alternative" }),
+    });
+    setLoading((prev) => ({ ...prev, saveAlt: false }));
+
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Save as alternative failed" });
+      return;
+    }
+
+    setError(null);
+    setFeedback({ state: "success", message: "Saved as alternative recommendation (not set as active)." });
+    const savedRecommendationId = result.data?.recommendation_id;
+    await loadRecommendations({ selectRecommendationUid: savedRecommendationId });
+    // No guided state update — saving as alternative does not advance the lineage
   }
 
   function openReplay() {
@@ -450,12 +473,11 @@ export default function RecommendationsPage() {
               <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Go to Replay step</button>
             ) : (
               <>
-                <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote} title={loading.promote ? "Promotion in flight…" : undefined}>
+                <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
                   {loading.promote ? "Promoting…" : "Make active"}
                 </button>
-                {/* TODO: backend needs save_alternative action variant on promote route */}
-                <button className="op-btn op-btn-secondary" disabled title="Not yet supported by backend">
-                  Save as alternative
+                <button className="op-btn op-btn-secondary" onClick={() => void saveAlternative()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.saveAlt ? "Saving alternative…" : undefined}>
+                  {loading.saveAlt ? "Saving…" : "Save as alternative"}
                 </button>
               </>
             )}
@@ -599,12 +621,11 @@ export default function RecommendationsPage() {
                   <StatusBadge tone="good">Already promoted to recommendation</StatusBadge>
                 ) : (
                   <div className="op-row">
-                    <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={loading.promote} title={loading.promote ? "Promotion in flight…" : undefined}>
+                    <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
                       {loading.promote ? "Promoting…" : "Make active"}
                     </button>
-                    {/* TODO: backend needs save_alternative action variant on promote route */}
-                    <button className="op-btn op-btn-secondary" disabled title="Not yet supported by backend">
-                      Save as alternative
+                    <button className="op-btn op-btn-secondary" onClick={() => void saveAlternative()} disabled={loading.promote || loading.saveAlt} title={loading.saveAlt ? "Saving alternative…" : undefined}>
+                      {loading.saveAlt ? "Saving…" : "Save as alternative"}
                     </button>
                   </div>
                 )}
