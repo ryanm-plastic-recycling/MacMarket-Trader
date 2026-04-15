@@ -381,7 +381,7 @@ export default function RecommendationsPage() {
         backHref="/analysis"
         backLabel="Back to Analyze"
         nextHref="/replay-runs"
-        nextLabel="Run replay"
+        nextLabel="Go to Replay step"
         nextDisabled={guidedState.guided && !selectedRecommendation?.recommendation_id}
         nextDisabledReason="Guided replay requires a persisted recommendation. Promote the selected queue candidate first."
         compact={!guidedState.guided}
@@ -400,7 +400,7 @@ export default function RecommendationsPage() {
           {unsupportedGuidedMode ? <ErrorState title="Research preview stops here" hint="Options and crypto are research preview only. Guided progression into Replay and Paper Orders is disabled outside equities." /> : null}
           <div className="op-row" style={{ marginTop: 8 }}>
             {selectedRecommendation?.recommendation_id ? (
-              <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Run replay</button>
+              <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Go to Replay step</button>
             ) : (
               <button onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote}>
                 {loading.promote ? "Promoting…" : "Promote to recommendation"}
@@ -415,8 +415,8 @@ export default function RecommendationsPage() {
           <input value={symbols} onChange={(e) => setSymbols(e.target.value.toUpperCase())} style={{ minWidth: 320 }} placeholder="AAPL,MSFT,NVDA" />
           <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
           <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
-          <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Open Replay</button>
-          {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Open Orders</button> : null}
+          <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>
+          {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadQueue()} />
       </Card>
