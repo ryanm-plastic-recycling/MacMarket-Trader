@@ -22,7 +22,7 @@ from macmarket_trader.email_templates import render_invite_html
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 user_router = APIRouter(prefix="/user", tags=["user"])
@@ -34,6 +34,7 @@ dashboard_repo = DashboardRepository(SessionLocal)
 recommendation_repo = RecommendationRepository(SessionLocal)
 replay_repo = ReplayRepository(SessionLocal)
 order_repo = OrderRepository(SessionLocal)
+paper_portfolio_repo = PaperPortfolioRepository(SessionLocal)
 watchlist_repo = WatchlistRepository(SessionLocal)
 strategy_report_repo = StrategyReportRepository(SessionLocal)
 email_provider = build_email_provider()
@@ -446,6 +447,9 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
     symbol = str(req.get("symbol") or "AAPL").upper()
     event_text = str(req.get("event_text") or "Operator-triggered deterministic refresh run.")
     market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
+    strategy = str(req.get("strategy") or "").strip()
+    timeframe = str(req.get("timeframe") or "1D")
+    workflow_source = str(req.get("workflow_source") or req.get("source") or "")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     bars, source, fallback_mode = _workflow_bars(symbol)
@@ -464,15 +468,16 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         market_data_source=source,
         fallback_mode=fallback_mode,
         market_mode=market_mode.value,
-        source_strategy=str(req.get("strategy") or ""),
+        source_strategy=strategy,
     )
     recommendation_repo.attach_ranking_provenance(
         rec.recommendation_id,
         ranking_provenance={
-            "strategy": req.get("strategy"),
+            "strategy": strategy or None,
             "market_mode": market_mode.value,
-            "workflow_source": source,
-            "source": source,
+            "timeframe": timeframe,
+            "workflow_source": workflow_source or source,
+            "source": workflow_source or source,
         },
     )
     return {
@@ -545,6 +550,9 @@ def replay_runs(_user=Depends(require_approved_user)):
                 "fill_count": row.fill_count,
                 "ending_heat": row.ending_heat,
                 "ending_open_notional": row.ending_open_notional,
+                "has_stageable_candidate": row.has_stageable_candidate,
+                "stageable_recommendation_id": row.stageable_recommendation_id,
+                "stageable_reason": row.stageable_reason,
                 "created_at": row.created_at,
                 "market_data_source": row.source_market_data_source or source,
                 "fallback_mode": row.source_fallback_mode if row.source_fallback_mode is not None else fallback_mode,
@@ -577,10 +585,13 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         raise HTTPException(status_code=400, detail="symbol is required when recommendation_id is not provided.")
     event_texts = req.get("event_texts")
     if not isinstance(event_texts, list) or not event_texts:
-        event_texts = [
-            "Operator-triggered replay from recommendation context.",
-            "Deterministic follow-through check for replay flow.",
-        ]
+        if guided:
+            event_texts = ["Guided replay validation path from active recommendation lineage."]
+        else:
+            event_texts = [
+                "Operator-triggered replay from recommendation context.",
+                "Deterministic follow-through check for replay flow.",
+            ]
     bars, source, fallback_mode = _workflow_bars(symbol)
     response = replay_engine.run(
         ReplayRunRequest(
@@ -628,6 +639,9 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         "source": source,
         "thesis": thesis,
         "key_levels": key_levels,
+        "has_stageable_candidate": bool(run_row.has_stageable_candidate) if run_row else False,
+        "stageable_recommendation_id": run_row.stageable_recommendation_id if run_row else None,
+        "stageable_reason": run_row.stageable_reason if run_row else None,
     }
 
 
@@ -656,6 +670,9 @@ def replay_run_detail(run_id: int, _user=Depends(require_approved_user)):
         "created_at": run.created_at,
         "thesis": source_payload.get("thesis"),
         "key_levels": extract_recommendation_key_levels(source_payload),
+        "has_stageable_candidate": run.has_stageable_candidate,
+        "stageable_recommendation_id": run.stageable_recommendation_id,
+        "stageable_reason": run.stageable_reason,
     }
 
 
@@ -695,6 +712,16 @@ def list_orders(_user=Depends(require_approved_user)):
     return order_repo.list_with_fills(app_user_id=_user.id)
 
 
+@user_router.get("/orders/portfolio-summary")
+def paper_portfolio_summary(_user=Depends(require_approved_user)):
+    summary = paper_portfolio_repo.summary(app_user_id=_user.id)
+    return {
+        **summary,
+        "lifecycle_status": "scaffolded",
+        "notes": "Position/trade lifecycle accounting endpoints are enabled. Realized P&L remains zero until close-trade lifecycle writes are connected.",
+    }
+
+
 @user_router.post("/orders")
 def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     guided = bool(req.get("guided"))
@@ -712,6 +739,19 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         raise HTTPException(status_code=400, detail="Guided order staging requires recommendation_id.")
     if guided and replay_run_id is None:
         raise HTTPException(status_code=400, detail="Guided order staging requires replay_run_id for auditable lineage.")
+    stageable_reason: str | None = None
+    if guided and replay_run_id is not None:
+        run = replay_repo.get_run(replay_run_id, app_user_id=_user.id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Replay run not found for guided order staging.")
+        if not run.has_stageable_candidate:
+            raise HTTPException(
+                status_code=409,
+                detail=run.stageable_reason or "No paper order can be staged from this replay.",
+            )
+        stageable_reason = run.stageable_reason
+        if run.stageable_recommendation_id:
+            recommendation_id = run.stageable_recommendation_id
 
     if recommendation_id:
         rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
@@ -741,7 +781,7 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     order, fill = paper_broker.execute(intent)
     recommendation_service.persist_order(
         order,
-        notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}|replay_run_id={replay_run_id or ''}",
+        notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}|replay_run_id={replay_run_id or ''}|stageable_reason={stageable_reason or ''}",
         app_user_id=_user.id,
     )
     recommendation_service.persist_fill(fill)

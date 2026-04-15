@@ -50,6 +50,34 @@ Still open:
 - Additional guided-mode visual polish (including deeper hierarchy tuning for history tables/panels) remains iterative.
 - Broader component-level frontend tests for all guided hero variants remain open beyond current helper + e2e coverage.
 
+### 2026-04-15 guided single-active lineage + stageable-order gating pass (this pass)
+
+Completed in this pass:
+- Guided replay defaults to a single validation path when `guided=true` and no explicit `event_texts` are supplied.
+- Replay runs now persist explicit stageability contract fields:
+  - `has_stageable_candidate`
+  - `stageable_recommendation_id`
+  - `stageable_reason`
+- Guided paper-order staging now enforces replay outcome gating:
+  - blocks when replay produced no stageable candidate
+  - stages from replay-approved recommendation lineage instead of stale query/source recommendation IDs.
+- Analysis -> recommendation generation now threads strategy/timeframe/source metadata so persisted recommendations retain non-empty strategy context.
+- Recommendations workspace now includes guided “Active recommendation” hero and practical table filters (symbol/strategy/status) with contained scroll region.
+- Replay workspace table relabeled from `recs` to `paths`; guided CTA semantics distinguish navigation from creation and show stageability guardrails.
+- Orders workspace language updated toward “Paper Orders / Order history”; added first paper portfolio summary endpoint + UI scaffold backed by new DB models.
+- Added backend tests for:
+  - analysis-generated recommendation strategy metadata persistence
+  - guided replay single-path behavior
+  - guided order-stage blocking when replay has no stageable candidate
+  - guided order staging from replay-approved lineage.
+
+Started early (foundation, not phase advance):
+- Added `paper_positions` + `paper_trades` persistence scaffolding and `GET /user/orders/portfolio-summary` contract for future auditable close-trade lifecycle accounting.
+
+Still open:
+- “Save as alternative” explicit action is not yet separated from “Make active” in guided recommendations queue controls.
+- Replay/Orders history tables still need sticky table headers + richer active-context toggles beyond current contained-scroll + lineage-first selection behavior.
+
 ### 2026-04-14 replay/orders lineage + guided coherence + sidebar layout pass (this pass)
 
 Completed in this pass:

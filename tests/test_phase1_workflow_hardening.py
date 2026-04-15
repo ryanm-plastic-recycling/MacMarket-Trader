@@ -46,7 +46,7 @@ def test_analysis_to_recommendation_to_replay_to_order_flow_keeps_lineage() -> N
     create_rec = client.post(
         '/user/recommendations/generate',
         headers={'Authorization': 'Bearer user-token'},
-        json={'symbol': 'AAPL', 'event_text': 'Earnings beat with raised strong guidance breakout'},
+        json={'symbol': 'AAPL', 'strategy': 'Event Continuation', 'timeframe': '1D', 'market_mode': 'equities', 'event_text': 'Earnings beat with raised strong guidance breakout'},
     )
     assert create_rec.status_code == 200
     assert create_rec.json()['approved'] is True
@@ -58,6 +58,8 @@ def test_analysis_to_recommendation_to_replay_to_order_flow_keeps_lineage() -> N
     assert latest['recommendation_id'] == recommendation_id
     assert latest['symbol'] == 'AAPL'
     assert latest['payload']['workflow']['market_data_source']
+    assert latest['payload']['workflow']['source_strategy'] == 'Event Continuation'
+    assert latest['payload']['workflow']['ranking_provenance']['timeframe'] == '1D'
 
     replay = client.post(
         '/user/replay-runs',
@@ -69,6 +71,9 @@ def test_analysis_to_recommendation_to_replay_to_order_flow_keeps_lineage() -> N
     assert replay_payload['symbol'] == 'AAPL'
     assert replay_payload['recommendation_id'] == recommendation_id
     assert replay_payload['market_data_source']
+    assert replay_payload['summary_metrics']['recommendation_count'] == 1.0
+    assert replay_payload['has_stageable_candidate'] is True
+    assert replay_payload['stageable_recommendation_id']
 
     stage_order = client.post(
         '/user/orders',
@@ -78,14 +83,14 @@ def test_analysis_to_recommendation_to_replay_to_order_flow_keeps_lineage() -> N
     assert stage_order.status_code == 200
     order_payload = stage_order.json()
     assert order_payload['order_id']
-    assert order_payload['recommendation_id'] == recommendation_id
+    assert order_payload['recommendation_id'] == replay_payload['stageable_recommendation_id']
     assert order_payload['replay_run_id'] == replay_payload['id']
     assert order_payload['market_data_source'] == latest['payload']['workflow']['market_data_source']
 
     orders = client.get('/user/orders', headers={'Authorization': 'Bearer user-token'})
     assert orders.status_code == 200
     staged = orders.json()[0]
-    assert staged['recommendation_id'] == recommendation_id
+    assert staged['recommendation_id'] == replay_payload['stageable_recommendation_id']
     assert staged['replay_run_id'] == replay_payload['id']
     assert staged['symbol'] == 'AAPL'
     assert staged['market_data_source'] == latest['payload']['workflow']['market_data_source']
@@ -204,6 +209,36 @@ def test_guided_replay_and_order_require_full_lineage() -> None:
     assert order_missing_rec.status_code == 400
     order_missing_run = client.post('/user/orders', headers={'Authorization': 'Bearer user-token'}, json={'guided': True, 'recommendation_id': 'rec_fake'})
     assert order_missing_run.status_code == 400
+
+
+def test_guided_order_blocks_when_replay_has_no_stageable_candidate(monkeypatch) -> None:
+    _approve_user()
+    create_rec = client.post(
+        '/user/recommendations/generate',
+        headers={'Authorization': 'Bearer user-token'},
+        json={'symbol': 'AAPL', 'strategy': 'Event Continuation', 'event_text': 'seed rec for no-stageable replay'},
+    )
+    recommendation_id = create_rec.json()['recommendation_id']
+
+    original_generate = admin_routes.recommendation_service.generate
+
+    def _always_reject(*args, **kwargs):
+        rec = original_generate(*args, **kwargs)
+        rec.approved = False
+        rec.outcome = 'no_trade'
+        rec.sizing.shares = 0
+        rec.rejection_reason = 'forced_reject_for_test'
+        return rec
+
+    monkeypatch.setattr(admin_routes.recommendation_service, 'generate', _always_reject)
+    replay = client.post('/user/replay-runs', headers={'Authorization': 'Bearer user-token'}, json={'guided': True, 'recommendation_id': recommendation_id})
+    assert replay.status_code == 200
+    assert replay.json()['has_stageable_candidate'] is False
+    run_id = replay.json()['id']
+
+    order = client.post('/user/orders', headers={'Authorization': 'Bearer user-token'}, json={'guided': True, 'recommendation_id': recommendation_id, 'replay_run_id': run_id})
+    assert order.status_code == 409
+    assert 'no stageable path' in order.json()['detail'].lower()
 
 
 def test_replay_detail_and_steps_return_enriched_lineage() -> None:

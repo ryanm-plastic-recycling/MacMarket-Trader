@@ -18,6 +18,8 @@ from macmarket_trader.domain.models import (
     EmailDeliveryLogModel,
     FillModel,
     OrderModel,
+    PaperPositionModel,
+    PaperTradeModel,
     ProviderHealthModel,
     RecommendationEvidenceModel,
     RecommendationModel,
@@ -251,9 +253,12 @@ class ReplayRepository:
         recommendation_count: int,
         approved_count: int,
         fill_count: int,
-                ending_heat: float,
-                ending_open_notional: float,
-                app_user_id: int | None = None,
+        ending_heat: float,
+        ending_open_notional: float,
+        has_stageable_candidate: bool = False,
+        stageable_recommendation_id: str | None = None,
+        stageable_reason: str | None = None,
+        app_user_id: int | None = None,
     ) -> ReplayRunModel:
         with self.session_factory() as session:
             row = ReplayRunModel(
@@ -270,6 +275,9 @@ class ReplayRepository:
                 fill_count=fill_count,
                 ending_heat=ending_heat,
                 ending_open_notional=ending_open_notional,
+                has_stageable_candidate=has_stageable_candidate,
+                stageable_recommendation_id=stageable_recommendation_id,
+                stageable_reason=stageable_reason,
             )
             session.add(row)
             session.commit()
@@ -318,6 +326,40 @@ class ReplayRepository:
             if app_user_id is not None:
                 stmt = stmt.where(ReplayRunModel.app_user_id == app_user_id)
             return session.execute(stmt).scalar_one_or_none()
+
+
+class PaperPortfolioRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def summary(self, *, app_user_id: int) -> dict[str, float | int]:
+        with self.session_factory() as session:
+            open_positions = list(
+                session.execute(
+                    select(PaperPositionModel).where(
+                        PaperPositionModel.app_user_id == app_user_id,
+                        PaperPositionModel.status == "open",
+                    )
+                ).scalars()
+            )
+            closed_trades = list(
+                session.execute(
+                    select(PaperTradeModel).where(
+                        PaperTradeModel.app_user_id == app_user_id,
+                        PaperTradeModel.closed_at.is_not(None),
+                    )
+                ).scalars()
+            )
+            closed_count = len(closed_trades)
+            wins = sum(1 for trade in closed_trades if trade.realized_pnl > 0)
+            return {
+                "open_positions": len(open_positions),
+                "total_open_notional": float(sum(position.open_notional for position in open_positions)),
+                "unrealized_pnl": float(sum(position.unrealized_pnl for position in open_positions)),
+                "realized_pnl": float(sum(trade.realized_pnl for trade in closed_trades)),
+                "closed_trade_count": closed_count,
+                "win_rate": float((wins / closed_count) if closed_count else 0.0),
+            }
 
 
 class UserRepository:
