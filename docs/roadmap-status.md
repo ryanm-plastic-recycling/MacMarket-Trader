@@ -19,6 +19,30 @@ The defensible edge is:
 MacMarket-Trader has completed **Phase 4 — Vendor integrations** and is entering **Phase 5 — Operator console polish** as the active implementation scope.
 Phases 1–4 form the operational baseline. Phase 5 delivers the polished operator surfaces that make the system credible as a paid tool.
 
+### 2026-04-15 Phase 5 operator UI polish pass — sticky table headers + save-as-alternative button
+
+Completed in this pass:
+
+**Fix 4 — Sticky table headers on Replay and Orders history tables**
+- Replay runs table: wrapper `maxHeight` set to 320px (was 360); all `thead th` elements get `position: sticky; top: 0; z-index: 1; background: var(--card-bg); border-bottom: 1px solid var(--table-border)` via inline styles.
+- Orders table: wrapper `maxHeight` set to 280px (was 360); same sticky-th inline style pattern applied.
+- No new CSS classes added; no column definitions, row handlers, or data logic changed.
+
+**Fix 5 — Separate "Save as alternative" from "Make active" on recommendations page**
+- "Make active" button now uses `op-btn op-btn-primary` styling in both the guided Next action card and the candidate detail panel.
+- "Save as alternative" button (`op-btn op-btn-secondary`) added alongside "Make active" in both locations. Button is rendered visually but is `disabled` with `title="Not yet supported by backend"`.
+- TODO comment placed at each button site: `backend needs save_alternative action variant on promote route` — the existing backend promote route (`/user/recommendations/queue/promote`) has no `action` field and does not distinguish save-as-alternative from make-active. Backend work required before this can be wired.
+- Both buttons are disabled while `loading.promote` is true; "Make active" shows `title="Promotion in flight…"` during that state.
+- In guided mode: buttons appear in the Next action card (when no active rec exists) and in the candidate detail panel. Collapsed queue table rows have no action buttons (per spec).
+- In explorer mode: buttons appear in the candidate detail panel as before.
+
+TypeScript: `npx tsc --noEmit` passes with zero errors after all changes.
+
+Still open:
+- Backend `save_alternative` action variant on the promote route — needed to wire the "Save as alternative" button.
+- Additional guided-mode visual polish (deeper hierarchy tuning for history tables/panels) — iterative.
+- Broader component-level frontend tests for guided hero variants.
+
 ### 2026-04-15 Phase 5 operator UI polish pass — banner chips, guided queue collapse, replay warning block
 
 Completed in this pass:

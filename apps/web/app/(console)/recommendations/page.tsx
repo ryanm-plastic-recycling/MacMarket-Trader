@@ -449,9 +449,15 @@ export default function RecommendationsPage() {
             {selectedRecommendation?.recommendation_id ? (
               <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Go to Replay step</button>
             ) : (
-              <button onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote}>
-                {loading.promote ? "Promoting…" : "Make active"}
-              </button>
+              <>
+                <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote} title={loading.promote ? "Promotion in flight…" : undefined}>
+                  {loading.promote ? "Promoting…" : "Make active"}
+                </button>
+                {/* TODO: backend needs save_alternative action variant on promote route */}
+                <button className="op-btn op-btn-secondary" disabled title="Not yet supported by backend">
+                  Save as alternative
+                </button>
+              </>
             )}
           </div>
         </Card>
@@ -592,9 +598,15 @@ export default function RecommendationsPage() {
                 {promotedKeys.has(`${selectedQueue.symbol}-${selectedQueue.strategy}-${selectedQueue.rank}`) ? (
                   <StatusBadge tone="good">Already promoted to recommendation</StatusBadge>
                 ) : (
-                  <button onClick={() => void promoteSelected()} disabled={loading.promote} style={{ width: "100%" }}>
-                    {loading.promote ? "Promoting…" : guidedState.guided ? "Make active" : "Promote to recommendation"}
-                  </button>
+                  <div className="op-row">
+                    <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={loading.promote} title={loading.promote ? "Promotion in flight…" : undefined}>
+                      {loading.promote ? "Promoting…" : "Make active"}
+                    </button>
+                    {/* TODO: backend needs save_alternative action variant on promote route */}
+                    <button className="op-btn op-btn-secondary" disabled title="Not yet supported by backend">
+                      Save as alternative
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
