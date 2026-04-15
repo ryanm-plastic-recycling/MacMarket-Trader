@@ -27,6 +27,7 @@ class ReplayEngine:
         req: ReplayRunRequest,
         *,
         app_user_id: int | None = None,
+        user_is_approved: bool = False,
         source_recommendation_id: str | None = None,
         source_strategy: str | None = None,
         source_market_mode: str | None = None,
@@ -49,6 +50,7 @@ class ReplayEngine:
                 event=None,
                 portfolio=portfolio_state,
                 market_mode=req.market_mode,
+                user_is_approved=user_is_approved,
                 app_user_id=app_user_id,
             )
             recs.append(rec)

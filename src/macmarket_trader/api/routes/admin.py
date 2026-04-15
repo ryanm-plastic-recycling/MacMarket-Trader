@@ -593,6 +593,8 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
                 "Deterministic follow-through check for replay flow.",
             ]
     bars, source, fallback_mode = _workflow_bars(symbol)
+    approval_status = getattr(_user.approval_status, "value", _user.approval_status)
+    user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     response = replay_engine.run(
         ReplayRunRequest(
             symbol=symbol,
@@ -602,6 +604,7 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
             portfolio=PortfolioSnapshot(),
         ),
         app_user_id=_user.id,
+        user_is_approved=user_is_approved,
         source_recommendation_id=recommendation_id or None,
         source_strategy=source_strategy,
         source_market_mode=source_market_mode,
