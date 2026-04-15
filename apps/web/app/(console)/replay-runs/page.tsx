@@ -13,7 +13,7 @@ import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickReplayRunSelection } from "@/lib/workflow-selection";
 
-type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null; source_recommendation_id?: string | null; source_strategy?: string | null };
+type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null; source_recommendation_id?: string | null; source_strategy?: string | null; has_stageable_candidate?: boolean; stageable_recommendation_id?: string | null; stageable_reason?: string | null };
 type RunDetail = Run & { source_recommendation_id?: string | null; source_strategy?: string | null; source_market_mode?: string | null; thesis?: string | null; key_levels?: { entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null } | null; summary_metrics?: Record<string, number> | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; rejection_reason?: string | null; thesis?: string | null; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; quality?: number | null; confidence?: number | null; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown> };
 type ActiveRecommendation = { recommendation_id: string; symbol: string; payload?: { thesis?: string; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; workflow?: { source_strategy?: string } } };
@@ -23,6 +23,10 @@ function fmt(v: unknown, digits = 2): string {
   const n = Number(v);
   if (!Number.isFinite(n)) return String(v);
   return n.toFixed(digits);
+}
+function fmtLevelRange(entry?: Record<string, unknown> | null): string {
+  if (!entry) return "—";
+  return `${fmt(entry.zone_low ?? entry.low)} - ${fmt(entry.zone_high ?? entry.high)}`;
 }
 
 function SnapshotRow({ label, pre, post, field, digits = 2 }: { label: string; pre: Record<string, unknown>; post: Record<string, unknown>; field: string; digits?: number }) {
@@ -300,22 +304,25 @@ export default function Page() {
       </Card>
     ) : null}
 
-    <Card><div className="op-row"><button onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : "Run replay now"}</button><button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} /></Card>
+    <Card><div className="op-row"><button onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : "Run replay now"}</button><button onClick={openOrdersNextAction} disabled={!selected?.has_stageable_candidate || unsupportedGuidedMode}>Go to Paper Order step</button><button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} /></Card>
     {error ? <ErrorState title="Replay unavailable" hint={error} /> : null}
     {stepError ? <ErrorState title="Replay steps unavailable" hint={stepError} /> : null}
 
     <div className="op-grid-2">
       <Card title={guidedState.guided ? "Replay history (secondary)" : "Replay runs"}>
         {guidedState.guided ? <div style={{ marginBottom: 6, color: "var(--op-muted, #7a8999)" }}>Secondary panel: full replay history</div> : null}
+        <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
         <table className="op-table" style={{ marginTop: guidedState.guided ? 8 : 0 }}>
-          <thead><tr><th>created_at</th><th>symbol</th><th>recs</th><th>approved</th><th>fills</th><th>ending_heat</th><th>ending_open_notional</th></tr></thead>
-          <tbody>{runs.map((r) => <tr key={r.id} onClick={() => void loadSteps(r.id)} className={`is-selectable ${r.id === selectedRunId ? "is-active" : ""}`}><td>{r.created_at}</td><td>{r.symbol}</td><td>{r.recommendation_count}</td><td>{r.approved_count}</td><td>{r.fill_count}</td><td>{r.ending_heat}</td><td>{r.ending_open_notional}</td></tr>)}</tbody>
+          <thead><tr><th>created_at</th><th>symbol</th><th>paths</th><th>approved</th><th>fills</th><th>stageable</th><th>ending_heat</th><th>ending_open_notional</th></tr></thead>
+          <tbody>{runs.map((r) => <tr key={r.id} onClick={() => void loadSteps(r.id)} className={`is-selectable ${r.id === selectedRunId ? "is-active" : ""}`}><td>{r.created_at}</td><td>{r.symbol}</td><td>{r.recommendation_count}</td><td>{r.approved_count}</td><td>{r.fill_count}</td><td>{r.has_stageable_candidate ? "yes" : "no"}</td><td>{r.ending_heat}</td><td>{r.ending_open_notional}</td></tr>)}</tbody>
         </table>
+        </div>
       </Card>
 
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
           <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource}</div>
+          {selected.has_stageable_candidate === false ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>Replay completed, but no stageable path was approved.</div> : null}
           {selected.approved_count === 0 && selected.fill_count === 0 ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>Replay completed, but no fills occurred. Portfolio remained unchanged.</div> : null}
           {steps.length > 0 && <div style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9fb0c3", marginBottom: 3 }}><span>approved {approvedCount}</span><span>rejected {rejectedCount}</span><span>fills {selected.fill_count}</span></div></div>}
           {equitySvg ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}><div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 2 }}>Equity curve (post-step)</div>{equitySvg}</div> : null}
@@ -324,11 +331,17 @@ export default function Page() {
             {steps.map((s) => <div key={s.id} className="op-card" style={{ padding: 8, cursor: "pointer" }} onClick={() => setExpandedStepId(expandedStepId === s.id ? null : s.id)}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}><strong>Step {s.step_index}</strong><StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge><span style={{ marginLeft: "auto", fontSize: 11, color: "#9fb0c3" }}>{expandedStepId === s.id ? "▲ collapse" : "▼ expand"}</span></div>
               {expandedStepId === s.id ? <div style={{ marginTop: 8 }}>
-                <div>{s.rejection_reason ? <><strong>rejection:</strong> {String(s.rejection_reason)}</> : <strong>verdict:</strong>} {s.approved ? "Approved" : "Rejected"}</div>
+                <div>{s.rejection_reason ? <><strong>rejection reason:</strong> {String(s.rejection_reason)}</> : <strong>verdict:</strong>} {s.approved ? "Approved" : "Rejected"}</div>
                 {s.thesis ? <div><strong>thesis:</strong> {s.thesis}</div> : null}
-                <div><strong>entry:</strong> {JSON.stringify(s.entry ?? {})}</div>
-                <div><strong>invalidation:</strong> {JSON.stringify(s.invalidation ?? {})}</div>
-                <div><strong>targets:</strong> {JSON.stringify(s.targets ?? {})}</div>
+                <div><strong>entry zone:</strong> {fmtLevelRange(s.entry)}</div>
+                <div><strong>stop / invalidation:</strong> {fmt((s.invalidation as Record<string, unknown> | null | undefined)?.["price"])} {(s.invalidation as Record<string, unknown> | null | undefined)?.["reason"] ? `(${String((s.invalidation as Record<string, unknown>)["reason"])})` : ""}</div>
+                <div><strong>targets:</strong> T1 {fmt((s.targets as Record<string, unknown> | null | undefined)?.["target_1"])} · T2 {fmt((s.targets as Record<string, unknown> | null | undefined)?.["target_2"])}</div>
+                <details style={{ marginTop: 6 }}>
+                  <summary>Raw operator detail</summary>
+                  <div><strong>entry:</strong> {JSON.stringify(s.entry ?? {})}</div>
+                  <div><strong>invalidation:</strong> {JSON.stringify(s.invalidation ?? {})}</div>
+                  <div><strong>targets:</strong> {JSON.stringify(s.targets ?? {})}</div>
+                </details>
                 <div style={{ marginTop: 6, fontSize: "0.75rem", color: "var(--op-muted, #7a8999)" }}>rec id: <span style={{ fontFamily: "monospace" }}>{s.recommendation_id}</span></div>
                 {(!guidedState.guided || showOperatorDetail) ? <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: "0.82rem" }}><strong>Show operator detail</strong></div>

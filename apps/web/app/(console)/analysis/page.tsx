@@ -254,7 +254,15 @@ export default function Page() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: appliedSymbol, market_mode: appliedMarketMode, event_text: `Workbench strategy: ${appliedStrategy}` }),
+        body: JSON.stringify({
+          symbol: appliedSymbol,
+          strategy: appliedStrategy,
+          timeframe: appliedTimeframe,
+          market_mode: appliedMarketMode,
+          workflow_source: setup?.workflow_source ?? source,
+          source: setup?.workflow_source ?? source,
+          event_text: `Workbench strategy: ${appliedStrategy}`,
+        }),
       }
     );
     if (!result.ok) {

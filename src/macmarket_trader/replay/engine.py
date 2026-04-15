@@ -70,6 +70,7 @@ class ReplayEngine:
             step_snapshots.append((pre_step_snapshot, post_step_snapshot))
 
         if self.service.persist_audit:
+            stageable_rec = next((rec for rec in recs if rec.approved), None)
             run = self.replay_repository.create_run(
                 symbol=req.symbol,
                 recommendation_id=recs[0].recommendation_id if recs else None,
@@ -83,6 +84,13 @@ class ReplayEngine:
                 fill_count=len(fills),
                 ending_heat=portfolio_state.current_heat,
                 ending_open_notional=portfolio_state.open_positions_notional,
+                has_stageable_candidate=stageable_rec is not None,
+                stageable_recommendation_id=stageable_rec.recommendation_id if stageable_rec else None,
+                stageable_reason=(
+                    "At least one replay path passed deterministic approval gates."
+                    if stageable_rec
+                    else "Replay completed, but no stageable path was approved."
+                ),
                 app_user_id=app_user_id,
             )
             for step_index, (step_rec, snapshots) in enumerate(zip(recs, step_snapshots, strict=True)):

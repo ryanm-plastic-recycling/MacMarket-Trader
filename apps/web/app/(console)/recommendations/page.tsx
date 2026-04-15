@@ -104,6 +104,9 @@ export default function RecommendationsPage() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
+  const [tableSymbolFilter, setTableSymbolFilter] = useState("");
+  const [tableStrategyFilter, setTableStrategyFilter] = useState("");
+  const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "approved" | "rejected">("all");
 
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
@@ -360,6 +363,27 @@ export default function RecommendationsPage() {
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
   const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
+  const activeRecommendation = useMemo(() => {
+    if (selectedRecommendation) return selectedRecommendation;
+    if (guidedState.recommendationId) return rows.find((item) => item.recommendation_id === guidedState.recommendationId) ?? null;
+    return rows[0] ?? null;
+  }, [guidedState.recommendationId, rows, selectedRecommendation]);
+  const filteredRows = useMemo(
+    () =>
+      rows
+        .filter((row) => {
+          const prov = getRankingProvenance(row.payload as Record<string, unknown>);
+          const workflow = (row.payload.workflow as Record<string, unknown> | undefined) ?? {};
+          const strategy = typeof prov?.strategy === "string" ? prov.strategy : typeof workflow.source_strategy === "string" ? workflow.source_strategy : "";
+          const approved = Boolean((row.payload as Record<string, unknown>)?.approved);
+          const symbolOk = tableSymbolFilter ? row.symbol.toLowerCase().includes(tableSymbolFilter.toLowerCase()) : true;
+          const strategyOk = tableStrategyFilter ? strategy.toLowerCase().includes(tableStrategyFilter.toLowerCase()) : true;
+          const statusOk = tableStatusFilter === "all" ? true : tableStatusFilter === "approved" ? approved : !approved;
+          return symbolOk && strategyOk && statusOk;
+        })
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))),
+    [rows, tableStatusFilter, tableStrategyFilter, tableSymbolFilter],
+  );
 
   return (
     <section className="op-stack">
@@ -392,6 +416,28 @@ export default function RecommendationsPage() {
           <div style={{ marginTop: 8 }}>
             Recommendations queue is equities-only in Phase 1. Options/crypto stop at research preview because replay/order semantics are not mode-native yet.
           </div>
+          <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)" }}>
+            Guided mode carries one active recommendation at a time.
+          </div>
+        </Card>
+      ) : null}
+      {guidedState.guided ? (
+        <Card title="Active recommendation">
+          {activeRecommendation ? (
+            <>
+              <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{activeRecommendation.recommendation_id}</span></div>
+              <div>
+                <strong>symbol:</strong> {activeRecommendation.symbol} · <strong>strategy:</strong>{" "}
+                {String(
+                  getRankingProvenance(activeRecommendation.payload as Record<string, unknown>)?.strategy
+                  ?? ((activeRecommendation.payload.workflow as Record<string, unknown> | undefined)?.source_strategy as string | undefined)
+                  ?? "-",
+                )}
+              </div>
+            </>
+          ) : (
+            <EmptyState title="No active recommendation" hint="Create from Analysis or promote one queue candidate to start guided replay." />
+          )}
         </Card>
       ) : null}
       {guidedState.guided ? (
@@ -403,7 +449,7 @@ export default function RecommendationsPage() {
               <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Go to Replay step</button>
             ) : (
               <button onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote}>
-                {loading.promote ? "Promoting…" : "Promote to recommendation"}
+                {loading.promote ? "Promoting…" : "Make active"}
               </button>
             )}
           </div>
@@ -462,15 +508,25 @@ export default function RecommendationsPage() {
         </Card>
 
         <Card title="Persisted recommendations">
+          <div className="op-row" style={{ marginBottom: 8, flexWrap: "wrap" }}>
+            <input placeholder="Filter symbol" value={tableSymbolFilter} onChange={(e) => setTableSymbolFilter(e.target.value)} />
+            <input placeholder="Filter strategy" value={tableStrategyFilter} onChange={(e) => setTableStrategyFilter(e.target.value)} />
+            <select value={tableStatusFilter} onChange={(e) => setTableStatusFilter(e.target.value as "all" | "approved" | "rejected")}>
+              <option value="all">All statuses</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
           {loading.recommendations && rows.length === 0 ? <EmptyState title="Loading recommendations" hint="Fetching stored recommendations." /> : null}
           {!loading.recommendations && rows.length === 0 ? <EmptyState title="No stored recommendations" hint="Promote a queue candidate to create reviewable lineage." /> : null}
           {rows.length > 0 ? (
+            <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
             <table className="op-table">
               <thead><tr><th>date</th><th>symbol</th><th>strategy</th><th>queue rank</th><th>approved</th><th>source</th></tr></thead>
               <tbody>
-                {rows.map((row) => {
+                {filteredRows.map((row) => {
                   const prov = getRankingProvenance(row.payload as Record<string, unknown>);
-                  const strategy = typeof prov?.strategy === "string" ? prov.strategy : "-";
+                  const strategy = typeof prov?.strategy === "string" ? prov.strategy : (typeof (row.payload.workflow as Record<string, unknown> | undefined)?.source_strategy === "string" ? String((row.payload.workflow as Record<string, unknown>).source_strategy) : "-");
                   const rank = prov?.rank != null ? `#${String(prov.rank)}` : "-";
                   const approved = (row.payload as Record<string, unknown>)?.approved;
                   return (
@@ -486,6 +542,7 @@ export default function RecommendationsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           ) : null}
         </Card>
       </div>
@@ -526,7 +583,7 @@ export default function RecommendationsPage() {
                   <StatusBadge tone="good">Already promoted to recommendation</StatusBadge>
                 ) : (
                   <button onClick={() => void promoteSelected()} disabled={loading.promote} style={{ width: "100%" }}>
-                    {loading.promote ? "Promoting…" : "Promote to recommendation"}
+                    {loading.promote ? "Promoting…" : guidedState.guided ? "Make active" : "Promote to recommendation"}
                   </button>
                 )}
               </div>
