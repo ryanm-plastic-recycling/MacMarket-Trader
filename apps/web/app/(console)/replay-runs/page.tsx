@@ -334,7 +334,7 @@ export default function Page() {
           {equitySvg ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}><div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 2 }}>Equity curve (post-step)</div>{equitySvg}</div> : null}
           {guidedState.guided ? <div className="op-row" style={{ marginBottom: 8 }}><button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button></div> : null}
           <div style={{ display: "grid", gap: 6 }}>
-            {steps.map((s) => <div key={s.id} className="op-card" style={{ padding: 8, cursor: "pointer" }} onClick={() => setExpandedStepId(expandedStepId === s.id ? null : s.id)}>
+            {steps.map((s) => <div key={s.id} className="op-card" style={{ padding: 8, cursor: "pointer", borderLeft: s.approved === true ? "3px solid #21c06e" : s.approved === false ? "3px solid #f44336" : undefined }} onClick={() => setExpandedStepId(expandedStepId === s.id ? null : s.id)}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}><strong>Step {s.step_index}</strong><StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge><span style={{ marginLeft: "auto", fontSize: 11, color: "#9fb0c3" }}>{expandedStepId === s.id ? "▲ collapse" : "▼ expand"}</span></div>
               {expandedStepId === s.id ? <div style={{ marginTop: 8 }}>
                 <div>{s.rejection_reason ? <><strong>rejection reason:</strong> {String(s.rejection_reason)}</> : <strong>verdict:</strong>} {s.approved ? "Approved" : "Rejected"}</div>

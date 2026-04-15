@@ -233,7 +233,7 @@ export default function Page() {
           </div>
         ) : (
           <>
-            <div><strong>symbol:</strong> {selected.symbol} · <strong>side:</strong> {selected.side} · <strong>shares:</strong> {selected.shares} · <strong>limit:</strong> {selected.limit_price}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><strong>symbol:</strong> {selected.symbol} · <strong>side:</strong> <StatusBadge tone={selected.side?.toLowerCase() === "buy" ? "good" : "warn"}>{selected.side}</StatusBadge> · <strong>shares:</strong> {selected.shares} · <strong>limit:</strong> {selected.limit_price}</div>
             <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{selected.recommendation_id}</span> · <strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{selected.replay_run_id ?? "—"}</span></div>
             <div><strong>source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)} · <strong>status:</strong> {selected.status}</div>
           </>
@@ -261,7 +261,7 @@ export default function Page() {
             <div><strong>Order id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selected.order_id}</span></div>
             <div><strong>Recommendation:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selected.recommendation_id}</span></div>
             <div><strong>Replay run:</strong> {selected.replay_run_id ?? "—"}</div>
-            <div><strong>Symbol/side:</strong> {selected.symbol} {selected.side}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><strong>Symbol/side:</strong> {selected.symbol} <StatusBadge tone={selected.side?.toLowerCase() === "buy" ? "good" : "warn"}>{selected.side}</StatusBadge></div>
             <div><strong>Shares:</strong> {selected.shares}</div>
             <div><strong>Limit:</strong> {selected.limit_price}</div>
             <div><strong>Status:</strong> {selected.status}</div>

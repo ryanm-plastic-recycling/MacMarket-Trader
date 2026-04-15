@@ -12,6 +12,8 @@ export type StrategyRegistryEntry = {
   execution_readiness: string;
   required_data_inputs: string[];
   operator_notes: string[];
+  description?: string;
+  regime_fit?: string;
 };
 
 export function filterStrategiesByMode(entries: StrategyRegistryEntry[], mode: MarketMode): StrategyRegistryEntry[] {

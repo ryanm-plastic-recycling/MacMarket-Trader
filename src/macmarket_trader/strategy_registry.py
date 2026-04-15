@@ -17,6 +17,8 @@ class StrategyRegistryEntry(BaseModel):
     execution_readiness: str
     required_data_inputs: list[str] = Field(default_factory=list)
     operator_notes: list[str] = Field(default_factory=list)
+    description: str | None = None
+    regime_fit: str | None = None
 
 
 REGISTRY: list[StrategyRegistryEntry] = [
@@ -30,6 +32,8 @@ REGISTRY: list[StrategyRegistryEntry] = [
         execution_readiness="live",
         required_data_inputs=["daily_bars", "relative_volume", "regime_state"],
         operator_notes=["Use deterministic trigger + invalidation before promotion to Recommendations."],
+        description="Trades in the direction of a catalyst after initial price discovery — earnings, guidance, or macro events with clear directional bias.",
+        regime_fit="trending / catalyst-driven",
     ),
     StrategyRegistryEntry(
         strategy_id="breakout_prior_day_high",
@@ -41,6 +45,8 @@ REGISTRY: list[StrategyRegistryEntry] = [
         execution_readiness="live",
         required_data_inputs=["daily_bars", "prior_day_levels", "relative_volume"],
         operator_notes=["Validate trigger quality around prior-day highs before staging."],
+        description="Enters on confirmed range expansion above resistance or below support with volume confirmation.",
+        regime_fit="trending / expanding volatility",
     ),
     StrategyRegistryEntry(
         strategy_id="pullback_trend_continuation",
@@ -51,6 +57,8 @@ REGISTRY: list[StrategyRegistryEntry] = [
         directional_profile="bullish",
         execution_readiness="live",
         required_data_inputs=["daily_bars", "trend_context", "atr"],
+        description="Buys dips or sells rips within an established trend using structure levels as entry zones.",
+        regime_fit="trending / orderly",
     ),
     StrategyRegistryEntry(
         strategy_id="gap_follow_through",
@@ -61,6 +69,8 @@ REGISTRY: list[StrategyRegistryEntry] = [
         directional_profile="volatility",
         execution_readiness="live",
         required_data_inputs=["daily_bars", "gap_stats", "relative_volume"],
+        description="Trades continuation after an overnight gap holds and establishes a new intraday trend direction.",
+        regime_fit="volatile open / trending intraday",
     ),
     StrategyRegistryEntry(
         strategy_id="mean_reversion",
@@ -71,6 +81,8 @@ REGISTRY: list[StrategyRegistryEntry] = [
         directional_profile="neutral",
         execution_readiness="live",
         required_data_inputs=["daily_bars", "volatility_context", "structure_levels"],
+        description="Fades extended moves back toward equilibrium when price is stretched beyond normal expected range.",
+        regime_fit="range-bound / low momentum",
     ),
     StrategyRegistryEntry(
         strategy_id="haco_context",
@@ -81,6 +93,8 @@ REGISTRY: list[StrategyRegistryEntry] = [
         directional_profile="neutral",
         execution_readiness="live",
         required_data_inputs=["daily_bars", "haco", "hacolt"],
+        description="Uses HACO signal transitions and regime state as the primary entry trigger alongside price structure.",
+        regime_fit="any — signal-driven",
     ),
     StrategyRegistryEntry(
         strategy_id="iron_condor",

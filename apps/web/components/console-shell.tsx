@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLockup } from "@/components/brand-lockup";
+import { TopbarContext } from "@/components/topbar-context";
 import { isActivePath } from "@/lib/console-nav";
 
 const navSections = [
@@ -43,6 +45,16 @@ const navSections = [
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const buildStamp = process.env.NEXT_PUBLIC_BUILD_STAMP ?? "dev-local";
+  const [appRole, setAppRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/user/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { app_role?: string } | null) => {
+        if (data?.app_role) setAppRole(String(data.app_role));
+      })
+      .catch(() => undefined);
+  }, []);
 
   return (
     <div className="op-shell">
@@ -52,24 +64,27 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           <p className="op-brand-caption">Invite-only private alpha console</p>
         </div>
         <nav className="op-nav">
-          {navSections.map((section) => (
-            <section key={section.title} className="op-nav-section">
-              <div className="op-nav-section-title">{section.title}</div>
-              <div className="op-nav-links">
-                {section.links.map(([href, label]) => {
-                  const active = isActivePath(pathname, href);
-                  return <Link key={href} href={href} className={active ? "is-active" : ""}>{label}</Link>;
-                })}
-              </div>
-            </section>
-          ))}
+          {navSections.map((section) => {
+            if (section.title === "Admin" && appRole !== "admin") return null;
+            return (
+              <section key={section.title} className="op-nav-section">
+                <div className="op-nav-section-title">{section.title}</div>
+                <div className="op-nav-links">
+                  {section.links.map(([href, label]) => {
+                    const active = isActivePath(pathname, href);
+                    return <Link key={href} href={href} className={active ? "is-active" : ""}>{label}</Link>;
+                  })}
+                </div>
+              </section>
+            );
+          })}
         </nav>
       </aside>
       <section className="op-main">
         <header className="op-topbar">
           <div className="op-topbar-brand">
             <BrandLockup compact />
-            <span>Workflow: Analyze → Recommendation → Replay → Paper Order</span>
+            <TopbarContext />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: "0.74rem", color: "var(--op-muted, #7a8999)" }}>build: {buildStamp}</span>

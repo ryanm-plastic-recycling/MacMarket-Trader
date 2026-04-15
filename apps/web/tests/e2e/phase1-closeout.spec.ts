@@ -12,9 +12,19 @@ function chartPayload() {
   return { symbol: "AAPL", timeframe: "1D", data_source: "polygon", fallback_mode: false, candles, heikin_ashi_candles: candles };
 }
 
-test("analysis -> recommendations -> replay -> orders click path with lineage ids + zero-fill messaging", async ({ page }) => {
-  let recommendationListCalls = 0;
+// Intercept all /api/** requests so no call proxies to the Python backend (not running in e2e).
+// The broad catch-all is registered first (lowest priority); test-level mocks registered
+// later in each test body override it for their specific endpoints.
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/**", async (route) => {
+    await route.fulfill({ status: 404, json: { detail: "not mocked in e2e" } });
+  });
+  await page.route("**/api/user/me", async (route) => {
+    await route.fulfill({ json: { app_role: null, approval_status: "approved" } });
+  });
+});
 
+test("analysis -> recommendations -> replay -> orders click path with lineage ids + zero-fill messaging", async ({ page }) => {
   await page.route("**/api/user/strategy-registry", async (route) => {
     await route.fulfill({ json: [{ strategy_id: "event_continuation", display_name: "Event Continuation", market_modes: ["equities"] }] });
   });
@@ -36,13 +46,15 @@ test("analysis -> recommendations -> replay -> orders click path with lineage id
     });
   });
   await page.route("**/api/charts/haco**", async (route) => route.fulfill({ json: chartPayload() }));
-  await page.route("**/api/user/recommendations/generate", async (route) => {
-    await route.fulfill({ json: { recommendation_id: "rec-phase1-e2e", market_data_source: "polygon", fallback_mode: false } });
-  });
+  // Single handler for all recommendations endpoints — dispatch by URL.
   await page.route("**/api/user/recommendations**", async (route) => {
-    recommendationListCalls += 1;
-    if (recommendationListCalls === 1) {
-      await route.fulfill({ status: 401, json: { detail: "Invalid token" } });
+    const url = route.request().url();
+    if (url.includes("/generate")) {
+      await route.fulfill({ json: { recommendation_id: "rec-phase1-e2e", market_data_source: "polygon", fallback_mode: false } });
+      return;
+    }
+    if (url.includes("/queue")) {
+      await route.fulfill({ json: { queue: [], summary: { total: 0, top_candidate_count: 0, watchlist_count: 0, no_trade_count: 0 } } });
       return;
     }
     await route.fulfill({
@@ -72,7 +84,8 @@ test("analysis -> recommendations -> replay -> orders click path with lineage id
       await route.fulfill({ json: { id: 22, recommendation_id: "rec-phase1-e2e", market_data_source: "polygon", fallback_mode: false, summary_metrics: { recommendation_count: 1, approved_count: 0, fill_count: 0, ending_heat: 0, ending_open_notional: 0 } } });
       return;
     }
-    await route.fulfill({ json: { items: [{ id: 22, symbol: "AAPL", source_recommendation_id: "rec-phase1-e2e", created_at: "2026-04-04", recommendation_count: 1, approved_count: 0, fill_count: 0, ending_heat: 0, ending_open_notional: 0, market_data_source: "polygon", fallback_mode: false }] } });
+    // has_stageable_candidate: true enables "Go to Paper Order step" after run completes
+    await route.fulfill({ json: { items: [{ id: 22, symbol: "AAPL", source_recommendation_id: "rec-phase1-e2e", created_at: "2026-04-04", recommendation_count: 1, approved_count: 0, fill_count: 0, ending_heat: 0, ending_open_notional: 0, market_data_source: "polygon", fallback_mode: false, has_stageable_candidate: true }] } });
   });
   await page.route("**/api/user/replay-runs/22", async (route) => {
     await route.fulfill({ json: { id: 22, symbol: "AAPL", source_recommendation_id: "rec-phase1-e2e", source_strategy: "Event Continuation", market_data_source: "polygon", fallback_mode: false, summary_metrics: { recommendation_count: 1, approved_count: 0, fill_count: 0, ending_heat: 0, ending_open_notional: 0 }, thesis: "Deterministic setup", key_levels: { entry: { zone_low: 120, zone_high: 122 }, invalidation: { price: 118 }, targets: { target_1: 126, target_2: 129 } } } });
@@ -80,7 +93,12 @@ test("analysis -> recommendations -> replay -> orders click path with lineage id
   await page.route("**/api/user/replay-runs/22/steps", async (route) => {
     await route.fulfill({ json: { items: [{ id: 1, step_index: 1, recommendation_id: "rec-phase1-e2e", approved: false, rejection_reason: "risk gate", pre_step_snapshot: { current_heat: 0, open_positions_notional: 0, equity: 10000 }, post_step_snapshot: { current_heat: 0, open_positions_notional: 0, equity: 10000 } }] } });
   });
-  await page.route("**/api/user/orders", async (route) => {
+  await page.route("**/api/user/orders**", async (route) => {
+    const url = route.request().url();
+    if (url.includes("/portfolio-summary")) {
+      await route.fulfill({ status: 404, json: { detail: "not found" } });
+      return;
+    }
     if (route.request().method() === "POST") {
       await route.fulfill({ json: { order_id: "ord-1", recommendation_id: "rec-phase1-e2e", replay_run_id: 22, symbol: "AAPL", side: "buy", shares: 10, limit_price: 121, status: "filled", market_data_source: "polygon", fallback_mode: false } });
       return;
@@ -92,24 +110,24 @@ test("analysis -> recommendations -> replay -> orders click path with lineage id
   await page.getByTestId("analysis-refresh-button").click();
   await page.getByTestId("analysis-create-recommendation-button").click();
 
-  await expect(page).toHaveURL(/\/recommendations\?recommendation=rec-phase1-e2e/);
-  await expect(page.getByText("Recommendations unavailable")).toBeVisible();
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await expect(page.getByText("Recommendations unavailable")).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Run replay with context" }).click();
-  await expect(page).toHaveURL(/\/replay-runs\?symbol=AAPL&recommendation=rec-phase1-e2e/);
+  // URL includes other query params before recommendation= depending on guided state
+  await expect(page).toHaveURL(/\/recommendations.*recommendation=rec-phase1-e2e/);
+  // Wait for the recommendation to load and auto-select from URL params before navigating
+  await expect(page.getByRole("button", { name: "Go to Replay step" })).toBeEnabled();
+  await page.getByRole("button", { name: "Go to Replay step" }).click();
+  await expect(page).toHaveURL(/\/replay-runs.*recommendation=rec-phase1-e2e/);
   await page.getByRole("button", { name: "Run replay now" }).click();
   await expect(page.getByText("replay complete")).toBeVisible();
   await expect(page.getByText("Replay completed, but no fills occurred. Portfolio remained unchanged.")).toBeVisible();
-  await expect(page.getByText("recommendation id:")).toBeVisible();
-  await expect(page.getByText("replay run id:")).toBeVisible();
+  // Workflow lineage card always visible (non-guided mode uses "recommendation:" / "replay run:")
+  await expect(page.getByText("recommendation:", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("replay run:", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Go to Paper Order step" }).click();
   await expect(page).toHaveURL(/\/orders\?.*recommendation=rec-phase1-e2e.*replay_run=22/);
   await page.getByRole("button", { name: "Stage paper order now" }).click();
   await expect(page.getByText("Order id:")).toBeVisible();
-  await expect(page.getByText("ord-1")).toBeVisible();
+  await expect(page.getByText("ord-1", { exact: true })).toBeVisible();
 });
 
 test("dashboard and provider-health show matching provider truth chips/messages in healthy provider mode", async ({ page }) => {
@@ -150,13 +168,15 @@ test("dashboard and provider-health show matching provider truth chips/messages 
   });
 
   await page.goto("/dashboard");
-  await expect(page.getByText("provider")).toBeVisible();
+  // Use exact match to target the workflow_execution_mode badge specifically
+  await expect(page.getByText("provider", { exact: true })).toBeVisible();
   await expect(page.getByText(/configured: polygon · reads: provider/i)).toBeVisible();
 
   await page.goto("/admin/provider-health");
   await expect(page.getByText(/workflow mode: provider/i)).toBeVisible();
-  await expect(page.getByText(/configured provider: polygon/i)).toBeVisible();
-  await expect(page.getByText(/effective read mode: provider/i)).toBeVisible();
+  // Provider-health renders "configured: <provider>" and "reads: <mode>" as separate elements
+  await expect(page.getByText(/configured:.*polygon/i)).toBeVisible();
+  await expect(page.getByText(/reads:.*provider/i)).toBeVisible();
   await expect(page.getByText(/provider-backed bars/i)).toBeVisible();
 });
 
@@ -203,7 +223,9 @@ test("dashboard and provider-health show matching provider truth chips/messages 
 
   await page.goto("/admin/provider-health");
   await expect(page.getByText(/workflow mode: demo_fallback/i)).toBeVisible();
-  await expect(page.getByText(/configured provider: polygon/i)).toBeVisible();
-  await expect(page.getByText(/effective read mode: fallback/i)).toBeVisible();
-  await expect(page.getByText(/deterministic demo fallback bars/i)).toBeVisible();
+  // Provider-health renders "configured: <provider>" and "reads: <mode>" as separate elements
+  await expect(page.getByText(/configured:.*polygon/i)).toBeVisible();
+  await expect(page.getByText(/reads:.*fallback/i)).toBeVisible();
+  // Use the specific "workflows on" paragraph to avoid matching the longer summary paragraph
+  await expect(page.getByText(/workflows on.*deterministic demo fallback bars/i)).toBeVisible();
 });

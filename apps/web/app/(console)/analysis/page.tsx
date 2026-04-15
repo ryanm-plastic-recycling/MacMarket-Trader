@@ -231,6 +231,7 @@ export default function Page() {
   }, [isLoaded, isSignedIn]);
 
   const strategiesForDraftMode = useMemo(() => filterStrategiesByMode(strategyRegistry, draftMarketMode), [strategyRegistry, draftMarketMode]);
+  const selectedStrategyEntry = useMemo(() => strategiesForDraftMode.find((e) => e.display_name === draftStrategy) ?? null, [strategiesForDraftMode, draftStrategy]);
   useEffect(() => {
     if (strategiesForDraftMode.length === 0) return;
     if (!strategiesForDraftMode.some((item) => item.display_name === draftStrategy)) {
@@ -337,7 +338,16 @@ export default function Page() {
         <div><label>Symbol</label><input value={draftSymbol} onChange={(e) => setDraftSymbol(e.target.value.toUpperCase())} /></div>
         <div><label>Market mode</label><select value={draftMarketMode} onChange={(e) => setDraftMarketMode(e.target.value as MarketMode)}><option value="equities">equities</option><option value="options">options</option><option value="crypto">crypto</option></select></div>
         <div><label>Timeframe</label><select value={draftTimeframe} onChange={(e) => setDraftTimeframe(e.target.value as SupportedTimeframe)}>{SUPPORTED_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}</select></div>
-        <div><label>Strategy</label><select value={draftStrategy} onChange={(e) => setDraftStrategy(e.target.value)}>{strategiesForDraftMode.map((entry) => <option key={entry.strategy_id} value={entry.display_name}>{entry.display_name}</option>)}</select></div>
+        <div>
+          <label>Strategy</label>
+          <select value={draftStrategy} onChange={(e) => setDraftStrategy(e.target.value)}>{strategiesForDraftMode.map((entry) => <option key={entry.strategy_id} value={entry.display_name}>{entry.display_name}</option>)}</select>
+          {selectedStrategyEntry?.description ? (
+            <div style={{ marginTop: 4, fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)", lineHeight: 1.4 }}>
+              {selectedStrategyEntry.description}
+              {selectedStrategyEntry.regime_fit ? <span style={{ marginLeft: 6, opacity: 0.75 }}>· {selectedStrategyEntry.regime_fit}</span> : null}
+            </div>
+          ) : null}
+        </div>
         <div className="op-row" style={{ alignItems: "end" }}><button data-testid="analysis-refresh-button" onClick={() => void refreshAnalysis()}>Refresh analysis</button></div>
       </div>
       {draftMarketMode === "options" ? <StatusBadge tone="warn">Options research — paper only</StatusBadge> : null}

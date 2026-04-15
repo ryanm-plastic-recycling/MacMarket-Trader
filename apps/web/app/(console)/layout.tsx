@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { backendUrl } from "@/lib/backend";
 import { ConsoleShell } from "@/components/console-shell";
+import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import type { UserProfile } from "@/lib/user-profile";
 
 async function loadProfile(token: string): Promise<UserProfile> {
@@ -19,6 +20,11 @@ async function loadProfile(token: string): Promise<UserProfile> {
 }
 
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
+  // Skip auth checks in E2E test runs — bypass flag set by playwright.config.ts
+  if (isE2EAuthBypassEnabled()) {
+    return <ConsoleShell>{children}</ConsoleShell>;
+  }
+
   const { userId, getToken } = await auth();
   if (!userId) {
     redirect("/sign-in");
