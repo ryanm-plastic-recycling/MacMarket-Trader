@@ -42,6 +42,7 @@ const navSections = [
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const buildStamp = process.env.NEXT_PUBLIC_BUILD_STAMP ?? "dev-local";
 
   return (
     <div className="op-shell">
@@ -70,7 +71,10 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
             <BrandLockup compact />
             <span>Workflow: Analyze → Recommendation → Replay → Paper Order</span>
           </div>
-          <ThemeToggle />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: "0.74rem", color: "var(--op-muted, #7a8999)" }}>build: {buildStamp}</span>
+            <ThemeToggle />
+          </div>
         </header>
         <main className="op-content">{children}</main>
       </section>

@@ -12,7 +12,7 @@ function chartPayload() {
   return { symbol: "AAPL", timeframe: "1D", data_source: "polygon", fallback_mode: false, candles, heikin_ashi_candles: candles };
 }
 
-test("analysis -> recommendations -> replay -> orders click path with stale-banner recovery", async ({ page }) => {
+test("analysis -> recommendations -> replay -> orders click path with lineage ids + zero-fill messaging", async ({ page }) => {
   let recommendationListCalls = 0;
 
   await page.route("**/api/user/strategy-registry", async (route) => {
@@ -69,20 +69,23 @@ test("analysis -> recommendations -> replay -> orders click path with stale-bann
   });
   await page.route("**/api/user/replay-runs", async (route) => {
     if (route.request().method() === "POST") {
-      await route.fulfill({ json: { id: 22, market_data_source: "polygon", fallback_mode: false } });
+      await route.fulfill({ json: { id: 22, recommendation_id: "rec-phase1-e2e", market_data_source: "polygon", fallback_mode: false, summary_metrics: { recommendation_count: 1, approved_count: 0, fill_count: 0, ending_heat: 0, ending_open_notional: 0 } } });
       return;
     }
-    await route.fulfill({ json: { items: [{ id: 22, symbol: "AAPL", created_at: "2026-04-04", recommendation_count: 1, approved_count: 1, fill_count: 1, ending_heat: 0.2, ending_open_notional: 1000, market_data_source: "polygon", fallback_mode: false }] } });
+    await route.fulfill({ json: { items: [{ id: 22, symbol: "AAPL", source_recommendation_id: "rec-phase1-e2e", created_at: "2026-04-04", recommendation_count: 1, approved_count: 0, fill_count: 0, ending_heat: 0, ending_open_notional: 0, market_data_source: "polygon", fallback_mode: false }] } });
+  });
+  await page.route("**/api/user/replay-runs/22", async (route) => {
+    await route.fulfill({ json: { id: 22, symbol: "AAPL", source_recommendation_id: "rec-phase1-e2e", source_strategy: "Event Continuation", market_data_source: "polygon", fallback_mode: false, summary_metrics: { recommendation_count: 1, approved_count: 0, fill_count: 0, ending_heat: 0, ending_open_notional: 0 }, thesis: "Deterministic setup", key_levels: { entry: { zone_low: 120, zone_high: 122 }, invalidation: { price: 118 }, targets: { target_1: 126, target_2: 129 } } } });
   });
   await page.route("**/api/user/replay-runs/22/steps", async (route) => {
-    await route.fulfill({ json: { items: [{ id: 1, step_index: 1, recommendation_id: "rec-phase1-e2e", approved: true, pre_step_snapshot: { current_heat: 0, open_positions_notional: 0, equity: 10000 }, post_step_snapshot: { current_heat: 0.2, open_positions_notional: 1000, equity: 10050 } }] } });
+    await route.fulfill({ json: { items: [{ id: 1, step_index: 1, recommendation_id: "rec-phase1-e2e", approved: false, rejection_reason: "risk gate", pre_step_snapshot: { current_heat: 0, open_positions_notional: 0, equity: 10000 }, post_step_snapshot: { current_heat: 0, open_positions_notional: 0, equity: 10000 } }] } });
   });
   await page.route("**/api/user/orders", async (route) => {
     if (route.request().method() === "POST") {
-      await route.fulfill({ json: { order_id: "ord-1", market_data_source: "polygon", fallback_mode: false } });
+      await route.fulfill({ json: { order_id: "ord-1", recommendation_id: "rec-phase1-e2e", replay_run_id: 22, symbol: "AAPL", side: "buy", shares: 10, limit_price: 121, status: "filled", market_data_source: "polygon", fallback_mode: false } });
       return;
     }
-    await route.fulfill({ json: { items: [{ order_id: "ord-1", recommendation_id: "rec-phase1-e2e", symbol: "AAPL", status: "filled", side: "buy", shares: 10, limit_price: 121, created_at: "2026-04-04", market_data_source: "polygon", fallback_mode: false, fills: [{ fill_price: 121, filled_shares: 10, timestamp: "2026-04-04T00:00:01Z" }] }] } });
+    await route.fulfill({ json: { items: [{ order_id: "ord-1", replay_run_id: 22, recommendation_id: "rec-phase1-e2e", symbol: "AAPL", status: "filled", side: "buy", shares: 10, limit_price: 121, created_at: "2026-04-04", market_data_source: "polygon", fallback_mode: false, fills: [{ fill_price: 121, filled_shares: 10, timestamp: "2026-04-04T00:00:01Z" }] }] } });
   });
 
   await page.goto("/analysis");
@@ -96,14 +99,17 @@ test("analysis -> recommendations -> replay -> orders click path with stale-bann
 
   await page.getByRole("button", { name: "Run replay with context" }).click();
   await expect(page).toHaveURL(/\/replay-runs\?symbol=AAPL&recommendation=rec-phase1-e2e/);
-  await page.getByRole("button", { name: "Run replay" }).click();
+  await page.getByRole("button", { name: "Run replay now" }).click();
   await expect(page.getByText("replay complete")).toBeVisible();
+  await expect(page.getByText("Replay completed, but no fills occurred. Portfolio remained unchanged.")).toBeVisible();
+  await expect(page.getByText("recommendation id:")).toBeVisible();
+  await expect(page.getByText("replay run id:")).toBeVisible();
 
-  await page.goto("/recommendations?recommendation=rec-phase1-e2e");
-  await page.getByRole("button", { name: "Stage paper order" }).click();
-  await expect(page).toHaveURL(/\/orders\?recommendation=rec-phase1-e2e/);
-  await page.getByRole("button", { name: "Stage paper order" }).click();
+  await page.getByRole("button", { name: "Go to Paper Order step" }).click();
+  await expect(page).toHaveURL(/\/orders\?.*recommendation=rec-phase1-e2e.*replay_run=22/);
+  await page.getByRole("button", { name: "Stage paper order now" }).click();
   await expect(page.getByText("Order id:")).toBeVisible();
+  await expect(page.getByText("ord-1")).toBeVisible();
 });
 
 test("dashboard and provider-health show matching provider truth chips/messages in healthy provider mode", async ({ page }) => {

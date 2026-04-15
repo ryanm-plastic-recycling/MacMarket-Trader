@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-14
+Last updated: 2026-04-15
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -18,6 +18,37 @@ The defensible edge is:
 ## Current Status
 MacMarket-Trader has completed **Phase 4 — Vendor integrations** and is entering **Phase 5 — Operator console polish** as the active implementation scope.
 Phases 1–4 form the operational baseline. Phase 5 delivers the polished operator surfaces that make the system credible as a paid tool.
+
+### 2026-04-15 replay/orders step-3/step-4 action-clarity + guided empty-state pass (this pass)
+
+Completed in this pass:
+- Clarified navigation-vs-creation semantics in workflow CTAs:
+  - navigation buttons now read **Go to Replay step** / **Go to Paper Order step**
+  - creation buttons now read **Run replay now** / **Stage paper order now**
+  - added explicit copy that arriving on Replay/Orders pages does not create artifacts.
+- Reworked guided replay selection priority to strict lineage-first behavior:
+  1) `replay_run` query param, 2) `source_recommendation_id`, 3) empty selection (no latest/symbol fallback in guided mode).
+- Added guided replay empty-state hero for no-run-yet context with recommendation thesis + levels and single primary CTA (**Run replay now**).
+- Reworked guided orders selection priority to strict lineage-first behavior:
+  1) `order` query param, 2) `replay_run_id`, 3) `recommendation_id`, 4) empty selection (no latest fallback in guided mode).
+- Added guided orders empty-state hero for no-order-yet context and single primary CTA (**Stage paper order now**).
+- Promoted explicit lineage visibility on Replay/Orders via persistent workflow-lineage blocks showing recommendation -> replay run -> paper order.
+- Improved replay post-create hydration:
+  - hero/ticket state hydrates immediately from POST response
+  - newly created run auto-selects
+  - guided mode auto-expands first replay step
+  - added explicit no-fill/no-approval message: “Replay completed, but no fills occurred. Portfolio remained unchanged.”
+  - suppresses equity curve when equity path has fewer than two distinct values.
+- Improved orders post-create hydration:
+  - ticket hero hydrates immediately from POST response
+  - new order auto-selects and detail panel scrolls into view
+  - `router.replace` now uses fresh `sourceName` rather than stale source state.
+- Added frontend shell build stamp (`build: ...`) so operators can confirm the active bundle.
+- Added frontend selection-priority unit tests and updated Playwright workflow coverage for lineage sequence + zero-fill replay message behavior.
+
+Still open:
+- Additional guided-mode visual polish (including deeper hierarchy tuning for history tables/panels) remains iterative.
+- Broader component-level frontend tests for all guided hero variants remain open beyond current helper + e2e coverage.
 
 ### 2026-04-14 replay/orders lineage + guided coherence + sidebar layout pass (this pass)
 
