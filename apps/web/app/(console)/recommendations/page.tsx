@@ -110,6 +110,7 @@ export default function RecommendationsPage() {
 
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
+  const [showQueue, setShowQueue] = useState(!guidedState.guided);
 
   const selectedQueue = useMemo(
     () => queue.find((item) => `${item.symbol}-${item.strategy}-${item.rank}` === selectedQueueKey) ?? null,
@@ -471,6 +472,14 @@ export default function RecommendationsPage() {
 
       <div className="op-grid-2">
         <Card title="Ranked queue candidates">
+          {guidedState.guided ? (
+            <div style={{ marginBottom: 8 }}>
+              <button className="op-btn op-btn-ghost" onClick={() => setShowQueue((prev) => !prev)}>
+                {showQueue ? "Hide recommendation queue" : `View recommendation queue (${queue.length})`}
+              </button>
+            </div>
+          ) : null}
+          {(!guidedState.guided || showQueue) ? <>
           {queueSummary ? (
             <div className="op-row" style={{ marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
               <StatusBadge tone="good">{queueSummary.top_candidate_count} top candidate{queueSummary.top_candidate_count !== 1 ? "s" : ""}</StatusBadge>
@@ -505,6 +514,7 @@ export default function RecommendationsPage() {
               </tbody>
             </table>
           ) : null}
+          </> : null}
         </Card>
 
         <Card title="Persisted recommendations">

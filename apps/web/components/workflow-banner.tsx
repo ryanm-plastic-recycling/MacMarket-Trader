@@ -26,14 +26,21 @@ function stepTone(step: GuidedStep, current: GuidedStep): "completed" | "current
 
 export function WorkflowBanner({ current, state, nextHref, nextLabel, backHref, backLabel, compact = false, nextDisabled = false, nextDisabledReason }: Props) {
   const query = buildGuidedQuery(state);
-  const chips: string[] = [];
-  if (state.symbol) chips.push(`symbol: ${state.symbol}`);
-  if (state.strategy) chips.push(`strategy: ${state.strategy}`);
-  if (state.marketMode) chips.push(`market: ${state.marketMode}`);
-  if (state.source) chips.push(`source: ${state.source}`);
-  if (state.recommendationId) chips.push(`rec: ${state.recommendationId}`);
-  if (state.replayRunId) chips.push(`replay: ${state.replayRunId}`);
-  if (state.orderId) chips.push(`order: ${state.orderId}`);
+
+  // Compose a single primary context line: SYMBOL · strategy · market mode
+  const primaryParts: string[] = [];
+  if (state.symbol) primaryParts.push(state.symbol);
+  if (state.strategy) primaryParts.push(state.strategy);
+  if (state.marketMode) primaryParts.push(state.marketMode);
+  const primaryContext = primaryParts.join(" · ");
+
+  const chips: { key: string; label: string }[] = [];
+  if (primaryContext) chips.push({ key: "primary", label: primaryContext });
+  if (state.source) chips.push({ key: "source", label: `via ${state.source}` });
+  if (state.recommendationId) chips.push({ key: "rec", label: `Rec #${state.recommendationId}` });
+  if (state.replayRunId) chips.push({ key: "replay", label: `Replay #${state.replayRunId}` });
+  if (state.orderId) chips.push({ key: "order", label: `Order #${state.orderId}` });
+
   const missingLineage = state.guided && (!state.recommendationId || (current === "Paper Order" && !state.replayRunId));
   const disabledLabel = nextDisabledReason ?? "Complete required lineage in this step first.";
 
@@ -47,8 +54,8 @@ export function WorkflowBanner({ current, state, nextHref, nextLabel, backHref, 
         ))}
       </div>
       <div className="op-workflow-context">
-        {chips.map((chip) => <span key={chip}>{chip}</span>)}
-        {missingLineage ? <span>lineage incomplete</span> : null}
+        {chips.map((chip) => <span key={chip.key}>{chip.label}</span>)}
+        {missingLineage ? <span style={{ color: "#f7b267", borderColor: "#785931" }}>lineage incomplete</span> : null}
       </div>
       <div className="op-workflow-actions">
         {backHref && backLabel ? <Link className="op-btn op-btn-ghost" href={`${backHref}?${query}`}>{backLabel}</Link> : <span />}

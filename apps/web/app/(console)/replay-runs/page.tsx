@@ -322,7 +322,13 @@ export default function Page() {
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
           <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource}</div>
-          {selected.has_stageable_candidate === false ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>Replay completed, but no stageable path was approved.</div> : null}
+          {selected.has_stageable_candidate === false ? (
+            <div className="op-error" style={{ marginBottom: 8 }}>
+              <strong>Replay produced no stageable candidate</strong>
+              <p>{selected.stageable_reason ?? "No fills occurred or no recommendation met approval thresholds."}</p>
+              <p>Return to Recommendations to select a different rec, or run a new replay.</p>
+            </div>
+          ) : null}
           {selected.approved_count === 0 && selected.fill_count === 0 ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>Replay completed, but no fills occurred. Portfolio remained unchanged.</div> : null}
           {steps.length > 0 && <div style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9fb0c3", marginBottom: 3 }}><span>approved {approvedCount}</span><span>rejected {rejectedCount}</span><span>fills {selected.fill_count}</span></div></div>}
           {equitySvg ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}><div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 2 }}>Equity curve (post-step)</div>{equitySvg}</div> : null}

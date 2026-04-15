@@ -19,7 +19,36 @@ The defensible edge is:
 MacMarket-Trader has completed **Phase 4 — Vendor integrations** and is entering **Phase 5 — Operator console polish** as the active implementation scope.
 Phases 1–4 form the operational baseline. Phase 5 delivers the polished operator surfaces that make the system credible as a paid tool.
 
-### 2026-04-15 replay/orders step-3/step-4 action-clarity + guided empty-state pass (this pass)
+### 2026-04-15 Phase 5 operator UI polish pass — banner chips, guided queue collapse, replay warning block
+
+Completed in this pass:
+
+**WorkflowBanner — human-readable context chips (workflow-banner.tsx)**
+- Replaced individual `symbol: X`, `strategy: X`, `market: X` chips with a single composed primary context line: `SYMBOL · strategy · market mode`.
+- Recommendation chip now reads `Rec #<id>` instead of `rec: <raw-id>`.
+- Replay chip now reads `Replay #<id>` instead of `replay: <raw-id>`.
+- Order chip now reads `Order #<id>` instead of `order: <raw-id>`.
+- Source chip now reads `via <source>` instead of `source: <source>`.
+- "lineage incomplete" chip now renders with amber text (`#f7b267`) and matching border, distinguishing it visually from neutral chips.
+
+**Recommendations page — guided mode queue collapse (recommendations/page.tsx)**
+- Added `showQueue` local state initialized to `!guidedState.guided` (collapsed in guided mode, expanded in explorer mode).
+- In guided mode, queue table section defaults to collapsed and shows a single `op-btn-ghost` toggle: `View recommendation queue (N)` / `Hide recommendation queue`.
+- Active-rec hero, workflow banner, and all other guided context remain at the top, unaffected.
+- Explorer mode behavior unchanged — table renders expanded with no toggle.
+
+**Replay page — styled stageability warning block (replay-runs/page.tsx)**
+- Replaced the minimal inline text warning for `has_stageable_candidate === false` with a visible `op-error` card (existing class: `border: 1px dashed #7c4040; background: #2a1717`).
+- Block shows: bold heading "Replay produced no stageable candidate", `stageable_reason` body (or default "No fills occurred or no recommendation met approval thresholds."), and muted operator note to return to Recommendations.
+- Block only renders when `has_stageable_candidate === false`; `true` and `null`/`undefined` (older runs) are unaffected.
+
+TypeScript: `npx tsc --noEmit` passes with zero errors after all three changes.
+
+Still open:
+- Additional guided-mode visual polish (including deeper hierarchy tuning for history tables/panels) remains iterative.
+- Broader component-level frontend tests for all guided hero variants remain open beyond current helper + e2e coverage.
+
+### 2026-04-15 replay/orders step-3/step-4 action-clarity + guided empty-state pass
 
 Completed in this pass:
 - Clarified navigation-vs-creation semantics in workflow CTAs:
