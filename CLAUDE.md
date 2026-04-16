@@ -153,82 +153,36 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Current Phase Status
 
-**CURRENT PHASE: Phases 1–6 complete. Operational readiness for second private-alpha operator.**
-141 backend pytest tests passing. `npx tsc --noEmit` clean.
+**CURRENT STATE: Phases 0–6 complete. 141 backend tests. 8 Playwright e2e. tsc clean.**
 
-### Completed this session (2026-04-15)
+### Completed (Options B + C — 2026-04-15)
 
-**Fix 1 — WorkflowBanner human-readable chips**
-- Composed primary context line (SYMBOL · strategy · market mode)
-- Rec/Replay/Order chips now read Rec #N / Replay #N / Order #N
-- Source chip reads "via {source}"
-- "lineage incomplete" chip renders in amber warning tone
+**Option C — Scheduled reports polish (`schedules/page.tsx`)**
+- Schedule list: last run relative time + top-candidate badge per row
+- Run history rows: scannable "N top · N watch · N no-trade" summary
+- Top candidate rows: "Analyze in guided mode →" link to `/analysis?guided=1`
+- Empty state: descriptive guidance + "Create your first schedule" CTA with scroll-to-form ref
+- Backend `last_run_at` + `top_candidate_count` already present — no changes needed
 
-**Fix 2 — Recommendations page guided queue collapse**
-- `showQueue` state defaults to collapsed in guided mode
-- "View recommendation queue (N)" ghost button toggle added
-- Explorer mode unchanged
+**Option B — Operational readiness (5 audits, all pass or fixed)**
+- Audit 1 (deploy script): PASS — current, no changes
+- Audit 2 (runbook): UPDATED — Phase 1 refs → Phase 5/6, full guided flow walkthrough, close-trade lifecycle, new Section 8 (Clerk config requirements), new Section 9 (second operator onboarding checklist — 6 steps)
+- Audit 3 (invite flow): PASS — no code gaps, config requirements documented
+- Audit 4 (data isolation): ALL PASS — 7/7 entities scoped by `app_user_id`: recommendations, replay_runs, orders, paper_positions, paper_trades, onboarding_status, strategy_schedules
+- Audit 5 (empty states): FIXED — dashboard 4 cards + replay/orders tables now show operator-useful hint rows for zero-data new operators
 
-**Fix 3 — Replay stageability warning block**
-- `op-error` styled block renders when `has_stageable_candidate === false`
-- Shows `stageable_reason` or default message
-- Includes operator note to return to Recommendations
+**Options/crypto research preview surfacing**
+- Analysis market mode selector: "Options (research preview)" / "Crypto (research preview)" labels + full preview notice paragraph (not bare badge)
+- Analysis guided CTA: disabled with inline reason when non-equity mode selected
+- Recommendations page: `isPreviewMode` gate — shows preview notice card with restart link, hides all workflow content (queue, hero, grids, chart)
+- Dashboard: dismissible `op-card` notice explains equities vs. preview modes; localStorage key `macmarket-preview-modes-noted` suppresses after first dismiss
 
-**Fix 4 — Sticky table headers on Replay + Orders history tables**
-- Both tables wrapped in scroll containers (320px / 280px max-height)
-- `thead th`: position sticky, top 0, z-index 1, card-bg background
-
-**Fix 5 — Save as alternative separated from Make active**
-- Backend: `promote_queue_candidate` reads `action` field (`make_active` / `save_alternative`)
-- Frontend: `saveAlternative()` wired with `action: "save_alternative"`
-- `promoteSelected()` explicitly sends `action: "make_active"`
-- Mutual-exclusion disabled states applied during in-flight requests
-- Test: `test_user_ranked_queue_candidate_can_be_saved_as_alternative` passing
-
-**README.md:** Updated to reflect Phase 5 as active scope.
-
-**Fix 6 — TopbarContext dynamic active-context line**
-- Created `components/topbar-context.tsx` (client component, Suspense-wrapped)
-- Topbar now shows `SYMBOL · strategy` in guided mode, "Guided workflow — start at Analyze" with no symbol, "Explorer mode" when not guided
-- Replaces static "Workflow: Analyze → Recommendation → Replay → Paper Order" span
-
-**Fix 7 — Role-gated Admin sidebar section**
-- `console-shell.tsx` fetches `/api/user/me` on mount; Admin nav section hidden until `app_role === "admin"` (null state renders nothing, no flash)
-
-**Fix 8 — BUY/SELL side badge color in order detail panels**
-- `orders/page.tsx` guided hero and detail panel now use `<StatusBadge tone="good">` for BUY, `tone="warn"` for SELL (matches existing table row behavior)
-
-**Fix 9 — Replay step row left-border accent by approval**
-- `replay-runs/page.tsx` step row: `borderLeft: "3px solid #21c06e"` (approved) / `"3px solid #f44336"` (rejected)
-
-**Fix 10 — Strategy selector description + regime hints**
-- Backend `StrategyRegistryEntry` Pydantic model: added `description: str | None = None` and `regime_fit: str | None = None`
-- All 6 equities strategies seeded with description and regime_fit values in `strategy_registry.py`
-- Frontend `StrategyRegistryEntry` type: added `description?: string` and `regime_fit?: string`
-- Analysis page: `selectedStrategyEntry` useMemo + inline description block below Strategy `<select>` (muted text, description + `· regime_fit`)
-
-**Phase 6 — Close-trade lifecycle (equities paper trading)**
-- `paper_positions` lifecycle: buy order stage creates open position row (`create_position` on `PaperPortfolioRepository`)
-- `POST /user/orders/{order_id}/close`: finds order + position, creates `paper_trades` row with `realized_pnl`, closes position, marks order "closed"
-- Portfolio-summary endpoint wired to real data: `lifecycle_status: "active"`, `unrealized_pnl: null`, `win_rate: null` when no closed trades
-- Orders page: "Close position" button (op-btn-destructive) → inline close_price input → Confirm close → shows P&L (green/red); resets on order selection change
-- Portfolio card redesigned to `op-grid-4`: Open positions / Open notional / Realized P&L (colored) / Win rate
-- `apps/web/app/api/user/orders/[orderId]/close/route.ts` proxy added
-- 4 new backend tests; 141 total. `npx tsc --noEmit` clean.
-
-**Scheduled reports polish — output clarity + action links**
-- Schedule list: last run shown as relative time ("2 hours ago" / "Never run"); top candidate count as colored StatusBadge (green/>0, amber/0, "—"/never run)
-- Run history rows: summary format changed to `N top · N watch · N no-trade`
-- Top candidates detail panel: "Analyze in guided mode →" link per row → `/analysis?guided=1&symbol=X&strategy=Y` (op-btn-secondary)
-- Empty state (no schedules): operator-useful title + description + "Create your first schedule" CTA scrolls to create form via ref
-- No backend changes (data already in endpoint response)
-
-**Operational readiness audit (Option B — second operator readiness)**
-- Deploy script: PASS — `pip install -e ".[dev]"`, `apply_schema_updates()`, ports 9510/9500 all current
-- Runbook: UPDATED — Phase 1 → Phase 5/6 throughout; section 3 now covers full Phase 5/6 guided flow, close-trade, and schedules; new section 8 (Clerk config requirements); new section 9 (Onboarding a second operator checklist)
-- Invite flow: PASS — sign-up, pending-approval, admin panel, console gate all functional; Clerk config requirements documented
-- Data isolation: ALL PASS — all 7 entities (recommendations, replay runs, orders, paper positions, paper trades, onboarding status, schedules) scoped by `app_user_id`
-- Empty states FIXED: dashboard "Recent replay runs" / "Recent orders" / "Pending admin actions" / "Alert log" all show muted hints when empty; replay runs table and orders table show centered hint rows when zero rows
+**Polygon.io live market data — wired and verified**
+- `ProviderUnavailableError` exception added to `market_data.py` — raised by `PolygonMarketDataProvider` on HTTP/connection/timeout errors; caught by `MarketDataService` to trigger fallback
+- `_fetch_url` helper refactored from `_request_json`; pagination in `get_historical_bars` follows `next_url` (max 3 pages) to collect full `limit` bars
+- `health_check` simplified to single snapshot probe (was two calls); catches `ProviderUnavailableError`
+- `.env.example` market data section now has full comment block with Polygon free tier note and opt-in instructions
+- `docs/local-development.md` has new "Live market data via Polygon.io" subsection with setup, UI changes, and verification steps
 
 ---
 
@@ -238,14 +192,17 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Open Items
 
-### Priority: test coverage
-- ~~Playwright e2e coverage for guided lineage hero cards, empty-state heroes, and post-create hydration flows~~ **Done** — 8 Playwright e2e tests passing in `guided-workflow-hero.spec.ts` + `phase1-closeout.spec.ts` (see roadmap-status.md 2026-04-15 e2e pass)
-- Component-level frontend tests for guided hero variants beyond current e2e coverage
+### Priority: high value (next build)
+- Email delivery: verify Resend adapter works end-to-end for scheduled report delivery to a real inbox
+
+### Priority: polish
+- HACO workspace: deeper indicator controls and signal visibility
+- `atm_straddle_mid` expected-range method (contract-allowed, not yet emitted)
 
 ---
 
-## Not started (deferred — do not touch yet)
+## Not started (do not touch without explicit authorization)
 
 - Options/crypto replay mode-native semantics
-- `atm_straddle_mid` expected-range method
-- Fetch realized_pnl from paper_trades DB on page load (currently only shown in session via `closeResults` state — page refresh loses it)
+- Full options chain / IV surface / Greeks provider integration
+- Crypto venue funding/basis/OI live data

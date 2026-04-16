@@ -32,8 +32,20 @@ export default function Page() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "loading", message: "Loading operator dashboard…" });
   const [error, setError] = useState<string | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null);
+  const [showModeNotice, setShowModeNotice] = useState(false);
   // True while the first data fetch is in flight — shows "Loading..." instead of "-"
   const loading = !data && feedback.state === "loading";
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && !window.localStorage.getItem("macmarket-preview-modes-noted")) {
+      setShowModeNotice(true);
+    }
+  }, []);
+
+  function dismissModeNotice() {
+    if (typeof window !== "undefined") window.localStorage.setItem("macmarket-preview-modes-noted", "true");
+    setShowModeNotice(false);
+  }
 
   useEffect(() => {
     fetchWorkflowApi<DashboardPayload>("/api/user/dashboard").then((result) => {
@@ -67,6 +79,14 @@ export default function Page() {
         </>}
       />
       <WorkflowBanner current="Analyze" state={{ guided: false }} nextHref="/analysis" nextLabel="Start from Analyze" compact />
+      {showModeNotice ? (
+        <div className="op-card" style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px" }}>
+          <div style={{ flex: 1, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem", lineHeight: 1.5 }}>
+            Analysis supports equities (live), options, and crypto (research preview). Full workflow — replay and paper orders — is equities only.
+          </div>
+          <button onClick={dismissModeNotice} style={{ flexShrink: 0, padding: "2px 10px", fontSize: "0.8rem" }}>Dismiss</button>
+        </div>
+      ) : null}
       <InlineFeedback state={feedback.state} message={feedback.message} />
       {error ? <ErrorState title="Dashboard unavailable" hint={error} /> : null}
       {!error && !data ? <EmptyState title="Waiting for dashboard data" hint="Refresh after your auth session initializes." /> : null}

@@ -2,6 +2,7 @@
 
 import { createChart, type CandlestickData, type IChartApi, type Time } from "lightweight-charts";
 import { useAuth } from "@clerk/nextjs";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -387,6 +388,7 @@ export default function RecommendationsPage() {
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
   const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
+  const isPreviewMode = guidedState.marketMode === "options" || guidedState.marketMode === "crypto";
   const activeRecommendation = useMemo(() => {
     if (selectedRecommendation) return selectedRecommendation;
     if (guidedState.recommendationId) return rows.find((item) => item.recommendation_id === guidedState.recommendationId) ?? null;
@@ -434,7 +436,17 @@ export default function RecommendationsPage() {
         nextDisabledReason="Guided replay requires a persisted recommendation. Promote the selected queue candidate first."
         compact={!guidedState.guided}
       />
-      {guidedState.guided ? (
+      {isPreviewMode ? (
+        <Card title="Options & crypto — research preview only">
+          <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.6 }}>
+            Options and crypto recommendations are research preview only. The full recommendation → replay → paper order workflow is available for equities only.
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <Link href="/analysis?guided=1"><button>← Restart in equities mode</button></Link>
+          </div>
+        </Card>
+      ) : null}
+      {guidedState.guided && !isPreviewMode ? (
         <Card title="Guided flow progress">
           <GuidedStepRail current="Recommendation" />
           <div style={{ marginTop: 8 }}>
@@ -445,7 +457,7 @@ export default function RecommendationsPage() {
           </div>
         </Card>
       ) : null}
-      {guidedState.guided ? (
+      {guidedState.guided && !isPreviewMode ? (
         <Card title="Active recommendation">
           {activeRecommendation ? (
             <>
@@ -464,7 +476,7 @@ export default function RecommendationsPage() {
           )}
         </Card>
       ) : null}
-      {guidedState.guided ? (
+      {guidedState.guided && !isPreviewMode ? (
         <Card title="Next action">
           <div>{selectedRecommendation?.recommendation_id ? "Run replay for the active persisted recommendation to validate deterministic path behavior before staging paper orders." : "Promote the selected queue candidate to persist lineage, then run replay."}</div>
           {unsupportedGuidedMode ? <ErrorState title="Research preview stops here" hint="Options and crypto are research preview only. Guided progression into Replay and Paper Orders is disabled outside equities." /> : null}
@@ -485,7 +497,7 @@ export default function RecommendationsPage() {
         </Card>
       ) : null}
 
-      <Card>
+      {!isPreviewMode ? <Card>
         <div className="op-row">
           <input value={symbols} onChange={(e) => setSymbols(e.target.value.toUpperCase())} style={{ minWidth: 320 }} placeholder="AAPL,MSFT,NVDA" />
           <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
@@ -494,11 +506,11 @@ export default function RecommendationsPage() {
           {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadQueue()} />
-      </Card>
+      </Card> : null}
 
-      {error ? <ErrorState title="Recommendations workflow unavailable" hint={error} /> : null}
+      {!isPreviewMode && error ? <ErrorState title="Recommendations workflow unavailable" hint={error} /> : null}
 
-      <div className="op-grid-2">
+      {!isPreviewMode ? <div className="op-grid-2">
         <Card title="Ranked queue candidates">
           {guidedState.guided ? (
             <div style={{ marginBottom: 8 }}>
@@ -583,9 +595,9 @@ export default function RecommendationsPage() {
             </div>
           ) : null}
         </Card>
-      </div>
+      </div> : null}
 
-      <div className="op-grid-2">
+      {!isPreviewMode ? <div className="op-grid-2">
         <Card title="Queue candidate detail">
           {guidedState.guided ? <div className="op-row" style={{ marginBottom: 8 }}><button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button></div> : null}
           {!selectedQueue ? <EmptyState title="No queue selection" hint="Select a queue row to review deterministic ranking detail." /> : (
@@ -740,16 +752,16 @@ export default function RecommendationsPage() {
             );
           })()}
         </Card>
-      </div>
+      </div> : null}
 
-      <Card title="Chart context (source-matched)">
+      {!isPreviewMode ? <Card title="Chart context (source-matched)">
         <div className="op-row" style={{ marginBottom: 8 }}>
           <StatusBadge tone={fallbackDerived ? "warn" : "good"}>workflow source: {selectedSource}</StatusBadge>
           {fallbackDerived ? <StatusBadge tone="warn">Chart overlays disabled to avoid mixed provider/fallback context.</StatusBadge> : null}
         </div>
         {!guidedState.guided || showOperatorDetail ? <IndicatorSelector selected={selectedIndicators} onChange={setSelectedIndicators} enabledIds={FIRST_CLASS_WORKFLOW_INDICATORS} /> : null}
         {fallbackDerived ? <EmptyState title="Chart overlays disabled" hint="Selected queue/recommendation was generated from fallback bars, so provider-backed chart overlays stay disabled." /> : <div ref={chartRef} />}
-      </Card>
+      </Card> : null}
     </section>
   );
 }

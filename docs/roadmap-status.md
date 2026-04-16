@@ -16,8 +16,62 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader has completed **Phases 1–6** (including close-trade lifecycle and schedules polish) and is entering **operational readiness** for a second private-alpha operator.
-The system is verified: 141 backend tests passing, TypeScript clean, all 7 user-scoped entities isolated by `app_user_id`.
+MacMarket-Trader has completed **Phases 1–6** and the first post-launch feature iteration: options/crypto research preview surfaced explicitly across Analysis, Recommendations, and Dashboard.
+The system is verified: 141 backend tests passing, TypeScript clean.
+
+### 2026-04-15 Polygon.io live market data — wired and verified
+
+Completed in this pass:
+
+**Change 1 — `ProviderUnavailableError` exception class**
+- Added `ProviderUnavailableError(Exception)` to `market_data.py` — raised by `PolygonMarketDataProvider` on HTTP errors, connection failures, and timeouts.
+- `_request_json` split into `_fetch_url(url)` (handles raw URL, raises `ProviderUnavailableError`) + `_request_json(path, query)` (builds URL, delegates to `_fetch_url`).
+- `ProviderUnavailableError` propagates through `MarketDataService.historical_bars`'s existing `except Exception` → falls back to demo data, triggering the 503 path in `_workflow_bars` when `POLYGON_ENABLED=true` and `WORKFLOW_DEMO_FALLBACK=false`.
+
+**Change 2 — Pagination for `get_historical_bars`**
+- After first Polygon response, follows `next_url` pagination (max 3 additional pages) until `limit` bars are collected.
+- Slices to `[-limit:]` so the caller always receives exactly the requested number.
+
+**Change 3 — Provider health probe: single snapshot call**
+- `health_check` simplified from two API calls (`/v3/reference/tickers` + snapshot) to a single snapshot probe.
+- Catches `ProviderUnavailableError` in addition to `HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError`.
+- Status "ok" when snapshot succeeds; "warning" with failure detail otherwise.
+
+**Change 4 — `.env.example` updated**
+- Market data section now has a comment block explaining: Polygon as preferred provider, free tier note (delayed data sufficient for research), demo fallback opt-in, Alpaca as alternate scaffold.
+- `POLYGON_API_KEY=your_polygon_api_key_here` (was blank before).
+
+**Change 5 — `docs/local-development.md` enhanced**
+- New "Live market data via Polygon.io" subsection with: setup steps, free tier signup URL, what changes in the UI (source chip, dashboard snapshot), and verification steps (`/admin/provider-health`, Analysis source chip).
+
+No domain/recommendation/replay logic changed. 141 pytest passing (all run with `POLYGON_ENABLED=false` — no real API calls in test suite). `npx tsc --noEmit` clean.
+
+### 2026-04-15 Options/crypto research preview surfacing
+
+Completed in this pass:
+
+**Change 1 — Market mode selector: explicit preview labels (`analysis/page.tsx`)**
+- Option labels updated: "Options (research preview)" and "Crypto (research preview)"
+- Preview notice block replaces bare StatusBadge: includes "Research preview" badge + full muted-text explanation paragraph
+- Notice disappears when equities is selected
+
+**Change 2 — Guided mode CTA disable (`analysis/page.tsx`)**
+- "Create recommendation from setup" button disabled when `guidedMode && draftMarketMode !== "equities"`
+- Inline disabled reason below button: "Guided workflow requires equities mode. Switch to equities to generate a recommendation."
+
+**Change 3 — Recommendations page preview gate (`recommendations/page.tsx`)**
+- Added `isPreviewMode = guidedState.marketMode === "options" || guidedState.marketMode === "crypto"` computed const
+- Preview card shown when `isPreviewMode`: full copy + "← Restart in equities mode" link to `/analysis?guided=1`
+- Queue table, active-rec hero, action row, detail grids, and chart all hidden when `isPreviewMode`
+- Added `import Link from "next/link"`
+
+**Change 4 — Dashboard modes callout (`dashboard/page.tsx`)**
+- Dismissible `op-card` notice added after WorkflowBanner
+- Copy: "Analysis supports equities (live), options, and crypto (research preview). Full workflow — replay and paper orders — is equities only."
+- localStorage key `macmarket-preview-modes-noted` suppresses after first dismiss
+- No new CSS — uses existing `op-card` + muted text styling
+
+No backend changes. 141 pytest passing. `npx tsc --noEmit` clean.
 
 ### 2026-04-15 Operational readiness audit — Option B (second operator readiness)
 

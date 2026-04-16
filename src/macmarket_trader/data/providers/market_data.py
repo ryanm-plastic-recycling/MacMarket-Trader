@@ -16,6 +16,10 @@ from macmarket_trader.config import settings
 from macmarket_trader.domain.schemas import Bar
 
 
+class ProviderUnavailableError(Exception):
+    """Raised when the configured market data provider cannot be reached or returns an error."""
+
+
 @dataclass
 class MarketSnapshot:
     symbol: str
@@ -268,14 +272,25 @@ class PolygonMarketDataProvider(MarketDataProvider):
     def is_configured(self) -> bool:
         return bool(self.api_key and self.base_url)
 
+    def _fetch_url(self, url: str) -> dict[str, Any]:
+        """Fetch a fully-formed URL (used for both primary requests and next_url pagination)."""
+        request = Request(url=url, headers={"Accept": "application/json"}, method="GET")
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
+                payload = json.loads(response.read().decode("utf-8"))
+                self._last_success_at = datetime.now(tz=UTC)
+                return payload
+        except HTTPError as exc:
+            raise ProviderUnavailableError(f"Polygon HTTP {exc.code}: {exc.reason}") from exc
+        except URLError as exc:
+            raise ProviderUnavailableError(f"Polygon connection error: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise ProviderUnavailableError(f"Polygon request timed out after {self.timeout_seconds}s") from exc
+
     def _request_json(self, path: str, query: dict[str, str]) -> dict[str, Any]:
         effective_query = {**query, "apiKey": self.api_key}
         url = f"{self.base_url}{path}?{urlencode(effective_query)}"
-        request = Request(url=url, headers={"Accept": "application/json"}, method="GET")
-        with urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
-            payload = json.loads(response.read().decode("utf-8"))
-            self._last_success_at = datetime.now(tz=UTC)
-            return payload
+        return self._fetch_url(url)
 
     def _map_polygon_range(self, timeframe: str, limit: int) -> tuple[int, str, str, str]:
         tf = timeframe.upper()
@@ -314,7 +329,15 @@ class PolygonMarketDataProvider(MarketDataProvider):
             f"/v2/aggs/ticker/{symbol.upper()}/range/{multiplier}/{timespan}/{from_ts}/{to_ts}",
             {"adjusted": "true", "sort": "asc", "limit": str(limit)},
         )
-        results = payload.get("results", [])
+        results: list[dict[str, Any]] = list(payload.get("results") or [])
+        # Follow Polygon pagination (next_url) until we have enough bars (max 3 extra pages).
+        page = 0
+        while "next_url" in payload and len(results) < limit and page < 3:
+            page += 1
+            next_url = str(payload["next_url"])
+            sep = "&" if "?" in next_url else "?"
+            payload = self._fetch_url(f"{next_url}{sep}apiKey={self.api_key}")
+            results.extend(payload.get("results") or [])
         return [self._normalize_polygon_bar(item) for item in results][-limit:]
 
     def fetch_historical_bars(self, symbol: str, timeframe: str, limit: int) -> list[Bar]:
@@ -373,21 +396,20 @@ class PolygonMarketDataProvider(MarketDataProvider):
 
         started = monotonic()
         try:
-            self._request_json("/v3/reference/tickers", {"limit": "1"})
             self.get_latest_snapshot(sample_symbol, "1D")
             elapsed = round((monotonic() - started) * 1000, 2)
             return MarketProviderHealth(
                 provider="market_data",
                 mode=self.name,
                 status="ok",
-                details="Polygon auth probe and sample snapshot succeeded.",
+                details="Polygon snapshot probe succeeded.",
                 configured=True,
                 feed="stocks",
                 sample_symbol=sample_symbol,
                 latency_ms=elapsed,
                 last_success_at=self._last_success_at,
             )
-        except (HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+        except (ProviderUnavailableError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
             elapsed = round((monotonic() - started) * 1000, 2)
             return MarketProviderHealth(
                 provider="market_data",

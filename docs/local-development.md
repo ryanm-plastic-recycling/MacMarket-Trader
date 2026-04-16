@@ -19,18 +19,37 @@
 
 ## Market data provider (backend `.env`)
 
-MacMarket-Trader can run in deterministic fallback mode, Polygon mode (preferred), or Alpaca mode (scaffold retained).
+MacMarket-Trader can run in deterministic fallback mode, Polygon mode (preferred live provider), or Alpaca mode (scaffold retained).
 
+### Live market data via Polygon.io
+
+Polygon is the recommended path for real bar data. The free Starter tier provides delayed data (15-minute delay) which is sufficient for research-preview analysis and replay validation.
+
+**Setup:**
+1. Create a free account and API key at [https://polygon.io/dashboard/signup](https://polygon.io/dashboard/signup)
+2. In your `.env` file set:
+   ```
+   POLYGON_ENABLED=true
+   POLYGON_API_KEY=your_key_here
+   ```
+3. Restart the backend: `python -m uvicorn macmarket_trader.api.main:app --reload --port 9510`
+
+**What changes in the UI when live data is active:**
+- The source chip in the Analysis workbench changes from `fallback (...)` to `polygon`
+- Dashboard "Latest market snapshot" shows a real recent price with a current `as_of` timestamp
+- Workflow banner shows `via polygon` instead of `via fallback`
+
+**Verify it's working:**
+- Navigate to `/admin/provider-health` — `Configured provider` should show `polygon`, `Workflow execution mode` should show `provider`
+- Run the Analysis workbench on any equities symbol — the source chip at the top right should read `polygon` (not `fallback`)
+- The provider-health card on the Dashboard should show "ok" status
+
+**Other modes:**
 - Fallback-only (default):
   - `POLYGON_ENABLED=false`
   - `MARKET_DATA_PROVIDER=fallback`
   - `MARKET_DATA_ENABLED=false`
-- Polygon enabled:
-  - Create an API key in Polygon dashboard (Stocks API access): https://polygon.io/dashboard/api-keys
-  - Set `POLYGON_ENABLED=true`
-  - Set `POLYGON_API_KEY=...`
-  - Optional: `POLYGON_BASE_URL=https://api.polygon.io`, `POLYGON_TIMEOUT_SECONDS=8`
-- Alpaca enabled (kept as alternate scaffold):
+- Alpaca (alternate scaffold):
   - `POLYGON_ENABLED=false`
   - `MARKET_DATA_PROVIDER=alpaca`
   - `MARKET_DATA_ENABLED=true`

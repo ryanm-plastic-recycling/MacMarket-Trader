@@ -336,7 +336,7 @@ export default function Page() {
     <Card>
       <div className="op-grid-4">
         <div><label>Symbol</label><input value={draftSymbol} onChange={(e) => setDraftSymbol(e.target.value.toUpperCase())} /></div>
-        <div><label>Market mode</label><select value={draftMarketMode} onChange={(e) => setDraftMarketMode(e.target.value as MarketMode)}><option value="equities">equities</option><option value="options">options</option><option value="crypto">crypto</option></select></div>
+        <div><label>Market mode</label><select value={draftMarketMode} onChange={(e) => setDraftMarketMode(e.target.value as MarketMode)}><option value="equities">Equities</option><option value="options">Options (research preview)</option><option value="crypto">Crypto (research preview)</option></select></div>
         <div><label>Timeframe</label><select value={draftTimeframe} onChange={(e) => setDraftTimeframe(e.target.value as SupportedTimeframe)}>{SUPPORTED_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}</select></div>
         <div>
           <label>Strategy</label>
@@ -350,8 +350,14 @@ export default function Page() {
         </div>
         <div className="op-row" style={{ alignItems: "end" }}><button data-testid="analysis-refresh-button" onClick={() => void refreshAnalysis()}>Refresh analysis</button></div>
       </div>
-      {draftMarketMode === "options" ? <StatusBadge tone="warn">Options research — paper only</StatusBadge> : null}
-      {draftMarketMode === "crypto" ? <StatusBadge tone="warn">Crypto research — paper only</StatusBadge> : null}
+      {(draftMarketMode === "options" || draftMarketMode === "crypto") ? (
+        <div style={{ marginTop: 8 }}>
+          <StatusBadge tone="warn">Research preview</StatusBadge>
+          <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem", lineHeight: 1.5 }}>
+            This mode generates research-preview analysis only. Recommendations, replay, and paper orders are not available for options or crypto in the current build.
+          </div>
+        </div>
+      ) : null}
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void refreshAnalysis()} />
     </Card>
 
@@ -384,7 +390,16 @@ export default function Page() {
             <div><strong>Targets:</strong> {setup?.targets?.join(" / ") ?? "-"}</div>
           </>
         )}
-        <div className="op-row" style={{ marginTop: 8 }}><button data-testid="analysis-create-recommendation-button" onClick={() => void createRecommendation()}>Create recommendation from setup</button></div>
+        <div style={{ marginTop: 8 }}>
+          <div className="op-row">
+            <button data-testid="analysis-create-recommendation-button" onClick={() => void createRecommendation()} disabled={guidedMode && draftMarketMode !== "equities"}>Create recommendation from setup</button>
+          </div>
+          {guidedMode && draftMarketMode !== "equities" ? (
+            <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
+              Guided workflow requires equities mode. Switch to equities to generate a recommendation.
+            </div>
+          ) : null}
+        </div>
       </Card>
       <Card title="Expected move">
         {setup?.expected_range ? (
