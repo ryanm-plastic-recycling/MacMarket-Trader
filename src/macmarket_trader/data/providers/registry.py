@@ -31,7 +31,11 @@ def build_email_provider() -> EmailProvider:
     if mode == "console":
         return ConsoleEmailProvider()
     if mode == "resend":
-        return ResendEmailProvider(api_key=settings.resend_api_key, from_email=settings.resend_from_email)
+        return ResendEmailProvider(
+            api_key=settings.resend_api_key,
+            from_email=settings.resend_from_email,
+            from_name=settings.brand_from_name,
+        )
     raise ValueError(f"Unsupported EMAIL_PROVIDER mode: {settings.email_provider}")
 
 

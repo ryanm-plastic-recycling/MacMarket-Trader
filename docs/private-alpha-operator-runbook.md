@@ -1,6 +1,6 @@
 # Private Alpha Operator Runbook (Phase 5/6)
 
-Last updated: 2026-04-15
+Last updated: 2026-04-16
 
 This runbook is for internal operators validating the **Phase 5/6 product center**:
 
@@ -452,6 +452,63 @@ conn.close()
 ```
 
 All 7 user-scoped entities (recommendations, replay runs, orders, paper positions, paper trades, onboarding status, strategy schedules) are verified to filter by `app_user_id` in code — no cross-operator data leakage is possible.
+
+---
+
+## 11) User management — admin actions reference
+
+The following admin actions are available from `/admin/users` and `/admin/pending-users`.
+All actions are scoped to admins only and do not touch Clerk identity (local DB only).
+
+### Approve a pending user
+
+**When:** A new user signs up and appears in the "Pending users" queue.
+**How:** Click **Approve** on `/admin/pending-users`. Sends a branded approval email.
+**Result:** `approval_status → approved`. User can access the console on next page load.
+
+### Reject a user
+
+**When:** A user signed up but should not have access (wrong account, bad actor, etc.).
+**How:** Click **Reject** on `/admin/pending-users`. Sends a branded rejection email.
+**Result:** `approval_status → rejected`. User is redirected to `/access-denied`.
+
+### Send an invite
+
+**When:** You want to onboard a specific person into the private alpha.
+**How:** Enter email + optional display name in the invite form on `/admin/pending-users`. Click **Send invite**.
+**Result:** Invite record created. Email sent with sign-up link. User is in `pending` state until admin approves after sign-up.
+
+### Revoke an invite
+
+**When:** An invite was sent in error, or the person should no longer be allowed to sign up.
+**How:** Click **Revoke** on the invite row in `/admin/pending-users` → confirm inline.
+**Result:** Invite record deleted. The invite token becomes invalid. Does not affect an existing user account if they already signed up.
+
+### Resend an invite
+
+**When:** The invitee didn't receive the original email or the invite link expired.
+**How:** Click **Resend** on the invite row in `/admin/pending-users`.
+**Result:** A fresh invite email is sent to the same address. `sent_at` timestamp updated. Button disabled for 5 seconds to prevent double-sends.
+
+### Change a user's role
+
+**When:** You need to promote a user to admin or demote an admin to user.
+**How:** Click **Make admin** or **Make user** on the user row in `/admin/users`.
+**Restriction:** Cannot change your own role.
+**Result:** `app_role` updated in local DB. Takes effect on next protected action.
+
+### Suspend a user
+
+**When:** An approved user should have their access temporarily revoked without full rejection.
+**How:** Click **Suspend** → confirm inline on the user row in `/admin/users`.
+**Restriction:** Cannot suspend your own account.
+**Result:** `approval_status → suspended`. User is redirected to `/access-denied` on next page load.
+To restore access, use the Approve action on `/admin/pending-users` (re-approve the user).
+
+### Expand user detail row
+
+**How:** Click any user row in `/admin/users` to expand it.
+**Shows:** Email, display name, role, approval status, last seen, last auth, Clerk ID with "Copy user ID" button.
 
 ---
 

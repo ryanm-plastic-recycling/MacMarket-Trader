@@ -1469,6 +1469,84 @@ def create_invite(req: InviteCreateRequest, admin=Depends(require_admin)):
     return {"invite_id": invite.id, "status": invite.status, "email": invite.email, "invite_token": invite.invite_token}
 
 
+@router.delete("/invites/{invite_id}")
+def delete_invite(invite_id: int, _admin=Depends(require_admin)):
+    deleted = invite_repo.delete(invite_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    return {"deleted": True, "invite_id": invite_id}
+
+
+@router.post("/invites/{invite_id}/resend")
+def resend_invite(invite_id: int, admin=Depends(require_admin)):
+    invite = invite_repo.get_by_id(invite_id)
+    if invite is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    invite_url = (
+        f"{settings.app_base_url.rstrip('/')}/sign-up"
+        f"?invite_token={invite.invite_token}&email={invite.email.strip().lower()}"
+    )
+    invite_html = render_invite_html(
+        to_email=invite.email.strip().lower(),
+        invite_url=invite_url,
+        display_name=invite.display_name or "",
+        invited_by=admin.email,
+    )
+    plain_body = (
+        f"You have been invited to MacMarket-Trader private alpha.\n"
+        f"Use this invite link to sign in/up: {invite_url}\n"
+        "After sign-in your local app account remains pending until admin approval."
+    )
+    message = EmailMessage(
+        to_email=invite.email.strip().lower(),
+        subject="MacMarket-Trader — your invite (resent)",
+        body=plain_body,
+        html=invite_html,
+        template_name="private_alpha_invite_resend",
+    )
+    email_status = "sent"
+    provider_id: str | None = None
+    try:
+        provider_id = email_provider.send(message)
+    except Exception as e:
+        logger.warning("Resend invite email failed (non-fatal): %s", e)
+        email_status = "failed"
+    invite_repo.update_sent_at(invite_id)
+    invited_user = user_repo.create_or_update_invited_pending_user(email=invite.email, display_name=invite.display_name or None)
+    email_repo.create(invited_user.id, "private_alpha_invite_resend", invite.email, email_status, provider_id or "")
+    return {"invite_id": invite.id, "status": invite.status, "email": invite.email, "email_status": email_status}
+
+
+@router.post("/users/{user_id}/set-role")
+def set_user_role(user_id: int, req: dict[str, object], admin=Depends(require_admin)):
+    role = str(req.get("role") or "").strip().lower()
+    if role not in {"admin", "user"}:
+        raise HTTPException(status_code=400, detail="role must be 'admin' or 'user'")
+    if user_id == admin.id:
+        raise HTTPException(status_code=409, detail="Cannot change your own role")
+    target = user_repo.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    updated = user_repo.set_app_role(user_id=user_id, role=role)
+    return {"id": updated.id, "app_role": updated.app_role}
+
+
+@router.post("/users/{user_id}/suspend")
+def suspend_user(user_id: int, admin=Depends(require_admin)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=409, detail="Cannot suspend your own account")
+    target = user_repo.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    updated = user_repo.set_approval_status(
+        user_id=user_id,
+        status=ApprovalStatus.SUSPENDED,
+        approved_by=admin.email,
+        note="Suspended by admin",
+    )
+    return {"id": updated.id, "approval_status": updated.approval_status}
+
+
 @router.get("/invites")
 def list_invites(_admin=Depends(require_admin)):
     rows = invite_repo.list_recent(limit=50)

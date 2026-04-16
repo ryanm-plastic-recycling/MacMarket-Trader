@@ -740,6 +740,20 @@ class UserRepository:
             stmt = select(UserApprovalRequestModel).order_by(UserApprovalRequestModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
 
+    def get_by_id(self, user_id: int) -> AppUserModel | None:
+        with self.session_factory() as session:
+            return session.get(AppUserModel, user_id)
+
+    def set_app_role(self, *, user_id: int, role: str) -> AppUserModel:
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                raise ValueError("User not found")
+            user.app_role = role
+            session.commit()
+            session.refresh(user)
+            return user
+
     def set_approval_status(self, *, user_id: int, status: ApprovalStatus, approved_by: str, note: str) -> AppUserModel:
         from macmarket_trader.domain.time import utc_now
 
@@ -798,10 +812,35 @@ class InviteRepository:
             session.refresh(row)
             return row
 
+    def get_by_id(self, invite_id: int) -> AppInviteModel | None:
+        with self.session_factory() as session:
+            return session.get(AppInviteModel, invite_id)
+
     def list_recent(self, limit: int = 100) -> list[AppInviteModel]:
         with self.session_factory() as session:
             stmt = select(AppInviteModel).order_by(AppInviteModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
+
+    def delete(self, invite_id: int) -> bool:
+        with self.session_factory() as session:
+            row = session.get(AppInviteModel, invite_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
+
+    def update_sent_at(self, invite_id: int) -> AppInviteModel | None:
+        from macmarket_trader.domain.time import utc_now
+
+        with self.session_factory() as session:
+            row = session.get(AppInviteModel, invite_id)
+            if row is None:
+                return None
+            row.sent_at = utc_now()
+            session.commit()
+            session.refresh(row)
+            return row
 
 
 class DailyBarRepository:

@@ -7,7 +7,6 @@ import { fetchWorkflowApi } from "@/lib/api-client";
 
 type PendingUser = { id: number; email: string; display_name: string };
 type Invite = { id: number; email: string; display_name: string; status: string; invited_by: string; created_at: string; invite_token: string };
-type UserRow = { id: number; email: string; display_name: string; approval_status: string; last_seen_at: string | null; created_at?: string };
 type AuditEvent = { event_type: string; timestamp: string | null; detail: string; status: string };
 
 function fmtTs(iso: string | null | undefined): string {
@@ -28,6 +27,9 @@ export function PendingUsersPanel() {
   const [inviteName, setInviteName] = useState("");
   const [inviteStatus, setInviteStatus] = useState("");
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  // Per-invite action state: "idle" | "confirm-revoke" | "revoking" | "resending" | "resent"
+  const [inviteAction, setInviteAction] = useState<Record<number, string>>({});
+  const [resendDisabled, setResendDisabled] = useState<Record<number, boolean>>({});
   const inviteEmailRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -52,6 +54,7 @@ export function PendingUsersPanel() {
     if (dashboardResponse.ok && dashboardResponse.data?.recent_audit_events) {
       setRecentActivity(dashboardResponse.data.recent_audit_events.slice(0, 5));
     }
+    setInviteAction({});
     setFeedback({ state: "success", message: "Admin queue refreshed." });
     setLoading(false);
   }
@@ -91,6 +94,36 @@ export function PendingUsersPanel() {
     await load();
   }
 
+  async function revokeInvite(inviteId: number) {
+    setInviteAction((prev) => ({ ...prev, [inviteId]: "revoking" }));
+    const response = await fetchWorkflowApi(`/api/admin/invites/${inviteId}`, { method: "DELETE" });
+    if (!response.ok) {
+      setInviteAction((prev) => ({ ...prev, [inviteId]: "idle" }));
+      setFeedback({ state: "error", message: `Revoke failed (${response.status})` });
+      return;
+    }
+    setFeedback({ state: "success", message: "Invite revoked." });
+    await load();
+  }
+
+  async function resendInvite(inviteId: number) {
+    setInviteAction((prev) => ({ ...prev, [inviteId]: "resending" }));
+    setResendDisabled((prev) => ({ ...prev, [inviteId]: true }));
+    const response = await fetchWorkflowApi(`/api/admin/invites/${inviteId}/resend`, { method: "POST" });
+    if (!response.ok) {
+      setInviteAction((prev) => ({ ...prev, [inviteId]: "idle" }));
+      setFeedback({ state: "error", message: `Resend failed (${response.status})` });
+      setResendDisabled((prev) => ({ ...prev, [inviteId]: false }));
+      return;
+    }
+    setInviteAction((prev) => ({ ...prev, [inviteId]: "resent" }));
+    setFeedback({ state: "success", message: "Invite resent." });
+    setTimeout(() => {
+      setInviteAction((prev) => ({ ...prev, [inviteId]: "idle" }));
+      setResendDisabled((prev) => ({ ...prev, [inviteId]: false }));
+    }, 5000);
+  }
+
   if (loading) return <p>Loading pending users…</p>;
   if (error) return <ErrorState title="Admin queue unavailable" hint={error} />;
 
@@ -118,7 +151,6 @@ export function PendingUsersPanel() {
         <Card title="Pending users">
           {users.length === 0
             ? <><EmptyState title="No pending users" hint="Queue is clear. Send an invite to onboard the next alpha user — they'll appear here once they sign up." /><button style={{ marginTop: 8 }} onClick={() => inviteEmailRef.current?.focus()}>Send an invite</button></>
-
             : <>
                 <div style={{ marginBottom: 8 }}><StatusBadge tone="warn">Next action: review and approve or reject each user below</StatusBadge></div>
                 <table className="op-table"><thead><tr><th>User</th><th>Email</th><th>Actions</th><th>Status</th></tr></thead><tbody>
@@ -127,8 +159,57 @@ export function PendingUsersPanel() {
               </>}
         </Card>
         <Card title="Recent invites">
-          {invites.length === 0 ? <EmptyState title="No invites sent" hint="Use invite form above." /> : <table className="op-table"><thead><tr><th>sent</th><th>email</th><th>status</th><th>invited by</th></tr></thead><tbody>
-            {invites.map((invite) => <tr key={invite.id}><td style={{ whiteSpace: "nowrap" }}>{fmtTs(invite.created_at)}</td><td>{invite.email}</td><td>{invite.status}</td><td>{invite.invited_by}</td></tr>)}</tbody></table>}
+          {invites.length === 0 ? (
+            <EmptyState title="No invites sent" hint="Use invite form above." />
+          ) : (
+            <table className="op-table">
+              <thead><tr><th>sent</th><th>email</th><th>status</th><th>invited by</th><th>actions</th></tr></thead>
+              <tbody>
+                {invites.map((invite) => {
+                  const action = inviteAction[invite.id] ?? "idle";
+                  return (
+                    <tr key={invite.id}>
+                      <td style={{ whiteSpace: "nowrap" }}>{fmtTs(invite.created_at)}</td>
+                      <td>{invite.email}</td>
+                      <td>{invite.status}</td>
+                      <td>{invite.invited_by}</td>
+                      <td>
+                        <div className="op-row" style={{ gap: 6 }}>
+                          {action === "confirm-revoke" ? (
+                            <>
+                              <span style={{ fontSize: "0.82rem", color: "var(--op-muted, #7a8999)" }}>Revoke?</span>
+                              <button onClick={() => void revokeInvite(invite.id)}>Confirm</button>
+                              <button onClick={() => setInviteAction((prev) => ({ ...prev, [invite.id]: "idle" }))}>Cancel</button>
+                            </>
+                          ) : action === "revoking" ? (
+                            <span style={{ fontSize: "0.82rem", color: "var(--op-muted, #7a8999)" }}>Revoking…</span>
+                          ) : (
+                            <button
+                              style={{ fontSize: "0.82rem" }}
+                              onClick={() => setInviteAction((prev) => ({ ...prev, [invite.id]: "confirm-revoke" }))}
+                            >
+                              Revoke
+                            </button>
+                          )}
+                          {action === "resent" ? (
+                            <StatusBadge tone="good">Invite resent</StatusBadge>
+                          ) : (
+                            <button
+                              style={{ fontSize: "0.82rem" }}
+                              disabled={resendDisabled[invite.id] ?? false}
+                              onClick={() => void resendInvite(invite.id)}
+                            >
+                              {action === "resending" ? "Resending…" : "Resend"}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </Card>
       </div>
 

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     resend_api_key: str = ""
     resend_from_email: str = "noreply@macmarket-trader.local"
+    brand_from_name: str = "MacMarket Trader"
     brand_logo_url: str = "https://raw.githubusercontent.com/ryanm-plastic-recycling/logo/refs/heads/main/square_console_ticks_lockup_light.png"
     console_url: str = "http://localhost:9500"
 

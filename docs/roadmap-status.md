@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-15
+Last updated: 2026-04-16
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -16,8 +16,64 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader has completed **Phases 1–6** and post-launch polish including email logo URL config and Windows Task Scheduler setup for strategy schedules.
+MacMarket-Trader has completed **Phases 1–6** and post-launch polish including email logo URL config, Windows Task Scheduler setup, and branded From display name for all outbound emails.
 The system is verified: 141 backend tests passing, TypeScript clean.
+
+### 2026-04-16 Admin user management hardening pass
+
+Six admin actions added across backend, proxy routes, and UI.
+
+**Fix 1 — Approve/reject email non-blocking**: Already complete from prior session. No change.
+
+**Fix 2 — Delete/revoke an invite (`admin.py`, `repositories.py`, `[inviteId]/route.ts`, `pending-users-panel.tsx`)**
+- `DELETE /admin/invites/{invite_id}` — deletes the invite record; 404 if not found; scoped to admin.
+- `InviteRepository.delete()` + `get_by_id()` methods added.
+- Frontend: `apps/web/app/api/admin/invites/[inviteId]/route.ts` DELETE proxy.
+- UI: "Revoke" button per invite row with inline confirm/cancel flow.
+
+**Fix 3 — Resend an invite (`admin.py`, `repositories.py`, `models.py`, `[inviteId]/resend/route.ts`, `pending-users-panel.tsx`)**
+- `AppInviteModel` gains nullable `sent_at` column (picked up by `apply_schema_updates`).
+- `POST /admin/invites/{invite_id}/resend` — re-sends invite email, updates `sent_at`.
+- `InviteRepository.update_sent_at()` method added.
+- Frontend: `apps/web/app/api/admin/invites/[inviteId]/resend/route.ts` POST proxy.
+- UI: "Resend" button per invite row; disabled 5 seconds after click; "Invite resent" badge on success.
+
+**Fix 4 — Change user role (`admin.py`, `repositories.py`, `[userId]/set-role/route.ts`, `admin-users-panel.tsx`)**
+- `POST /admin/users/{user_id}/set-role` — body `{ role: "admin" | "user" }`; 409 if targeting self.
+- `UserRepository.set_app_role()` + `get_by_id()` methods added.
+- Frontend: `apps/web/app/api/admin/users/[userId]/set-role/route.ts` POST proxy.
+- UI: "Make admin" / "Make user" toggle per user row; own row disabled.
+
+**Fix 5 — Suspend a user (`admin.py`, `[userId]/suspend/route.ts`, `admin-users-panel.tsx`)**
+- `POST /admin/users/{user_id}/suspend` — sets `approval_status → suspended`; 409 if targeting self.
+- `ApprovalStatus.SUSPENDED` already existed in enum; console layout already redirected to `/access-denied` for suspended.
+- Frontend: `apps/web/app/api/admin/users/[userId]/suspend/route.ts` POST proxy.
+- UI: "Suspend" button per row with inline confirm; own row excluded.
+
+**Fix 6 — Expandable user detail row (UI only, `admin-users-panel.tsx`)**
+- Click any row to expand: shows email, display name, role, approval, last seen, last auth, Clerk ID + "Copy user ID" button.
+
+**Backend tests (5 new → 146 total)**
+- `test_delete_invite_scoped_to_admin`: non-admin blocked (403), admin succeeds, second delete 404.
+- `test_resend_invite_updates_sent_at`: `sent_at` null before resend, populated after.
+- `test_set_role_cannot_demote_self`: 409 on self, succeeds on another user.
+- `test_suspend_cannot_suspend_self`: 409 on self, succeeds on another user.
+- `test_suspended_user_blocked_from_console_routes`: approved user gets 200, suspended user gets 403.
+
+**Runbook**: Section 11 added — "User management" reference for all 8 admin actions.
+
+146 pytest passing. `npx tsc --noEmit` clean.
+
+### 2026-04-16 Branded From display name for all outbound emails
+
+**Change — `BRAND_FROM_NAME` env var (`config.py`, `resend.py`, `registry.py`, `.env.example`)**
+- `brand_from_name: str = "MacMarket Trader"` added to `Settings` in `config.py`.
+- `ResendEmailProvider.__init__` now accepts `from_name` parameter and constructs `from_address` as `"Name <email>"` when a name is provided; falls back to bare email when name is empty.
+- `build_email_provider()` in `registry.py` passes `settings.brand_from_name` to `ResendEmailProvider`.
+- `.env.example` documents `BRAND_FROM_NAME=MacMarket Trader` with comment explaining inbox display behavior.
+- Applies to all outbound emails: invites, approvals, rejections, and strategy reports — all routed through `ResendEmailProvider.send()`.
+
+141 pytest passing. `npx tsc --noEmit` clean (no frontend changes).
 
 ### 2026-04-15 Fix: email send no longer blocks approve/reject actions
 

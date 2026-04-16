@@ -10,9 +10,16 @@ from macmarket_trader.data.providers.base import EmailMessage, EmailProvider
 class ResendEmailProvider(EmailProvider):
     """Thin adapter to keep business logic isolated from SDK specifics."""
 
-    def __init__(self, api_key: str | None = None, from_email: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        from_email: str | None = None,
+        from_name: str | None = None,
+    ) -> None:
         self.api_key = api_key or os.getenv("RESEND_API_KEY", "")
-        self.from_email = from_email or os.getenv("RESEND_FROM_EMAIL", "noreply@macmarket-trader.local")
+        raw_email = from_email or os.getenv("RESEND_FROM_EMAIL", "noreply@macmarket-trader.local")
+        name = from_name or os.getenv("BRAND_FROM_NAME", "")
+        self.from_address = f"{name} <{raw_email}>" if name else raw_email
 
     def send(self, message: EmailMessage) -> str:
         if not self.api_key:
@@ -20,7 +27,7 @@ class ResendEmailProvider(EmailProvider):
         try:
             import httpx  # available via test/runtime deps; kept as lazy import to avoid hard dep in non-resend mode
             payload: dict[str, object] = {
-                "from": self.from_email,
+                "from": self.from_address,
                 "to": [message.to_email],
                 "subject": message.subject,
                 "text": message.body,

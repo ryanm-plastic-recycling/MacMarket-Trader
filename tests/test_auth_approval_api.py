@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from macmarket_trader.api.main import app
-from macmarket_trader.domain.models import AppUserModel
+from macmarket_trader.domain.models import AppInviteModel, AppUserModel
 from macmarket_trader.storage.db import SessionLocal
 
 
@@ -417,3 +417,152 @@ def test_user_me_returns_real_email_after_duplicate_identity_reconciliation(monk
     with SessionLocal() as session:
         rows = list(session.execute(select(AppUserModel).where(AppUserModel.email == 'split.identity@example.com')).scalars())
     assert len(rows) == 1
+
+
+# ── New admin user-management tests ──────────────────────────────────────────
+
+def _seed_admin(session_local=SessionLocal) -> int:
+    """Seed admin-token user as approved admin and return their id."""
+    client.get('/user/me', headers={'Authorization': 'Bearer admin-token'})
+    with session_local() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
+        admin.app_role = 'admin'
+        admin.approval_status = 'approved'
+        admin.mfa_enabled = True
+        session.commit()
+        return admin.id
+
+
+def test_delete_invite_scoped_to_admin() -> None:
+    admin_id = _seed_admin()
+
+    # Create an invite
+    resp = client.post(
+        '/admin/invites',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'email': 'revoke-me@example.com', 'display_name': 'Revoke Test'},
+    )
+    assert resp.status_code == 200
+    invite_id = resp.json()['invite_id']
+
+    # Non-admin cannot delete
+    _seed_mock_user('user-token')
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user.approval_status = 'approved'
+        user.app_role = 'user'
+        session.commit()
+    denied = client.delete(f'/admin/invites/{invite_id}', headers={'Authorization': 'Bearer user-token'})
+    assert denied.status_code == 403
+
+    # Admin can delete
+    ok = client.delete(f'/admin/invites/{invite_id}', headers={'Authorization': 'Bearer admin-token'})
+    assert ok.status_code == 200
+    assert ok.json()['deleted'] is True
+
+    # Second delete returns 404
+    not_found = client.delete(f'/admin/invites/{invite_id}', headers={'Authorization': 'Bearer admin-token'})
+    assert not_found.status_code == 404
+
+
+def test_resend_invite_updates_sent_at() -> None:
+    _seed_admin()
+
+    resp = client.post(
+        '/admin/invites',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'email': 'resend-me@example.com', 'display_name': 'Resend Test'},
+    )
+    assert resp.status_code == 200
+    invite_id = resp.json()['invite_id']
+
+    # sent_at should be null before resend
+    with SessionLocal() as session:
+        invite = session.execute(select(AppInviteModel).where(AppInviteModel.id == invite_id)).scalar_one()
+        assert invite.sent_at is None
+
+    resend = client.post(
+        f'/admin/invites/{invite_id}/resend',
+        headers={'Authorization': 'Bearer admin-token'},
+    )
+    assert resend.status_code == 200
+    assert resend.json()['email'] == 'resend-me@example.com'
+
+    # sent_at should now be populated
+    with SessionLocal() as session:
+        invite = session.execute(select(AppInviteModel).where(AppInviteModel.id == invite_id)).scalar_one()
+        assert invite.sent_at is not None
+
+
+def test_set_role_cannot_demote_self() -> None:
+    admin_id = _seed_admin()
+
+    # Admin tries to change their own role
+    resp = client.post(
+        f'/admin/users/{admin_id}/set-role',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'role': 'user'},
+    )
+    assert resp.status_code == 409
+
+    # Admin can change another user's role
+    _seed_mock_user('user-token')
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user_id = user.id
+        session.commit()
+
+    resp2 = client.post(
+        f'/admin/users/{user_id}/set-role',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'role': 'admin'},
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()['app_role'] == 'admin'
+
+
+def test_suspend_cannot_suspend_self() -> None:
+    admin_id = _seed_admin()
+
+    resp = client.post(
+        f'/admin/users/{admin_id}/suspend',
+        headers={'Authorization': 'Bearer admin-token'},
+    )
+    assert resp.status_code == 409
+
+    # Admin can suspend another user
+    _seed_mock_user('user-token')
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user_id = user.id
+        user.approval_status = 'approved'
+        session.commit()
+
+    resp2 = client.post(
+        f'/admin/users/{user_id}/suspend',
+        headers={'Authorization': 'Bearer admin-token'},
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()['approval_status'] == 'suspended'
+
+
+def test_suspended_user_blocked_from_console_routes() -> None:
+    _seed_mock_user('user-token')
+    _seed_admin()
+
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user.approval_status = 'approved'
+        user_id = user.id
+        session.commit()
+
+    # Confirm access while approved
+    ok = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert ok.status_code == 200
+
+    # Suspend the user
+    client.post(f'/admin/users/{user_id}/suspend', headers={'Authorization': 'Bearer admin-token'})
+
+    # Suspended user is blocked from protected routes (same as pending)
+    blocked = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert blocked.status_code == 403

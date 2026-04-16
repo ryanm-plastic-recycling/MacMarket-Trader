@@ -153,7 +153,7 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–6 complete + post-launch polish. 141 backend tests. 8 Playwright e2e. tsc clean.**
+**CURRENT STATE: Phases 0–6 complete + post-launch polish. 146 backend tests. 8 Playwright e2e. tsc clean.**
 
 ### Completed (transactional email polish — 2026-04-15)
 
@@ -170,6 +170,43 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 - `.env.example` documents `CONSOLE_URL` with comment
 
 **Invite email** was already HTML-templated via `render_invite_html` — unchanged.
+
+### Completed (admin user management hardening — 2026-04-16)
+
+**Fix 2 — Delete/revoke invite**
+- `DELETE /admin/invites/{invite_id}` — admin-scoped; 404 if not found
+- `InviteRepository.delete()` + `get_by_id()` methods
+- Frontend: `[inviteId]/route.ts` DELETE proxy; "Revoke" button with inline confirm in `pending-users-panel.tsx`
+
+**Fix 3 — Resend invite**
+- `AppInviteModel` gains nullable `sent_at` column (auto-added by `apply_schema_updates`)
+- `POST /admin/invites/{invite_id}/resend` — re-sends email, updates `sent_at`
+- Frontend: `[inviteId]/resend/route.ts`; "Resend" button with 5s disable + badge in `pending-users-panel.tsx`
+
+**Fix 4 — Change user role**
+- `POST /admin/users/{user_id}/set-role` — 409 if targeting self
+- `UserRepository.set_app_role()` + `get_by_id()` methods
+- Frontend: `[userId]/set-role/route.ts`; "Make admin" / "Make user" toggle in `admin-users-panel.tsx` (own row disabled)
+
+**Fix 5 — Suspend user**
+- `POST /admin/users/{user_id}/suspend` — 409 if targeting self; `ApprovalStatus.SUSPENDED` already existed
+- Console layout already redirects `suspended` → `/access-denied`
+- Frontend: `[userId]/suspend/route.ts`; "Suspend" button with inline confirm (own row excluded)
+
+**Fix 6 — Expandable user detail rows (UI only)**
+- Click any row in `admin-users-panel.tsx` to expand: email, role, approval, timestamps, Clerk ID + "Copy user ID"
+
+**Tests:** 5 new backend tests → 146 total
+**Runbook:** Section 11 added — full user management action reference
+
+### Completed (branded From display name — 2026-04-16)
+
+**`BRAND_FROM_NAME` env var**
+- `brand_from_name: str = "MacMarket Trader"` added to `Settings` in `config.py`
+- `ResendEmailProvider` now accepts `from_name` and builds `from_address` as `"Name <email>"` (falls back to bare email when name is empty)
+- `build_email_provider()` in `registry.py` passes `settings.brand_from_name` to `ResendEmailProvider`
+- `.env.example` documents `BRAND_FROM_NAME=MacMarket Trader` with inbox display comment
+- Applies to all outbound emails: invites, approvals, rejections, strategy reports
 
 ### Completed (email logo URL + Task Scheduler — 2026-04-15)
 
@@ -219,7 +256,7 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 ## Open Items
 
 ### Priority: high value (next build)
-- Email delivery: verify Resend adapter works end-to-end for scheduled report delivery to a real inbox (logo URL now configurable via `BRAND_LOGO_URL`)
+- Email delivery: verify Resend adapter works end-to-end for scheduled report delivery to a real inbox (logo URL configurable via `BRAND_LOGO_URL`, From display name configurable via `BRAND_FROM_NAME`)
 
 ### Priority: polish
 - HACO workspace: deeper indicator controls and signal visibility

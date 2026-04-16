@@ -239,6 +239,7 @@ class AppInviteModel(Base):
     status: Mapped[str] = mapped_column(String(24), default="sent", index=True)
     invited_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class WatchlistModel(Base):
