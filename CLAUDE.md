@@ -153,7 +153,33 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–6 complete. 141 backend tests. 8 Playwright e2e. tsc clean.**
+**CURRENT STATE: Phases 0–6 complete + post-launch polish. 141 backend tests. 8 Playwright e2e. tsc clean.**
+
+### Completed (transactional email polish — 2026-04-15)
+
+**Approval notification email**
+- `render_approval_html(to_email, display_name, console_url)` in `email_templates.py` — dark-themed, inline CSS, table layout matching strategy report style; green accent line; "Open the console" CTA → `CONSOLE_URL`
+- `approve_user` route in `admin.py` now sends the branded HTML
+
+**Rejection / access-denied email**
+- `render_rejection_html(to_email, display_name)` — same structure, red accent line, polite copy
+- `reject_user` route now sends branded HTML with updated subject
+
+**CONSOLE_URL env var**
+- `console_url` added to `Settings` (default `http://localhost:9500`)
+- `.env.example` documents `CONSOLE_URL` with comment
+
+**Invite email** was already HTML-templated via `render_invite_html` — unchanged.
+
+### Completed (email logo URL + Task Scheduler — 2026-04-15)
+
+**Email logo URL (Fix 1)**
+- `_logo_img()` in `email_templates.py` checks `BRAND_LOGO_URL` env var first; falls back to base64 embed, then CSS lockup — no broken image ever rendered
+- `BRAND_LOGO_URL` in `config.py` and `.env.example` — defaults to GitHub raw asset URL, can be overridden
+
+**Windows Task Scheduler (Fix 2)**
+- `scripts/deploy_windows.bat` prints `[WARN]` reminder if `MacMarket-StrategyScheduler` task is not registered
+- `docs/private-alpha-operator-runbook.md` Section 10: schtask register/verify/check/remove commands for 15-minute strategy schedule runner
 
 ### Completed (Options B + C — 2026-04-15)
 
@@ -193,7 +219,7 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 ## Open Items
 
 ### Priority: high value (next build)
-- Email delivery: verify Resend adapter works end-to-end for scheduled report delivery to a real inbox
+- Email delivery: verify Resend adapter works end-to-end for scheduled report delivery to a real inbox (logo URL now configurable via `BRAND_LOGO_URL`)
 
 ### Priority: polish
 - HACO workspace: deeper indicator controls and signal visibility

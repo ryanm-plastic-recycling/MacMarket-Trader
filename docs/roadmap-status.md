@@ -16,8 +16,48 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader has completed **Phases 1–6** and the first post-launch feature iteration: options/crypto research preview surfaced explicitly across Analysis, Recommendations, and Dashboard.
+MacMarket-Trader has completed **Phases 1–6** and post-launch polish including email logo URL config and Windows Task Scheduler setup for strategy schedules.
 The system is verified: 141 backend tests passing, TypeScript clean.
+
+### 2026-04-15 Transactional email polish — approval, rejection, invite HTML templates
+
+Completed in this pass:
+
+**Change 1 — Approval notification email (`email_templates.py`, `admin.py`)**
+- New `render_approval_html()` function: dark-themed, inline-CSS, table-based layout matching strategy report style.
+- Header: logo (BRAND_LOGO_URL if set), dark card background, green accent line.
+- Headline: "You've been approved — welcome to MacMarket".
+- Body: guided workflow CTA copy (Analyze → Recommendation → Replay → Paper Order).
+- CTA button: "Open the console" → `CONSOLE_URL`.
+- Footer: "MacMarket · Invite-only private alpha · Questions? Reply to this email."
+- `approve_user` route now passes `html=approval_html` to `EmailMessage`.
+
+**Change 2 — Rejection / access-denied email (`email_templates.py`, `admin.py`)**
+- New `render_rejection_html()` function: same structure, red accent line instead of green.
+- Headline: "Account access update". Body: polite rejection copy with reply-to-admin instruction.
+- `reject_user` route now passes `html=rejection_html` and updated subject/body.
+
+**Change 3 — CONSOLE_URL env var (`config.py`, `.env.example`)**
+- `console_url: str = "http://localhost:9500"` added to `Settings`.
+- `.env.example` documents `CONSOLE_URL=http://localhost:9500` with comment.
+
+141 pytest passing. `npx tsc --noEmit` clean.
+
+### 2026-04-15 Email logo URL config + Windows Task Scheduler runbook
+
+Completed in this pass:
+
+**Fix 1 — Email logo URL (`email_templates.py`, `config.py`, `.env.example`)**
+- `_logo_img()` now checks `BRAND_LOGO_URL` env var first; falls back to embedded base64, then CSS text lockup.
+- No broken image is ever rendered — the CSS lockup is always the final fallback.
+- `BRAND_LOGO_URL` added to `Settings` in `config.py` with default pointing to GitHub raw asset.
+- `.env.example` documents `BRAND_LOGO_URL` with the default GitHub URL so it works out of the box.
+
+**Fix 2 — Windows Task Scheduler (`scripts/deploy_windows.bat`, `docs/private-alpha-operator-runbook.md`)**
+- `deploy_windows.bat`: after servers start, checks for `MacMarket-StrategyScheduler` task and prints a `[WARN]` reminder if not registered.
+- Runbook `Section 10` added: register/verify/check/remove schtask commands for the 15-minute strategy schedule runner.
+
+141 pytest passing. `npx tsc --noEmit` clean.
 
 ### 2026-04-15 Polygon.io live market data — wired and verified
 

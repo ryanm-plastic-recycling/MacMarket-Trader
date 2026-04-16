@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import html as _html
+import os
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,7 +66,19 @@ _LOGO_DATA_URI: str | None = _load_logo_base64()
 
 
 def _logo_img(width: int = 200) -> str:
-    """Return an <img> tag using the embedded logo, or the CSS text lockup fallback."""
+    """Return an <img> tag using the logo, or the CSS text lockup fallback.
+
+    Priority:
+    1. BRAND_LOGO_URL env var (URL-based — works for hosted deployments)
+    2. Embedded base64 data URI (embedded — works without external access)
+    3. CSS text lockup fallback (no broken image ever rendered)
+    """
+    brand_logo_url = os.environ.get("BRAND_LOGO_URL", "").strip()
+    if brand_logo_url:
+        return (
+            f'<img src="{_html.escape(brand_logo_url)}" alt="MacMarket Trader" width="{width}" '
+            f'style="display:block;max-width:{width}px;height:auto;border:0;" />'
+        )
     if _LOGO_DATA_URI:
         return (
             f'<img src="{_LOGO_DATA_URI}" alt="MacMarket Trader" width="{width}" '
@@ -536,6 +549,135 @@ def render_strategy_report_text(
     ]
 
     return "\n".join(lines)
+
+
+def render_approval_html(
+    *,
+    to_email: str,
+    display_name: str = "",
+    console_url: str = "http://localhost:9500",
+) -> str:
+    """Return a branded dark-theme HTML approval notification email."""
+    greeting = f"Hi {_e(display_name)}," if display_name else "Hi,"
+    safe_console_url = _e(console_url.rstrip("/"))
+    body_rows = (
+        # header
+        f'<tr><td style="background-color:{_BG_CARD};padding:28px 28px 22px 28px;">'
+        f'<div style="margin:0 0 14px 0;">{_logo_img(180)}</div>'
+        f'<h1 style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:22px;'
+        f'font-weight:700;color:{_TEXT_PRIMARY};line-height:1.2;">'
+        f'You&rsquo;ve been approved &mdash; welcome to MacMarket</h1>'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:{_TEXT_SECONDARY};">'
+        f'Invite-only &middot; Operator console &middot; Private alpha'
+        f'</p>'
+        f'</td></tr>'
+        # accent line
+        f'<tr><td style="background-color:{_GREEN};height:2px;font-size:0;line-height:0;">&nbsp;</td></tr>'
+        # body
+        f'<tr><td style="background-color:{_BG_CARD};padding:28px;">'
+        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};">{greeting}</p>'
+        f'<p style="margin:0 0 20px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_SECONDARY};line-height:1.7;">'
+        f'Your operator account is approved and ready. Sign in to access the console and '
+        f'start your first guided paper trade: '
+        f'<strong style="color:{_TEXT_PRIMARY};">Analyze &rarr; Recommendation &rarr; Replay &rarr; Paper Order</strong>.'
+        f'</p>'
+        # CTA button
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 0 0;">'
+        f'<tr><td style="background-color:{_GREEN};border-radius:4px;text-align:center;">'
+        f'<a href="{safe_console_url}" '
+        f'style="display:inline-block;font-family:Arial,sans-serif;font-size:14px;font-weight:700;'
+        f'color:#000000;text-decoration:none;padding:12px 28px;border-radius:4px;">'
+        f'Open the console</a>'
+        f'</td></tr></table>'
+        f'</td></tr>'
+        # footer
+        f'<tr><td style="background-color:{_BG_DARK};padding:16px 28px;border-top:1px solid {_BORDER};">'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};text-align:center;">'
+        f'MacMarket &nbsp;&middot;&nbsp; Invite-only private alpha'
+        f'&nbsp;&middot;&nbsp; Questions? Reply to this email.'
+        f'</p>'
+        f'</td></tr>'
+    )
+    return (
+        "<!DOCTYPE html>"
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        "<title>MacMarket Trader — Account approved</title>"
+        "</head>"
+        f'<body style="margin:0;padding:0;background-color:{_BG_PAGE};">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="background-color:{_BG_PAGE};">'
+        f'<tr><td align="center" style="padding:20px 12px;">'
+        f'<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+        f'style="max-width:600px;width:100%;border:1px solid {_BORDER};border-radius:6px;overflow:hidden;">'
+        + body_rows
+        + "</table>"
+        "</td></tr>"
+        "</table>"
+        "</body>"
+        "</html>"
+    )
+
+
+def render_rejection_html(
+    *,
+    to_email: str,
+    display_name: str = "",
+) -> str:
+    """Return a branded dark-theme HTML rejection / access-denied notification email."""
+    greeting = f"Hi {_e(display_name)}," if display_name else "Hi,"
+    body_rows = (
+        # header
+        f'<tr><td style="background-color:{_BG_CARD};padding:28px 28px 22px 28px;">'
+        f'<div style="margin:0 0 14px 0;">{_logo_img(180)}</div>'
+        f'<h1 style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:22px;'
+        f'font-weight:700;color:{_TEXT_PRIMARY};line-height:1.2;">'
+        f'Account access update</h1>'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:{_TEXT_SECONDARY};">'
+        f'MacMarket &middot; Invite-only private alpha'
+        f'</p>'
+        f'</td></tr>'
+        # accent line (red for rejection)
+        f'<tr><td style="background-color:{_RED};height:2px;font-size:0;line-height:0;">&nbsp;</td></tr>'
+        # body
+        f'<tr><td style="background-color:{_BG_CARD};padding:28px;">'
+        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};">{greeting}</p>'
+        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_SECONDARY};line-height:1.7;">'
+        f'Your account request has not been approved at this time. '
+        f'If you believe this is an error, please reply to this email or contact your administrator.'
+        f'</p>'
+        f'</td></tr>'
+        # footer
+        f'<tr><td style="background-color:{_BG_DARK};padding:16px 28px;border-top:1px solid {_BORDER};">'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};text-align:center;">'
+        f'MacMarket &nbsp;&middot;&nbsp; Invite-only private alpha'
+        f'&nbsp;&middot;&nbsp; Questions? Reply to this email.'
+        f'</p>'
+        f'</td></tr>'
+    )
+    return (
+        "<!DOCTYPE html>"
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        "<title>MacMarket Trader — Account access update</title>"
+        "</head>"
+        f'<body style="margin:0;padding:0;background-color:{_BG_PAGE};">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="background-color:{_BG_PAGE};">'
+        f'<tr><td align="center" style="padding:20px 12px;">'
+        f'<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+        f'style="max-width:600px;width:100%;border:1px solid {_BORDER};border-radius:6px;overflow:hidden;">'
+        + body_rows
+        + "</table>"
+        "</td></tr>"
+        "</table>"
+        "</body>"
+        "</html>"
+    )
 
 
 def render_invite_html(

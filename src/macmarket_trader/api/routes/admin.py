@@ -18,7 +18,7 @@ from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
-from macmarket_trader.email_templates import render_invite_html
+from macmarket_trader.email_templates import render_approval_html, render_invite_html, render_rejection_html
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
@@ -1371,10 +1371,19 @@ def approve_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require
         approved_by=admin.email,
         note=req.note,
     )
+    approval_html = render_approval_html(
+        to_email=user.email,
+        display_name=user.display_name or "",
+        console_url=settings.console_url,
+    )
     message = EmailMessage(
         to_email=user.email,
         subject="MacMarket-Trader account approved",
-        body="Your account has been approved.",
+        body=(
+            "Your operator account is approved and ready. "
+            f"Sign in at {settings.console_url} to access the console."
+        ),
+        html=approval_html,
         template_name="account_approved",
     )
     provider_id = email_provider.send(message)
@@ -1392,10 +1401,15 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
         approved_by=admin.email,
         note=req.note,
     )
+    rejection_html = render_rejection_html(
+        to_email=user.email,
+        display_name=user.display_name or "",
+    )
     message = EmailMessage(
         to_email=user.email,
-        subject="MacMarket-Trader account rejected",
-        body="Your account request has been rejected.",
+        subject="MacMarket-Trader account access update",
+        body="Your account request has not been approved at this time. Reply to this email if you believe this is an error.",
+        html=rejection_html,
         template_name="account_rejected",
     )
     provider_id = email_provider.send(message)

@@ -277,6 +277,13 @@ if exist "%WEB_DIR%\package.json" (
 
 echo.
 echo [OK] Deployment completed successfully.
+
+schtasks /query /tn "MacMarket-StrategyScheduler" >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] Strategy scheduler task not registered.
+  echo [WARN] See runbook Section - Scheduled report runner to set it up.
+)
+
 goto :END
 
 :FAIL_POP_WEB

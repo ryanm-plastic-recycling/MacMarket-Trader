@@ -452,3 +452,48 @@ conn.close()
 ```
 
 All 7 user-scoped entities (recommendations, replay runs, orders, paper positions, paper trades, onboarding status, strategy schedules) are verified to filter by `app_user_id` in code — no cross-operator data leakage is possible.
+
+---
+
+## 10) Scheduled report runner (Windows Task Scheduler)
+
+Strategy schedules are triggered by `python -m macmarket_trader.cli run-due-strategy-schedules`.
+On Windows deployments, this should be run on a recurring schedule via Task Scheduler.
+
+### Register the task
+
+Run once from an elevated (Administrator) command prompt:
+
+```bat
+schtasks /create /tn "MacMarket-StrategyScheduler" ^
+  /tr "C:\Dashboard\MacMarket-Trader\.venv\Scripts\python.exe -m macmarket_trader.cli run-due-strategy-schedules" ^
+  /sc minute /mo 15 /st 00:00 /ru SYSTEM /f
+```
+
+This registers a task named `MacMarket-StrategyScheduler` that runs every 15 minutes as SYSTEM.
+The `/f` flag overwrites any previously registered task with the same name.
+
+### Verify it registered
+
+```bat
+schtasks /query /tn "MacMarket-StrategyScheduler"
+```
+
+Expected output includes `Status: Ready` and the trigger interval.
+
+### Check last run time
+
+```bat
+schtasks /query /tn "MacMarket-StrategyScheduler" /fo LIST /v
+```
+
+Look for `Last Run Time` and `Last Result` in the output.
+`Last Result: 0` means the last execution completed successfully.
+
+### Remove the task if needed
+
+```bat
+schtasks /delete /tn "MacMarket-StrategyScheduler" /f
+```
+
+The `/f` flag suppresses the confirmation prompt.
