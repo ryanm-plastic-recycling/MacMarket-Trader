@@ -19,6 +19,20 @@ The defensible edge is:
 MacMarket-Trader has completed **Phases 1–6** and post-launch polish including email logo URL config and Windows Task Scheduler setup for strategy schedules.
 The system is verified: 141 backend tests passing, TypeScript clean.
 
+### 2026-04-15 Fix: email send no longer blocks approve/reject actions
+
+**Bug:** `approve_user` and `reject_user` called `email_provider.send()` without a try/except — any email failure (bad config, provider down, template error) threw a 500 and left the approval action uncommitted from the caller's perspective even though the DB write had succeeded.
+
+**Fix (`admin.py`):**
+- Added `import logging` + `logger = logging.getLogger(__name__)`.
+- `approve_user`: wrapped send in `try/except Exception as e` → `logger.warning("Approval email failed (non-fatal): %s", e)` + `email_status = "failed"`. DB write and 200 response always proceed.
+- `reject_user`: same pattern.
+- `create_invite`: already had a guard — added `logger.warning` so failures are visible in logs (was silently swallowed before).
+
+Email failure now logs a warning and records `"failed"` in `email_logs` but never blocks the approval/rejection action.
+
+141 pytest passing.
+
 ### 2026-04-15 Transactional email polish — approval, rejection, invite HTML templates
 
 Completed in this pass:

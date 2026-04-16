@@ -1,7 +1,10 @@
 """Admin approval and operator routes."""
 
+import logging
 import math
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -1386,8 +1389,14 @@ def approve_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require
         html=approval_html,
         template_name="account_approved",
     )
-    provider_id = email_provider.send(message)
-    email_repo.create(user.id, "account_approved", user.email, "sent", provider_id)
+    email_status = "sent"
+    provider_id: str | None = None
+    try:
+        provider_id = email_provider.send(message)
+    except Exception as e:
+        logger.warning("Approval email failed (non-fatal): %s", e)
+        email_status = "failed"
+    email_repo.create(user.id, "account_approved", user.email, email_status, provider_id or "")
     return {"id": user.id, "approval_status": user.approval_status}
 
 
@@ -1412,8 +1421,14 @@ def reject_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_
         html=rejection_html,
         template_name="account_rejected",
     )
-    provider_id = email_provider.send(message)
-    email_repo.create(user.id, "account_rejected", user.email, "sent", provider_id)
+    email_status = "sent"
+    provider_id: str | None = None
+    try:
+        provider_id = email_provider.send(message)
+    except Exception as e:
+        logger.warning("Rejection email failed (non-fatal): %s", e)
+        email_status = "failed"
+    email_repo.create(user.id, "account_rejected", user.email, email_status, provider_id or "")
     return {"id": user.id, "approval_status": user.approval_status}
 
 
@@ -1447,7 +1462,8 @@ def create_invite(req: InviteCreateRequest, admin=Depends(require_admin)):
     provider_id: str | None = None
     try:
         provider_id = email_provider.send(message)
-    except Exception:
+    except Exception as e:
+        logger.warning("Invite email failed (non-fatal): %s", e)
         email_status = "failed"
     email_repo.create(invited_user.id, "private_alpha_invite", invited_user.email, email_status, provider_id or "")
     return {"invite_id": invite.id, "status": invite.status, "email": invite.email, "invite_token": invite.invite_token}
