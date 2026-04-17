@@ -12,7 +12,7 @@ from macmarket_trader.api.deps.auth import current_user, require_admin, require_
 from macmarket_trader.api.routes.workflow_lineage import extract_recommendation_key_levels, extract_recommendation_strategy
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
-from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider, SymbolNotFoundError
+from macmarket_trader.data.providers.market_data import DataNotEntitledError, DeterministicFallbackMarketDataProvider, SymbolNotFoundError
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
@@ -166,6 +166,14 @@ def _safe_identity_value(value: str | None) -> str | None:
 def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
     try:
         bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=limit)
+    except DataNotEntitledError:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "data_not_entitled",
+                "message": f"Your data plan does not include {symbol}. Index bar data (SPX, NDX, VIX) requires a plan upgrade.",
+            },
+        )
     except SymbolNotFoundError:
         raise HTTPException(
             status_code=400,

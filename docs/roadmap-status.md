@@ -17,7 +17,23 @@ The defensible edge is:
 
 ## Current Status
 MacMarket-Trader has completed **Phases 1–6** and post-launch polish including email logo URL config, Windows Task Scheduler setup, and branded From display name for all outbound emails.
-The system is verified: 163 backend tests passing, TypeScript clean.
+The system is verified: 166 backend tests passing, TypeScript clean.
+
+### 2026-04-16 DataNotEntitledError — Polygon 403 / plan-gated data
+
+**`DataNotEntitledError` and HTTP 402 (`market_data.py`, `admin.py`, `analysis/page.tsx`)**
+- `DataNotEntitledError(Exception)` added to `market_data.py` — third distinct exception class alongside `ProviderUnavailableError` and `SymbolNotFoundError`.
+- `_fetch_url`: HTTP 403 → `DataNotEntitledError("Not entitled to this data. Upgrade plan at https://polygon.io/pricing")`.
+- `MarketDataService.historical_bars` and `latest_snapshot`: re-raise `DataNotEntitledError` (added to existing `(SymbolNotFoundError, DataNotEntitledError)` tuple).
+- `_workflow_bars` in `admin.py`: new `except DataNotEntitledError` branch before `SymbolNotFoundError` → HTTP 402 `{ "error": "data_not_entitled", "message": "Your data plan does not include {symbol}. Index bar data (SPX, NDX, VIX) requires a plan upgrade." }`.
+- Frontend `analysis/page.tsx`: 402 response → `workbenchState = "data_not_entitled"`. Dedicated `StatusBadge tone="warn"` banner: "Data not available for {symbol} on current plan. Try SPY instead of SPX, or QQQ instead of NDX." Provider-unavailable banner not shown for 402. `WorkbenchState` union extended with `"data_not_entitled"`.
+
+**Backend tests (3 new → 166 total)**
+- `test_data_not_entitled_raised_on_polygon_403`: patches module-level `urlopen` to raise `HTTPError(403)`; confirms `DataNotEntitledError` propagates out of `fetch_historical_bars`.
+- `test_market_data_service_propagates_data_not_entitled`: service does not fall back when provider raises `DataNotEntitledError`.
+- `test_workflow_bars_returns_402_for_entitled_data`: full route test via `TestClient`; confirms 402 with `error: data_not_entitled` and symbol in message.
+
+166 pytest passing. `npx tsc --noEmit` clean.
 
 ### 2026-04-16 Polygon options chain preview + index symbol fixes
 

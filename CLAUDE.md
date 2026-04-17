@@ -153,7 +153,17 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–6 complete + post-launch polish. 163 backend tests. 8 Playwright e2e. tsc clean.**
+**CURRENT STATE: Phases 0–6 complete + post-launch polish. 166 backend tests. 8 Playwright e2e. tsc clean.**
+
+### Completed (DataNotEntitledError / 402 handling — 2026-04-16)
+
+**`DataNotEntitledError` (`market_data.py`, `admin.py`, `analysis/page.tsx`)**
+- `DataNotEntitledError(Exception)` added to `market_data.py` — distinct from `ProviderUnavailableError`.
+- `_fetch_url`: HTTP 403 → `DataNotEntitledError("Not entitled to this data. Upgrade plan at https://polygon.io/pricing")`.
+- `MarketDataService.historical_bars` / `latest_snapshot`: re-raise alongside `SymbolNotFoundError` (no fallback).
+- `_workflow_bars` in `admin.py`: catches `DataNotEntitledError` → HTTP 402 `{ "error": "data_not_entitled", "message": "Your data plan does not include {symbol}. Index bar data (SPX, NDX, VIX) requires a plan upgrade." }`.
+- Frontend: 402 response sets `workbenchState = "data_not_entitled"` — shows `StatusBadge tone="warn"` notice with ETF substitution hints (SPY/QQQ). Does not show provider-unavailable banner. `WorkbenchState` union updated.
+- 3 new tests → 166 total: 403→`DataNotEntitledError` via module-level `urlopen` patch, service-level propagation, full route 402 response test.
 
 ### Completed (Polygon options chain preview — 2026-04-16)
 

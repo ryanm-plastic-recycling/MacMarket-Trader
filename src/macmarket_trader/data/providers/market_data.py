@@ -24,6 +24,10 @@ class SymbolNotFoundError(Exception):
     """Raised when the provider has no data for the requested symbol (not a connectivity failure)."""
 
 
+class DataNotEntitledError(Exception):
+    """Raised when the current data plan does not include access to the requested data."""
+
+
 # Polygon uses the I: prefix for index tickers.
 INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP", "OEX"}
 
@@ -297,6 +301,10 @@ class PolygonMarketDataProvider(MarketDataProvider):
                 self._last_success_at = datetime.now(tz=UTC)
                 return payload
         except HTTPError as exc:
+            if exc.code == 403:
+                raise DataNotEntitledError(
+                    "Not entitled to this data. Upgrade plan at https://polygon.io/pricing"
+                ) from exc
             if exc.code == 404:
                 raise SymbolNotFoundError(f"Polygon returned 404 — ticker not found") from exc
             raise ProviderUnavailableError(f"Polygon HTTP {exc.code}: {exc.reason}") from exc
@@ -546,7 +554,7 @@ class MarketDataService:
             else:
                 source = self._provider.name if self._provider.name != "fallback" else "fallback"
                 result = (bars, source, self._provider.name == "fallback")
-        except SymbolNotFoundError:
+        except (SymbolNotFoundError, DataNotEntitledError):
             raise
         except Exception:
             result = self._fallback_result(symbol=symbol, timeframe=timeframe, limit=limit)
@@ -562,7 +570,7 @@ class MarketDataService:
 
         try:
             snapshot = self._provider.fetch_latest_snapshot(symbol=symbol, timeframe=timeframe)
-        except SymbolNotFoundError:
+        except (SymbolNotFoundError, DataNotEntitledError):
             raise
         except Exception:
             snapshot = self._fallback_provider.fetch_latest_snapshot(symbol=symbol, timeframe=timeframe)

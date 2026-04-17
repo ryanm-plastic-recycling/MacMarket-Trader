@@ -23,7 +23,7 @@ import { WorkflowBanner } from "@/components/workflow-banner";
 const SUPPORTED_TIMEFRAMES = ["1D", "4H", "1H"] as const;
 
 type SupportedTimeframe = (typeof SUPPORTED_TIMEFRAMES)[number];
-type WorkbenchState = "auth_initializing" | "loading_analysis" | "ready" | "fallback_mode" | "provider_unavailable" | "hard_failure";
+type WorkbenchState = "auth_initializing" | "loading_analysis" | "ready" | "fallback_mode" | "provider_unavailable" | "data_not_entitled" | "hard_failure";
 
 type SetupPayload = {
   market_mode: MarketMode;
@@ -150,6 +150,11 @@ export default function Page() {
         if (setupResult.authPending) {
           setWorkbenchState("auth_initializing");
           setFeedback({ state: "loading", message: "Authentication still initializing. Workbench will be ready shortly." });
+          return;
+        }
+        if (setupResult.status === 402) {
+          setWorkbenchState("data_not_entitled");
+          setFeedback({ state: "idle", message: "" });
           return;
         }
         if (setupResult.status === 503) {
@@ -333,6 +338,18 @@ export default function Page() {
     </Card>
 
     {workbenchState === "provider_unavailable" ? <ErrorState title="Provider configured but unavailable" hint={PROVIDER_BLOCKED_HINT} /> : null}
+
+    {workbenchState === "data_not_entitled" ? (
+      <div className="op-card" style={{ border: "1px dashed #7c6a20", background: "#2a2010", padding: "12px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <StatusBadge tone="warn">Data not available on current plan</StatusBadge>
+        </div>
+        <div style={{ fontSize: "0.88rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+          Data not available for <strong>{appliedSymbol}</strong> on current plan.
+          Try <strong>SPY</strong> instead of <strong>SPX</strong>, or <strong>QQQ</strong> instead of <strong>NDX</strong>.
+        </div>
+      </div>
+    ) : null}
 
 
     {unsupportedIndicators.length > 0 ? (

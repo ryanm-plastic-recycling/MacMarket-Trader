@@ -10,13 +10,14 @@ from macmarket_trader.api.routes import admin as admin_routes
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.market_data import (
     AlpacaMarketDataProvider,
+    DataNotEntitledError,
     INDEX_SYMBOLS,
     MarketDataService,
     MarketProviderHealth,
     PolygonMarketDataProvider,
+    ProviderUnavailableError,
     SymbolNotFoundError,
     normalize_polygon_ticker,
-    ProviderUnavailableError,
 )
 
 
@@ -361,6 +362,90 @@ def test_workflow_bars_returns_400_for_unknown_symbol(monkeypatch) -> None:
     payload = resp.json()
     assert payload["detail"]["error"] == "symbol_not_found"
     assert "FAKE" in payload["detail"]["message"]
+
+
+def test_data_not_entitled_raised_on_polygon_403(monkeypatch) -> None:
+    import pytest
+    from urllib.error import HTTPError
+    import macmarket_trader.data.providers.market_data as md_module
+
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    def fake_urlopen(request, timeout):  # type: ignore[override]
+        raise HTTPError(url="", code=403, msg="Forbidden", hdrs=None, fp=None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(md_module, "urlopen", fake_urlopen)
+
+    with pytest.raises(DataNotEntitledError, match="Not entitled"):
+        provider.fetch_historical_bars(symbol="SPX", timeframe="1D", limit=5)
+
+
+def test_market_data_service_propagates_data_not_entitled(monkeypatch) -> None:
+    import pytest
+
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+
+    service = MarketDataService()
+
+    def fake_fetch(symbol: str, timeframe: str, limit: int) -> list:
+        raise DataNotEntitledError("Not entitled to this data")
+
+    monkeypatch.setattr(service._provider, "fetch_historical_bars", fake_fetch)
+
+    with pytest.raises(DataNotEntitledError):
+        service.historical_bars("SPX", "1D", 10)
+
+
+def test_workflow_bars_returns_402_for_entitled_data(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+
+    from macmarket_trader.api.main import app
+    from macmarket_trader.api.routes import admin as admin_routes
+    from macmarket_trader.domain.models import AppUserModel
+    from macmarket_trader.storage.db import SessionLocal
+
+    class StubMarketDataService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):  # type: ignore[override]
+            raise DataNotEntitledError("Not entitled to this data")
+
+        def latest_snapshot(self, symbol: str, timeframe: str):  # type: ignore[override]
+            from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):  # type: ignore[override]
+            return None
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data", mode="polygon", status="ok",
+                details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", False)
+    monkeypatch.setattr(settings, "environment", "test")
+
+    client = TestClient(app)
+    client.get("/user/me", headers={"Authorization": "Bearer user-token"})
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_user")).scalar_one()
+        user.approval_status = "approved"
+        session.commit()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "SPX"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert resp.status_code == 402
+    payload = resp.json()
+    assert payload["detail"]["error"] == "data_not_entitled"
+    assert "SPX" in payload["detail"]["message"]
+    assert "plan upgrade" in payload["detail"]["message"]
 
 
 def test_options_chain_preview_returns_calls_and_puts(monkeypatch) -> None:
