@@ -12,7 +12,7 @@ from macmarket_trader.api.deps.auth import current_user, require_admin, require_
 from macmarket_trader.api.routes.workflow_lineage import extract_recommendation_key_levels, extract_recommendation_strategy
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
-from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
+from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider, SymbolNotFoundError
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
@@ -164,7 +164,16 @@ def _safe_identity_value(value: str | None) -> str | None:
 
 
 def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
-    bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=limit)
+    try:
+        bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=limit)
+    except SymbolNotFoundError:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "symbol_not_found",
+                "message": f"No data found for symbol {symbol}. Verify the ticker is correct and supported.",
+            },
+        )
     if not bars:
         raise HTTPException(
             status_code=503,
@@ -996,6 +1005,7 @@ def analysis_setup(
 
     if market_mode == MarketMode.OPTIONS:
         payload["operator_disclaimer"] = "Options research — paper only. Not execution support."
+        payload["options_chain_preview"] = market_data_service.options_chain_preview(symbol=symbol)
     elif market_mode == MarketMode.CRYPTO:
         payload["operator_disclaimer"] = "Crypto research — paper only. Not execution support."
 
@@ -1364,10 +1374,48 @@ def list_users(_admin=Depends(require_admin)):
     ]
 
 
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, admin=Depends(require_admin)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=409, detail="Cannot delete your own account")
+    deleted = user_repo.delete_user(user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"deleted": True, "user_id": user_id}
+
+
+@router.post("/users/{user_id}/force-password-reset")
+def force_password_reset(user_id: int, admin=Depends(require_admin)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=409, detail="Cannot force re-login on your own account")
+    target = user_repo.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    clerk_id = target.external_auth_user_id or ""
+    if not clerk_id or clerk_id.startswith("invited::") or clerk_id.startswith("retired::"):
+        raise HTTPException(status_code=409, detail="User does not have an active Clerk identity — cannot invalidate sessions")
+    if not settings.clerk_secret_key:
+        raise HTTPException(status_code=409, detail="CLERK_SECRET_KEY not configured")
+    try:
+        import httpx
+        resp = httpx.delete(
+            f"{settings.clerk_api_base_url}/v1/users/{clerk_id}/sessions",
+            headers={"Authorization": f"Bearer {settings.clerk_secret_key}"},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning("Clerk session invalidation failed for user %s: %s", user_id, exc)
+        raise HTTPException(status_code=502, detail=f"Clerk session invalidation failed: {exc}") from exc
+    return {"user_id": user_id, "clerk_id": clerk_id, "sessions_invalidated": True}
+
+
 @router.post("/users/{user_id}/approve")
 def approve_user(user_id: int, req: ApprovalActionRequest, admin=Depends(require_admin)):
     if req.user_id != user_id:
         raise HTTPException(status_code=400, detail="Path and body user id mismatch")
+    if user_id == admin.id:
+        raise HTTPException(status_code=409, detail="Cannot change your own approval status")
     user = user_repo.set_approval_status(
         user_id=user_id,
         status=ApprovalStatus.APPROVED,
@@ -1543,6 +1591,22 @@ def suspend_user(user_id: int, admin=Depends(require_admin)):
         status=ApprovalStatus.SUSPENDED,
         approved_by=admin.email,
         note="Suspended by admin",
+    )
+    return {"id": updated.id, "approval_status": updated.approval_status}
+
+
+@router.post("/users/{user_id}/unsuspend")
+def unsuspend_user(user_id: int, admin=Depends(require_admin)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=409, detail="Cannot unsuspend your own account")
+    target = user_repo.get_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    updated = user_repo.set_approval_status(
+        user_id=user_id,
+        status=ApprovalStatus.APPROVED,
+        approved_by=admin.email,
+        note="Unsuspended by admin",
     )
     return {"id": updated.id, "approval_status": updated.approval_status}
 

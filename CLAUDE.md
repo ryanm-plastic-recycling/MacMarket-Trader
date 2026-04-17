@@ -153,7 +153,62 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–6 complete + post-launch polish. 146 backend tests. 8 Playwright e2e. tsc clean.**
+**CURRENT STATE: Phases 0–6 complete + post-launch polish. 163 backend tests. 8 Playwright e2e. tsc clean.**
+
+### Completed (Polygon options chain preview — 2026-04-16)
+
+**Fix 3 — Options chain preview (`market_data.py`, `admin.py`, `analysis/page.tsx`)**
+- `PolygonMarketDataProvider.fetch_options_chain_preview(symbol, limit=50)` — calls `/v3/reference/options/contracts` (Polygon Options Basic plan). Returns nearest-expiry calls/puts as `{ strike, expiry, last_price: null, volume: null }`. Gracefully handles 404/empty/unavailable.
+- `MarketDataService.options_chain_preview(symbol, limit)` — delegates to Polygon; returns `None` for non-Polygon providers.
+- `analysis_setup` adds `options_chain_preview` to payload when `market_mode == OPTIONS`.
+- Frontend: "Options chain preview" `Card` on analysis page for options mode. Shows calls/puts tables or reason message. `SetupPayload` type updated.
+- `INDEX_SYMBOLS` updated to include "OEX".
+- 5 new tests → 163 total.
+
+### Completed (Polygon symbol handling — 2026-04-16)
+
+**Fix 1 — `SymbolNotFoundError` (`market_data.py`, `admin.py`)**
+- New `SymbolNotFoundError(Exception)` class in `market_data.py` — distinct from `ProviderUnavailableError`.
+- `_fetch_url`: HTTP 404 → `SymbolNotFoundError`. Other HTTP errors → `ProviderUnavailableError` (unchanged).
+- `get_historical_bars`: raises `SymbolNotFoundError` when no results returned after pagination.
+- `get_latest_snapshot`: raises `SymbolNotFoundError` when `ticker` is None in Polygon response.
+- `MarketDataService.historical_bars` / `latest_snapshot`: re-raise `SymbolNotFoundError` (not caught → no fallback).
+- `_workflow_bars` catches `SymbolNotFoundError` → HTTP 400 `{ "error": "symbol_not_found", "message": "..." }`.
+
+**Fix 2 — Index symbol normalization (`market_data.py`)**
+- `INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP"}` constant.
+- `normalize_polygon_ticker(symbol)` helper — maps known indices to `I:{symbol}`, passes others unchanged.
+- Applied in `get_historical_bars` and `get_latest_snapshot` before building Polygon URL paths.
+
+**7 new tests → 158 total**: normalize_polygon_ticker, index ticker URL paths, SymbolNotFoundError propagation, full 400 route test.
+
+### Completed (admin hardening pass 2 — 2026-04-16)
+
+**Fix 1 — Sign-up error boundary**
+- `apps/web/app/sign-up/[[...sign-up]]/error.tsx` — route-level error boundary with "Try again" + "Go to sign in" links
+- `apps/web/app/global-error.tsx` — root-level global error boundary with full `<html>` wrapper
+
+**Fix 2 — Unsuspend / re-approve (`admin.py`, `[userId]/unsuspend/route.ts`)**
+- `POST /admin/users/{user_id}/unsuspend` — sets status → approved; 409 if self; 404 if not found
+- `approve_user` already handles rejected → approved; both flows covered
+
+**Fix 3 — Hard delete user (`admin.py`, `repositories.py`, `[userId]/route.ts`)**
+- `DELETE /admin/users/{user_id}` — 409 if self, 404 if not found; removes local DB record permanently
+
+**Fix 4 — Force re-login via Clerk session invalidation (`admin.py`, `[userId]/force-password-reset/route.ts`)**
+- `POST /admin/users/{user_id}/force-password-reset` — calls Clerk `DELETE /v1/users/{clerk_id}/sessions`; guards against invalid IDs, missing key, network failure (502)
+
+**Fix 5 — Status-aware action matrix (`admin-users-panel.tsx`)**
+- `approved`: Suspend + role toggle in row; Force re-login + Delete in expanded row
+- `suspended`: Unsuspend in row; Force re-login + Delete in expanded row
+- `rejected`: Approve in row; Delete in expanded row
+- `pending`: Approve + Reject in row; Delete in expanded row
+- Own row: all mutating actions hidden with tooltip
+
+**New proxy routes**: `[userId]/unsuspend/route.ts`
+
+**Backend tests (5 new → 151 total)**
+- `test_re_approve_suspended_user`, `test_re_approve_rejected_user`, `test_delete_user_scoped_to_admin`, `test_delete_user_cannot_target_self`, `test_force_relogin_calls_clerk_session_invalidation`
 
 ### Completed (transactional email polish — 2026-04-15)
 

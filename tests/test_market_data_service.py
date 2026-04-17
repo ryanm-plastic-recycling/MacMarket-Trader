@@ -10,9 +10,13 @@ from macmarket_trader.api.routes import admin as admin_routes
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.market_data import (
     AlpacaMarketDataProvider,
+    INDEX_SYMBOLS,
     MarketDataService,
     MarketProviderHealth,
     PolygonMarketDataProvider,
+    SymbolNotFoundError,
+    normalize_polygon_ticker,
+    ProviderUnavailableError,
 )
 
 
@@ -194,6 +198,347 @@ def test_provider_health_reports_blocked_workflows_when_probe_fails_and_demo_fal
     market_entry = next(item for item in payload["providers"] if item["provider"] == "market_data")
     assert market_entry["workflow_execution_mode"] == "blocked"
     assert "blocked" in market_entry["operational_impact"].lower()
+
+
+def test_normalize_polygon_ticker_maps_index_symbols() -> None:
+    # Every known index should get the I: prefix
+    for sym in INDEX_SYMBOLS:
+        assert normalize_polygon_ticker(sym) == f"I:{sym}"
+    # Case-insensitive input
+    assert normalize_polygon_ticker("spx") == "I:SPX"
+    assert normalize_polygon_ticker("vix") == "I:VIX"
+    assert normalize_polygon_ticker("oex") == "I:OEX"
+    # Equity symbols pass through unchanged
+    assert normalize_polygon_ticker("AAPL") == "AAPL"
+    assert normalize_polygon_ticker("msft") == "MSFT"
+    assert normalize_polygon_ticker("SPY") == "SPY"
+
+
+def test_polygon_historical_bars_uses_normalized_ticker(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    captured_paths: list[str] = []
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        captured_paths.append(path)
+        return {
+            "results": [
+                {"t": 1775088000000, "o": 5200.0, "h": 5210.0, "l": 5190.0, "c": 5205.0, "v": 1_000_000},
+            ]
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+    bars = provider.fetch_historical_bars(symbol="SPX", timeframe="1D", limit=1)
+
+    assert len(bars) == 1
+    assert any("I:SPX" in p for p in captured_paths), f"Expected I:SPX in path, got: {captured_paths}"
+
+
+def test_polygon_snapshot_uses_normalized_ticker(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    captured_paths: list[str] = []
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        captured_paths.append(path)
+        return {
+            "ticker": {
+                "day": {"o": 5200.0, "h": 5210.0, "l": 5190.0, "c": 5205.0, "v": 500_000, "t": 1775174340000},
+                "prevDay": {"c": 5195.0},
+                "lastTrade": {"p": 5206.0, "t": 1775174345000},
+            }
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+    snapshot = provider.fetch_latest_snapshot(symbol="VIX", timeframe="1D")
+
+    assert snapshot.symbol == "VIX"
+    assert any("I:VIX" in p for p in captured_paths), f"Expected I:VIX in path, got: {captured_paths}"
+
+
+def test_symbol_not_found_raised_when_polygon_returns_empty_results(monkeypatch) -> None:
+    import pytest
+
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        return {"resultsCount": 0, "results": []}
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+
+    with pytest.raises(SymbolNotFoundError):
+        provider.fetch_historical_bars(symbol="FAKE", timeframe="1D", limit=5)
+
+
+def test_symbol_not_found_raised_when_polygon_snapshot_missing(monkeypatch) -> None:
+    import pytest
+
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        return {"ticker": None, "status": "OK"}
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+
+    with pytest.raises(SymbolNotFoundError):
+        provider.fetch_latest_snapshot(symbol="FAKE", timeframe="1D")
+
+
+def test_market_data_service_propagates_symbol_not_found(monkeypatch) -> None:
+    import pytest
+
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+
+    service = MarketDataService()
+
+    def fake_fetch(symbol: str, timeframe: str, limit: int) -> list:
+        raise SymbolNotFoundError(f"No data for {symbol}")
+
+    monkeypatch.setattr(service._provider, "fetch_historical_bars", fake_fetch)
+
+    with pytest.raises(SymbolNotFoundError):
+        service.historical_bars("FAKE", "1D", 10)
+
+
+def test_workflow_bars_returns_400_for_unknown_symbol(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+
+    from macmarket_trader.api.main import app
+    from macmarket_trader.api.routes import admin as admin_routes
+    from macmarket_trader.domain.models import AppUserModel
+    from macmarket_trader.storage.db import SessionLocal
+
+    class StubMarketDataService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):  # type: ignore[override]
+            raise SymbolNotFoundError(f"No data for {symbol}")
+
+        def latest_snapshot(self, symbol: str, timeframe: str):  # type: ignore[override]
+            from macmarket_trader.data.providers.market_data import MarketSnapshot
+            return MarketSnapshot(
+                symbol=symbol, timeframe=timeframe,
+                as_of=datetime(2026, 4, 2, tzinfo=UTC),
+                open=100, high=101, low=99, close=100.5, volume=1000,
+                source="fallback", fallback_mode=True,
+            )
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data", mode="fallback", status="warning",
+                details="stub", configured=False, feed="none", sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", False)
+    monkeypatch.setattr(settings, "environment", "test")
+
+    client = TestClient(app)
+    client.get("/user/me", headers={"Authorization": "Bearer admin-token"})
+    with SessionLocal() as session:
+        admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_admin")).scalar_one()
+        admin.app_role = "admin"
+        admin.approval_status = "approved"
+        admin.mfa_enabled = True
+        session.commit()
+    client.get("/user/me", headers={"Authorization": "Bearer user-token"})
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_user")).scalar_one()
+        user.approval_status = "approved"
+        session.commit()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "FAKE"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["detail"]["error"] == "symbol_not_found"
+    assert "FAKE" in payload["detail"]["message"]
+
+
+def test_options_chain_preview_returns_calls_and_puts(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        assert path == "/v3/reference/options/contracts"
+        assert query["underlying_ticker"] == "AAPL"
+        return {
+            "results": [
+                {"contract_type": "call", "strike_price": 190.0, "expiration_date": "2026-05-16", "underlying_ticker": "AAPL"},
+                {"contract_type": "call", "strike_price": 195.0, "expiration_date": "2026-05-16", "underlying_ticker": "AAPL"},
+                {"contract_type": "put", "strike_price": 185.0, "expiration_date": "2026-05-16", "underlying_ticker": "AAPL"},
+                {"contract_type": "put", "strike_price": 180.0, "expiration_date": "2026-05-16", "underlying_ticker": "AAPL"},
+            ],
+            "status": "OK",
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+    result = provider.fetch_options_chain_preview(symbol="AAPL")
+
+    assert result["underlying"] == "AAPL"
+    assert result["expiry"] == "2026-05-16"
+    assert result["source"] == "polygon_options_basic"
+    assert isinstance(result["calls"], list)
+    assert len(result["calls"]) == 2
+    assert result["calls"][0]["strike"] == 190.0
+    assert result["calls"][0]["last_price"] is None
+    assert isinstance(result["puts"], list)
+    assert len(result["puts"]) == 2
+    assert "reason" not in result or result.get("reason") is None
+
+
+def test_options_chain_preview_null_when_no_results(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        return {"results": [], "status": "OK"}
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+    result = provider.fetch_options_chain_preview(symbol="FAKE")
+
+    assert result["calls"] is None
+    assert result["puts"] is None
+    assert "reason" in result
+    assert result["reason"]
+
+
+def test_options_chain_preview_null_when_provider_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        raise ProviderUnavailableError("Connection refused")
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+    result = provider.fetch_options_chain_preview(symbol="AAPL")
+
+    assert result["calls"] is None
+    assert result["puts"] is None
+    assert "reason" in result
+
+
+def test_analysis_setup_includes_options_chain_preview_for_options_mode(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+
+    from macmarket_trader.api.main import app
+    from macmarket_trader.api.routes import admin as admin_routes
+    from macmarket_trader.domain.models import AppUserModel
+    from macmarket_trader.storage.db import SessionLocal
+
+    chain_preview = {
+        "underlying": "AAPL",
+        "expiry": "2026-05-16",
+        "calls": [{"strike": 190.0, "expiry": "2026-05-16", "last_price": None, "volume": None}],
+        "puts": [{"strike": 185.0, "expiry": "2026-05-16", "last_price": None, "volume": None}],
+        "data_as_of": "2026-04-16",
+        "source": "polygon_options_basic",
+    }
+
+    class StubMarketDataService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):  # type: ignore[override]
+            from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "fallback", True
+
+        def latest_snapshot(self, symbol: str, timeframe: str):  # type: ignore[override]
+            from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):  # type: ignore[override]
+            return chain_preview
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data", mode="fallback", status="warning",
+                details="stub", configured=False, feed="none", sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", False)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", True)
+    monkeypatch.setattr(settings, "environment", "test")
+
+    client = TestClient(app)
+    client.get("/user/me", headers={"Authorization": "Bearer user-token"})
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_user")).scalar_one()
+        user.approval_status = "approved"
+        session.commit()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "AAPL", "market_mode": "options"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "options_chain_preview" in payload
+    preview = payload["options_chain_preview"]
+    assert preview is not None
+    assert preview["underlying"] == "AAPL"
+    assert preview["expiry"] == "2026-05-16"
+    assert preview["source"] == "polygon_options_basic"
+    assert len(preview["calls"]) == 1
+    assert len(preview["puts"]) == 1
+
+
+def test_analysis_setup_options_chain_preview_none_when_provider_not_polygon(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+
+    from macmarket_trader.api.main import app
+    from macmarket_trader.api.routes import admin as admin_routes
+    from macmarket_trader.domain.models import AppUserModel
+    from macmarket_trader.storage.db import SessionLocal
+
+    class StubMarketDataService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):  # type: ignore[override]
+            from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "fallback", True
+
+        def latest_snapshot(self, symbol: str, timeframe: str):  # type: ignore[override]
+            from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):  # type: ignore[override]
+            return None  # Non-Polygon provider
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data", mode="fallback", status="warning",
+                details="stub", configured=False, feed="none", sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", False)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", True)
+    monkeypatch.setattr(settings, "environment", "test")
+
+    client = TestClient(app)
+    client.get("/user/me", headers={"Authorization": "Bearer user-token"})
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_user")).scalar_one()
+        user.approval_status = "approved"
+        session.commit()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "AAPL", "market_mode": "options"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "options_chain_preview" in payload
+    assert payload["options_chain_preview"] is None
 
 
 def test_provider_health_reports_demo_fallback_when_probe_fails_and_demo_fallback_enabled(monkeypatch) -> None:

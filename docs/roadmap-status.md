@@ -17,7 +17,92 @@ The defensible edge is:
 
 ## Current Status
 MacMarket-Trader has completed **Phases 1–6** and post-launch polish including email logo URL config, Windows Task Scheduler setup, and branded From display name for all outbound emails.
-The system is verified: 141 backend tests passing, TypeScript clean.
+The system is verified: 163 backend tests passing, TypeScript clean.
+
+### 2026-04-16 Polygon options chain preview + index symbol fixes
+
+**Fix 3 — Options chain preview for research-preview mode (`market_data.py`, `admin.py`, `analysis/page.tsx`)**
+- `PolygonMarketDataProvider.fetch_options_chain_preview(symbol, limit=50)` — calls `GET /v3/reference/options/contracts` with `sort=expiration_date&order=asc&expired=false`. Finds nearest expiry, returns up to 5 calls and 5 puts `{ strike, expiry, last_price: null, volume: null }`. On 404/empty/unavailable returns `{ reason: "...", calls: null, puts: null }`.
+- `MarketDataService.options_chain_preview(symbol, limit)` — delegates to Polygon provider; returns `None` for non-Polygon providers (fallback/Alpaca).
+- `analysis_setup` in `admin.py`: when `market_mode == OPTIONS`, adds `options_chain_preview` key to payload (either chain dict or `None`).
+- Frontend `SetupPayload` type updated with `options_chain_preview` field.
+- Analysis page: "Options chain preview" card rendered when mode is options — shows calls/puts table or graceful reason message. Uses existing `op-card` + `op-table` styling; no new CSS.
+
+**Fix 2 (addendum) — OEX added to INDEX_SYMBOLS**
+- `INDEX_SYMBOLS` now includes `{"SPX", "NDX", "RUT", "VIX", "DJI", "COMP", "OEX"}`.
+
+**Backend tests (5 new → 163 total)**
+- `test_options_chain_preview_returns_calls_and_puts`: mock reference endpoint; verifies `expiry`, `source`, call/put structures.
+- `test_options_chain_preview_null_when_no_results`: empty results → `calls: null`, `puts: null`, `reason` set.
+- `test_options_chain_preview_null_when_provider_unavailable`: `ProviderUnavailableError` → graceful reason dict.
+- `test_analysis_setup_includes_options_chain_preview_for_options_mode`: full route test confirming `options_chain_preview` in payload with correct shape.
+- `test_analysis_setup_options_chain_preview_none_when_provider_not_polygon`: non-Polygon stub returns `null`; payload key present but value is `null`.
+
+163 pytest passing. `npx tsc --noEmit` clean.
+
+### 2026-04-16 Polygon symbol handling fixes
+
+**Fix 1 — Distinguish "provider down" from "symbol not found" (`market_data.py`, `admin.py`)**
+- `SymbolNotFoundError(Exception)` added to `market_data.py` — separate from `ProviderUnavailableError`.
+- `PolygonMarketDataProvider._fetch_url`: HTTP 404 now raises `SymbolNotFoundError` (not `ProviderUnavailableError`).
+- `PolygonMarketDataProvider.get_historical_bars`: raises `SymbolNotFoundError` when results count == 0 after pagination.
+- `PolygonMarketDataProvider.get_latest_snapshot`: raises `SymbolNotFoundError` when `ticker` is None.
+- `MarketDataService.historical_bars` / `latest_snapshot`: re-raise `SymbolNotFoundError` instead of falling back to deterministic bars.
+- `_workflow_bars` in `admin.py`: catches `SymbolNotFoundError`, returns HTTP 400 `{ "error": "symbol_not_found", "message": "No data found for symbol {symbol}. Verify the ticker is correct and supported." }`.
+
+**Fix 2 — Index symbol support (`market_data.py`)**
+- `INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP"}` — known indices requiring Polygon `I:` prefix.
+- `normalize_polygon_ticker(symbol)` — maps index symbols to `I:{symbol}`, passes all others unchanged; case-insensitive.
+- Applied in `get_historical_bars` and `get_latest_snapshot` before constructing Polygon URLs.
+
+**Backend tests (7 new → 158 total)**
+- `test_normalize_polygon_ticker_maps_index_symbols`: all INDEX_SYMBOLS get prefix; equity symbols pass through.
+- `test_polygon_historical_bars_uses_normalized_ticker`: SPX request sends `I:SPX` in URL path.
+- `test_polygon_snapshot_uses_normalized_ticker`: VIX snapshot request sends `I:VIX` in URL path.
+- `test_symbol_not_found_raised_when_polygon_returns_empty_results`: empty results → `SymbolNotFoundError`.
+- `test_symbol_not_found_raised_when_polygon_snapshot_missing`: null ticker → `SymbolNotFoundError`.
+- `test_market_data_service_propagates_symbol_not_found`: service does not fall back on `SymbolNotFoundError`.
+- `test_workflow_bars_returns_400_for_unknown_symbol`: full route test via `TestClient`; confirms 400 with `error: symbol_not_found`.
+
+158 pytest passing. `npx tsc --noEmit` clean (no frontend changes).
+
+### 2026-04-16 Admin user management hardening pass 2
+
+Five more admin hardening fixes across backend, proxy routes, and UI.
+
+**Fix 1 — Sign-up error boundary**
+- `apps/web/app/sign-up/[[...sign-up]]/error.tsx` — route-level boundary with "Try again" + "Go to sign in" links; logs `error.digest`.
+- `apps/web/app/global-error.tsx` — root-level boundary with full `<html>` wrapper for truly unrecoverable errors.
+
+**Fix 2 — Unsuspend / re-approve (`admin.py`, `[userId]/unsuspend/route.ts`, `admin-users-panel.tsx`)**
+- `POST /admin/users/{user_id}/unsuspend` — sets `approval_status → approved`; 409 if targeting self.
+- Frontend: `apps/web/app/api/admin/users/[userId]/unsuspend/route.ts` POST proxy.
+- `approve_user` already accepts rejected users; both paths covered.
+
+**Fix 3 — Hard delete user (`admin.py`, `repositories.py`, `[userId]/route.ts`, `admin-users-panel.tsx`)**
+- `DELETE /admin/users/{user_id}` — 409 if self, 404 if not found; removes local DB record.
+- `UserRepository.delete_user()` + `get_by_id()` added.
+- Frontend: `apps/web/app/api/admin/users/[userId]/route.ts` DELETE proxy.
+- UI: "Delete" button in expanded row with two-step inline confirm ("Permanently delete {name}? This cannot be undone.").
+
+**Fix 4 — Force re-login via Clerk session invalidation (`admin.py`, `[userId]/force-password-reset/route.ts`, `admin-users-panel.tsx`)**
+- `POST /admin/users/{user_id}/force-password-reset` — calls `DELETE /v1/users/{clerk_id}/sessions`; 409 if self or no active Clerk identity; 502 on Clerk failure.
+- Frontend: `apps/web/app/api/admin/users/[userId]/force-password-reset/route.ts` POST proxy.
+- UI: "Force re-login" button in expanded row (visible for approved/suspended users only).
+
+**Fix 5 — Status-aware action matrix (`admin-users-panel.tsx`)**
+- Main row actions: `approved` → Suspend + Make admin/user; `suspended` → Unsuspend; `rejected` / `pending` → Approve; `pending` → +Reject.
+- Expanded row actions: Force re-login (approved/suspended only) + Delete with two-step confirm (all statuses).
+- Own row: mutating actions hidden with `title="Cannot modify your own account"` tooltip.
+
+**Backend tests (5 new → 151 total)**
+- `test_re_approve_suspended_user`: suspend then unsuspend via `/unsuspend`; access restored.
+- `test_re_approve_rejected_user`: rejected → approved via standard `/approve`; access granted.
+- `test_delete_user_scoped_to_admin`: non-admin blocked (403), admin succeeds, second delete 404.
+- `test_delete_user_cannot_target_self`: 409 on self-delete.
+- `test_force_relogin_calls_clerk_session_invalidation`: monkeypatches `httpx.delete`; verifies correct Clerk URL called.
+
+151 pytest passing. `npx tsc --noEmit` clean.
 
 ### 2026-04-16 Admin user management hardening pass
 

@@ -566,3 +566,126 @@ def test_suspended_user_blocked_from_console_routes() -> None:
     # Suspended user is blocked from protected routes (same as pending)
     blocked = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
     assert blocked.status_code == 403
+
+
+def test_re_approve_suspended_user() -> None:
+    _seed_mock_user('user-token')
+    _seed_admin()
+
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user.approval_status = 'suspended'
+        user_id = user.id
+        session.commit()
+
+    # Blocked while suspended
+    blocked = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert blocked.status_code == 403
+
+    # Unsuspend via dedicated endpoint
+    resp = client.post(f'/admin/users/{user_id}/unsuspend', headers={'Authorization': 'Bearer admin-token'})
+    assert resp.status_code == 200
+    assert resp.json()['approval_status'] == 'approved'
+
+    # Access restored
+    ok = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert ok.status_code == 200
+
+
+def test_re_approve_rejected_user() -> None:
+    _seed_mock_user('user-token')
+    _seed_admin()
+
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user.approval_status = 'rejected'
+        user_id = user.id
+        session.commit()
+
+    # Approve a previously rejected user using the standard approve endpoint
+    resp = client.post(
+        f'/admin/users/{user_id}/approve',
+        headers={'Authorization': 'Bearer admin-token'},
+        json={'user_id': user_id, 'note': 're-approved after rejection'},
+    )
+    assert resp.status_code == 200
+    assert resp.json()['approval_status'] == 'approved'
+
+    # Access is now granted
+    ok = client.get('/user/dashboard', headers={'Authorization': 'Bearer user-token'})
+    assert ok.status_code == 200
+
+
+def test_delete_user_scoped_to_admin() -> None:
+    _seed_admin()
+    _seed_mock_user('user-token')
+
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user_id = user.id
+        user.approval_status = 'approved'
+        user.app_role = 'user'
+        session.commit()
+
+    # Non-admin cannot delete
+    denied = client.delete(f'/admin/users/{user_id}', headers={'Authorization': 'Bearer user-token'})
+    assert denied.status_code == 403
+
+    # Admin can delete
+    ok = client.delete(f'/admin/users/{user_id}', headers={'Authorization': 'Bearer admin-token'})
+    assert ok.status_code == 200
+    assert ok.json()['deleted'] is True
+
+    # Second delete returns 404
+    not_found = client.delete(f'/admin/users/{user_id}', headers={'Authorization': 'Bearer admin-token'})
+    assert not_found.status_code == 404
+
+
+def test_delete_user_cannot_target_self() -> None:
+    admin_id = _seed_admin()
+
+    resp = client.delete(f'/admin/users/{admin_id}', headers={'Authorization': 'Bearer admin-token'})
+    assert resp.status_code == 409
+
+
+def test_force_relogin_calls_clerk_session_invalidation(monkeypatch) -> None:
+    import httpx
+
+    _seed_admin()
+    _seed_mock_user('user-token')
+
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
+        user_id = user.id
+        user.external_auth_user_id = 'user_clerk_abc123'
+        user.approval_status = 'approved'
+        session.commit()
+
+    from macmarket_trader.api.routes import admin as admin_routes
+    from macmarket_trader.config import settings
+
+    monkeypatch.setattr(settings, 'clerk_secret_key', 'sk_test_fake')
+
+    invalidated_urls: list[str] = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            pass
+
+    def fake_delete(url: str, **_kwargs: object) -> FakeResponse:
+        invalidated_urls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, 'delete', fake_delete)
+
+    resp = client.post(
+        f'/admin/users/{user_id}/force-password-reset',
+        headers={'Authorization': 'Bearer admin-token'},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload['sessions_invalidated'] is True
+    assert payload['clerk_id'] == 'user_clerk_abc123'
+    assert any('user_clerk_abc123' in url for url in invalidated_urls)

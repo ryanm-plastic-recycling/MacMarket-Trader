@@ -63,6 +63,15 @@ type SetupPayload = {
     status: "computed" | "blocked" | "omitted";
     reason?: string | null;
   };
+  options_chain_preview?: {
+    underlying: string;
+    expiry?: string | null;
+    calls?: Array<{ strike: number | null; expiry: string | null; last_price: number | null; volume: number | null }> | null;
+    puts?: Array<{ strike: number | null; expiry: string | null; last_price: number | null; volume: number | null }> | null;
+    data_as_of?: string | null;
+    source?: string | null;
+    reason?: string | null;
+  } | null;
 };
 
 const STORAGE_KEY = "macmarket-indicators-analysis";
@@ -414,6 +423,67 @@ export default function Page() {
         ) : <div>Expected move data unavailable for this setup.</div>}
       </Card>
     </div>
+
+    {appliedMarketMode === "options" && setup?.options_chain_preview !== undefined ? (
+      <Card title="Options chain preview">
+        {setup.options_chain_preview === null || setup.options_chain_preview?.reason ? (
+          <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
+            {setup.options_chain_preview?.reason ?? "Options chain data unavailable — Polygon options plan not configured."}
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: "0.85rem", marginBottom: 8 }}>
+              <strong>Underlying:</strong> {setup.options_chain_preview.underlying}
+              {setup.options_chain_preview.expiry ? <> &nbsp; <strong>Nearest expiry:</strong> {setup.options_chain_preview.expiry}</> : null}
+              {setup.options_chain_preview.source ? <> &nbsp; <span style={{ color: "var(--op-muted, #7a8999)" }}>({setup.options_chain_preview.source})</span></> : null}
+            </div>
+            <div className="op-grid-2" style={{ gap: 12 }}>
+              <div>
+                <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 4 }}>Calls</div>
+                {setup.options_chain_preview.calls && setup.options_chain_preview.calls.length > 0 ? (
+                  <table className="op-table">
+                    <thead><tr><th>strike</th><th>expiry</th><th>last</th><th>volume</th></tr></thead>
+                    <tbody>
+                      {setup.options_chain_preview.calls.map((c, i) => (
+                        <tr key={i}>
+                          <td>{c.strike ?? "—"}</td>
+                          <td>{c.expiry ?? "—"}</td>
+                          <td>{c.last_price ?? "—"}</td>
+                          <td>{c.volume ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>No call contracts returned.</div>}
+              </div>
+              <div>
+                <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 4 }}>Puts</div>
+                {setup.options_chain_preview.puts && setup.options_chain_preview.puts.length > 0 ? (
+                  <table className="op-table">
+                    <thead><tr><th>strike</th><th>expiry</th><th>last</th><th>volume</th></tr></thead>
+                    <tbody>
+                      {setup.options_chain_preview.puts.map((p, i) => (
+                        <tr key={i}>
+                          <td>{p.strike ?? "—"}</td>
+                          <td>{p.expiry ?? "—"}</td>
+                          <td>{p.last_price ?? "—"}</td>
+                          <td>{p.volume ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>No put contracts returned.</div>}
+              </div>
+            </div>
+            {setup.options_chain_preview.data_as_of ? (
+              <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
+                Reference data as of {setup.options_chain_preview.data_as_of}. Research preview — no execution support.
+              </div>
+            ) : null}
+          </>
+        )}
+      </Card>
+    ) : null}
 
     <Card title="Workbench chart">
       {!isLoaded || workbenchState === "auth_initializing"

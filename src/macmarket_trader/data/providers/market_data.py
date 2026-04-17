@@ -20,6 +20,22 @@ class ProviderUnavailableError(Exception):
     """Raised when the configured market data provider cannot be reached or returns an error."""
 
 
+class SymbolNotFoundError(Exception):
+    """Raised when the provider has no data for the requested symbol (not a connectivity failure)."""
+
+
+# Polygon uses the I: prefix for index tickers.
+INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP", "OEX"}
+
+
+def normalize_polygon_ticker(symbol: str) -> str:
+    """Map known index symbols to their Polygon I: prefixed form; pass all others through unchanged."""
+    upper = symbol.upper()
+    if upper in INDEX_SYMBOLS:
+        return f"I:{upper}"
+    return upper
+
+
 @dataclass
 class MarketSnapshot:
     symbol: str
@@ -281,6 +297,8 @@ class PolygonMarketDataProvider(MarketDataProvider):
                 self._last_success_at = datetime.now(tz=UTC)
                 return payload
         except HTTPError as exc:
+            if exc.code == 404:
+                raise SymbolNotFoundError(f"Polygon returned 404 — ticker not found") from exc
             raise ProviderUnavailableError(f"Polygon HTTP {exc.code}: {exc.reason}") from exc
         except URLError as exc:
             raise ProviderUnavailableError(f"Polygon connection error: {exc.reason}") from exc
@@ -324,9 +342,10 @@ class PolygonMarketDataProvider(MarketDataProvider):
         )
 
     def get_historical_bars(self, symbol: str, timeframe: str, limit: int = 120) -> list[Bar]:
+        ticker = normalize_polygon_ticker(symbol)
         multiplier, timespan, from_ts, to_ts = self._map_polygon_range(timeframe=timeframe, limit=limit)
         payload = self._request_json(
-            f"/v2/aggs/ticker/{symbol.upper()}/range/{multiplier}/{timespan}/{from_ts}/{to_ts}",
+            f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_ts}/{to_ts}",
             {"adjusted": "true", "sort": "asc", "limit": str(limit)},
         )
         results: list[dict[str, Any]] = list(payload.get("results") or [])
@@ -338,19 +357,22 @@ class PolygonMarketDataProvider(MarketDataProvider):
             sep = "&" if "?" in next_url else "?"
             payload = self._fetch_url(f"{next_url}{sep}apiKey={self.api_key}")
             results.extend(payload.get("results") or [])
+        if not results:
+            raise SymbolNotFoundError(f"No bar data returned for symbol {symbol}")
         return [self._normalize_polygon_bar(item) for item in results][-limit:]
 
     def fetch_historical_bars(self, symbol: str, timeframe: str, limit: int) -> list[Bar]:
         return self.get_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
 
     def get_latest_snapshot(self, symbol: str, timeframe: str = "1D") -> MarketSnapshot:
+        ticker_param = normalize_polygon_ticker(symbol)
         payload = self._request_json(
-            f"/v2/snapshot/locale/us/markets/stocks/tickers/{symbol.upper()}",
+            f"/v2/snapshot/locale/us/markets/stocks/tickers/{ticker_param}",
             {},
         )
         ticker = payload.get("ticker")
         if not ticker:
-            raise ValueError(f"No snapshot returned for {symbol}")
+            raise SymbolNotFoundError(f"No snapshot returned for symbol {symbol}")
 
         day = ticker.get("day") or {}
         prev_day = ticker.get("prevDay") or {}
@@ -378,6 +400,73 @@ class PolygonMarketDataProvider(MarketDataProvider):
 
     def fetch_latest_snapshot(self, symbol: str, timeframe: str) -> MarketSnapshot:
         return self.get_latest_snapshot(symbol=symbol, timeframe=timeframe)
+
+    def fetch_options_chain_preview(self, symbol: str, limit: int = 50) -> dict[str, Any]:
+        """Fetch options contract reference data for research-preview mode.
+
+        Uses the Polygon /v3/reference/options/contracts endpoint (Options Basic plan).
+        Returns calls and puts for the nearest expiry. No greeks or execution data.
+        """
+        try:
+            payload = self._request_json(
+                "/v3/reference/options/contracts",
+                {
+                    "underlying_ticker": symbol.upper(),
+                    "limit": str(limit),
+                    "sort": "expiration_date",
+                    "order": "asc",
+                    "expired": "false",
+                },
+            )
+        except SymbolNotFoundError:
+            return {"underlying": symbol, "reason": f"No options contracts found for {symbol}", "calls": None, "puts": None}
+        except ProviderUnavailableError as exc:
+            return {"underlying": symbol, "reason": f"Options endpoint unavailable: {exc}", "calls": None, "puts": None}
+        except Exception as exc:
+            return {"underlying": symbol, "reason": f"Options fetch failed: {exc}", "calls": None, "puts": None}
+
+        results: list[dict[str, Any]] = payload.get("results") or []
+        if not results:
+            return {
+                "underlying": symbol,
+                "reason": "No options contracts returned for this symbol",
+                "calls": None,
+                "puts": None,
+            }
+
+        today = date.today().isoformat()
+        upcoming = [r for r in results if str(r.get("expiration_date", "")) >= today]
+        if not upcoming:
+            upcoming = results
+
+        nearest_expiry = min(
+            (str(r["expiration_date"]) for r in upcoming if r.get("expiration_date")),
+            default=None,
+        )
+        if not nearest_expiry:
+            return {"underlying": symbol, "reason": "Could not determine nearest expiry date", "calls": None, "puts": None}
+
+        expiry_contracts = [r for r in upcoming if r.get("expiration_date") == nearest_expiry]
+
+        def _row(r: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "strike": r.get("strike_price"),
+                "expiry": r.get("expiration_date"),
+                "last_price": None,
+                "volume": None,
+            }
+
+        calls = [_row(r) for r in expiry_contracts if r.get("contract_type") == "call"][:5]
+        puts = [_row(r) for r in expiry_contracts if r.get("contract_type") == "put"][:5]
+
+        return {
+            "underlying": symbol,
+            "expiry": nearest_expiry,
+            "calls": calls if calls else None,
+            "puts": puts if puts else None,
+            "data_as_of": today,
+            "source": "polygon_options_basic",
+        }
 
     def get_provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
         return self.health_check(sample_symbol=sample_symbol)
@@ -457,6 +546,8 @@ class MarketDataService:
             else:
                 source = self._provider.name if self._provider.name != "fallback" else "fallback"
                 result = (bars, source, self._provider.name == "fallback")
+        except SymbolNotFoundError:
+            raise
         except Exception:
             result = self._fallback_result(symbol=symbol, timeframe=timeframe, limit=limit)
 
@@ -471,11 +562,19 @@ class MarketDataService:
 
         try:
             snapshot = self._provider.fetch_latest_snapshot(symbol=symbol, timeframe=timeframe)
+        except SymbolNotFoundError:
+            raise
         except Exception:
             snapshot = self._fallback_provider.fetch_latest_snapshot(symbol=symbol, timeframe=timeframe)
 
         self._latest_cache.set(cache_key, snapshot, settings.market_data_latest_cache_ttl_seconds)
         return snapshot
+
+    def options_chain_preview(self, symbol: str, limit: int = 50) -> dict[str, Any] | None:
+        """Returns options chain preview dict if provider is Polygon; None otherwise."""
+        if not isinstance(self._provider, PolygonMarketDataProvider):
+            return None
+        return self._provider.fetch_options_chain_preview(symbol=symbol, limit=limit)
 
     def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
         health = self._provider.health_check(sample_symbol=sample_symbol)

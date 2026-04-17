@@ -744,6 +744,15 @@ class UserRepository:
         with self.session_factory() as session:
             return session.get(AppUserModel, user_id)
 
+    def delete_user(self, user_id: int) -> bool:
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                return False
+            session.delete(user)
+            session.commit()
+            return True
+
     def set_app_role(self, *, user_id: int, role: str) -> AppUserModel:
         with self.session_factory() as session:
             user = session.get(AppUserModel, user_id)

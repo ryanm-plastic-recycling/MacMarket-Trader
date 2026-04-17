@@ -458,18 +458,28 @@ All 7 user-scoped entities (recommendations, replay runs, orders, paper position
 ## 11) User management — admin actions reference
 
 The following admin actions are available from `/admin/users` and `/admin/pending-users`.
-All actions are scoped to admins only and do not touch Clerk identity (local DB only).
+All actions are scoped to admins only. Admins cannot modify their own account from these panels.
 
-### Approve a pending user
+### Status-aware action matrix
 
-**When:** A new user signs up and appears in the "Pending users" queue.
-**How:** Click **Approve** on `/admin/pending-users`. Sends a branded approval email.
+| Approval status | Main-row actions | Expanded-row actions |
+|---|---|---|
+| `pending` | Approve, Reject | Delete |
+| `approved` | Suspend, Make admin/user | Force re-login, Delete |
+| `suspended` | Unsuspend | Force re-login, Delete |
+| `rejected` | Approve | Delete |
+| Own row | — (all disabled) | — (all disabled) |
+
+### Approve a pending or rejected user
+
+**When:** A new user signs up and appears in the "Pending users" queue, or you want to reinstate a rejected user.
+**How:** Click **Approve** on `/admin/pending-users` (pending) or on the user row in `/admin/users` (rejected/pending). Sends a branded approval email.
 **Result:** `approval_status → approved`. User can access the console on next page load.
 
 ### Reject a user
 
 **When:** A user signed up but should not have access (wrong account, bad actor, etc.).
-**How:** Click **Reject** on `/admin/pending-users`. Sends a branded rejection email.
+**How:** Click **Reject** on `/admin/pending-users` or on the user row. Sends a branded rejection email.
 **Result:** `approval_status → rejected`. User is redirected to `/access-denied`.
 
 ### Send an invite
@@ -493,7 +503,7 @@ All actions are scoped to admins only and do not touch Clerk identity (local DB 
 ### Change a user's role
 
 **When:** You need to promote a user to admin or demote an admin to user.
-**How:** Click **Make admin** or **Make user** on the user row in `/admin/users`.
+**How:** Click **Make admin** or **Make user** on the user row in `/admin/users` (visible for approved users).
 **Restriction:** Cannot change your own role.
 **Result:** `app_role` updated in local DB. Takes effect on next protected action.
 
@@ -503,12 +513,33 @@ All actions are scoped to admins only and do not touch Clerk identity (local DB 
 **How:** Click **Suspend** → confirm inline on the user row in `/admin/users`.
 **Restriction:** Cannot suspend your own account.
 **Result:** `approval_status → suspended`. User is redirected to `/access-denied` on next page load.
-To restore access, use the Approve action on `/admin/pending-users` (re-approve the user).
+To restore access, use **Unsuspend**.
+
+### Unsuspend a user
+
+**When:** A suspended user's access should be restored.
+**How:** Click **Unsuspend** on the user row in `/admin/users`.
+**Restriction:** Cannot unsuspend your own account.
+**Result:** `approval_status → approved`. User can access the console on next page load.
+
+### Force re-login
+
+**When:** You need to immediately terminate all active sessions for a user (security incident, session anomaly, etc.).
+**How:** Expand the user row in `/admin/users` → click **Force re-login**.
+**Restriction:** Only available for users with an active Clerk identity (approved or suspended). Cannot target your own account.
+**Result:** Calls `DELETE /v1/users/{clerk_id}/sessions` against the Clerk API. All active sessions for that user are invalidated. The user must log in again on their next request. Requires `CLERK_SECRET_KEY` to be configured.
+
+### Hard delete a user
+
+**When:** A user record should be permanently removed from the local DB (test accounts, bad data, off-boarded users).
+**How:** Expand the user row in `/admin/users` → click **Delete** → confirm inline ("Permanently delete {name}? This cannot be undone.").
+**Restriction:** Cannot delete your own account.
+**Result:** Local `app_users` record is permanently deleted. Does not affect the Clerk identity — the user could re-register if invited again.
 
 ### Expand user detail row
 
 **How:** Click any user row in `/admin/users` to expand it.
-**Shows:** Email, display name, role, approval status, last seen, last auth, Clerk ID with "Copy user ID" button.
+**Shows:** Email, display name, role, approval status, last seen, last auth, Clerk ID with "Copy user ID" button, and the Force re-login / Delete actions.
 
 ---
 
