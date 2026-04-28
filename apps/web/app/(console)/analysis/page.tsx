@@ -379,9 +379,9 @@ export default function Page() {
           <label>Strategy</label>
           <select value={draftStrategy} onChange={(e) => setDraftStrategy(e.target.value)}>{strategiesForDraftMode.map((entry) => <option key={entry.strategy_id} value={entry.display_name}>{entry.display_name}</option>)}</select>
           {selectedStrategyEntry?.description ? (
-            <div style={{ marginTop: 4, fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)", lineHeight: 1.4 }}>
-              {selectedStrategyEntry.description}
-              {selectedStrategyEntry.regime_fit ? <span style={{ marginLeft: 6, opacity: 0.75 }}>· {selectedStrategyEntry.regime_fit}</span> : null}
+            <div data-testid="strategy-hint" style={{ marginTop: 4, fontSize: "12px", color: "var(--op-muted, #7a8999)", lineHeight: 1.4 }}>
+              <div>{selectedStrategyEntry.description}</div>
+              {selectedStrategyEntry.regime_fit ? <div style={{ marginTop: 2 }}>Best in: {selectedStrategyEntry.regime_fit}</div> : null}
             </div>
           ) : null}
         </div>

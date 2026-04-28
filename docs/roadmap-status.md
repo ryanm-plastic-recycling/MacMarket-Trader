@@ -16,8 +16,46 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader has completed **Phases 1–6** and post-launch polish, plus the **Phase 6 close-trade lifecycle UI** (open positions, close action, closed trades blotter).
-The system is verified: 173 backend tests passing, TypeScript clean, **74 vitest unit tests** (+15 from this pass), 17 Playwright e2e (all passing, no skips).
+MacMarket-Trader has completed **Phases 1–6** and post-launch polish. **Phase 5 is fully closed** (last gaps — strategy regime hints + role-conditional sidebar — landed this pass). **Phase 6 close-trade lifecycle is e2e-gated** end-to-end (open-positions list, inline close ticket, closed-trades blotter, lineage extension).
+The system is verified: 173 backend tests passing, TypeScript clean, 74 vitest unit tests, **26 Playwright e2e** (all passing, no skips).
+
+### 2026-04-28 Phase 5 final closeouts + Phase 6 close-flow e2e
+
+Three sections in one pass: role-conditional sidebar (real bug fix), strategy regime hints, and 9 new Playwright e2e tests gating the Phase 6 close lifecycle.
+
+**Section 1 — Role-conditional sidebar (`apps/web/components/console-shell.tsx`)**
+- Existing code already gated the Admin section on `appRole === "admin"` and started with `null`, but the resolution path was implicit: a 401/error left the prior role intact, and there was no explicit "fetch settled" signal to distinguish "still loading" from "loaded as non-admin."
+- Refactored to track both `appRole` and a `meChecked` boolean. The Admin section now renders only when `meChecked && appRole === "admin"` — a single derived `isAdmin` flag drives the conditional. On 401, network error, or any non-OK response, both `setAppRole(null)` and `setMeChecked(true)` fire (fail-closed: settled but not admin). During the in-flight initial fetch, `meChecked` is false so Admin is hidden — no flicker for non-admin users.
+
+**Section 2 — Strategy selector regime hints (`apps/web/app/(console)/analysis/page.tsx`)**
+- Hint block under the strategy `<select>` rewritten to spec: `description` on its own line, optional `regime_fit` rendered as a separate line prefixed `Best in: …` (was previously inline-appended after a middot).
+- Styling aligned to the work-order spec: `font-size: 12px`, `color: var(--op-muted, #7a8999)`, `lineHeight: 1.4`, no card chrome (it's an inline hint, not a panel). Added `data-testid="strategy-hint"` for future test addressability.
+- Updates on every strategy change without requiring a Refresh — `selectedStrategyEntry` is already a `useMemo` over `strategiesForDraftMode + draftStrategy`, so the hint follows the dropdown live.
+- Renders nothing when the registry entry has no `description` (no placeholder copy), per spec.
+
+**Section 3 — Phase 6 close-lifecycle e2e (`apps/web/tests/e2e/phase6-close-lifecycle.spec.ts`)** — 9 new tests, all passing on first run:
+
+1. *Open positions list renders after fill* — mounts `/orders?guided=1` with one mocked open position carrying full lineage; asserts Card heading, row data (symbol, `op-side-badge.is-long`, qty, avg entry, recommendation `<Link>`, Close button), and the Closed-trades empty-state copy.
+2. *Open positions empty state* — mocks empty positions list; asserts `"No open paper positions"` copy and zero Close buttons inside the Open positions card.
+3. *Close ticket opens inline below row* — clicks Close; asserts the ticket is a sibling row inside the same Card (not a modal), `mark_price` input defaults to `avg_entry_price.toFixed(2)`, reason `<select>` lists exactly the five spec'd options in order, Confirm + Cancel buttons present.
+4. *Cancel dismisses without POST* — uses a request-method counter on the close-route mock; asserts the POST count stays at 0 and the ticket disappears.
+5. *Close success refetches lists + surfaces realized PnL* — three counter-backed mocks (positions GET, trades GET, portfolio-summary GET); confirms close, asserts the InlineFeedback success message contains `+142.50`, asserts each counter increments past mount-only baseline.
+6. *Closed trade row appears after close* — sequenced trades mock returns `[]` initially and `[newTrade]` on the post-close refetch; asserts the closed-trades Card row populates with symbol, qty, `entry_price → exit_price`, color-coded realized PnL, hold duration (`2h 14m`), and reason.
+7. *Realized PnL color coding* — mocks one positive + one negative trade; asserts `toHaveCSS("color", "rgb(33, 192, 110)")` for the positive and `rgb(224, 122, 122)` for the negative (exact rgb equivalents of `#21c06e` / `#e07a7a` from `pnlColor`).
+8. *Workflow lineage card extension* — two orders + one matching open position + one matching closed trade; clicks each order row in turn; asserts the lineage card appends `↳ open position #{id}` for the open match and `↳ closed trade #{id} · realized {±N.NN}` for the closed match.
+9. *Close error surfaces InlineFeedback, ticket stays open* — mocks the close POST as 400 with `"Position already closed"`; asserts the error message renders, the ticket stays open (mark_price input + Confirm button still visible), and positions/trades GET counters do **not** increment past their pre-close values (no silent refetch on error).
+
+All 9 use the existing `beforeEach` catch-all + `/api/user/me` mock pattern and per-test `page.route` overrides — no new infrastructure.
+
+**Verification**
+- `pytest -q` — 173 passed (unchanged; backend untouched per work-order rules).
+- `npx tsc --noEmit` clean in `apps/web`.
+- `npm test` — 74 vitest tests across 15 files (unchanged).
+- `npx playwright test --reporter=list` — **26 passed** (was 17), 0 skipped.
+
+**Roadmap "Still open" items this pass closes**
+- "Strategy selector enhancement: description + regime hint per entry from strategy-registry endpoint" — closed.
+- "Playwright e2e coverage for the close lifecycle (separate gate per the work order)" — closed (9 tests in `phase6-close-lifecycle.spec.ts`).
 
 ### 2026-04-28 Phase 6B — close-trade lifecycle UI on /orders + CSS selector cleanup
 
@@ -75,7 +113,6 @@ Surfaces the Phase 6A backend foundation in the operator console. No backend cha
 
 **Still open (deferred per work-order rules)**
 - Commission and slippage modeling on close (the prompt explicitly excluded this from Phase 6B; tracked for a future pass).
-- Playwright e2e coverage for the close lifecycle (separate gate per the work order).
 
 ### 2026-04-28 Phase 6A — close-trade lifecycle backend foundation + Phase 5 cosmetic closeouts
 
@@ -650,7 +687,6 @@ Completed in this pass:
 `npx tsc --noEmit` passes with zero errors.
 
 Still open:
-- Strategy selector enhancement: description + regime hint per entry from strategy-registry endpoint.
 - Color-coded replay step rows already done (Fix 4 above). Playwright e2e coverage for guided hero cards, empty-state heroes, post-create hydration flows.
 - Component-level frontend tests for guided hero variants.
 

@@ -45,16 +45,26 @@ const navSections = [
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const buildStamp = process.env.NEXT_PUBLIC_BUILD_STAMP ?? "dev-local";
+  // Track both the role and whether the /me fetch has settled. Admin is hidden
+  // until both (a) the fetch has settled successfully and (b) role === "admin"
+  // — fail-closed on 401/error/in-flight so non-admins never see admin links.
   const [appRole, setAppRole] = useState<string | null>(null);
+  const [meChecked, setMeChecked] = useState(false);
 
   useEffect(() => {
     fetch("/api/user/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { app_role?: string } | null) => {
-        if (data?.app_role) setAppRole(String(data.app_role));
+        setAppRole(data?.app_role ? String(data.app_role) : null);
+        setMeChecked(true);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        setAppRole(null);
+        setMeChecked(true);
+      });
   }, []);
+
+  const isAdmin = meChecked && appRole === "admin";
 
   return (
     <div className="op-shell">
@@ -65,7 +75,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="op-nav">
           {navSections.map((section) => {
-            if (section.title === "Admin" && appRole !== "admin") return null;
+            if (section.title === "Admin" && !isAdmin) return null;
             return (
               <section key={section.title} className="op-nav-section">
                 <div className="op-nav-section-title">{section.title}</div>

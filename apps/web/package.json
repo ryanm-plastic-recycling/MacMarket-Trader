@@ -12,7 +12,7 @@
   "dependencies": {
     "@clerk/nextjs": "^6.39.1",
     "lightweight-charts": "4.2.3",
-    "next": "15.5.14",
+    "next": "^15.5.15",
     "react": "19.1.4",
     "react-dom": "19.1.4"
   },
