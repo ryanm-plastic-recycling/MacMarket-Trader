@@ -19,6 +19,205 @@ The defensible edge is:
 MacMarket-Trader has completed **Phases 1–6** and post-launch polish. **Phase 5 is fully closed** (last gaps — strategy regime hints + role-conditional sidebar — landed this pass). **Phase 6 close-trade lifecycle is e2e-gated** end-to-end (open-positions list, inline close ticket, closed-trades blotter, lineage extension).
 The system is verified: 173 backend tests passing, TypeScript clean, 74 vitest unit tests, **26 Playwright e2e** (all passing, no skips).
 
+### 2026-04-28 Pass 4 — email logo real fix + cancel staged + reopen closed trade + scheduler audit
+
+Three tracks. Test counts: backend **173 → 189** (+16: 7 email + 9 cancel/reopen). Frontend vitest **88 → 97** (+9 reopen helper tests). Playwright **27 → 31** (+4 cancel/reopen).
+
+#### Track A — Email logo broken-image: real diagnosis and fix
+
+**Pass 2 was wrong.** The "env-URL → base64 → CSS chain fallback" claim referred to dead code: production has `BRAND_LOGO_URL` set, so the very first branch always wins and `_logo_img()` emits `<img src="https://...">`. The base64 fallback was never reached.
+
+**Root cause** (mix of spec causes (a) and (d)): Gmail renders `<img>` tags by proxying the URL through `googleusercontent.com`. The proxy fetches the URL **server-side**. If that fetch fails for any reason — DNS, cert, timeout, rate limit, anti-abuse rule, host quirk — Gmail shows a broken-image icon even when the URL loads fine in a browser. `logos.macmarket.io` (a subdomain not under our Cloudflare tunnel) was the unreliable hop.
+
+**Resend send call** uses `payload = {from, to, subject, text, html}` only — **no `attachments` array**. So CID image embedding was never an option for the current adapter; the `<img>` tag's `src` attribute is the only thing that controls the rendered image.
+
+**Fix** (`src/macmarket_trader/email_templates.py`): swap the priority order so the embedded base64 data URI is the **primary** path, with `BRAND_LOGO_URL` demoted to a deeper fallback only used if the on-disk PNG is missing. Inlined data URIs render reliably in Gmail / Outlook / Apple Mail because they don't depend on any proxy fetch. Cost: ~10 KB of email size (the lockup PNG is 33 KB → ~45 KB base64, but it caches client-side per Resend message).
+
+**Test gate** (`tests/test_email_templates.py`, 7 new tests): asserts that even when `BRAND_LOGO_URL` is set, the rendered HTML for `_logo_img()`, `render_invite_html`, `render_approval_html`, and `render_rejection_html` contains `src="data:image/png;base64,..."` — and **does not** contain `logos.macmarket.io`. Two negative-path tests cover the deep-fallback chain (env URL kicks in only when the data URI is missing; CSS lockup kicks in when both are missing).
+
+#### Track B — Cancel staged order + reopen closed position with 5-min window
+
+**Backend (`api/routes/admin.py`, `storage/repositories.py`, `domain/models.py`):**
+- New `OrderModel.canceled_at: datetime | null` column. Auto-applied on next startup by `apply_schema_updates` — no migration file needed.
+- `OrderRepository` gains `has_fills(order_id)` and `cancel(order_id, *, canceled_at)`.
+- `PaperPortfolioRepository` gains `get_trade_by_id(trade_id)`, `reopen_position(position_id, qty)` (sets `status='open'`, `closed_at=None`, restores `remaining_qty`), and `delete_trade(trade_id)` (hard delete, since reopen is an undo not a soft-delete).
+- New endpoint `POST /user/orders/{order_id}/cancel` — 404 for non-owner, 409 if status ≠ "staged" or any fills exist, sets `status='canceled'` + `canceled_at`, writes audit log entry `{event: "order_canceled", order_id, recommendation_id, replay_run_id, app_user_id, canceled_at}`.
+- New endpoint `POST /user/paper-trades/{trade_id}/reopen` — 404 for non-owner, 409 if `now - closed_at > REOPEN_WINDOW_SECONDS (5 min)`, 409 if parent position is not closed. Restores parent position, hard-deletes the trade row, writes audit log entry `{event: "position_reopened", position_id, trade_id, original_closed_at, original_realized_pnl, app_user_id, reopened_at}`. Audit captures the original PnL so the action is reversible by replay if ever needed.
+- `_record_audit_event(*, recommendation_id, payload)` helper added for both paths — writes to the existing `audit_logs` table that `RecommendationRepository.create()` already uses; the `payload.event` field distinguishes the new lifecycle entries from the recommendation snapshots.
+- `OrderRepository.list_with_fills` now serializes `canceled_at` so the orders blotter UI can show the cancellation timestamp.
+
+**Backend tests** (`tests/test_close_trade_lifecycle.py`, 9 new): cancel happy path + audit row, cancel 409 fills, cancel 409 non-staged, cancel 404 non-owner, reopen happy path + audit row + trade row deletion, reopen 409 outside window (backdates `closed_at` 6 min in the past via direct DB write), reopen 409 already-open, reopen 404 non-owner, reopen invariant test (post-condition: position status=open, closed_at=None, remaining_qty restored, trade row hard-deleted).
+
+**Next.js proxies:**
+- `apps/web/app/api/user/orders/[orderId]/cancel/route.ts` (POST → backend)
+- `apps/web/app/api/user/paper-trades/[tradeId]/reopen/route.ts` (POST → backend)
+
+**Helpers** (`apps/web/lib/orders-helpers.ts`):
+- `REOPEN_WINDOW_SECONDS = 5 * 60`.
+- `reopenSecondsRemaining(closedAt, nowMs)` — clamps to 0 when expired or unparseable; returns `REOPEN_WINDOW_SECONDS` for future-dated input (clock-skew safety).
+- `canReopenTrade(closedAt, nowMs)` — boolean predicate used by the UI to gate button visibility.
+- 9 new vitest tests cover happy path, edge of window, expired, future-dated, and missing/invalid inputs.
+
+**UI** (`apps/web/app/(console)/orders/page.tsx`):
+- Order history table grew an action column. Rows where `status === "staged" && fills.length === 0` show a destructive **Cancel order** button. Click → inline confirm row ("Are you sure? This cannot be undone." + Yes/No), no modal — matches the existing close-ticket pattern. Confirm → POST cancel → refetch orders + positions → success feedback.
+- Closed trades table grew an action column. Rows where `canReopenTrade(closed_at)` show a secondary **Reopen position** button with adjacent muted text `(undo within Xs)` showing live countdown. Click → inline confirm. Confirm → POST reopen → refetch positions + trades + portfolio summary → success feedback.
+- 30-second `setInterval` updates a `nowMs` state value so the countdown decreases visibly and rows automatically lose the Reopen button after the 5-minute window closes (no manual refresh needed).
+
+**Playwright e2e** (`apps/web/tests/e2e/phase6-cancel-reopen.spec.ts`, 4 new):
+1. Cancel button is visible when order is staged with no fills.
+2. Cancel button is NOT visible when order has fills.
+3. Reopen button is visible (with countdown text) on a closed trade with `closed_at` 60 s ago.
+4. Reopen button is NOT visible (and no countdown text) when `closed_at` is 10 minutes ago.
+
+#### Track C — Operator action: audit Windows Task Scheduler
+
+**Documented finding** (operator confirmed both tasks exist in Windows Task Scheduler):
+- `MacMarket-StrategyScheduler` — created in Pass 2 by operator following runbook §12. Runs `scripts/run-due-schedules.ps1` (PowerShell) every 5 minutes; logs append to `logs/scheduler.log`. The script invokes `python -m macmarket_trader.cli run-due-strategy-schedules`.
+- `MacMarket-Strategy-Reports` — pre-existing, registered by `scripts/setup_task_scheduler.bat`. Looking at the batch file, it runs the **same CLI command** (`python -m macmarket_trader.cli run-due-strategy-schedules`) but on a weekly schedule (Mon-Fri at 08:30) as SYSTEM with HIGHEST privileges.
+
+**Risk to flag**: if both tasks are enabled, the strategy scheduler runs both at 08:30 each weekday morning *and* every 5 minutes via the Pass 2 task. The 08:30 weekday run is a no-op (the 5-min runner already covered it 5 min earlier), but if either task's working directory is misconfigured the duplicate invocation can produce two divergent scheduler.log streams. **Operator action required**: in Windows Task Scheduler, open Properties → Actions tab on each task and confirm what each one calls. If both call `run-due-strategy-schedules`, disable `MacMarket-Strategy-Reports` (the older one) and keep `MacMarket-StrategyScheduler` (the Pass 2 PowerShell-runner version with logging). Claude has no Task Scheduler visibility — this audit must be done at the deployment host.
+
+#### Verification
+
+- `pytest -q` — **189 passed** (was 173, +16: 7 email + 9 cancel/reopen).
+- `npx tsc --noEmit` clean.
+- `npm test` — **97 passed** (was 88, +9 reopen helper tests).
+- `npx playwright test --reporter=list` — **31 passed**, 0 skipped (was 27, +4 cancel/reopen).
+
+#### "Still open" items closed by this pass
+
+- *Cancel staged order* — closed. Backend endpoint + audit log + UI affordance + 4 e2e tests gating visibility.
+- *Reopen closed position* — closed. Backend endpoint with 5-min window + audit log + UI countdown + helper tests + e2e tests.
+
+#### "Still open" items kept open
+
+- **Display-friendly recommendation ID** — alongside canonical `rec_<hex>`, surface a human-meaningful slug like `AAPL-EVCONT-20260428-1430`. Requires schema migration on the recommendations table; deferred.
+- **Per-user `risk_dollars_per_trade` configuration** — currently env-only via `RISK_DOLLARS_PER_TRADE`. Should be settable per operator from a Settings page. Requires `app_users` column + admin/account UI; deferred.
+
+#### "Still open" items added by this pass
+
+- **Operator-action item — Audit `MacMarket-Strategy-Reports` task** — verify what command it actually runs from the Task Scheduler GUI; if it's the same CLI as `MacMarket-StrategyScheduler`, disable the older task to avoid duplicate scheduler.log streams. Track C above explains the procedure. Claude cannot inspect Task Scheduler directly.
+
+### 2026-04-28 Operational fixes — email logo relocation, scheduler runner, MFA rollout doc
+
+Documentation-heavy pass with three operational fixes. Backend test count unchanged (173); frontend test counts unchanged (88 vitest, 27 Playwright).
+
+**Section 1 — Email logo asset relocation (`config.py` + `.env.example`)**
+- Brand asset audit of `apps/web/public/brand/`: confirmed PNG lockups exist as `square_console_ticks_lockup_light.png` (33.6 KB, transparent — works on the dark `#0f1923` email card) and `square_console_ticks_lockup_dark.png` (35.3 KB). Same filenames the base64 fallback in `email_templates.py::_load_logo_base64` already reads at process start.
+- New default URL: `https://macmarket.io/brand/square_console_ticks_lockup_light.png`. Self-hosted via the Next.js `public/` static path so the email image and the in-app logo come from the same artifact — no separate logo CDN dependency.
+- `Settings.brand_logo_url` default in `config.py` updated to the new URL with an inline comment explaining that the base64 embed remains as the deeper fallback.
+- `.env.example` updated to the same default with a more accurate comment block (was previously implying the GitHub raw URL was canonical).
+- **Email template logic was deliberately not changed.** The existing `_logo_img()` chain (env URL → base64 → CSS lockup) already produces a working image in every code path; "as a fallback if needed" was satisfied by leaving the in-process base64 as the deep fallback rather than introducing a hardcoded URL retry.
+- **Operator action required** (manual, do not commit): on the deployment host, edit `C:\Dashboard\MacMarket-Trader\.env` and set `BRAND_LOGO_URL=https://macmarket.io/brand/square_console_ticks_lockup_light.png`. Restart the backend so the new env value is picked up. No backend code change is needed — `_logo_img()` reads `os.environ` directly each render.
+
+**Section 2 — Strategy scheduler runner script (`scripts/run-due-schedules.ps1` + runbook §12)**
+- New PowerShell runner wraps the existing CLI command. Sets `$ErrorActionPreference = "Stop"`, ensures `C:\Dashboard\MacMarket-Trader\logs\` exists (creates it if not), appends a `[yyyy-MM-dd HH:mm:ss] running due strategy schedules` line to `logs\scheduler.log`, then runs `.venv\Scripts\python.exe -m macmarket_trader.cli run-due-strategy-schedules` with stdout+stderr piped via `Add-Content` into the same log. `Push-Location`/`Pop-Location` keeps the working directory predictable.
+- New runbook section `## 12) Strategy scheduler task registration` (after the existing schtasks-based §10 — both methods coexist, the new one is the recommended path because the GUI Task Scheduler exposes "missed start" recovery and per-failure retry that bare `schtasks` cannot express).
+- Section 12 walks the operator through the **Create Task** GUI: General tab name + "Run whether user is logged on" + "Run with highest privileges"; Triggers daily 06:00 with 5-minute repeat for 1 day; Action `powershell.exe` with `-NoProfile -ExecutionPolicy Bypass -File C:\Dashboard\MacMarket-Trader\scripts\run-due-schedules.ps1`; Settings tab "Run task as soon as possible after a scheduled start is missed" + "Restart every 1 minute up to 3 times". Includes verify (`schtasks /query /tn "MacMarket-StrategyScheduler" /fo LIST /v`), sanity-check (manual invoke), and tail-the-log commands.
+- `scripts/deploy_windows.bat` already greps for `MacMarket-StrategyScheduler` after every deploy and prints `[WARN]` when the task is missing — once registered per §12, that warning silences automatically.
+
+**Section 3 — MFA pre-flight documentation (runbook §13)**
+- New runbook section `## 13) MFA rollout sequence` covering the documented order: pre-flight checklist → Stage A (admins only, `REQUIRE_MFA_FOR_ADMIN=true`) → Stage B (all users, `ENFORCE_GLOBAL_MFA=true`).
+- Pre-flight checklist enumerates: TOTP backup codes saved offline, at least one admin verified to log in with MFA on the **production tunnel domain** (not just localhost), Clerk recovery email current and verified.
+- Stage A walks through the env flip, backend restart, login test, and the 1–2 day soak before progressing.
+- Stage B mirrors Stage A for `ENFORCE_GLOBAL_MFA`.
+- Recovery section calls out the two escape hatches: Clerk dashboard MFA disable for individual accounts, plus the `cloudflareaccess.com` outermost layer that lets admins reach the Clerk dashboard even if the application is unreachable.
+- `.env` was **not** modified. Backend MFA enforcement code was **not** modified. The flags remain `false` everywhere they currently are; the section is the documented prerequisite an operator must complete before flipping them.
+
+**Verification**
+- `pytest -q` — **173 passed** (unchanged; backend untouched).
+- `npx tsc --noEmit` clean.
+- `npm test` — **88 passed** (16 files, unchanged).
+- `npx playwright test --reporter=list` — **27 passed**, 0 skipped (unchanged).
+
+**"Still open" items closed by this pass**
+- *Strategy scheduler not running on schedule* — closed. The runner script + GUI-based registration in runbook §12 give the operator a one-time setup that produces a recurring trigger; `deploy_windows.bat`'s post-deploy warning will go silent after registration.
+
+**"Still open" items added by this pass**
+- **Brand logo CDN** — currently using `apps/web/public/brand/` static asset served from the same Next.js host as the console. Consider Cloudflare R2 or a dedicated logo CDN for production scale so emails can reference an asset that is independent of the app deployment domain.
+- **MFA enforcement not yet enabled** — `REQUIRE_MFA_FOR_ADMIN=false` and `ENFORCE_GLOBAL_MFA=false` remain in `.env` pending operator decision and the pre-flight checklist completion documented in runbook §13. Backend logic already honours both flags; flipping them is the only step left.
+
+### 2026-04-28 Phase 6 UX close-out follow-up — sticky banner, readable lineage, auto-advance hardening, conditional CTAs, replay step labels
+
+Second smoke-test session surfaced five more friction points. Issues #6 (display-friendly recommendation ID) and #7 (per-user `risk_dollars_per_trade`) require schema migrations and are deferred to Pass 3 — captured in "Still open" below.
+
+**Section 1 — Sticky Active Trade banner (`apps/web/components/active-trade-banner.tsx` + `console-shell.tsx` + `globals.css`)**
+- New `ActiveTradeBanner` client component reads `GuidedFlowState` from URL params via `useSearchParams` (props override is supported but default is URL-driven).
+- Renders only when `state.guided === true && state.recommendationId` is present — explorer mode shows nothing, and `/analysis` before generation also shows nothing.
+- Layout per spec: `position: sticky; top: 0; z-index: 5`, `#1a2e1f` solid background, 2 px green `#21c06e` bottom border, 10 × 16 padding, flex row with 16 px gap, 14 px font.
+- Content: bold green "ACTIVE TRADE:" label, then SYMBOL (white 16 px / 700) · strategy (white) · market mode (muted), spacer, right-side lineage status: `Order staged` / `Replay run #N complete` / `Recommendation created` based on which IDs are populated.
+- Mounted in `console-shell.tsx` directly inside `<section className="op-main">` and above `<header className="op-topbar">` so it sits below the sidebar and above the topbar context line. `TopbarContext` is unchanged — this is additive.
+- Adjusted `.op-main { grid-template-rows: auto auto 1fr }` so the new banner row + topbar row + content row size correctly.
+
+**Section 2 — Human-readable workflow lineage (`apps/web/lib/lineage-format.ts` + `lineage-format.test.ts` + replay/orders pages)**
+- New helper module exports `shortRecommendationId`, `shortReplayRunId`, `shortOrderId`, and `formatLineageBreadcrumb`. The full breadcrumb renders as e.g. `AAPL Event Continuation · Rec #a65757 → Replay #25 → Order pending`.
+- `Rec #` shortener: strips a leading `rec_`, keeps the last 6 hex chars; `Order #` shortener: same treatment for `ord_`. Empty/missing inputs return `Replay pending` / `Order pending` / `Rec #—` so the chain never has blank gaps.
+- Applied to the Workflow lineage Card body in both `replay-runs/page.tsx` and `orders/page.tsx`. The arrow chain is preserved; only the labels and ID rendering change.
+- 14 new vitest unit tests cover prefix stripping, `<= 6 char` ids, missing fields, override precedence, and null-state handling. Fits beside the existing `orders-helpers.test.ts` style — same vitest harness.
+
+**Section 3 — Make active auto-advance hardening (`apps/web/app/(console)/recommendations/page.tsx` + `tests/e2e/phase6-auto-advance.spec.ts`)**
+- Code analysis of `promoteSelected()` end-to-end — auto-advance was unreachable only if `promotedRecommendationId` resolved to `undefined`. The backend returns `recommendation_id` at the top level and the api-client unwraps that as `result.data.recommendation_id`, so the existing extraction was correct in the happy path.
+- Added defensive triple fallback: `result.data?.recommendation_id ?? result.raw?.recommendation_id ?? selectedQueue?.recommendation_id`. The first works today; the second guards against an upstream wrapping the response in `{ data: {...} }`; the third is a last-resort safety net for the (currently theoretical) case where `selectedQueue` already carries a promoted id.
+- Added a temporary `console.debug("[guided] promote success, advancing to replay in 600ms", { promotedId, query })` immediately before the `setTimeout` fires. Marked in-source as "will be removed in next pass" so it does not become a permanent log line.
+- New `phase6-auto-advance.spec.ts` Playwright test: mocks `/api/user/recommendations/queue/promote` with a successful response (`recommendation_id: "rec_e2e_advance_abcdef"`), goes to `/recommendations?guided=1&symbol=AAPL`, clicks "Make active", and asserts the URL transitions to `/replay-runs` with both `guided=1` and `recommendation=rec_e2e_advance_abcdef` within 1500 ms.
+
+**Section 4 — Conditional CTA states (`globals.css` + replay/orders pages)**
+- New `@keyframes pulse-cta` (0% / 70% / 100% box-shadow ring expansion + fade) and `.op-btn-pulse` class (`animation: pulse-cta 2s infinite`); disabled state suppresses the animation.
+- Replay page: in **guided mode only**, derives `replayDoneForRec = Boolean(selectedRunId) || runs.some(r.source_recommendation_id === guidedState.recommendationId)`. When `false`, the always-visible "Run replay now →" carries `op-btn-primary-cta op-btn-pulse` (action needed). When `true`, the button switches to `op-btn op-btn-secondary` with the label `Run again →` (calm; running again is optional). The contextual button inside the "Replaying recommendation" Card always shows `Run replay now →` with pulse because that card only renders when no run exists.
+- Orders page: same pattern with `orderDoneForRec` matching by `recommendation_id` or `replay_run_id`. When `false`, "Stage paper order now →" pulses; when `true`, it switches to `Stage another →` secondary.
+- Explorer/non-guided mode is intentionally untouched: the conditional collapses to `false`, so the existing primary-CTA styling and copy remain stable. This preserves the `phase1-closeout` non-guided click path.
+
+**Section 5 — Replay step timeline labeling (`apps/web/app/(console)/replay-runs/page.tsx`)**
+- Step rows now render `✓ Bar #{step_index + 1}` (green) for approved and `✗ Bar #{step_index + 1}` (red) for rejected — addresses the operator's confusion about "step 0 vs step 1" by switching to one-indexed bar numbering with a visual approval icon.
+- New `fmtStepTimestamp` helper formats an optional `step.timestamp` ISO string as `YYYY-MM-DD HH:MM` UTC; appended after the bar label as a muted `· {timestamp}` chip when present.
+- An optional `step.event_text` (when the backend ever populates it) renders as a secondary muted line `Event: {event_text}` directly under the row header.
+- The `Step` TS type gained `timestamp?: string | null` and `event_text?: string | null` to keep the rendering forward-compatible without backend changes (deferred per the work-order rule).
+- Added a small explainer card at the top of the steps list (always visible when `steps.length > 0`): "Each row shows one bar of historical data the replay engine evaluated. ✓ approved means the recommendation logic would have triggered. ✗ rejected means the bar did not meet the strategy gate. Approved bars contribute to fill simulation."
+
+**Verification**
+- `pytest -q` — **173 passed** (unchanged; backend untouched per work-order rules).
+- `npx tsc --noEmit` clean in `apps/web`.
+- `npm test` — **88 passed** across 16 files (was 74 across 15 — added 14 `lineage-format` unit tests).
+- `npx playwright test --reporter=list` — **27 passed**, 0 skipped (was 26; added the new Section 3 auto-advance gate). Two pre-existing tests were updated to match the new breadcrumb format: `phase1-closeout.spec.ts` now asserts `Rec #e1-e2e` and `Replay #22`, and `phase5-guided-lineage.spec.ts` now asserts `Rec #orders` / `Replay #10` / `Order pending` instead of the legacy `recommendation:` / `replay run:` / `paper order: —` raw labels.
+
+Still open:
+- **Cancel staged order** (Pass 3) — no UI affordance or backend endpoint to cancel a staged paper order before a fill occurs.
+- **Reopen closed position** (Pass 3) — no way to undo a closed trade. Realized P&L is permanent on close.
+- **Display-friendly recommendation ID** (Pass 3) — alongside the canonical `rec_<hex>` token, surface a human-meaningful identifier such as `AAPL-EVCONT-20260428-1430`. Requires a schema migration on the recommendations table to persist the slug deterministically; deferred to a later pass.
+- **Per-user `risk_dollars_per_trade` configuration** (Pass 3) — currently env-only via `RISK_DOLLARS_PER_TRADE`, should be settable per operator from a Settings page. Requires a new column on `app_users` plus matching admin/account UI; deferred.
+
+### 2026-04-28 Phase 6 UX close-out — auto-advance + primary CTA
+
+Smoke-test feedback on the guided flow surfaced two friction points: (1) every step required two clicks — the action button (Make active / Run replay now / Stage paper order) and a separate "Go to X step" navigation button — which is ceremony, not control, in guided mode; and (2) the primary CTA did not visually dominate the page, so the operator's eye did not land on it within ~1 second.
+
+**Section 1 — Auto-advance on guided action success**
+
+Applies only when `guidedState.guided === true`. Explorer-mode behavior unchanged.
+
+- `apps/web/app/(console)/recommendations/page.tsx` — after `promoteSelected()` resolves with the `make_active` action, the page calls `router.replace` to update the URL with the newly active recommendation and then `setTimeout(() => router.push(\`/replay-runs?…\`), 600)`. The 600 ms delay keeps the success feedback readable before the route change. The `save_alternative` path does not auto-advance (saving an alternative is an inert lineage operation).
+- `apps/web/app/(console)/replay-runs/page.tsx` — after `runReplay()` resolves and a run id is hydrated, the page fetches `/api/user/replay-runs/{id}` to read `has_stageable_candidate`. If `false`, it stays on the page so the warning block (`op-error` block + `stageable_reason`) is visible. Otherwise it auto-advances to `/orders?…` after the same 600 ms delay, threading `recommendation_id`, `replay_run_id`, `symbol`, and `source` through `buildGuidedQuery`.
+- `apps/web/app/(console)/orders/page.tsx` — terminal step. After `stagePaperOrder()` resolves, the page hydrates the new order into the blotter, refetches positions/trades, and calls `detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })`. No navigation — the operator is already where they need to be to monitor and close.
+
+**Section 2 — Primary CTA visual treatment (`apps/web/app/globals.css` + 3 page files)**
+
+- New `.op-btn-primary-cta` class in `globals.css`: brand-green background `#21c06e`, white 16 px / 600-weight text, 12 × 20 padding, 6 px radius, no border, `min-width: 220px`, soft green box-shadow `0 2px 8px rgba(33,192,110,0.2)`. Hover lifts (`translateY(-1px)`) and intensifies the shadow. Disabled drops to 0.5 opacity, `not-allowed` cursor, muted-green background `#4a5a4a`, transform reset.
+- Applied on each guided page to the actual primary action button:
+  - **Recommendations** "Next action" Card → `Make active` (the `Save as alternative` sibling stays as `op-btn-secondary`).
+  - **Replay** → both `Run replay now` instances (the contextual one in the "Replaying recommendation" Card hero and the always-visible one in the action Card below).
+  - **Orders** → both `Stage paper order now` instances (the contextual one in the "Paper order ticket" Card hero and the always-visible one in the action Card below).
+- After every primary CTA label, appended a right-arrow ` →` so directional intent is visible at a glance ("Make active →", "Run replay now →", "Stage paper order now →").
+- The `Go to X step` navigation buttons keep their existing default / `op-btn-secondary` / `op-btn-ghost` styling — they are manual overrides, not the primary path, and should remain visually subordinate.
+
+**Verification**
+- `pytest -q` — 173 passed (unchanged; backend untouched per work-order rules).
+- `npx tsc --noEmit` clean in `apps/web`.
+- `npm test` — 74 vitest tests across 15 files (unchanged).
+- `npx playwright test --reporter=list` — **26 passed**, 0 skipped. No assertion updates required: existing tests address buttons by visible label or `getByRole("button", { name: /Run replay now/ })`, which still match after the ` →` suffix is appended.
+
+Still open:
+- **Cancel staged order** — there is no UI affordance or backend endpoint to cancel a staged paper order before a fill occurs. An operator who mis-stages has no undo path.
+- **Reopen closed position** — there is no way to undo a closed trade. Realized P&L is permanent on close, with no operator-reversible escape hatch for a misclick or a wrong mark price.
+
 ### 2026-04-28 Phase 5 final closeouts + Phase 6 close-flow e2e
 
 Three sections in one pass: role-conditional sidebar (real bug fix), strategy regime hints, and 9 new Playwright e2e tests gating the Phase 6 close lifecycle.

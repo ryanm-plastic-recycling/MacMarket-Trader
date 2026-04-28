@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { formatHoldDuration, formatRelativeTime, pnlColor } from "./orders-helpers";
+import {
+  canReopenTrade,
+  formatHoldDuration,
+  formatRelativeTime,
+  pnlColor,
+  REOPEN_WINDOW_SECONDS,
+  reopenSecondsRemaining,
+} from "./orders-helpers";
 
 describe("pnlColor", () => {
   it("returns green for positive PnL", () => {
@@ -74,5 +81,55 @@ describe("formatRelativeTime", () => {
 
   it("returns the input string when not a parseable date", () => {
     expect(formatRelativeTime("not-a-date", NOW)).toBe("not-a-date");
+  });
+});
+
+describe("reopenSecondsRemaining", () => {
+  const NOW = Date.parse("2026-04-28T12:00:00Z");
+
+  it("returns 0 for null/undefined/empty/unparseable closed_at", () => {
+    expect(reopenSecondsRemaining(null, NOW)).toBe(0);
+    expect(reopenSecondsRemaining(undefined, NOW)).toBe(0);
+    expect(reopenSecondsRemaining("", NOW)).toBe(0);
+    expect(reopenSecondsRemaining("not-a-date", NOW)).toBe(0);
+  });
+
+  it("returns full window when closed_at equals now", () => {
+    expect(reopenSecondsRemaining("2026-04-28T12:00:00Z", NOW)).toBe(REOPEN_WINDOW_SECONDS);
+  });
+
+  it("returns ~half the window 2:30 minutes after close", () => {
+    expect(reopenSecondsRemaining("2026-04-28T11:57:30Z", NOW)).toBe(REOPEN_WINDOW_SECONDS - 150);
+  });
+
+  it("returns 0 once the 5-minute window has elapsed exactly", () => {
+    expect(reopenSecondsRemaining("2026-04-28T11:55:00Z", NOW)).toBe(0);
+  });
+
+  it("returns 0 well past the window", () => {
+    expect(reopenSecondsRemaining("2026-04-28T11:00:00Z", NOW)).toBe(0);
+  });
+
+  it("returns the full window for future-dated closed_at (clock skew safety)", () => {
+    expect(reopenSecondsRemaining("2026-04-28T12:01:00Z", NOW)).toBe(REOPEN_WINDOW_SECONDS);
+  });
+});
+
+describe("canReopenTrade", () => {
+  const NOW = Date.parse("2026-04-28T12:00:00Z");
+
+  it("is true while the window is open", () => {
+    expect(canReopenTrade("2026-04-28T11:59:00Z", NOW)).toBe(true);
+    expect(canReopenTrade("2026-04-28T11:55:01Z", NOW)).toBe(true);
+  });
+
+  it("is false at or after the window edge", () => {
+    expect(canReopenTrade("2026-04-28T11:55:00Z", NOW)).toBe(false);
+    expect(canReopenTrade("2026-04-28T11:00:00Z", NOW)).toBe(false);
+  });
+
+  it("is false for missing / invalid timestamps", () => {
+    expect(canReopenTrade(null, NOW)).toBe(false);
+    expect(canReopenTrade("not-a-date", NOW)).toBe(false);
   });
 });

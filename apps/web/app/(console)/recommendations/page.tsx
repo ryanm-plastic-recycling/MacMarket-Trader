@@ -204,7 +204,12 @@ export default function RecommendationsPage() {
 
     setError(null);
     setFeedback({ state: "success", message: "Queue candidate promoted to stored recommendation." });
-    const promotedRecommendationId = result.data?.recommendation_id;
+    // Defensive ID extraction: backend returns {recommendation_id, ...} at top level.
+    // result.data unwraps a nested {data:{...}} envelope when present, otherwise it's the raw payload.
+    // Fall back through raw and the selected queue candidate just in case the response shape shifts.
+    const rawRec = (result.raw as { recommendation_id?: string } | null | undefined)?.recommendation_id;
+    const queueRec = (selectedQueue as { recommendation_id?: string } | null | undefined)?.recommendation_id;
+    const promotedRecommendationId = result.data?.recommendation_id ?? rawRec ?? queueRec;
     await loadRecommendations({ selectRecommendationUid: promotedRecommendationId });
     if (guidedState.guided && promotedRecommendationId) {
       const query = buildGuidedQuery({
@@ -218,6 +223,9 @@ export default function RecommendationsPage() {
       router.replace(`/recommendations?${query}`);
       // Auto-advance: in guided mode the operator's next step is always Replay.
       // Brief delay so the success feedback is readable before the route changes.
+      // Temporary debug log (will be removed in next pass) to help diagnose
+      // the smoke-test report that auto-advance was not firing.
+      console.debug("[guided] promote success, advancing to replay in 600ms", { promotedId: promotedRecommendationId, query });
       setTimeout(() => router.push(`/replay-runs?${query}`), 600);
     }
   }
@@ -493,8 +501,8 @@ export default function RecommendationsPage() {
               <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Go to Replay step</button>
             ) : (
               <>
-                <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
-                  {loading.promote ? "Promoting…" : "Make active"}
+                <button className="op-btn-primary-cta" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
+                  {loading.promote ? "Promoting…" : "Make active →"}
                 </button>
                 <button className="op-btn op-btn-secondary" onClick={() => void saveAlternative()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.saveAlt ? "Saving alternative…" : undefined}>
                   {loading.saveAlt ? "Saving…" : "Save as alternative"}

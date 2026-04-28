@@ -68,20 +68,30 @@ _LOGO_DATA_URI: str | None = _load_logo_base64()
 def _logo_img(width: int = 200) -> str:
     """Return an <img> tag using the logo, or the CSS text lockup fallback.
 
-    Priority:
-    1. BRAND_LOGO_URL env var (URL-based — works for hosted deployments)
-    2. Embedded base64 data URI (embedded — works without external access)
-    3. CSS text lockup fallback (no broken image ever rendered)
+    Pass 4 root-cause fix (2026-04-28): Gmail (and most webmail) proxies remote
+    image src= URLs through their own fetcher (googleusercontent.com for Gmail).
+    When that proxy can't reach our hosted logo URL — DNS, cert, CORS, or any
+    intermittent fetch failure on the proxy side — the email renders with a
+    broken-image icon even though the URL loads fine in a browser. Inlined
+    base64 data URIs do not depend on any proxy fetch and render reliably.
+
+    Priority (effective order):
+    1. Embedded base64 data URI (always preferred when the asset is on disk —
+       this is the production path).
+    2. BRAND_LOGO_URL env var fallback — only used if the on-disk asset is
+       missing for some reason (e.g. trimmed deployment). Still subject to
+       email client proxy quirks, but better than the CSS lockup.
+    3. CSS text lockup fallback (no broken image ever rendered).
     """
+    if _LOGO_DATA_URI:
+        return (
+            f'<img src="{_LOGO_DATA_URI}" alt="MacMarket Trader" width="{width}" '
+            f'style="display:block;max-width:{width}px;height:auto;border:0;" />'
+        )
     brand_logo_url = os.environ.get("BRAND_LOGO_URL", "").strip()
     if brand_logo_url:
         return (
             f'<img src="{_html.escape(brand_logo_url)}" alt="MacMarket Trader" width="{width}" '
-            f'style="display:block;max-width:{width}px;height:auto;border:0;" />'
-        )
-    if _LOGO_DATA_URI:
-        return (
-            f'<img src="{_LOGO_DATA_URI}" alt="MacMarket Trader" width="{width}" '
             f'style="display:block;max-width:{width}px;height:auto;border:0;" />'
         )
     # CSS fallback: table-based monogram + name lockup

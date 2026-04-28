@@ -466,12 +466,14 @@ test("guided /orders empty state renders hero with Stage CTA and threaded lineag
   // Stage paper order CTA — first occurrence is the in-hero button
   await expect(page.getByRole("button", { name: "Stage paper order now" }).first()).toBeVisible();
 
-  // Workflow lineage block shows the threaded IDs (recommendation → replay → order placeholder)
+  // Workflow lineage block shows the threaded IDs in the operator-readable breadcrumb
+  // form added in the Phase 6 follow-up: "Rec #shortid → Replay #N → Order pending".
+  // "rec-lineage-orders" → last 6 chars of the hex tail = "orders".
   const lineageCard = page.locator("section.op-card").filter({ has: page.getByRole("heading", { name: "Workflow lineage" }) });
   await expect(lineageCard).toBeVisible();
-  await expect(lineageCard.getByText(recId)).toBeVisible();
-  await expect(lineageCard.getByText(new RegExp(`replay run:\\s*${replayRunId}`))).toBeVisible();
-  await expect(lineageCard.getByText(/paper order:\s*—/)).toBeVisible();
+  await expect(lineageCard.getByText(/Rec #orders/)).toBeVisible();
+  await expect(lineageCard.getByText(new RegExp(`Replay #${replayRunId}`))).toBeVisible();
+  await expect(lineageCard.getByText(/Order pending/)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

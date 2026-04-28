@@ -13,11 +13,20 @@ Covers:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from macmarket_trader.api.main import app
-from macmarket_trader.domain.models import AppUserModel, PaperPositionModel
+from macmarket_trader.domain.models import (
+    AppUserModel,
+    AuditLogModel,
+    FillModel,
+    OrderModel,
+    PaperPositionModel,
+    PaperTradeModel,
+)
 from macmarket_trader.storage.db import SessionLocal
 
 client = TestClient(app)
@@ -306,3 +315,222 @@ def test_list_endpoints_scope_to_owning_user() -> None:
     assert trades_resp_a.status_code == 200
     assert len(trades_resp_a.json()) == 1
     assert trades_resp_a.json()[0]["recommendation_id"] == rec_uid
+
+
+# ---------------------------------------------------------------------------
+# Pass 4 — Cancel staged order
+# ---------------------------------------------------------------------------
+
+def _seed_staged_order(*, app_user_id: int, order_id: str = "ord-staged-1") -> str:
+    """Seed an OrderModel row with status='staged' and no fills directly via the
+    DB — the standard /user/orders POST path always produces a fill, so this is
+    the only way to exercise the cancel happy path."""
+    with SessionLocal() as session:
+        session.add(
+            OrderModel(
+                order_id=order_id,
+                app_user_id=app_user_id,
+                recommendation_id="rec-staged",
+                replay_run_id=None,
+                symbol="AAPL",
+                status="staged",
+                side="long",
+                shares=10,
+                limit_price=120.0,
+                notes="seeded_for_test",
+            )
+        )
+        session.commit()
+    return order_id
+
+
+def test_cancel_succeeds_when_staged_with_no_fills() -> None:
+    user_id = _seed_approved_user()
+    order_id = _seed_staged_order(app_user_id=user_id)
+
+    resp = client.post(f"/user/orders/{order_id}/cancel", headers=_USER_AUTH)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["order_id"] == order_id
+    assert body["status"] == "canceled"
+    assert body["canceled_at"] is not None
+
+    # Audit row written
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(AuditLogModel).where(AuditLogModel.recommendation_id == "rec-staged")
+        ).scalars().all()
+        assert any(
+            (r.payload or {}).get("event") == "order_canceled" and (r.payload or {}).get("order_id") == order_id
+            for r in rows
+        ), f"audit log missing order_canceled entry: {[r.payload for r in rows]}"
+
+
+def test_cancel_409s_when_order_has_fills() -> None:
+    user_id = _seed_approved_user()
+    order_id = _seed_staged_order(app_user_id=user_id, order_id="ord-with-fill")
+    with SessionLocal() as session:
+        session.add(FillModel(order_id=order_id, fill_price=120.0, filled_shares=10))
+        session.commit()
+
+    resp = client.post(f"/user/orders/{order_id}/cancel", headers=_USER_AUTH)
+    assert resp.status_code == 409, resp.text
+    assert "fills" in resp.json()["detail"].lower()
+
+
+def test_cancel_409s_when_order_is_not_staged() -> None:
+    user_id = _seed_approved_user()
+    order_id = _seed_staged_order(app_user_id=user_id, order_id="ord-already-closed")
+    # Mutate status away from "staged"
+    with SessionLocal() as session:
+        row = session.execute(select(OrderModel).where(OrderModel.order_id == order_id)).scalar_one()
+        row.status = "filled"
+        session.commit()
+
+    resp = client.post(f"/user/orders/{order_id}/cancel", headers=_USER_AUTH)
+    assert resp.status_code == 409, resp.text
+    assert "staged" in resp.json()["detail"].lower()
+
+
+def test_cancel_404s_for_non_owner() -> None:
+    owner_id = _seed_approved_user(token="user-token", external_id="clerk_user")
+    order_id = _seed_staged_order(app_user_id=owner_id, order_id="ord-cancel-other-user")
+
+    # Different approved user
+    _seed_approved_user(token="admin-token", external_id="clerk_admin")
+    resp = client.post(f"/user/orders/{order_id}/cancel", headers=_ADMIN_AUTH)
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Order not found."
+
+
+# ---------------------------------------------------------------------------
+# Pass 4 — Reopen closed paper trade
+# ---------------------------------------------------------------------------
+
+def _stage_and_close_for_reopen(*, token: str = "user-token", external_id: str = "clerk_user") -> dict:
+    """Stage a paper order, close the resulting open position, and return
+    {position_id, trade_id, qty, realized_pnl} for use by reopen tests."""
+    _seed_approved_user(token=token, external_id=external_id)
+    rec_uid = _seed_recommendation()
+    bundle = _stage_order_and_get_position(rec_uid, token=token)
+    pos_id = bundle["position"]["id"]
+    qty = float(bundle["position"]["remaining_qty"])
+    avg = float(bundle["position"]["avg_entry_price"])
+
+    close_resp = client.post(
+        f"/user/paper-positions/{pos_id}/close",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"mark_price": avg + 1.0, "reason": "test exit"},
+    )
+    assert close_resp.status_code == 200, close_resp.text
+    trade = close_resp.json()
+    return {
+        "position_id": pos_id,
+        "trade_id": int(trade["id"]),
+        "qty": qty,
+        "realized_pnl": float(trade["realized_pnl"]),
+        "rec_uid": rec_uid,
+    }
+
+
+def test_reopen_succeeds_within_5_minute_window() -> None:
+    state = _stage_and_close_for_reopen()
+    trade_id = state["trade_id"]
+    pos_id = state["position_id"]
+    qty = state["qty"]
+
+    resp = client.post(f"/user/paper-trades/{trade_id}/reopen", headers=_USER_AUTH)
+    assert resp.status_code == 200, resp.text
+    pos = resp.json()
+    assert pos["id"] == pos_id
+    assert pos["status"] == "open"
+    assert float(pos["remaining_qty"]) == qty
+    assert pos["closed_at"] is None
+
+    # Trade row hard-deleted
+    with SessionLocal() as session:
+        assert session.get(PaperTradeModel, trade_id) is None
+
+    # Audit row written
+    with SessionLocal() as session:
+        rows = session.execute(select(AuditLogModel)).scalars().all()
+        assert any(
+            (r.payload or {}).get("event") == "position_reopened"
+            and (r.payload or {}).get("position_id") == pos_id
+            and (r.payload or {}).get("trade_id") == trade_id
+            for r in rows
+        ), f"audit log missing position_reopened entry: {[r.payload for r in rows]}"
+
+
+def test_reopen_409s_after_5_minute_window() -> None:
+    state = _stage_and_close_for_reopen()
+    trade_id = state["trade_id"]
+
+    # Backdate the trade.closed_at so it appears 6 minutes ago
+    with SessionLocal() as session:
+        trade = session.get(PaperTradeModel, trade_id)
+        assert trade is not None
+        trade.closed_at = datetime.now(tz=timezone.utc) - timedelta(minutes=6)
+        session.commit()
+
+    resp = client.post(f"/user/paper-trades/{trade_id}/reopen", headers=_USER_AUTH)
+    assert resp.status_code == 409, resp.text
+    assert "reopen window" in resp.json()["detail"].lower()
+
+
+def test_reopen_409s_when_position_already_open() -> None:
+    state = _stage_and_close_for_reopen()
+    trade_id = state["trade_id"]
+    pos_id = state["position_id"]
+
+    # Manually flip the parent position back to open without removing the trade
+    with SessionLocal() as session:
+        pos = session.get(PaperPositionModel, pos_id)
+        assert pos is not None
+        pos.status = "open"
+        pos.closed_at = None
+        pos.remaining_qty = state["qty"]
+        session.commit()
+
+    resp = client.post(f"/user/paper-trades/{trade_id}/reopen", headers=_USER_AUTH)
+    assert resp.status_code == 409, resp.text
+    assert "not closed" in resp.json()["detail"].lower()
+
+
+def test_reopen_404s_for_non_owner() -> None:
+    state = _stage_and_close_for_reopen(token="user-token", external_id="clerk_user")
+    trade_id = state["trade_id"]
+
+    _seed_approved_user(token="admin-token", external_id="clerk_admin")
+    resp = client.post(f"/user/paper-trades/{trade_id}/reopen", headers=_ADMIN_AUTH)
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Trade not found."
+
+
+def test_reopen_restores_remaining_qty_and_deletes_trade_row() -> None:
+    """Spec says 'Reopen properly restores remaining_qty and deletes the trade
+    row' — this is the explicit invariant test that the close→reopen cycle
+    leaves the position open at the original qty AND removes the trade row
+    so portfolio summary's closed_trade_count drops back."""
+    state = _stage_and_close_for_reopen()
+    trade_id = state["trade_id"]
+    pos_id = state["position_id"]
+
+    # Pre-condition: trade row exists, position is closed.
+    with SessionLocal() as session:
+        assert session.get(PaperTradeModel, trade_id) is not None
+        pos = session.get(PaperPositionModel, pos_id)
+        assert pos is not None and pos.status == "closed"
+
+    resp = client.post(f"/user/paper-trades/{trade_id}/reopen", headers=_USER_AUTH)
+    assert resp.status_code == 200, resp.text
+
+    # Post-condition
+    with SessionLocal() as session:
+        assert session.get(PaperTradeModel, trade_id) is None, "trade row should be hard-deleted"
+        pos = session.get(PaperPositionModel, pos_id)
+        assert pos is not None
+        assert pos.status == "open"
+        assert pos.closed_at is None
+        assert float(pos.remaining_qty) == state["qty"]
+

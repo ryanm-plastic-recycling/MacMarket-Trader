@@ -207,6 +207,7 @@ class OrderRepository:
                         "shares": order.shares,
                         "limit_price": order.limit_price,
                         "created_at": order.created_at,
+                        "canceled_at": order.canceled_at.isoformat() if order.canceled_at else None,
                         "market_data_source": source,
                         "fallback_mode": fallback_mode,
                         "fills": [
@@ -230,6 +231,28 @@ class OrderRepository:
             if row is not None:
                 row.status = status
                 session.commit()
+
+    def has_fills(self, order_id: str) -> bool:
+        """True if any fill exists for this order_id (in the FillModel table)."""
+        with self.session_factory() as session:
+            row = session.execute(
+                select(FillModel.id).where(FillModel.order_id == order_id).limit(1)
+            ).first()
+            return row is not None
+
+    def cancel(self, order_id: str, *, canceled_at: datetime) -> OrderModel | None:
+        """Set status='canceled' and the canceled_at timestamp; return updated row."""
+        with self.session_factory() as session:
+            row = session.execute(
+                select(OrderModel).where(OrderModel.order_id == order_id)
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            row.status = "canceled"
+            row.canceled_at = canceled_at
+            session.commit()
+            session.refresh(row)
+            return row
 
 
 class FillRepository:
@@ -511,6 +534,36 @@ class PaperPortfolioRepository:
                 row.remaining_qty = 0.0
                 row.quantity = 0.0
                 session.commit()
+
+    def get_trade_by_id(self, *, trade_id: int) -> PaperTradeModel | None:
+        with self.session_factory() as session:
+            return session.get(PaperTradeModel, trade_id)
+
+    def reopen_position(self, *, position_id: int, qty: float) -> PaperPositionModel | None:
+        """Restore a closed position to status='open' with remaining_qty=qty.
+        Returns the updated row (None if the row no longer exists)."""
+        with self.session_factory() as session:
+            row = session.get(PaperPositionModel, position_id)
+            if row is None:
+                return None
+            row.status = "open"
+            row.closed_at = None
+            row.remaining_qty = qty
+            row.quantity = qty
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def delete_trade(self, *, trade_id: int) -> bool:
+        """Hard-delete a trade row (used by the reopen-position undo path).
+        Returns True if a row was removed."""
+        with self.session_factory() as session:
+            row = session.get(PaperTradeModel, trade_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
 
     def create_trade(
         self,

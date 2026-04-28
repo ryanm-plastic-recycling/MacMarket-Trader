@@ -33,7 +33,10 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_email: str = "noreply@macmarket-trader.local"
     brand_from_name: str = "MacMarket Trader"
-    brand_logo_url: str = "https://raw.githubusercontent.com/ryanm-plastic-recycling/logo/refs/heads/main/square_console_ticks_lockup_light.png"
+    # Self-hosted at /brand/<file> from the Next.js public dir, served by the
+    # production tunnel. The base64 embed in email_templates.py is the deeper
+    # fallback so emails render even if this URL fails to load.
+    brand_logo_url: str = "https://macmarket.io/brand/square_console_ticks_lockup_light.png"
     console_url: str = "http://localhost:9500"
 
     # market data provider config

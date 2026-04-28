@@ -28,6 +28,35 @@ export function formatHoldDuration(seconds: number | null | undefined): string {
   return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
 }
 
+// Pass 4 reopen-undo helpers — the operator can undo a paper close within
+// REOPEN_WINDOW_SECONDS of the trade's closed_at timestamp. After that, the
+// realized P&L is treated as final and the Reopen button must disappear.
+
+export const REOPEN_WINDOW_SECONDS = 5 * 60;
+
+// Seconds remaining in the reopen window (0 if the window has expired or the
+// closed_at timestamp is missing/invalid). `nowMs` is injectable for tests.
+export function reopenSecondsRemaining(
+  closedAt: string | null | undefined,
+  nowMs: number = Date.now(),
+): number {
+  if (!closedAt) return 0;
+  const t = Date.parse(closedAt);
+  if (!Number.isFinite(t)) return 0;
+  const elapsedSec = Math.floor((nowMs - t) / 1000);
+  if (elapsedSec < 0) return REOPEN_WINDOW_SECONDS;
+  const remaining = REOPEN_WINDOW_SECONDS - elapsedSec;
+  return remaining > 0 ? remaining : 0;
+}
+
+// True iff the trade can still be reopened (closed_at is within the window).
+export function canReopenTrade(
+  closedAt: string | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  return reopenSecondsRemaining(closedAt, nowMs) > 0;
+}
+
 // Format an ISO timestamp as "Nh ago" / "Nm ago" / "Nd ago" relative to `now` (defaults to Date.now()).
 // Returns the original ISO string on parse failure or for future-dated inputs.
 export function formatRelativeTime(iso: string | null | undefined, nowMs: number = Date.now()): string {

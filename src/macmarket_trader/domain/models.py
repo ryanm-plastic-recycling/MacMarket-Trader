@@ -122,6 +122,7 @@ class OrderModel(Base):
     limit_price: Mapped[float] = mapped_column(Float)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
 class FillModel(Base):

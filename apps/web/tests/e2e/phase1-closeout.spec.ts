@@ -119,9 +119,11 @@ test("analysis -> recommendations -> replay -> orders click path with lineage id
   await page.getByRole("button", { name: "Run replay now" }).click();
   await expect(page.getByText("replay complete")).toBeVisible();
   await expect(page.getByText("Replay completed, but no fills occurred. Portfolio remained unchanged.")).toBeVisible();
-  // Workflow lineage card always visible (non-guided mode uses "recommendation:" / "replay run:")
-  await expect(page.getByText("recommendation:", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("replay run:", { exact: true }).first()).toBeVisible();
+  // Workflow lineage card always visible — Phase 6 follow-up replaced raw "recommendation: rec_xxx"
+  // with the operator-readable breadcrumb produced by formatLineageBreadcrumb. The promoted
+  // recommendation_id "rec-phase1-e2e" shortens to "Rec #e1-e2e" (last 6 chars of the hex tail).
+  await expect(page.getByText(/Rec #e1-e2e/).first()).toBeVisible();
+  await expect(page.getByText(/Replay #22/).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Go to Paper Order step" }).click();
   await expect(page).toHaveURL(/\/orders\?.*recommendation=rec-phase1-e2e.*replay_run=22/);

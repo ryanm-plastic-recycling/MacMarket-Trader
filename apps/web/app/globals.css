@@ -42,7 +42,7 @@ body { background: var(--bg); color: var(--text); font-family: Inter, Arial, san
 .op-brand-lockup-compact { width: 120px; }
 .op-brand-caption { color: var(--muted); margin-top: 12px; font-size: 13px; }
 .op-topbar-brand { display: inline-flex; align-items: center; gap: 12px; }
-.op-main { display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+.op-main { display: grid; grid-template-rows: auto auto 1fr; min-width: 0; }
 .op-topbar { border-bottom: 1px solid var(--border); padding: 12px 18px; background: var(--topbar-bg); color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .op-content { padding: 18px; display: grid; gap: 12px; min-width: 0; }
 .op-nav { display: grid; gap: 8px; }
@@ -142,3 +142,39 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 
 .is-approved { background: rgba(33, 192, 110, 0.06); }
 .is-rejected { background: rgba(224, 122, 122, 0.06); }
+
+.op-btn-primary-cta {
+  background: #21c06e;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: 6px;
+  border: none;
+  min-width: 220px;
+  box-shadow: 0 2px 8px rgba(33, 192, 110, 0.2);
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.op-btn-primary-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(33, 192, 110, 0.3);
+}
+.op-btn-primary-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #4a5a4a;
+  transform: none;
+}
+
+@keyframes pulse-cta {
+  0%   { box-shadow: 0 0 0 0 rgba(33, 192, 110, 0.4); }
+  70%  { box-shadow: 0 0 0 8px rgba(33, 192, 110, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(33, 192, 110, 0); }
+}
+.op-btn-pulse {
+  animation: pulse-cta 2s infinite;
+}
+.op-btn-pulse:disabled {
+  animation: none;
+}

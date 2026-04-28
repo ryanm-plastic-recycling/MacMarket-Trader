@@ -585,3 +585,137 @@ schtasks /delete /tn "MacMarket-StrategyScheduler" /f
 ```
 
 The `/f` flag suppresses the confirmation prompt.
+
+## 12) Strategy scheduler task registration
+
+The CLI command `python -m macmarket_trader.cli run-due-strategy-schedules` only fires
+when invoked. Without a Task Scheduler entry pointing at it, scheduled report times
+configured by operators in `/schedules` are silently dropped. The runner script that
+wraps the CLI with a log file lives at `scripts/run-due-schedules.ps1` and is the
+recommended invocation target — it appends a timestamped line plus the CLI output to
+`C:\Dashboard\MacMarket-Trader\logs\scheduler.log` on every run.
+
+`scripts/deploy_windows.bat` already checks for the task by name (`MacMarket-StrategyScheduler`)
+at the end of every deploy and prints a `[WARN]` line when it is missing. After the steps
+below, that warning will silence on subsequent deploys.
+
+### Steps to register the scheduled task (manual operator action)
+
+The Task Scheduler GUI is the supported path because it lets you configure the
+"missed start" recovery and the per-failure retry policy that the bare `schtasks`
+command in Section 10 cannot express. Run these as a Windows administrator on the
+deployment host (`C:\Dashboard\MacMarket-Trader`).
+
+1. Open **Windows Task Scheduler** → **Create Task** (not Basic).
+2. **General** tab:
+   - Name: `MacMarket-StrategyScheduler`
+   - Select **Run whether user is logged on or not**
+   - Check **Run with highest privileges**
+3. **Triggers** tab → **New**:
+   - Begin the task: **On a schedule**
+   - **Daily**, Start: `06:00 AM`
+   - Advanced settings: **Repeat task every** `5 minutes` for a duration of `1 day`
+   - **Enabled** must be checked
+4. **Actions** tab → **New**:
+   - Action: **Start a program**
+   - Program/script: `powershell.exe`
+   - Add arguments: `-NoProfile -ExecutionPolicy Bypass -File "C:\Dashboard\MacMarket-Trader\scripts\run-due-schedules.ps1"`
+5. **Settings** tab:
+   - Check **Run task as soon as possible after a scheduled start is missed**
+   - Check **If the task fails, restart every** `1 minute`, **Attempt to restart up to** `3` times
+6. Click **OK** — Task Scheduler prompts for the Windows password of the account that
+   will run the task. Enter it.
+
+### Verify after registration
+
+```powershell
+schtasks /query /tn "MacMarket-StrategyScheduler" /fo LIST /v
+```
+
+Expected: `Status: Ready`, the next run time within 5 minutes of the current time, and
+`Last Result: 0` after the first cycle. The append-only log file at
+`C:\Dashboard\MacMarket-Trader\logs\scheduler.log` should grow by one timestamped block
+plus CLI output every 5 minutes.
+
+### Sanity-check the runner without waiting for the trigger
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Dashboard\MacMarket-Trader\scripts\run-due-schedules.ps1"
+```
+
+Tail the log to confirm:
+
+```powershell
+Get-Content C:\Dashboard\MacMarket-Trader\logs\scheduler.log -Tail 20
+```
+
+A clean run prints the timestamp line plus the CLI's per-schedule decisions
+(`due` / `not due` / `dispatched`) without a Python traceback.
+
+## 13) MFA rollout sequence
+
+The repository ships with `REQUIRE_MFA_FOR_ADMIN=false` and `ENFORCE_GLOBAL_MFA=false`
+in `.env`. Enforcing either flag without the pre-flight checklist below risks locking
+out the only admin account, so this section is the documented rollout. **Do not flip
+the env flags until every pre-flight item is complete and verified.**
+
+### Pre-flight checklist BEFORE Stage A
+
+- [ ] **Admin TOTP backup codes saved offline.** Capture the recovery codes Clerk
+  issues at MFA enrollment to a password manager / printed copy stored off the
+  deployment host. Without these, a lost authenticator device strands the account.
+- [ ] **At least one admin account verified to log in successfully with MFA on the
+  production tunnel domain.** Test the full sign-in flow end to end on the
+  `macmarket.io` domain (or whichever tunnel name is in production), not just on
+  `localhost`. Clerk's MFA challenge sometimes routes differently on production
+  domains than on local dev.
+- [ ] **Recovery email on the Clerk admin account is current and accessible.** Send a
+  test reset link from the Clerk dashboard and verify it arrives. This is the path
+  Clerk uses for self-service recovery if the authenticator is lost.
+
+### Stage A — admins only
+
+1. Verify all admin users have Clerk MFA enrolled **before** flipping the env flag.
+   The Clerk dashboard's user list shows MFA status per account.
+2. In `C:\Dashboard\MacMarket-Trader\.env`, set:
+   ```
+   REQUIRE_MFA_FOR_ADMIN=true
+   ```
+3. Restart the backend so the new env is loaded:
+   ```powershell
+   schtasks /run /tn "MacMarket-Backend-Startup"
+   ```
+   (or the equivalent `Restart-Service`/`uvicorn` restart used in your deployment).
+4. Test admin login still works on the production domain. Confirm Clerk prompts for
+   the MFA code and that the console loads without redirecting to an error page.
+5. Run for **1–2 days** before proceeding to Stage B. Monitor for any "auth failed"
+   patterns in the backend logs — admins occasionally drop MFA from their device
+   without realising it.
+
+### Stage B — all users
+
+1. Verify all non-admin alpha users have Clerk MFA enrolled. The same Clerk dashboard
+   view that filters by role should show 100 % MFA coverage before this flip.
+2. In `.env`, set:
+   ```
+   ENFORCE_GLOBAL_MFA=true
+   ```
+3. Restart the backend (same command as Stage A step 3).
+4. Test a non-admin user login still works on the production domain. Confirm the
+   MFA prompt shows up at sign-in and the user lands on the dashboard afterwards.
+
+### Recovery if an admin gets locked out
+
+- The Clerk dashboard can disable MFA on an individual account as a last resort. Do
+  this from another admin account, or — if no other admin is available — log in to
+  Clerk directly with the recovery email captured in pre-flight.
+- **Cloudflare Access remains as the outermost layer.** Admins can still reach the
+  Clerk dashboard via the `cloudflareaccess.com` bypass even if the application
+  itself becomes unreachable.
+
+### Documentation-only rollout note
+
+This section is **documentation only**. The flags above remain `false` in
+`.env.example` and in the live `.env`. No code under `src/macmarket_trader/` was
+modified to enable MFA — the existing backend MFA enforcement logic already honours
+the env flags when they are flipped.

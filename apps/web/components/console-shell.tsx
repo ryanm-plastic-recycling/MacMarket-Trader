@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLockup } from "@/components/brand-lockup";
 import { TopbarContext } from "@/components/topbar-context";
+import { ActiveTradeBanner } from "@/components/active-trade-banner";
 import { isActivePath } from "@/lib/console-nav";
 
 const navSections = [
@@ -91,6 +92,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <section className="op-main">
+        <ActiveTradeBanner />
         <header className="op-topbar">
           <div className="op-topbar-brand">
             <BrandLockup compact />

@@ -26,6 +26,17 @@ from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
+from macmarket_trader.domain.models import AuditLogModel
+
+
+def _record_audit_event(*, recommendation_id: str, payload: dict[str, object]) -> None:
+    """Write a row into audit_logs. Reuses the same table the recommendation
+    audit trail uses; the payload's `event` field distinguishes lifecycle
+    actions like order_canceled / position_reopened from the recommendation
+    snapshots written by RecommendationRepository.create()."""
+    with SessionLocal() as session:
+        session.add(AuditLogModel(recommendation_id=recommendation_id or "", payload=payload))
+        session.commit()
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 user_router = APIRouter(prefix="/user", tags=["user"])
@@ -988,6 +999,116 @@ def close_paper_position(position_id: int, req: dict[str, object], _user=Depends
     )
     paper_portfolio_repo.close_position(position_id=position.id, closed_at=now)
     return _serialize_trade(trade)
+
+
+@user_router.post("/orders/{order_id}/cancel")
+def cancel_order(order_id: str, _user=Depends(require_approved_user)):
+    """Cancel a staged paper order. Allowed only when status == 'staged' and
+    no fills exist. 404 for non-owners (matches the scope-isolation pattern)."""
+    order = order_repo.get_by_order_id(order_id, app_user_id=_user.id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    if order.status != "staged":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Order is not staged (current status: {order.status}); only staged orders can be canceled.",
+        )
+    if order_repo.has_fills(order.order_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Order has fills; canceled is not permitted on filled orders.",
+        )
+    now = utc_now()
+    updated = order_repo.cancel(order.order_id, canceled_at=now)
+    _record_audit_event(
+        recommendation_id=order.recommendation_id or "",
+        payload={
+            "event": "order_canceled",
+            "order_id": order.order_id,
+            "recommendation_id": order.recommendation_id,
+            "replay_run_id": order.replay_run_id,
+            "app_user_id": _user.id,
+            "canceled_at": now.isoformat(),
+        },
+    )
+    return {
+        "order_id": updated.order_id,
+        "recommendation_id": updated.recommendation_id,
+        "replay_run_id": updated.replay_run_id,
+        "symbol": updated.symbol,
+        "status": updated.status,
+        "side": updated.side,
+        "shares": updated.shares,
+        "limit_price": updated.limit_price,
+        "created_at": updated.created_at.isoformat() if updated.created_at else None,
+        "canceled_at": updated.canceled_at.isoformat() if updated.canceled_at else None,
+    }
+
+
+# Reopen-window: a closed trade can be undone within REOPEN_WINDOW_SECONDS of
+# its closed_at timestamp. Beyond that the realized PnL is treated as final.
+REOPEN_WINDOW_SECONDS = 5 * 60
+
+
+@user_router.post("/paper-trades/{trade_id}/reopen")
+def reopen_paper_trade(trade_id: int, _user=Depends(require_approved_user)):
+    """Undo a recent paper close. Restores the parent position to status='open'
+    with remaining_qty = trade.qty, deletes the paper_trades row, and writes
+    an audit_log entry capturing the original closed_at + realized_pnl."""
+    trade = paper_portfolio_repo.get_trade_by_id(trade_id=trade_id)
+    if trade is None or trade.app_user_id != _user.id:
+        raise HTTPException(status_code=404, detail="Trade not found.")
+    if trade.closed_at is None:
+        raise HTTPException(status_code=409, detail="Trade has no closed_at timestamp; cannot reopen.")
+
+    now = utc_now()
+    closed_aware = trade.closed_at if trade.closed_at.tzinfo is not None else trade.closed_at.replace(tzinfo=timezone.utc)
+    elapsed_seconds = (now - closed_aware).total_seconds()
+    if elapsed_seconds > REOPEN_WINDOW_SECONDS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Reopen window has expired (closed {int(elapsed_seconds)}s ago, "
+                f"limit {REOPEN_WINDOW_SECONDS}s)."
+            ),
+        )
+
+    if trade.position_id is None:
+        raise HTTPException(status_code=409, detail="Trade has no parent position to reopen.")
+    position = paper_portfolio_repo.get_position_by_id(position_id=trade.position_id)
+    if position is None or position.app_user_id != _user.id:
+        raise HTTPException(status_code=404, detail="Parent position not found.")
+    if position.status != "closed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Position is not closed (current status: {position.status}); cannot reopen.",
+        )
+
+    original_closed_at = trade.closed_at.isoformat() if trade.closed_at else None
+    original_realized_pnl = float(trade.realized_pnl)
+    qty = float(trade.quantity)
+
+    updated = paper_portfolio_repo.reopen_position(position_id=position.id, qty=qty)
+    paper_portfolio_repo.delete_trade(trade_id=trade.id)
+
+    _record_audit_event(
+        recommendation_id=position.recommendation_id or "",
+        payload={
+            "event": "position_reopened",
+            "position_id": position.id,
+            "trade_id": trade.id,
+            "original_closed_at": original_closed_at,
+            "original_realized_pnl": original_realized_pnl,
+            "app_user_id": _user.id,
+            "reopened_at": now.isoformat(),
+        },
+    )
+
+    if updated is None:
+        # Should not happen — reopen_position only returns None if the row was
+        # deleted concurrently. Surface as 500 so the operator retries.
+        raise HTTPException(status_code=500, detail="Position vanished during reopen.")
+    return _serialize_position(updated)
 
 
 @user_router.get("/analysis/setup")

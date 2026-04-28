@@ -14,9 +14,16 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickOrderSelection } from "@/lib/workflow-selection";
-import { formatHoldDuration, formatRelativeTime, pnlColor } from "@/lib/orders-helpers";
+import {
+  canReopenTrade,
+  formatHoldDuration,
+  formatRelativeTime,
+  pnlColor,
+  reopenSecondsRemaining,
+} from "@/lib/orders-helpers";
+import { formatLineageBreadcrumb } from "@/lib/lineage-format";
 
-type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
+type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; canceled_at?: string | null; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
 type CloseResult = { order_id: string; symbol: string; realized_pnl: number; entry_price: number; close_price: number; shares: number };
 
@@ -80,10 +87,29 @@ export default function Page() {
   const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
   const [closeMarkInput, setCloseMarkInput] = useState("");
   const [closeReasonInput, setCloseReasonInput] = useState<string>(CLOSE_REASONS[0]);
+  // Pass 4 — Cancel staged order: which order_id is awaiting inline confirm.
+  const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
+  // Pass 4 — Reopen closed trade: which trade_id is awaiting inline confirm.
+  const [reopeningTradeId, setReopeningTradeId] = useState<number | null>(null);
+  // 30-second tick used to refresh the reopen-window countdown so stale rows
+  // automatically lose their button when the 5-minute window closes.
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
   const detailRef = useRef<HTMLDivElement | null>(null);
+
+  // Phase 6 close-out follow-up — Section 4: in guided mode only, pulse the
+  // Stage CTA when no order exists for the active rec/replay; calm
+  // "Stage another →" once one is staged. Explorer/non-guided mode keeps the
+  // primary CTA styling unchanged so existing flows and tests are not perturbed.
+  const orderDoneForRec = guidedState.guided
+    ? orders.some((o) => {
+        const recMatch = guidedState.recommendationId ? o.recommendation_id === guidedState.recommendationId : false;
+        const runMatch = guidedState.replayRunId ? String(o.replay_run_id ?? "") === guidedState.replayRunId : false;
+        return recMatch || runMatch;
+      })
+    : false;
 
   async function load() {
     if (!authReady) {
@@ -293,12 +319,57 @@ export default function Page() {
     setBusy(false);
   }
 
+  // Pass 4 — Cancel staged order
+  async function confirmCancelOrder(orderId: string) {
+    setBusy(true);
+    setFeedback({ state: "loading", message: "Canceling order…" });
+    const result = await fetchWorkflowApi<{ order_id: string; status: string; canceled_at: string | null }>(
+      `/api/user/orders/${orderId}/cancel`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+    );
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Cancel order failed." });
+      setBusy(false);
+      return;
+    }
+    setCancelingOrderId(null);
+    setFeedback({ state: "success", message: "Order canceled." });
+    await Promise.all([load(), loadPositions()]);
+    setBusy(false);
+  }
+
+  // Pass 4 — Reopen closed paper trade
+  async function confirmReopenTrade(tradeId: number) {
+    setBusy(true);
+    setFeedback({ state: "loading", message: "Reopening position…" });
+    const result = await fetchWorkflowApi<PaperPosition>(
+      `/api/user/paper-trades/${tradeId}/reopen`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+    );
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Reopen position failed." });
+      setBusy(false);
+      return;
+    }
+    setReopeningTradeId(null);
+    setFeedback({ state: "success", message: "Position reopened." });
+    await Promise.all([loadPositions(), loadTrades(), loadPortfolioSummary()]);
+    setBusy(false);
+  }
+
   useEffect(() => {
     if (!authReady) return;
     void load();
     void loadPositions();
     void loadTrades();
   }, [searchKey, authReady]);
+
+  // Refresh the reopen-window countdown every 30 seconds so closed-trade rows
+  // lose their Reopen button automatically once 5 minutes have elapsed.
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!authReady || !guidedState.replayRunId) return;
@@ -360,7 +431,13 @@ export default function Page() {
       <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)" }}>Arriving here does not stage an order.</div>
     </Card>
     <Card title="Workflow lineage">
-      <div><strong>recommendation:</strong> {selected?.recommendation_id ?? guidedState.recommendationId ?? "—"} → <strong>replay run:</strong> {selected?.replay_run_id ?? guidedState.replayRunId ?? "—"} → <strong>paper order:</strong> {selected?.order_id ?? guidedState.orderId ?? "—"}</div>
+      <div>{formatLineageBreadcrumb(guidedState, {
+        symbol: selected?.symbol ?? guidedState.symbol,
+        strategy: guidedState.strategy,
+        recommendationId: selected?.recommendation_id ?? guidedState.recommendationId,
+        replayRunId: selected?.replay_run_id ?? guidedState.replayRunId,
+        orderId: selected?.order_id ?? guidedState.orderId,
+      })}</div>
       {selected?.order_id ? (() => {
         const matchingOpen = positions.find((p) => p.order_id === selected.order_id);
         const matchingTrade = trades.find((t) => t.order_id === selected.order_id);
@@ -390,7 +467,7 @@ export default function Page() {
             <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.recommendationId ?? "—"}</span></div>
             <div><strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.replayRunId ?? "—"}</span></div>
             <div><strong>symbol:</strong> {guidedState.symbol ?? "—"} · <strong>strategy:</strong> {guidedState.strategy ?? "—"}</div>
-            <button style={{ marginTop: 8, width: "100%" }} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now"}</button>
+            <button className="op-btn-primary-cta op-btn-pulse" style={{ marginTop: 8, width: "100%" }} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now →"}</button>
             {replayOutcome?.has_stageable_candidate === false ? <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)" }}>No paper order can be staged from this replay. {replayOutcome.stageable_reason ?? ""}</div> : null}
           </div>
         ) : (
@@ -403,7 +480,7 @@ export default function Page() {
       </Card>
     ) : null}
 
-    <Card><div className="op-row"><button onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now"}</button><button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh order history"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} /></Card>
+    <Card><div className="op-row"><button className={orderDoneForRec ? "op-btn op-btn-secondary" : "op-btn-primary-cta op-btn-pulse"} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : orderDoneForRec ? "Stage another →" : "Stage paper order now →"}</button><button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh order history"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} /></Card>
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
 
     <Card title="Open paper positions">
@@ -491,10 +568,53 @@ export default function Page() {
         {guidedState.guided ? <div style={{ marginBottom: 6, color: "var(--op-muted, #7a8999)" }}>Secondary panel: full order history</div> : null}
         <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
         <table className="op-table" style={{ marginTop: guidedState.guided ? 8 : 0 }}>
-          <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>shares</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>limit/fill</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>broker status</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fill count</th></tr></thead>
+          <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>shares</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>limit/fill</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>broker status</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fill count</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}></th></tr></thead>
           <tbody>
-            {orders.length === 0 && !busy ? <tr><td colSpan={7} style={{ color: "#9fb0c3", textAlign: "center", padding: "16px 8px" }}>No paper orders yet. Click "Stage paper order now" above to create your first order.</td></tr> : null}
-            {orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td><span className={`op-side-badge is-${o.side.toLowerCase()}`}>{o.side}</span></td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}
+            {orders.length === 0 && !busy ? <tr><td colSpan={8} style={{ color: "#9fb0c3", textAlign: "center", padding: "16px 8px" }}>No paper orders yet. Click "Stage paper order now" above to create your first order.</td></tr> : null}
+            {orders.flatMap((o) => {
+              const cancelable = o.status === "staged" && (o.fills?.length ?? 0) === 0;
+              const rowEls: React.ReactNode[] = [
+                <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}>
+                  <td>{o.created_at}</td>
+                  <td>{o.symbol}</td>
+                  <td><span className={`op-side-badge is-${o.side.toLowerCase()}`}>{o.side}</span></td>
+                  <td>{o.shares}</td>
+                  <td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td>
+                  <td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td>
+                  <td>{o.fills.length}</td>
+                  <td>
+                    {cancelable && cancelingOrderId !== o.order_id ? (
+                      <button
+                        className="op-btn op-btn-destructive"
+                        onClick={(e) => { e.stopPropagation(); setCancelingOrderId(o.order_id); }}
+                        disabled={busy}
+                      >Cancel order</button>
+                    ) : null}
+                  </td>
+                </tr>,
+              ];
+              if (cancelable && cancelingOrderId === o.order_id) {
+                rowEls.push(
+                  <tr key={`${o.order_id}-confirm`}>
+                    <td colSpan={8} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "0.9rem" }}>Are you sure? This cannot be undone.</span>
+                        <button
+                          className="op-btn op-btn-destructive"
+                          onClick={(e) => { e.stopPropagation(); void confirmCancelOrder(o.order_id); }}
+                          disabled={busy}
+                        >{busy ? "Canceling…" : "Yes, cancel"}</button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setCancelingOrderId(null); }}
+                          disabled={busy}
+                        >No</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
+              return rowEls;
+            })}
           </tbody>
         </table>
         </div>
@@ -552,23 +672,58 @@ export default function Page() {
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>hold</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>reason</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>closed</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}></th>
               </tr>
             </thead>
             <tbody>
-              {trades.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.symbol}</td>
-                  <td><span className={`op-side-badge is-${t.side.toLowerCase()}`}>{t.side}</span></td>
-                  <td>{t.qty}</td>
-                  <td>{t.entry_price.toFixed(2)} → {t.exit_price != null ? t.exit_price.toFixed(2) : "—"}</td>
-                  <td style={{ color: pnlColor(t.realized_pnl), fontWeight: 600 }}>
-                    {t.realized_pnl >= 0 ? "+" : ""}{t.realized_pnl.toFixed(2)}
-                  </td>
-                  <td>{formatHoldDuration(t.hold_seconds)}</td>
-                  <td>{t.close_reason ?? "—"}</td>
-                  <td>{formatRelativeTime(t.closed_at)}</td>
-                </tr>
-              ))}
+              {trades.flatMap((t) => {
+                const reopenable = canReopenTrade(t.closed_at, nowMs);
+                const remaining = reopenSecondsRemaining(t.closed_at, nowMs);
+                const tradeRows: React.ReactNode[] = [
+                  <tr key={t.id}>
+                    <td>{t.symbol}</td>
+                    <td><span className={`op-side-badge is-${t.side.toLowerCase()}`}>{t.side}</span></td>
+                    <td>{t.qty}</td>
+                    <td>{t.entry_price.toFixed(2)} → {t.exit_price != null ? t.exit_price.toFixed(2) : "—"}</td>
+                    <td style={{ color: pnlColor(t.realized_pnl), fontWeight: 600 }}>
+                      {t.realized_pnl >= 0 ? "+" : ""}{t.realized_pnl.toFixed(2)}
+                    </td>
+                    <td>{formatHoldDuration(t.hold_seconds)}</td>
+                    <td>{t.close_reason ?? "—"}</td>
+                    <td>{formatRelativeTime(t.closed_at)}</td>
+                    <td>
+                      {reopenable && reopeningTradeId !== t.id ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <button
+                            className="op-btn op-btn-secondary"
+                            onClick={() => setReopeningTradeId(t.id)}
+                            disabled={busy}
+                          >Reopen position</button>
+                          <span style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>(undo within {remaining}s)</span>
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>,
+                ];
+                if (reopenable && reopeningTradeId === t.id) {
+                  tradeRows.push(
+                    <tr key={`${t.id}-reopen-confirm`}>
+                      <td colSpan={9} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "0.9rem" }}>Are you sure? This cannot be undone.</span>
+                          <button
+                            className="op-btn op-btn-secondary"
+                            onClick={() => void confirmReopenTrade(t.id)}
+                            disabled={busy}
+                          >{busy ? "Reopening…" : "Yes, reopen"}</button>
+                          <button onClick={() => setReopeningTradeId(null)} disabled={busy}>No</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                return tradeRows;
+              })}
             </tbody>
           </table>
         </div>

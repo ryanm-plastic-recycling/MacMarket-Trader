@@ -12,11 +12,28 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickReplayRunSelection } from "@/lib/workflow-selection";
+import { formatLineageBreadcrumb } from "@/lib/lineage-format";
 
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null; source_recommendation_id?: string | null; source_strategy?: string | null; has_stageable_candidate?: boolean; stageable_recommendation_id?: string | null; stageable_reason?: string | null };
 type RunDetail = Run & { source_recommendation_id?: string | null; source_strategy?: string | null; source_market_mode?: string | null; thesis?: string | null; key_levels?: { entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null } | null; summary_metrics?: Record<string, number> | null };
-type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; rejection_reason?: string | null; thesis?: string | null; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; quality?: number | null; confidence?: number | null; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown> };
+type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; rejection_reason?: string | null; thesis?: string | null; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; quality?: number | null; confidence?: number | null; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown>; timestamp?: string | null; event_text?: string | null };
 type ActiveRecommendation = { recommendation_id: string; symbol: string; payload?: { thesis?: string; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; workflow?: { source_strategy?: string } } };
+
+// Phase 6 close-out follow-up — Section 5: format the step timestamp into a
+// short operator-readable form. Falls through to the raw string on parse
+// failure so we never hide data we couldn't pretty-print.
+function fmtStepTimestamp(value: string | null | undefined): string {
+  if (!value) return "";
+  const t = Date.parse(value);
+  if (!Number.isFinite(t)) return String(value);
+  const d = new Date(t);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mi = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
 
 function fmt(v: unknown, digits = 2): string {
   if (v == null) return "—";
@@ -253,6 +270,15 @@ export default function Page() {
     })();
   }, [authReady, guidedState.recommendationId]);
 
+  // Phase 6 close-out follow-up — Section 4: in guided mode only, derive
+  // "has the operator already run replay for the active recommendation?" so
+  // the CTA can shift between pulsing primary (action needed) and a calm
+  // secondary "Run again →". Explorer/non-guided mode keeps the primary CTA
+  // styling unchanged so existing flows and tests are not perturbed.
+  const replayDoneForRec = guidedState.guided
+    ? Boolean(selectedRunId) || runs.some((r) => r.source_recommendation_id && r.source_recommendation_id === guidedState.recommendationId)
+    : false;
+
   const approvedCount = steps.filter((s) => s.approved).length;
   const rejectedCount = steps.length - approvedCount;
   const equityPoints = steps.map((s) => Number(s.post_step_snapshot?.equity ?? 0)).filter((v) => v > 0);
@@ -300,7 +326,13 @@ export default function Page() {
       <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)" }}>Arriving here does not create a replay run.</div>
     </Card>
     <Card title="Workflow lineage">
-      <div><strong>recommendation:</strong> {selected?.source_recommendation_id ?? runDetail?.source_recommendation_id ?? guidedState.recommendationId ?? "—"} → <strong>replay run:</strong> {selectedRunId ?? guidedState.replayRunId ?? "—"} → <strong>paper order:</strong> {guidedState.orderId ?? "—"}</div>
+      <div>{formatLineageBreadcrumb(guidedState, {
+        symbol: selected?.symbol ?? activeRecommendation?.symbol ?? guidedState.symbol,
+        strategy: runDetail?.source_strategy ?? selected?.source_strategy ?? activeRecommendation?.payload?.workflow?.source_strategy ?? guidedState.strategy,
+        recommendationId: selected?.source_recommendation_id ?? runDetail?.source_recommendation_id ?? guidedState.recommendationId,
+        replayRunId: selectedRunId ?? guidedState.replayRunId,
+        orderId: guidedState.orderId,
+      })}</div>
     </Card>
 
     {guidedState.guided ? (
@@ -317,13 +349,13 @@ export default function Page() {
             <div><strong>entry:</strong> {JSON.stringify(activeRecommendation?.payload?.entry ?? {})}</div>
             <div><strong>invalidation:</strong> {JSON.stringify(activeRecommendation?.payload?.invalidation ?? {})}</div>
             <div><strong>targets:</strong> {JSON.stringify(activeRecommendation?.payload?.targets ?? {})}</div>
-            <button style={{ marginTop: 8, width: "100%" }} onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : "Run replay now"}</button>
+            <button className="op-btn-primary-cta op-btn-pulse" style={{ marginTop: 8, width: "100%" }} onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : "Run replay now →"}</button>
           </div>
         ) : null}
       </Card>
     ) : null}
 
-    <Card><div className="op-row"><button onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : "Run replay now"}</button><button onClick={openOrdersNextAction} disabled={!selected?.has_stageable_candidate || unsupportedGuidedMode}>Go to Paper Order step</button><button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} /></Card>
+    <Card><div className="op-row"><button className={replayDoneForRec ? "op-btn op-btn-secondary" : "op-btn-primary-cta op-btn-pulse"} onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : replayDoneForRec ? "Run again →" : "Run replay now →"}</button><button onClick={openOrdersNextAction} disabled={!selected?.has_stageable_candidate || unsupportedGuidedMode}>Go to Paper Order step</button><button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} /></Card>
     {error ? <ErrorState title="Replay unavailable" hint={error} /> : null}
     {stepError ? <ErrorState title="Replay steps unavailable" hint={stepError} /> : null}
 
@@ -354,10 +386,29 @@ export default function Page() {
           {selected.approved_count === 0 && selected.fill_count === 0 ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>Replay completed, but no fills occurred. Portfolio remained unchanged.</div> : null}
           {steps.length > 0 && <div style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9fb0c3", marginBottom: 3 }}><span>approved {approvedCount}</span><span>rejected {rejectedCount}</span><span>fills {selected.fill_count}</span></div></div>}
           {equitySvg ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}><div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 2 }}>Equity curve (post-step)</div>{equitySvg}</div> : null}
+          {steps.length > 0 ? (
+            <div className="op-card" style={{ marginBottom: 8, padding: 10, fontSize: 13, lineHeight: 1.5, color: "var(--op-muted, #9fb0c3)" }}>
+              Each row shows one bar of historical data the replay engine evaluated.{" "}
+              <span style={{ color: "#21c06e", fontWeight: 600 }}>✓ approved</span> means the recommendation logic would have triggered.{" "}
+              <span style={{ color: "#e07a7a", fontWeight: 600 }}>✗ rejected</span> means the bar did not meet the strategy gate.
+              Approved bars contribute to fill simulation.
+            </div>
+          ) : null}
           {guidedState.guided ? <div className="op-row" style={{ marginBottom: 8 }}><button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button></div> : null}
           <div style={{ display: "grid", gap: 6 }}>
-            {steps.map((s) => <div key={s.id} className={`op-card ${s.approved ? "is-approved" : "is-rejected"}`} style={{ padding: 8, cursor: "pointer", borderLeft: s.approved === true ? "3px solid #21c06e" : s.approved === false ? "3px solid #f44336" : undefined }} onClick={() => setExpandedStepId(expandedStepId === s.id ? null : s.id)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}><strong>Step {s.step_index}</strong><StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge><span style={{ marginLeft: "auto", fontSize: 11, color: "#9fb0c3" }}>{expandedStepId === s.id ? "▲ collapse" : "▼ expand"}</span></div>
+            {steps.map((s) => {
+              const tsLabel = fmtStepTimestamp(s.timestamp);
+              const statusIcon = s.approved ? "✓" : "✗";
+              const statusColor = s.approved ? "#21c06e" : "#e07a7a";
+              return <div key={s.id} className={`op-card ${s.approved ? "is-approved" : "is-rejected"}`} style={{ padding: 8, cursor: "pointer", borderLeft: s.approved === true ? "3px solid #21c06e" : s.approved === false ? "3px solid #f44336" : undefined }} onClick={() => setExpandedStepId(expandedStepId === s.id ? null : s.id)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: statusColor, fontWeight: 700, fontSize: 14 }}>{statusIcon}</span>
+                <strong>Bar #{s.step_index + 1}</strong>
+                {tsLabel ? <span style={{ color: "var(--op-muted, #9fb0c3)", fontSize: 12 }}>· {tsLabel}</span> : null}
+                <StatusBadge tone={s.approved ? "good" : "warn"}>{s.approved ? "approved" : "rejected"}</StatusBadge>
+                <span style={{ marginLeft: "auto", fontSize: 11, color: "#9fb0c3" }}>{expandedStepId === s.id ? "▲ collapse" : "▼ expand"}</span>
+              </div>
+              {s.event_text ? <div style={{ marginTop: 4, fontSize: 12, color: "var(--op-muted, #9fb0c3)" }}>Event: {s.event_text}</div> : null}
               {expandedStepId === s.id ? <div style={{ marginTop: 8 }}>
                 <div>{s.rejection_reason ? <><strong>rejection reason:</strong> {String(s.rejection_reason)}</> : <strong>verdict:</strong>} {s.approved ? "Approved" : "Rejected"}</div>
                 {s.thesis ? <div><strong>thesis:</strong> {s.thesis}</div> : null}
@@ -378,7 +429,8 @@ export default function Page() {
                   <SnapshotRow label="open notional" pre={s.pre_step_snapshot} post={s.post_step_snapshot} field="open_positions_notional" />
                 </div> : null}
               </div> : null}
-            </div>)}
+            </div>;
+            })}
           </div>
           {steps.length === 0 ? <EmptyState title="No steps" hint="Steps load after selecting a run row." /> : null}
         </>}
