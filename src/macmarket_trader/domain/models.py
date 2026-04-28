@@ -296,6 +296,11 @@ class PaperPositionModel(Base):
     status: Mapped[str] = mapped_column(String(16), default="open", index=True)
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    opened_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    remaining_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recommendation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    replay_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 class PaperTradeModel(Base):
@@ -311,3 +316,9 @@ class PaperTradeModel(Base):
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    position_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommendation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    replay_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    close_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)

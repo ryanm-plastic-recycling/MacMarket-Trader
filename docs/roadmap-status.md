@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-16
+Last updated: 2026-04-28
 
 ## Positioning
 MacMarket-Trader should not try to be “another brokerage chart page.”
@@ -16,8 +16,198 @@ The defensible edge is:
 - explainable AI layered on top of deterministic logic
 
 ## Current Status
-MacMarket-Trader has completed **Phases 1–6** and post-launch polish including email logo URL config, Windows Task Scheduler setup, and branded From display name for all outbound emails.
-The system is verified: 166 backend tests passing, TypeScript clean.
+MacMarket-Trader has completed **Phases 1–6** and post-launch polish, plus the **Phase 6 close-trade lifecycle UI** (open positions, close action, closed trades blotter).
+The system is verified: 173 backend tests passing, TypeScript clean, **74 vitest unit tests** (+15 from this pass), 17 Playwright e2e (all passing, no skips).
+
+### 2026-04-28 Phase 6B — close-trade lifecycle UI on /orders + CSS selector cleanup
+
+Surfaces the Phase 6A backend foundation in the operator console. No backend changes (Phase 6A contract is locked).
+
+**CSS selector cleanup (`apps/web/app/globals.css`)**
+- The 2026-04-28 cosmetic pass added `tr.is-approved` / `tr.is-rejected` selectors, but the replay step DOM uses `<div>` not `<tr>`, so the row tints never rendered. Selectors changed to `.is-approved` / `.is-rejected` (tag-agnostic) so the existing `is-approved` / `is-rejected` className applications on replay step cards now activate. DOM unchanged — no `<div>` → `<tr>` refactor.
+
+**Next.js proxy routes (mirroring the existing `app/api/user/...` pattern)**
+- `apps/web/app/api/user/paper-positions/route.ts` — GET → `/user/paper-positions`, forwards `status` and `limit` query params via `includeSearchParams: true`.
+- `apps/web/app/api/user/paper-positions/[positionId]/close/route.ts` — POST → `/user/paper-positions/{id}/close`, forwards request body intact.
+- `apps/web/app/api/user/paper-trades/route.ts` — GET → `/user/paper-trades`, forwards `limit` via `includeSearchParams: true`.
+- All three reuse `proxyWorkflowRequest` from `_utils/workflow-proxy.ts` and inherit its auth-token resolution + 425 auth-initializing handling.
+
+**Open positions Card on /orders (`apps/web/app/(console)/orders/page.tsx`)**
+- New `Card` titled "Open paper positions" rendered above the existing Order history grid.
+- Fetches `GET /api/user/paper-positions?status=open` on mount (`useEffect` keyed on `searchKey, authReady`) and after every successful order stage and position close.
+- Each row shows: symbol · side (`op-side-badge` reused from 2026-04-28 cosmetic pass) · `remaining_qty` · `avg_entry_price` (2 decimals) · opened (relative time via new `formatRelativeTime`) · recommendation lineage (clickable `<Link>` to `/recommendations?…` preserving `guidedState` via `buildGuidedQuery`) · "Close position" button.
+- Empty state: `<EmptyState title="No open paper positions" hint="Stage a paper order from a replay-validated recommendation to open a position." />`.
+
+**Inline close ticket (no modal — matches existing console pattern)**
+- Click "Close position" → row stays in place; an additional `<tr>` opens immediately below it inside the same table.
+- Ticket fields: `mark_price` `<input type="number" required>` (default = position's `avg_entry_price`), `reason` `<select>` with options `Target hit` / `Stop hit` / `Manual exit` / `Time exit` / `Other`.
+- Confirm → `POST /api/user/paper-positions/{id}/close` with `{ mark_price, reason }`. On success: refetches positions list, trades list, and portfolio summary in parallel; surfaces realized P&L in the `InlineFeedback` success message. On error: error feedback with the upstream message.
+- Cancel → resets ticket state without sending.
+- State: `closingPositionId`, `closeMarkInput`, `closeReasonInput` (`useState`), with `beginClosePosition` / `cancelClosePosition` / `confirmClosePosition` handlers.
+
+**Closed trades Card on /orders**
+- New `Card` titled "Closed trades (last 50)" rendered below the order history grid.
+- Fetches `GET /api/user/paper-trades?limit=50` on mount and after every close.
+- Columns: symbol · side (`op-side-badge`) · qty · `entry → exit` · realized P&L (color from `pnlColor`: green positive, red negative, inherit zero — bold) · hold (human duration via `formatHoldDuration`) · close reason · closed (relative time).
+- Empty state: "No closed trades yet."
+
+**Workflow lineage card extension**
+- Existing "Workflow lineage" card now appends a second line when `selected.order_id` matches an entry in either the open positions list or the closed trades list:
+  - Open match → `↳ open position #{id}`.
+  - Closed match → `↳ closed trade #{id} · realized {±N.NN}` with `pnlColor` styling on the value.
+- Both lines render side-by-side (separated by `·`) when an order has been closed but a fresh open also exists; either alone otherwise. No render when no match (so non-equity / not-yet-filled orders stay untouched).
+
+**Helpers (`apps/web/lib/orders-helpers.ts`)**
+- `pnlColor(pnl)` → `#21c06e` / `#e07a7a` / `inherit` for positive / negative / zero. Reused by closed-trades P&L cell and lineage extension.
+- `formatHoldDuration(seconds)` → `<1m` / `Nm` / `Nh Mm` / `Nd Mh`. `null`/`undefined`/negative → `—`.
+- `formatRelativeTime(iso, nowMs?)` → `just now` / `Nm ago` / `Nh ago` / `Nd ago`. Returns the original ISO string for future-dated or unparseable input.
+
+**Vitest unit tests (`apps/web/lib/orders-helpers.test.ts`)** — 15 new tests across the three helpers:
+- `pnlColor` — positive / negative / zero branches.
+- `formatHoldDuration` — null / undefined / negative input → em-dash; sub-minute → `<1m`; sub-hour minutes; sub-day with both `Nh Mm` and `Nh` (zero-minute) variants; multi-day with both `Nd Mh` and `Nd` (zero-hour) variants.
+- `formatRelativeTime` — null / undefined input; `just now`; minutes / hours / days; future-dated input passes through; unparseable input passes through.
+
+**Verification**
+- `pytest -q` — 173 passed (unchanged from Phase 6A — backend untouched).
+- `npx tsc --noEmit` clean in `apps/web`.
+- `npm test` — **15 vitest files, 74 tests** (was 14 / 59).
+- Playwright untouched this pass — 17 e2e remain green from prior runs (e2e for the close flow is documented as a separate gate in the work order).
+
+**Still open (deferred per work-order rules)**
+- Commission and slippage modeling on close (the prompt explicitly excluded this from Phase 6B; tracked for a future pass).
+- Playwright e2e coverage for the close lifecycle (separate gate per the work order).
+
+### 2026-04-28 Phase 6A — close-trade lifecycle backend foundation + Phase 5 cosmetic closeouts
+
+Backend foundation for explicit position lifecycle tracking and close-trade auditability. Frontend untouched aside from two scoped Phase 5 cosmetic closeouts at the end of this pass.
+
+**Part 1 — Auto-create paper_position on order fill (`api/routes/admin.py`, `storage/repositories.py`, `domain/models.py`)**
+- `PaperPositionModel` extended with nullable lineage columns: `opened_qty`, `remaining_qty`, `recommendation_id`, `replay_run_id`, `order_id`. (`apply_schema_updates` auto-adds them on the live SQLite DB at startup; existing `quantity` / `average_price` columns retained for back-compat with `PaperPortfolioRepository.summary`.)
+- `PaperTradeModel` extended with: `position_id`, `hold_seconds`, `recommendation_id`, `replay_run_id`, `order_id`, `close_reason`.
+- New `PaperPortfolioRepository.upsert_position_on_fill(...)` — looks up the open `(app_user_id, symbol, side)` position and either aggregates the new fill into it (recomputing `average_price` as the qty-weighted average of the prior cost basis and the new fill, advancing `opened_qty` and `remaining_qty`) or creates a new row. Lineage columns set on creation only — aggregation does not overwrite the originating recommendation/replay/order ids.
+- `stage_order` now calls `upsert_position_on_fill` with the actual fill price/shares and lineage ids when `market_mode == EQUITIES` and `fill.filled_shares > 0` (replaces the prior `if order.side.value == "long"` branch that created a position from `order.limit_price` without lineage). Non-equities orders are skipped per Phase 1 scope.
+
+**Part 2 — Close position endpoint (`POST /user/paper-positions/{position_id}/close`)**
+- Body: `{ "mark_price": float, "reason": str | null }`. Validates `mark_price` is numeric (400 otherwise).
+- Owner-scoped: 404 when the position id does not exist or belongs to a different user (matches the scope-isolation pattern elsewhere — does not leak existence).
+- 400 when the position is already closed.
+- `realized_pnl = (mark_price - avg_entry_price) * remaining_qty` for `long`; sign-flipped for `short` (`* -1`).
+- `hold_seconds` computed from `(now - opened_at)`. Normalizes naive `opened_at` (SQLite round-trip) to UTC before subtraction so the math holds whether the row was written this run or read from a persisted DB.
+- Creates a `paper_trades` row with full lineage (`position_id`, `hold_seconds`, `recommendation_id`, `replay_run_id`, `order_id`, `close_reason`), then closes the position (`status="closed"`, `closed_at=now`, `remaining_qty=0`, `quantity=0`).
+- Returns the serialized trade row.
+
+**Part 3 — List endpoints (owner-scoped)**
+- `GET /user/paper-positions?status=open|closed|all&limit=50` — ordered by `opened_at desc`. 400 on bad `status`.
+- `GET /user/paper-trades?limit=50` — ordered by `closed_at desc`.
+- New `_serialize_position` / `_serialize_trade` helpers in `admin.py` produce the JSON shapes (using spec field names: `opened_qty`, `remaining_qty`, `avg_entry_price`, `qty`, `close_reason`, etc.).
+
+**Part 4 — Tests (`tests/test_close_trade_lifecycle.py`)**
+Seven new pytest cases — full suite **166 → 173 passing**:
+1. `test_order_fill_creates_paper_position_with_lineage` — staging an order creates an open position with `recommendation_id` and `order_id` populated.
+2. `test_multiple_fills_aggregate_with_weighted_average` — two `stage_order` calls on the same `(user, symbol, side)` aggregate into one position row with cumulative `opened_qty`/`remaining_qty` and weighted-avg entry preserved.
+3. `test_close_position_realized_pnl_long` — long PnL math + close response shape + post-close position state.
+4. `test_close_position_realized_pnl_short` — short position seeded directly via the ORM (short orders don't flow through `stage_order` in Phase 1) — close endpoint computes `(mark - avg) * qty * -1` and returns +PnL when `mark < avg`.
+5. `test_close_position_blocks_non_owner_with_404` — admin-token user attempting to close a `clerk_user`-owned position → 404 with `"Position not found."`.
+6. `test_close_position_already_closed_returns_400` — second close attempt → 400 with `"Position is already closed."`.
+7. `test_list_endpoints_scope_to_owning_user` — User A closes a position; User B's `paper-positions?status=all` and `paper-trades` lists are both empty; A's lists still contain the row.
+
+**Part 5 — Phase 5 cosmetic closeouts (`apps/web/app/globals.css`, `apps/web/app/(console)/orders/page.tsx`, `apps/web/app/(console)/replay-runs/page.tsx`)**
+- `globals.css` gains `.op-side-badge` base style plus `.is-buy` / `.is-sell` (and equivalent `.is-long` / `.is-short` for the canonical `Direction` enum the backend emits) — green for buy/long, red for sell/short. Plus `tr.is-approved { background: rgba(33, 192, 110, 0.06); }` and `tr.is-rejected { background: rgba(224, 122, 122, 0.06); }`.
+- Orders table side cell: `<StatusBadge tone=...>` replaced with `<span className={\`op-side-badge is-${o.side.toLowerCase()}\`}>{o.side}</span>` — visible green/red BUY/SELL chips at a glance. Side cells in the selected-order detail panel keep `StatusBadge` (the prompt scoped this change to the table column).
+- Replay step cards now carry `is-approved` / `is-rejected` className alongside the existing `borderLeft` color cue. The CSS rules in `globals.css` use `tr.` selectors per the work order spec; activation is gated until step rows refactor from `<div>` to `<tr>` — applied className is in place for that future change.
+
+**Verification**
+- `pytest -q` — **173 passed** in ~14s (was 166).
+- `npx tsc --noEmit` clean in `apps/web`.
+- `npm test` — 14 vitest files, 59 tests green.
+- `npx playwright test --reporter=list` — 17 passed, 0 skipped.
+
+**Roadmap "Still open" items this pass closes**
+- Operator runbook reference: "Full close-trade UI for existing closed orders without in-session closeResults" — the backend foundation is now in place; UI surfacing is a follow-up pass.
+
+### 2026-04-28 Phase 5 polish — refreshAnalysis URL push + e2e unskip
+
+Closes the gap surfaced by the prior pass's `test.skip`: `/analysis` now mirrors applied symbol/strategy/market_mode/source into the URL after a successful Refresh, so `TopbarContext`, deep-links, and guided handoff all stay in sync.
+
+**Fix — `refreshAnalysis` pushes URL on success (`apps/web/app/(console)/analysis/page.tsx`)**
+- `runAnalysis` now returns `Promise<string | null>`: the resolved workflow source string on success, or `null` on any early-return / catch path. All early-return branches (auth not ready, 402 data-not-entitled, 503 provider-unavailable, hard failure, AUTH_NOT_READY catch, generic catch) return `null`. The success branch returns `payload.fallback_mode ? "fallback (...)" : payload.data_source` (with `setupPayload.workflow_source` and `"workflow source pending"` as ordered fallbacks).
+- `refreshAnalysis` awaits `runAnalysis(...)`, returns early if `workflowSource == null`, then builds a query via `buildGuidedQuery({ guided: guidedMode, symbol: nextSymbol, strategy: draftStrategy, marketMode: draftMarketMode, source: workflowSource })` and calls `router.replace(\`/analysis?${query}\`)`. Empty query falls back to `/analysis`.
+- Reuses `buildGuidedQuery` from `@/lib/guided-workflow` — same canonical helper already used by `createRecommendation`.
+- `router.replace` (not `push`) — Refresh is idempotent state hydration, not a history-worthy navigation.
+- Pushes only after a successful setup fetch (not on error/loading), per the work order.
+- In explorer mode, the push omits `guided=1` (because `buildGuidedQuery` only emits it when `state.guided === true`) — deep-linking to `/analysis?symbol=AAPL&strategy=Event+Continuation&market_mode=equities&source=polygon` works in both guided and explorer modes.
+- The two `useEffect` callers of `runAnalysis` (initial-load on auth-ready, and indicator-change) intentionally do **not** push — only the explicit Refresh click does. This keeps the user landing on `/analysis?guided=1` from having their URL silently rewritten before they interact.
+
+**E2E test unskipped (`apps/web/tests/e2e/phase5-guided-lineage.spec.ts`)**
+- The previously-skipped `test.skip("guided /analysis topbar reflects applied symbol after Refresh analysis (gap: form state not pushed to URL)")` is converted to an active `test`. TODO comment removed.
+- Test flow: navigate to `/analysis?guided=1` → assert pre-refresh topbar text → wait for initial setup load (the mock's distinctive `active_reason: "phase5 url-push"` proves Clerk auth and setup hydration completed before clicking Refresh) → click `analysis-refresh-button` → assert URL now contains `symbol=AAPL`, `strategy=Event+Continuation`, `guided=1` → assert TopbarContext text "AAPL · Event Continuation" is visible.
+- Wait gate is essential: if the Refresh click fires before Clerk's `isLoaded` settles, `runAnalysis` returns `null` at the auth-not-ready branch and no URL push occurs. The active-reason wait gates that race deterministically.
+
+**Test fixture fix (same spec file)**
+- `chartPayload()` previously generated 40 candles via `idx % 28`, producing duplicate dates after index 28 and tripping lightweight-charts' "data must be asc ordered by time" assertion when the chart actually rendered (which only the unskipped Refresh-success test exercises). Replaced with strictly ascending dates: indices 0–30 → `2026-01-01..2026-01-31`, indices 31–39 → `2026-02-01..2026-02-09`.
+
+**Verification**
+- `npx tsc --noEmit` clean in `apps/web`.
+- `npm test` — 14 vitest files, 59 tests green.
+- `npx playwright test --reporter=list` — **17 passed, 0 skipped** in ~50s. Prior 16 tests still green; the unskipped test now passes.
+- Backend untouched — pytest count remains 166.
+
+**Roadmap "Still open" items this pass closes**
+- "`refreshAnalysis` should push `symbol` / `strategy` to the URL so `TopbarContext` reflects post-refresh selection without a separate navigation" — closed; URL push now wired and the e2e regression guard is active.
+
+### 2026-04-28 Phase 5 polish — Playwright e2e for guided lineage + empty states
+
+Pure test-layer pass: nine new e2e tests (eight active + one documented `test.skip`) added in `apps/web/tests/e2e/phase5-guided-lineage.spec.ts`. **No application code was modified in this pass.**
+
+**Coverage added (regression guards on the 2026-04-28 fixes plus broader empty-state behavior):**
+1. Guided `/analysis` hero — `WorkflowBanner` step states (`is-current` / `is-pending`), `TopbarContext` guided-no-symbol hint, `Refresh analysis` CTA enabled, banner chip reflects applied symbol/strategy after refresh.
+2. Guided `/recommendations` empty state — "No active recommendation" `EmptyState` renders, queue toggle button shows count, queue table is collapsed by default and expands on click with `AAPL` / `Event Continuation` row data.
+3. **Regression for Fix 2 (2026-04-28)** — guided `/recommendations?guided=1&recommendation=rec-missing` with stored items that do NOT match the URL id renders the "No active recommendation" empty state, and the unrelated `rows[0]` recommendation id (`rec-other-msft` / symbol `MSFT`) is asserted absent from the Active recommendation card. Direct guard against silent `rows[0]` fallback re-introducing.
+4. Guided `/replay-runs` empty state — when the URL carries `recommendation=rec-nvda-lineage` (no `symbol` param) and the recommendation lineage carries `symbol: NVDA`, the hero card shows `symbol: NVDA` and never falls back to a stale `AAPL`. Recommendation id from lineage is rendered, "Run replay now" CTA is visible and enabled.
+5. Replay zero-fill — synthetic run `id=77` with `fill_count: 0` and flat equity (10000 across pre and post) renders "Replay completed, but no fills occurred. Portfolio remained unchanged." and suppresses the equity curve label (distinct equity values < 2).
+6. Replay stageability gating — synthetic run `id=55` with `has_stageable_candidate: false` renders the `op-error` styled "Replay produced no stageable candidate" block and the `stageable_reason` text inside the same block.
+7. Guided `/orders` empty state — hero "No paper order staged yet" renders, "Stage paper order now" CTA visible, and the "Workflow lineage" card threads `recommendation: rec-lineage-orders → replay run: 10 → paper order: —`.
+8. **Regression for Fix 1 (2026-04-28)** — three URL navigations verify `TopbarContext` text directly: `/analysis` → "Explorer mode"; `/analysis?guided=1` → "Guided workflow — start at Analyze"; `/analysis?guided=1&symbol=NVDA&strategy=Event%20Continuation` → "NVDA · Event Continuation". Pure URL-driven, no form interaction.
+
+**Skipped with TODO (gap surfaced by Test 1):**
+- `guided /analysis topbar reflects applied symbol after Refresh analysis (gap: form state not pushed to URL)` — closed in the follow-up 2026-04-28 pass above (URL push wired, test unskipped and passing).
+
+**Test count**
+- Before: 8 Playwright tests (in `phase1-closeout.spec.ts` + `guided-workflow-hero.spec.ts`).
+- After: **17 Playwright tests** — 16 passing + 1 documented skip (the skip was closed in the next 2026-04-28 pass).
+- Backend untouched — pytest count remains 166.
+
+**Roadmap "Still open" items this pass closes**
+- "Broader component-level frontend tests for all guided hero variants beyond current e2e coverage" → guided hero variants on Analyze, Recommendations, Replay, and Orders are now all covered.
+- "Playwright coverage for the enhanced guided lineage hero cards and replay/order immediate post-create hydration" → empty-state heroes for replay (no run yet) and orders (no order staged) are now covered, plus the lineage-symbol propagation through to `/replay-runs`.
+
+### 2026-04-28 Phase 5 polish — topbar context + guided lineage strictness
+
+Three targeted Phase 5 polish fixes; no scope expansion.
+
+**Fix 1 — Topbar active-context line (`apps/web/components/console-shell.tsx`, `apps/web/components/topbar-context.tsx`)**
+- `topbar-context.tsx` rewritten to read `useSearchParams` + `usePathname` and parse guided state via `parseGuidedFlowState` (canonical helper). The static workflow string ("Workflow: Analyze → Recommendation → Replay → Paper Order") is gone.
+- Display logic:
+  - `guided=1` and `symbol` present → renders `{SYMBOL} · {strategy if present}` (uppercased symbol).
+  - `guided=1` and no `symbol` → renders `Guided workflow — start at Analyze`.
+  - Not guided → renders `Explorer mode`.
+  - Raw query string is never rendered.
+- `console-shell.tsx` already mounts `<TopbarContext />` in the topbar slot next to `<BrandLockup compact />`; no styling or class changes were needed.
+- `Suspense` fallback updated to `Explorer mode` (matches the no-guided default rather than the legacy workflow string).
+
+**Fix 2 — No silent rows[0] fallback in guided mode (`apps/web/app/(console)/recommendations/page.tsx`)**
+- `activeRecommendation` `useMemo` updated: when `guidedState.guided` is true and there is no match for `guidedState.recommendationId` in `rows`, return `null` to force the empty state ("No active recommendation"). When not guided, the existing `rows[0]` fallback is preserved.
+- This honors the "no silent fabrication of workflow data" rule — guided lineage must always be explicit.
+
+**Fix 3 — Hide duplicate promote button in guided mode (`apps/web/app/(console)/recommendations/page.tsx`)**
+- The "Promote selected queue candidate" button in the bottom-row symbols-input action card is now wrapped in `!guidedState.guided` so it only renders in explorer mode. In guided mode, the canonical CTA is the Next-action card's "Make active" / "Save as alternative" pair.
+- "Refresh queue" and "Go to Replay step" remain visible in both modes; "Go to Paper Order step" stays explorer-only as before.
+
+**Verification**
+- `npx tsc --noEmit` clean in `apps/web`.
+- `npm test` passes — 14 test files, 59 vitest tests green.
+- No Playwright tests added in this pass (separate track per the work order).
+- Backend untouched — pytest count remains 166.
 
 ### 2026-04-16 DataNotEntitledError — Polygon 403 / plan-gated data
 

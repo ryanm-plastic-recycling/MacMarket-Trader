@@ -375,17 +375,57 @@ class PaperPortfolioRepository:
                 "win_rate": float((wins / closed_count) if closed_count else 0.0),
             }
 
-    def get_open_position(self, *, app_user_id: int, symbol: str) -> PaperPositionModel | None:
+    def get_open_position(self, *, app_user_id: int, symbol: str, side: str | None = None) -> PaperPositionModel | None:
         with self.session_factory() as session:
-            return session.execute(
-                select(PaperPositionModel).where(
-                    PaperPositionModel.app_user_id == app_user_id,
-                    PaperPositionModel.symbol == symbol,
-                    PaperPositionModel.status == "open",
-                )
-            ).scalar_one_or_none()
+            stmt = select(PaperPositionModel).where(
+                PaperPositionModel.app_user_id == app_user_id,
+                PaperPositionModel.symbol == symbol,
+                PaperPositionModel.status == "open",
+            )
+            if side is not None:
+                stmt = stmt.where(PaperPositionModel.side == side)
+            return session.execute(stmt).scalar_one_or_none()
 
-    def create_position(self, *, app_user_id: int, symbol: str, side: str, quantity: float, average_price: float) -> PaperPositionModel:
+    def get_position_by_id(self, *, position_id: int) -> PaperPositionModel | None:
+        with self.session_factory() as session:
+            return session.get(PaperPositionModel, position_id)
+
+    def list_positions(
+        self,
+        *,
+        app_user_id: int,
+        status: str = "open",
+        limit: int = 50,
+    ) -> list[PaperPositionModel]:
+        with self.session_factory() as session:
+            stmt = select(PaperPositionModel).where(PaperPositionModel.app_user_id == app_user_id)
+            if status != "all":
+                stmt = stmt.where(PaperPositionModel.status == status)
+            stmt = stmt.order_by(PaperPositionModel.opened_at.desc()).limit(limit)
+            return list(session.execute(stmt).scalars())
+
+    def list_trades(self, *, app_user_id: int, limit: int = 50) -> list[PaperTradeModel]:
+        with self.session_factory() as session:
+            stmt = (
+                select(PaperTradeModel)
+                .where(PaperTradeModel.app_user_id == app_user_id)
+                .order_by(PaperTradeModel.closed_at.desc())
+                .limit(limit)
+            )
+            return list(session.execute(stmt).scalars())
+
+    def create_position(
+        self,
+        *,
+        app_user_id: int,
+        symbol: str,
+        side: str,
+        quantity: float,
+        average_price: float,
+        recommendation_id: str | None = None,
+        replay_run_id: int | None = None,
+        order_id: str | None = None,
+    ) -> PaperPositionModel:
         with self.session_factory() as session:
             row = PaperPositionModel(
                 app_user_id=app_user_id,
@@ -395,6 +435,67 @@ class PaperPortfolioRepository:
                 average_price=average_price,
                 open_notional=quantity * average_price,
                 status="open",
+                opened_qty=quantity,
+                remaining_qty=quantity,
+                recommendation_id=recommendation_id,
+                replay_run_id=replay_run_id,
+                order_id=order_id,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def upsert_position_on_fill(
+        self,
+        *,
+        app_user_id: int,
+        symbol: str,
+        side: str,
+        fill_qty: float,
+        fill_price: float,
+        recommendation_id: str | None = None,
+        replay_run_id: int | None = None,
+        order_id: str | None = None,
+    ) -> PaperPositionModel:
+        """Aggregate a new fill into an existing open (user, symbol, side) position
+        with weighted-average entry price, or create a new position if none open.
+        """
+        with self.session_factory() as session:
+            existing = session.execute(
+                select(PaperPositionModel).where(
+                    PaperPositionModel.app_user_id == app_user_id,
+                    PaperPositionModel.symbol == symbol,
+                    PaperPositionModel.side == side,
+                    PaperPositionModel.status == "open",
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                old_remaining = float(existing.remaining_qty if existing.remaining_qty is not None else existing.quantity)
+                old_avg = float(existing.average_price)
+                new_remaining = old_remaining + fill_qty
+                new_avg = ((old_avg * old_remaining) + (fill_price * fill_qty)) / new_remaining if new_remaining > 0 else fill_price
+                existing.average_price = new_avg
+                existing.quantity = new_remaining
+                existing.remaining_qty = new_remaining
+                existing.opened_qty = float((existing.opened_qty or old_remaining) + fill_qty)
+                existing.open_notional = new_remaining * new_avg
+                session.commit()
+                session.refresh(existing)
+                return existing
+            row = PaperPositionModel(
+                app_user_id=app_user_id,
+                symbol=symbol,
+                side=side,
+                quantity=fill_qty,
+                average_price=fill_price,
+                open_notional=fill_qty * fill_price,
+                status="open",
+                opened_qty=fill_qty,
+                remaining_qty=fill_qty,
+                recommendation_id=recommendation_id,
+                replay_run_id=replay_run_id,
+                order_id=order_id,
             )
             session.add(row)
             session.commit()
@@ -407,6 +508,8 @@ class PaperPortfolioRepository:
             if row is not None:
                 row.status = "closed"
                 row.closed_at = closed_at
+                row.remaining_qty = 0.0
+                row.quantity = 0.0
                 session.commit()
 
     def create_trade(
@@ -421,6 +524,12 @@ class PaperPortfolioRepository:
         realized_pnl: float,
         opened_at: datetime,
         closed_at: datetime,
+        position_id: int | None = None,
+        hold_seconds: int | None = None,
+        recommendation_id: str | None = None,
+        replay_run_id: int | None = None,
+        order_id: str | None = None,
+        close_reason: str | None = None,
     ) -> PaperTradeModel:
         with self.session_factory() as session:
             row = PaperTradeModel(
@@ -433,6 +542,12 @@ class PaperPortfolioRepository:
                 realized_pnl=realized_pnl,
                 opened_at=opened_at,
                 closed_at=closed_at,
+                position_id=position_id,
+                hold_seconds=hold_seconds,
+                recommendation_id=recommendation_id,
+                replay_run_id=replay_run_id,
+                order_id=order_id,
+                close_reason=close_reason,
             )
             session.add(row)
             session.commit()

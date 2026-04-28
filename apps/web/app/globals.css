@@ -123,3 +123,22 @@ button:disabled { opacity: .6; cursor: not-allowed; }
   color: var(--muted);
   font-size: 13px;
 }
+
+/* Phase 5 cosmetic closeouts — order side badges and replay step row tints */
+.op-side-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.op-side-badge.is-buy { color: #21c06e; border-color: #21c06e; }
+.op-side-badge.is-sell { color: #e07a7a; border-color: #e07a7a; }
+.op-side-badge.is-long { color: #21c06e; border-color: #21c06e; }
+.op-side-badge.is-short { color: #e07a7a; border-color: #e07a7a; }
+
+.is-approved { background: rgba(33, 192, 110, 0.06); }
+.is-rejected { background: rgba(224, 122, 122, 0.06); }

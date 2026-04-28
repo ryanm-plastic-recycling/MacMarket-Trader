@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 
+import Link from "next/link";
+
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
@@ -12,10 +14,47 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickOrderSelection } from "@/lib/workflow-selection";
+import { formatHoldDuration, formatRelativeTime, pnlColor } from "@/lib/orders-helpers";
 
 type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
 type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
 type CloseResult = { order_id: string; symbol: string; realized_pnl: number; entry_price: number; close_price: number; shares: number };
+
+type PaperPosition = {
+  id: number;
+  symbol: string;
+  side: string;
+  opened_qty: number;
+  remaining_qty: number;
+  avg_entry_price: number;
+  open_notional: number;
+  status: string;
+  opened_at: string | null;
+  closed_at: string | null;
+  recommendation_id: string | null;
+  replay_run_id: number | null;
+  order_id: string | null;
+};
+
+type PaperTrade = {
+  id: number;
+  symbol: string;
+  side: string;
+  qty: number;
+  entry_price: number;
+  exit_price: number | null;
+  realized_pnl: number;
+  opened_at: string | null;
+  closed_at: string | null;
+  hold_seconds: number | null;
+  position_id: number | null;
+  recommendation_id: string | null;
+  replay_run_id: number | null;
+  order_id: string | null;
+  close_reason: string | null;
+};
+
+const CLOSE_REASONS = ["Target hit", "Stop hit", "Manual exit", "Time exit", "Other"] as const;
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -36,6 +75,11 @@ export default function Page() {
   const [closeInputVisible, setCloseInputVisible] = useState(false);
   const [closePriceInput, setClosePriceInput] = useState("");
   const [closeResults, setCloseResults] = useState<Record<string, CloseResult>>({});
+  const [positions, setPositions] = useState<PaperPosition[]>([]);
+  const [trades, setTrades] = useState<PaperTrade[]>([]);
+  const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
+  const [closeMarkInput, setCloseMarkInput] = useState("");
+  const [closeReasonInput, setCloseReasonInput] = useState<string>(CLOSE_REASONS[0]);
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
@@ -159,6 +203,7 @@ export default function Page() {
     setStatus("paper order staged");
     setFeedback({ state: "success", message: "Paper order staged." });
     await load();
+    await Promise.all([loadPositions(), loadTrades()]);
     detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setBusy(false);
   }
@@ -188,9 +233,71 @@ export default function Page() {
     setBusy(false);
   }
 
+  async function loadPositions() {
+    if (!authReady) return;
+    const result = await fetchWorkflowApi<PaperPosition>("/api/user/paper-positions?status=open");
+    if (result.ok) setPositions(result.items);
+  }
+
+  async function loadTrades() {
+    if (!authReady) return;
+    const result = await fetchWorkflowApi<PaperTrade>("/api/user/paper-trades?limit=50");
+    if (result.ok) setTrades(result.items);
+  }
+
+  async function loadPortfolioSummary() {
+    if (!authReady) return;
+    const summary = await fetchWorkflowApi<PortfolioSummary>("/api/user/orders/portfolio-summary");
+    if (summary.ok) setPortfolioSummary(summary.data ?? null);
+  }
+
+  function beginClosePosition(position: PaperPosition) {
+    setClosingPositionId(position.id);
+    setCloseMarkInput(position.avg_entry_price.toFixed(2));
+    setCloseReasonInput(CLOSE_REASONS[0]);
+  }
+
+  function cancelClosePosition() {
+    setClosingPositionId(null);
+    setCloseMarkInput("");
+    setCloseReasonInput(CLOSE_REASONS[0]);
+  }
+
+  async function confirmClosePosition(positionId: number) {
+    const mark = parseFloat(closeMarkInput);
+    if (!Number.isFinite(mark) || mark <= 0) {
+      setFeedback({ state: "error", message: "Enter a valid mark price." });
+      return;
+    }
+    setBusy(true);
+    setFeedback({ state: "loading", message: "Closing paper position…" });
+    const result = await fetchWorkflowApi<PaperTrade>(
+      `/api/user/paper-positions/${positionId}/close`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mark_price: mark, reason: closeReasonInput }),
+      },
+    );
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Close paper position failed." });
+      setBusy(false);
+      return;
+    }
+    cancelClosePosition();
+    setFeedback({
+      state: "success",
+      message: `Position closed — realized P&L ${result.data && result.data.realized_pnl >= 0 ? "+" : ""}${result.data ? result.data.realized_pnl.toFixed(2) : "—"}`,
+    });
+    await Promise.all([loadPositions(), loadTrades(), loadPortfolioSummary()]);
+    setBusy(false);
+  }
+
   useEffect(() => {
     if (!authReady) return;
     void load();
+    void loadPositions();
+    void loadTrades();
   }, [searchKey, authReady]);
 
   useEffect(() => {
@@ -254,6 +361,25 @@ export default function Page() {
     </Card>
     <Card title="Workflow lineage">
       <div><strong>recommendation:</strong> {selected?.recommendation_id ?? guidedState.recommendationId ?? "—"} → <strong>replay run:</strong> {selected?.replay_run_id ?? guidedState.replayRunId ?? "—"} → <strong>paper order:</strong> {selected?.order_id ?? guidedState.orderId ?? "—"}</div>
+      {selected?.order_id ? (() => {
+        const matchingOpen = positions.find((p) => p.order_id === selected.order_id);
+        const matchingTrade = trades.find((t) => t.order_id === selected.order_id);
+        if (!matchingOpen && !matchingTrade) return null;
+        return (
+          <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
+            {matchingOpen ? <span>↳ open position #{matchingOpen.id}</span> : null}
+            {matchingOpen && matchingTrade ? <span> · </span> : null}
+            {matchingTrade ? (
+              <span>
+                ↳ closed trade #{matchingTrade.id} · realized{" "}
+                <span style={{ color: pnlColor(matchingTrade.realized_pnl), fontWeight: 600 }}>
+                  {matchingTrade.realized_pnl >= 0 ? "+" : ""}{matchingTrade.realized_pnl.toFixed(2)}
+                </span>
+              </span>
+            ) : null}
+          </div>
+        );
+      })() : null}
     </Card>
 
     {guidedState.guided ? (
@@ -280,6 +406,86 @@ export default function Page() {
     <Card><div className="op-row"><button onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now"}</button><button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh order history"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} /></Card>
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
 
+    <Card title="Open paper positions">
+      {positions.length === 0 ? (
+        <EmptyState title="No open paper positions" hint="Stage a paper order from a replay-validated recommendation to open a position." />
+      ) : (
+        <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+          <table className="op-table">
+            <thead>
+              <tr>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>remaining qty</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>avg entry</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>opened</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>recommendation</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.flatMap((p) => {
+                const rows: React.ReactNode[] = [
+                  <tr key={p.id}>
+                    <td>{p.symbol}</td>
+                    <td><span className={`op-side-badge is-${p.side.toLowerCase()}`}>{p.side}</span></td>
+                    <td>{p.remaining_qty}</td>
+                    <td>{p.avg_entry_price.toFixed(2)}</td>
+                    <td>{formatRelativeTime(p.opened_at)}</td>
+                    <td>
+                      {p.recommendation_id ? (
+                        <Link
+                          href={`/recommendations?${buildGuidedQuery({ ...guidedState, recommendationId: p.recommendation_id, symbol: p.symbol })}`}
+                          style={{ fontFamily: "monospace", fontSize: "0.8rem" }}
+                        >
+                          {p.recommendation_id}
+                        </Link>
+                      ) : "—"}
+                    </td>
+                    <td>
+                      {closingPositionId === p.id ? null : (
+                        <button className="op-btn op-btn-destructive" onClick={() => beginClosePosition(p)} disabled={busy}>Close position</button>
+                      )}
+                    </td>
+                  </tr>,
+                ];
+                if (closingPositionId === p.id) {
+                  rows.push(
+                    <tr key={`${p.id}-ticket`}>
+                      <td colSpan={7} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: "0.85rem", color: "var(--op-muted, #7a8999)" }}>Mark price</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              required
+                              value={closeMarkInput}
+                              onChange={(e) => setCloseMarkInput(e.target.value)}
+                              style={{ width: 120 }}
+                            />
+                          </label>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: "0.85rem", color: "var(--op-muted, #7a8999)" }}>Reason</span>
+                            <select value={closeReasonInput} onChange={(e) => setCloseReasonInput(e.target.value)}>
+                              {CLOSE_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </label>
+                          <button className="op-btn op-btn-destructive" onClick={() => void confirmClosePosition(p.id)} disabled={busy}>{busy ? "Closing…" : "Confirm close"}</button>
+                          <button onClick={cancelClosePosition} disabled={busy}>Cancel</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                return rows;
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+
     <div className="op-grid-2">
       <Card title={guidedState.guided ? "Order history (secondary)" : "Order history"}>
         {guidedState.guided ? <div style={{ marginBottom: 6, color: "var(--op-muted, #7a8999)" }}>Secondary panel: full order history</div> : null}
@@ -288,7 +494,7 @@ export default function Page() {
           <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>shares</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>limit/fill</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>broker status</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fill count</th></tr></thead>
           <tbody>
             {orders.length === 0 && !busy ? <tr><td colSpan={7} style={{ color: "#9fb0c3", textAlign: "center", padding: "16px 8px" }}>No paper orders yet. Click "Stage paper order now" above to create your first order.</td></tr> : null}
-            {orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td><StatusBadge tone={o.side === "buy" ? "good" : "warn"}>{o.side}</StatusBadge></td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}
+            {orders.map((o) => <tr key={o.order_id} onClick={() => setSelectedOrderId(o.order_id)} className={`is-selectable ${selectedOrderId === o.order_id ? "is-active" : ""}`}><td>{o.created_at}</td><td>{o.symbol}</td><td><span className={`op-side-badge is-${o.side.toLowerCase()}`}>{o.side}</span></td><td>{o.shares}</td><td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td><td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td><td>{o.fills.length}</td></tr>)}
           </tbody>
         </table>
         </div>
@@ -329,5 +535,44 @@ export default function Page() {
         </div>
       </Card>
     </div>
+
+    <Card title="Closed trades (last 50)">
+      {trades.length === 0 ? (
+        <EmptyState title="No closed trades yet." hint="Close an open paper position to record a realized trade." />
+      ) : (
+        <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+          <table className="op-table">
+            <thead>
+              <tr>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>qty</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>entry → exit</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>realized P&amp;L</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>hold</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>reason</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>closed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((t) => (
+                <tr key={t.id}>
+                  <td>{t.symbol}</td>
+                  <td><span className={`op-side-badge is-${t.side.toLowerCase()}`}>{t.side}</span></td>
+                  <td>{t.qty}</td>
+                  <td>{t.entry_price.toFixed(2)} → {t.exit_price != null ? t.exit_price.toFixed(2) : "—"}</td>
+                  <td style={{ color: pnlColor(t.realized_pnl), fontWeight: 600 }}>
+                    {t.realized_pnl >= 0 ? "+" : ""}{t.realized_pnl.toFixed(2)}
+                  </td>
+                  <td>{formatHoldDuration(t.hold_seconds)}</td>
+                  <td>{t.close_reason ?? "—"}</td>
+                  <td>{formatRelativeTime(t.closed_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   </section>;
 }

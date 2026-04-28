@@ -131,11 +131,11 @@ export default function Page() {
     }
   }
 
-  const runAnalysis = async (nextSymbol: string, nextMode: MarketMode, nextTimeframe: SupportedTimeframe, nextStrategy: string) => {
+  const runAnalysis = async (nextSymbol: string, nextMode: MarketMode, nextTimeframe: SupportedTimeframe, nextStrategy: string): Promise<string | null> => {
     if (!authReady || !chartRef.current) {
       setWorkbenchState("auth_initializing");
       setFeedback({ state: "loading", message: "Authentication session is initializing for protected workbench routes…" });
-      return;
+      return null;
     }
 
     setWorkbenchState("loading_analysis");
@@ -150,21 +150,21 @@ export default function Page() {
         if (setupResult.authPending) {
           setWorkbenchState("auth_initializing");
           setFeedback({ state: "loading", message: "Authentication still initializing. Workbench will be ready shortly." });
-          return;
+          return null;
         }
         if (setupResult.status === 402) {
           setWorkbenchState("data_not_entitled");
           setFeedback({ state: "idle", message: "" });
-          return;
+          return null;
         }
         if (setupResult.status === 503) {
           setWorkbenchState("provider_unavailable");
           setFeedback({ state: "error", message: PROVIDER_BLOCKED_HINT });
-          return;
+          return null;
         }
         setWorkbenchState("hard_failure");
         setFeedback({ state: "error", message: setupResult.error ?? "Unable to load workbench setup." });
-        return;
+        return null;
       }
 
       const setupPayload = setupResult.data;
@@ -209,14 +209,16 @@ export default function Page() {
 
       setWorkbenchState(payload.fallback_mode ? "fallback_mode" : "ready");
       setFeedback({ state: "success", message: "Analysis loaded. Strategy and indicators are synced to one canonical bar series." });
+      return workflowSource || setupPayload?.workflow_source || "workflow source pending";
     } catch (err) {
       if (err instanceof Error && err.message === "AUTH_NOT_READY") {
         setWorkbenchState("auth_initializing");
         setFeedback({ state: "loading", message: "Authentication bridge still initializing for chart context." });
-        return;
+        return null;
       }
       setWorkbenchState("hard_failure");
       setFeedback({ state: "error", message: "Failed to load chart context. Retry when provider/auth is ready." });
+      return null;
     }
   };
 
@@ -259,7 +261,16 @@ export default function Page() {
     setAppliedMarketMode(draftMarketMode);
     setAppliedTimeframe(draftTimeframe);
     setAppliedStrategy(draftStrategy);
-    await runAnalysis(nextSymbol, draftMarketMode, draftTimeframe, draftStrategy);
+    const workflowSource = await runAnalysis(nextSymbol, draftMarketMode, draftTimeframe, draftStrategy);
+    if (workflowSource == null) return;
+    const query = buildGuidedQuery({
+      guided: guidedMode,
+      symbol: nextSymbol,
+      strategy: draftStrategy,
+      marketMode: draftMarketMode,
+      source: workflowSource,
+    });
+    router.replace(query ? `/analysis?${query}` : "/analysis");
   }
 
   async function createRecommendation() {

@@ -854,13 +854,18 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         app_user_id=_user.id,
     )
     recommendation_service.persist_fill(fill)
-    if order.side.value == "long":
-        paper_portfolio_repo.create_position(
+    # Auto-create / aggregate paper_positions on fill (equities only — Phase 1 scope).
+    # Use the actual fill price/shares so weighted-average entry tracks broker reality.
+    if market_mode == MarketMode.EQUITIES and fill.filled_shares > 0:
+        paper_portfolio_repo.upsert_position_on_fill(
             app_user_id=_user.id,
             symbol=order.symbol,
             side=order.side.value,
-            quantity=float(order.shares),
-            average_price=order.limit_price,
+            fill_qty=float(fill.filled_shares),
+            fill_price=float(fill.fill_price),
+            recommendation_id=rec.recommendation_id,
+            replay_run_id=replay_run_id,
+            order_id=order.order_id,
         )
     return {
         "order_id": order.order_id,
@@ -877,6 +882,112 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     }
 
 
+def _serialize_position(row) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "symbol": row.symbol,
+        "side": row.side,
+        "opened_qty": float(row.opened_qty if row.opened_qty is not None else row.quantity),
+        "remaining_qty": float(row.remaining_qty if row.remaining_qty is not None else row.quantity),
+        "avg_entry_price": float(row.average_price),
+        "open_notional": float(row.open_notional),
+        "status": row.status,
+        "opened_at": row.opened_at.isoformat() if row.opened_at else None,
+        "closed_at": row.closed_at.isoformat() if row.closed_at else None,
+        "recommendation_id": row.recommendation_id,
+        "replay_run_id": row.replay_run_id,
+        "order_id": row.order_id,
+    }
+
+
+def _serialize_trade(row) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "symbol": row.symbol,
+        "side": row.side,
+        "qty": float(row.quantity),
+        "entry_price": float(row.entry_price),
+        "exit_price": float(row.exit_price) if row.exit_price is not None else None,
+        "realized_pnl": float(row.realized_pnl),
+        "opened_at": row.opened_at.isoformat() if row.opened_at else None,
+        "closed_at": row.closed_at.isoformat() if row.closed_at else None,
+        "hold_seconds": row.hold_seconds,
+        "position_id": row.position_id,
+        "recommendation_id": row.recommendation_id,
+        "replay_run_id": row.replay_run_id,
+        "order_id": row.order_id,
+        "close_reason": row.close_reason,
+    }
+
+
+@user_router.get("/paper-positions")
+def list_paper_positions(
+    status: str = "open",
+    limit: int = 50,
+    _user=Depends(require_approved_user),
+):
+    if status not in {"open", "closed", "all"}:
+        raise HTTPException(status_code=400, detail="status must be one of: open, closed, all.")
+    rows = paper_portfolio_repo.list_positions(app_user_id=_user.id, status=status, limit=limit)
+    return [_serialize_position(row) for row in rows]
+
+
+@user_router.get("/paper-trades")
+def list_paper_trades(limit: int = 50, _user=Depends(require_approved_user)):
+    rows = paper_portfolio_repo.list_trades(app_user_id=_user.id, limit=limit)
+    return [_serialize_trade(row) for row in rows]
+
+
+@user_router.post("/paper-positions/{position_id}/close")
+def close_paper_position(position_id: int, req: dict[str, object], _user=Depends(require_approved_user)):
+    mark_price_raw = req.get("mark_price")
+    if mark_price_raw is None:
+        raise HTTPException(status_code=400, detail="mark_price is required.")
+    try:
+        mark_price = float(mark_price_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="mark_price must be numeric.")
+    reason = str(req.get("reason") or "").strip() or None
+
+    position = paper_portfolio_repo.get_position_by_id(position_id=position_id)
+    if position is None or position.app_user_id != _user.id:
+        # Conceal existence from non-owners with 404, matching scope-isolation pattern elsewhere.
+        raise HTTPException(status_code=404, detail="Position not found.")
+    if position.status == "closed":
+        raise HTTPException(status_code=400, detail="Position is already closed.")
+
+    remaining = float(position.remaining_qty if position.remaining_qty is not None else position.quantity)
+    avg_entry = float(position.average_price)
+    direction = 1.0 if position.side == "long" else -1.0
+    realized_pnl = (mark_price - avg_entry) * remaining * direction
+
+    now = utc_now()
+    opened_at = position.opened_at
+    hold_seconds: int | None = None
+    if opened_at is not None:
+        # SQLite may round-trip naive datetimes; normalize to UTC-aware before subtracting.
+        opened_aware = opened_at if opened_at.tzinfo is not None else opened_at.replace(tzinfo=timezone.utc)
+        hold_seconds = int(max(0.0, (now - opened_aware).total_seconds()))
+
+    trade = paper_portfolio_repo.create_trade(
+        app_user_id=_user.id,
+        symbol=position.symbol,
+        side=position.side,
+        entry_price=avg_entry,
+        exit_price=mark_price,
+        quantity=remaining,
+        realized_pnl=realized_pnl,
+        opened_at=opened_at or now,
+        closed_at=now,
+        position_id=position.id,
+        hold_seconds=hold_seconds,
+        recommendation_id=position.recommendation_id,
+        replay_run_id=position.replay_run_id,
+        order_id=position.order_id,
+        close_reason=reason,
+    )
+    paper_portfolio_repo.close_position(position_id=position.id, closed_at=now)
+    return _serialize_trade(trade)
 
 
 @user_router.get("/analysis/setup")

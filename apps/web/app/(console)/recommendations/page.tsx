@@ -391,9 +391,14 @@ export default function RecommendationsPage() {
   const isPreviewMode = guidedState.marketMode === "options" || guidedState.marketMode === "crypto";
   const activeRecommendation = useMemo(() => {
     if (selectedRecommendation) return selectedRecommendation;
+    if (guidedState.guided) {
+      // Guided mode never silently fabricates lineage: require an explicit recommendation match.
+      if (!guidedState.recommendationId) return null;
+      return rows.find((item) => item.recommendation_id === guidedState.recommendationId) ?? null;
+    }
     if (guidedState.recommendationId) return rows.find((item) => item.recommendation_id === guidedState.recommendationId) ?? null;
     return rows[0] ?? null;
-  }, [guidedState.recommendationId, rows, selectedRecommendation]);
+  }, [guidedState.guided, guidedState.recommendationId, rows, selectedRecommendation]);
   const filteredRows = useMemo(
     () =>
       rows
@@ -501,7 +506,9 @@ export default function RecommendationsPage() {
         <div className="op-row">
           <input value={symbols} onChange={(e) => setSymbols(e.target.value.toUpperCase())} style={{ minWidth: 320 }} placeholder="AAPL,MSFT,NVDA" />
           <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
-          <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
+          {!guidedState.guided ? (
+            <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
+          ) : null}
           <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>
           {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
         </div>
