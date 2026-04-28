@@ -178,6 +178,25 @@ export default function Page() {
     await loadRuns();
     if (newRunId != null) await loadSteps(newRunId, { autoExpandFirst: guidedState.guided });
     setBusy(false);
+
+    // Auto-advance: in guided mode the operator's next step is Paper Order.
+    // Skip if the replay produced no stageable candidate so the warning block stays visible.
+    if (guidedState.guided && newRunId != null) {
+      const detail = await fetchWorkflowApi<{ has_stageable_candidate?: boolean }>(
+        `/api/user/replay-runs/${newRunId}`,
+      );
+      const blocked = detail.ok && detail.data?.has_stageable_candidate === false;
+      if (!blocked) {
+        const nextQuery = buildGuidedQuery({
+          ...guidedState,
+          symbol: preferredSymbol,
+          source: sourceName,
+          recommendationId: guidedState.recommendationId,
+          replayRunId: String(newRunId),
+        });
+        setTimeout(() => router.push(`/orders?${nextQuery}`), 600);
+      }
+    }
   }
 
   function openOrdersNextAction() {

@@ -216,6 +216,9 @@ export default function RecommendationsPage() {
         recommendationId: promotedRecommendationId,
       });
       router.replace(`/recommendations?${query}`);
+      // Auto-advance: in guided mode the operator's next step is always Replay.
+      // Brief delay so the success feedback is readable before the route changes.
+      setTimeout(() => router.push(`/replay-runs?${query}`), 600);
     }
   }
 
