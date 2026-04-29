@@ -176,6 +176,26 @@ describe("PaperOptionsPositionsSectionContent", () => {
     expect(html).not.toContain("null");
   });
 
+  it("renders loading and error states safely", () => {
+    const html = renderToStaticMarkup(
+      <PaperOptionsPositionsSectionContent
+        loading
+        error="Authentication required"
+        items={[]}
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Loading paper options positions");
+    expect(html).toContain("Failed to load paper options positions");
+    expect(html).toContain("Authentication required");
+    expect(html).toContain("Retry paper options load");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("Infinity");
+  });
+
   it("renders safe missing-value fallbacks for closed rows", () => {
     const html = renderToStaticMarkup(
       <PaperOptionsPositionsSectionContent
