@@ -39,6 +39,7 @@ from macmarket_trader.domain.models import (
 from macmarket_trader.domain.schemas import (
     FillRecord,
     OptionPaperOrderLegRecord,
+    OptionPaperOpenStructureResponse,
     OptionPaperOrderRecord,
     OptionPaperPositionLegRecord,
     OptionPaperPositionRecord,
@@ -763,6 +764,81 @@ class OptionPaperRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
+    def open_structure(
+        self,
+        *,
+        app_user_id: int,
+        structure: OptionPaperStructureInput,
+    ) -> OptionPaperOpenStructureResponse:
+        prepared = prepare_option_paper_structure(structure)
+        with self.session_factory() as session:
+            order_row = PaperOptionOrderModel(
+                app_user_id=app_user_id,
+                underlying_symbol=prepared.underlying_symbol,
+                structure_type=prepared.structure_type,
+                status="opened",
+                expiration=prepared.expiration,
+                net_debit=prepared.net_debit,
+                net_credit=prepared.net_credit,
+                max_profit=prepared.max_profit,
+                max_loss=prepared.max_loss,
+                breakevens=list(prepared.breakevens),
+                execution_enabled=False,
+                notes=structure.notes or "",
+            )
+            session.add(order_row)
+            session.flush()
+            for leg in prepared.legs:
+                session.add(
+                    PaperOptionOrderLegModel(
+                        option_order_id=order_row.id,
+                        action=leg.action,
+                        right=leg.right,
+                        strike=leg.strike,
+                        expiration=leg.expiration,
+                        quantity=leg.quantity,
+                        multiplier=leg.multiplier,
+                        premium=leg.premium,
+                        leg_status="opened",
+                        label=leg.label,
+                    )
+                )
+
+            position_row = PaperOptionPositionModel(
+                app_user_id=app_user_id,
+                underlying_symbol=prepared.underlying_symbol,
+                structure_type=prepared.structure_type,
+                status="open",
+                expiration=prepared.expiration,
+                opening_net_debit=prepared.net_debit,
+                opening_net_credit=prepared.net_credit,
+                max_profit=prepared.max_profit,
+                max_loss=prepared.max_loss,
+                breakevens=list(prepared.breakevens),
+                source_order_id=order_row.id,
+            )
+            session.add(position_row)
+            session.flush()
+            for leg in prepared.legs:
+                session.add(
+                    PaperOptionPositionLegModel(
+                        position_id=position_row.id,
+                        action=leg.action,
+                        right=leg.right,
+                        strike=leg.strike,
+                        expiration=leg.expiration,
+                        quantity=leg.quantity,
+                        multiplier=leg.multiplier,
+                        entry_premium=leg.premium,
+                        status="open",
+                        label=leg.label,
+                    )
+                )
+            session.commit()
+            session.refresh(order_row)
+            session.refresh(position_row)
+            return self._serialize_open_response(session, order_row=order_row, position_row=position_row)
+
     def create_order(
         self,
         *,
@@ -1119,6 +1195,38 @@ class OptionPaperRepository:
                 )
                 for leg in legs
             ],
+        )
+
+    def _serialize_open_response(
+        self,
+        session: Session,
+        *,
+        order_row: PaperOptionOrderModel,
+        position_row: PaperOptionPositionModel,
+    ) -> OptionPaperOpenStructureResponse:
+        position_record = self._serialize_position_record(session, position_row)
+        return OptionPaperOpenStructureResponse(
+            order_id=order_row.id,
+            position_id=position_row.id,
+            structure_type=position_row.structure_type,
+            underlying_symbol=position_row.underlying_symbol,
+            status=position_row.status,
+            order_status=order_row.status,
+            position_status=position_row.status,
+            opening_net_debit=position_row.opening_net_debit,
+            opening_net_credit=position_row.opening_net_credit,
+            max_profit=position_row.max_profit,
+            max_loss=position_row.max_loss,
+            breakevens=list(position_row.breakevens or []),
+            execution_enabled=bool(order_row.execution_enabled),
+            persistence_enabled=True,
+            paper_only=True,
+            operator_disclaimer=(
+                "Paper-only options structure open. No replay runs, live routing, or broker execution."
+            ),
+            legs=position_record.legs,
+            order_created_at=order_row.created_at,
+            position_opened_at=position_row.opened_at,
         )
 
 

@@ -80,9 +80,22 @@ Required now for `8D3` repository/service contracts:
 - validation-block tests for naked short and unsupported expiration patterns
 - regression proof that equity paper lifecycle tests remain green
 
+Required now for `8D4` open paper option structure behavior:
+
+- open paper option structure tests for supported defined-risk inputs
+- order and position header/leg persistence tests through the open-only path
+- user-scoping tests for created option paper orders and positions
+- response-contract tests for:
+  - `market_mode=options`
+  - `execution_enabled=false`
+  - `persistence_enabled=true`
+  - paper-only disclaimer presence
+- blocked naked-short and invalid-leg-data tests proving nothing persists
+- regression proof that no equity orders, positions, trades, recommendations,
+  or replay runs are created by the options open path
+
 Required later for options paper lifecycle:
 
-- structure open lifecycle tests
 - structure close lifecycle tests
 - gross versus net realized P&L tests
 - `commission_per_contract` application tests

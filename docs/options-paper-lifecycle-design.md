@@ -4,15 +4,18 @@ Last updated: 2026-04-29
 
 ## Purpose
 
-This document defines the `8D` design checkpoint and schema foundation for
-future options paper lifecycle support.
+This document defines the `8D` design checkpoint, schema foundation,
+repository/service contracts, and open-only runtime boundary for options paper
+lifecycle support.
 
-`8D1` design, `8D2` schema foundation, and `8D3` repository/service contracts
-are now implemented. The dedicated options persistence branch exists, but it
-does not yet authorize:
+`8D1` design, `8D2` schema foundation, `8D3` repository/service contracts,
+and `8D4` open paper option structure behavior are now implemented. The
+dedicated options persistence branch exists and now authorizes supported
+defined-risk structures to open through an options-specific paper-only backend
+path. It still does not authorize:
 
 - options order staging
-- options positions or trades
+- close paper option structure behavior
 - live routing
 - brokerage execution
 - automatic assignment or exercise handling
@@ -307,6 +310,49 @@ Still not implemented in `8D3`:
 - `commission_per_contract` application
 - assignment/exercise handling
 - frontend UI
+
+## 8D4 open paper option structure implemented now
+
+The first runtime lifecycle step now exists without adding any frontend UI.
+
+Implemented now:
+
+- `open_paper_option_structure(...)` in
+  `src/macmarket_trader/options/paper_open.py`
+- `OptionPaperRepository.open_structure(...)` in
+  `src/macmarket_trader/storage/repositories.py`
+- protected route at `POST /user/options/paper-structures/open`
+- typed open-response contract in
+  `src/macmarket_trader/domain/schemas.py`
+
+Current runtime behavior:
+
+- validates and normalizes the requested structure through
+  `prepare_option_paper_structure(...)`
+- accepts supported defined-risk structures only
+- creates one options-specific paper order header plus legs
+- creates one options-specific paper position header plus legs
+- preserves `execution_enabled=false`
+- returns an operator-facing paper-only summary with:
+  - order id
+  - position id
+  - structure type
+  - net debit / credit
+  - max profit / loss
+  - breakevens
+  - normalized legs
+
+Current guardrails:
+
+- no equity orders, positions, or trades are created
+- no replay runs are created
+- no recommendation rows are created
+- no staged options orders are created
+- naked short single-leg structures remain blocked
+- multi-expiration structures remain blocked
+- no close behavior exists yet
+- no `commission_per_contract` application exists yet
+- no frontend operator UI exists yet
 
 ## Draft contract and payload direction
 
@@ -705,7 +751,9 @@ Complete when:
 - no equity lifecycle breakage
 - no live trading
 - no brokerage routing
-- no options open/close lifecycle behavior until `8D4+` is explicitly approved
+- no options close lifecycle behavior until `8D5+` is explicitly approved
+- the only approved runtime lifecycle behavior in the current branch is the
+  `8D4` open-only paper structure path
 - no automatic assignment or exercise in the early lifecycle pass
 - no naked shorts early
 - no margin assumptions unless explicitly modeled
@@ -713,9 +761,10 @@ Complete when:
 
 ## Recommended implementation prompt after this checkpoint
 
-After the completed `8D3` repository/service layer, the safest next implementation
-prompt is:
+After the completed `8D4` open-only paper lifecycle slice, the safest next
+implementation prompt is:
 
-- `Implement 8D4 only: add open paper option structure behavior on top of the
-  dedicated repository contracts, with no close behavior, no commission
-  application, no frontend UI, and no live routing.`
+- `Implement 8D5 only: add close paper option structure behavior on top of the
+  dedicated options persistence branch, with no commission_per_contract
+  application yet, no frontend UI, no live routing, and no changes to the
+  existing equity close lifecycle.`

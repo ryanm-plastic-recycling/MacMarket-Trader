@@ -279,6 +279,10 @@ Current implementation note:
 - `POST /user/options/replay-preview` plus the Recommendations-side replay
   preview UI now define the current 8C boundary without adding schema,
   persistence, staged orders, or execution enablement
+- `POST /user/options/paper-structures/open` now defines the current 8D4
+  boundary for open-only paper options lifecycle persistence, using dedicated
+  options tables and repository contracts without adding close behavior,
+  staged options orders, or live routing
 
 ## Deferred items that do not block 8C planning
 

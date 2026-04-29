@@ -21,6 +21,8 @@ from macmarket_trader.domain.schemas import (
     Bar,
     ExpectedRange,
     InviteCreateRequest,
+    OptionPaperOpenStructureResponse,
+    OptionPaperStructureInput,
     OptionReplayPreviewRequest,
     OptionReplayPreviewResponse,
     PortfolioSnapshot,
@@ -28,6 +30,8 @@ from macmarket_trader.domain.schemas import (
     TradeRecommendation,
 )
 from macmarket_trader.execution.paper_broker import PaperBroker
+from macmarket_trader.options.paper_contracts import OptionPaperContractError
+from macmarket_trader.options.paper_open import open_paper_option_structure
 from macmarket_trader.options.replay_preview import build_options_replay_preview
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
@@ -36,7 +40,7 @@ from macmarket_trader.email_templates import render_approval_html, render_invite
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository, commission_paid_for_trade, display_id_or_fallback, gross_pnl_or_fallback, net_pnl_or_fallback
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OptionPaperRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository, commission_paid_for_trade, display_id_or_fallback, gross_pnl_or_fallback, net_pnl_or_fallback
 from macmarket_trader.domain.models import AuditLogModel
 
 
@@ -192,6 +196,7 @@ dashboard_repo = DashboardRepository(SessionLocal)
 recommendation_repo = RecommendationRepository(SessionLocal)
 replay_repo = ReplayRepository(SessionLocal)
 order_repo = OrderRepository(SessionLocal)
+option_paper_repo = OptionPaperRepository(SessionLocal)
 paper_portfolio_repo = PaperPortfolioRepository(SessionLocal)
 watchlist_repo = WatchlistRepository(SessionLocal)
 strategy_report_repo = StrategyReportRepository(SessionLocal)
@@ -844,6 +849,21 @@ def options_replay_preview(
     _user=Depends(require_approved_user),
 ) -> OptionReplayPreviewResponse:
     return build_options_replay_preview(req)
+
+
+@user_router.post("/options/paper-structures/open", response_model=OptionPaperOpenStructureResponse)
+def open_user_option_paper_structure(
+    req: OptionPaperStructureInput,
+    user=Depends(require_approved_user),
+) -> OptionPaperOpenStructureResponse:
+    try:
+        return open_paper_option_structure(
+            app_user_id=user.id,
+            structure=req,
+            repository=option_paper_repo,
+        )
+    except OptionPaperContractError as exc:
+        raise HTTPException(status_code=409, detail=exc.reason) from exc
 
 
 @user_router.post("/replay-runs")

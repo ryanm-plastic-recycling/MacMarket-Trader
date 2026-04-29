@@ -534,6 +534,31 @@ class OptionPaperTradeRecord(BaseModel):
     legs: list[OptionPaperTradeLegRecord] = Field(default_factory=list)
 
 
+class OptionPaperOpenStructureResponse(BaseModel):
+    order_id: int
+    position_id: int
+    market_mode: MarketMode = MarketMode.OPTIONS
+    structure_type: str
+    underlying_symbol: str
+    status: str
+    order_status: str
+    position_status: str
+    opening_net_debit: float | None = None
+    opening_net_credit: float | None = None
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float] = Field(default_factory=list)
+    execution_enabled: bool = False
+    persistence_enabled: bool = True
+    paper_only: bool = True
+    operator_disclaimer: str = (
+        "Paper-only options structure open. No replay runs, live routing, or broker execution."
+    )
+    legs: list[OptionPaperPositionLegRecord] = Field(default_factory=list)
+    order_created_at: datetime
+    position_opened_at: datetime
+
+
 class CryptoMarketContext(BaseModel):
     venue: str
     quote_currency: str = "USD"
