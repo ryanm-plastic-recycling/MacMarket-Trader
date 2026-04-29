@@ -1,6 +1,8 @@
 export type IndicatorCategory = "trend" | "volatility" | "structure" | "momentum" | "volume" | "haco";
 
 export type IndicatorId =
+  | "sma20"
+  | "sma50"
   | "ema20"
   | "ema50"
   | "ema200"
@@ -36,18 +38,20 @@ export type CandleBar = {
 };
 
 export const INDICATOR_REGISTRY: IndicatorDefinition[] = [
+  { id: "sma20", label: "SMA 20", category: "trend", defaultEnabled: false },
+  { id: "sma50", label: "SMA 50", category: "trend", defaultEnabled: false },
   { id: "ema20", label: "EMA 20", category: "trend", defaultEnabled: true },
   { id: "ema50", label: "EMA 50", category: "trend", defaultEnabled: false },
   { id: "ema200", label: "EMA 200", category: "trend", defaultEnabled: false },
   { id: "vwap", label: "VWAP", category: "trend", defaultEnabled: true },
   { id: "anchored_vwap", label: "Anchored VWAP", category: "trend", defaultEnabled: false },
   { id: "atr", label: "ATR", category: "volatility", defaultEnabled: false },
-  { id: "bollinger", label: "Bollinger Bands", category: "volatility", defaultEnabled: false },
+  { id: "bollinger", label: "Bollinger (20,2)", category: "volatility", defaultEnabled: false },
   { id: "prior_day_levels", label: "Prior Day H/L", category: "structure", defaultEnabled: true },
   { id: "opening_range", label: "Opening Range", category: "structure", defaultEnabled: false },
   { id: "gap_levels", label: "Gap Levels", category: "structure", defaultEnabled: false },
   { id: "pivot_sr", label: "Pivot S/R", category: "structure", defaultEnabled: false },
-  { id: "rsi", label: "RSI", category: "momentum", defaultEnabled: false },
+  { id: "rsi", label: "RSI 14", category: "momentum", defaultEnabled: false },
   { id: "macd", label: "MACD", category: "momentum", defaultEnabled: false },
   { id: "volume", label: "Volume", category: "volume", defaultEnabled: false },
   { id: "relative_volume", label: "Relative Volume", category: "volume", defaultEnabled: false },
@@ -100,6 +104,8 @@ export function calculateIndicatorSnapshot(bars: CandleBar[]) {
   const latestVol = volumes.at(-1) ?? 0;
   const relVol = avgVol > 0 ? latestVol / avgVol : 0;
   return {
+    sma20: closes.slice(-20).reduce((sum, item) => sum + item, 0) / Math.max(1, Math.min(20, closes.length)),
+    sma50: closes.slice(-50).reduce((sum, item) => sum + item, 0) / Math.max(1, Math.min(50, closes.length)),
     ema20,
     ema50,
     ema200,

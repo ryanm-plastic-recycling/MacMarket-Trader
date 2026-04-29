@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 99, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 103, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
@@ -236,7 +236,7 @@ deferred to later phases and do not block Phase 8 planning.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 99
+- vitest: 103
 - Playwright: 31
 
 ## Core product pillars
@@ -279,6 +279,12 @@ preserved in git history. Run `git log --oneline -- docs/roadmap-status.md`
 for the chronological list, or `git log -p docs/roadmap-status.md` for full
 diffs. Notable recent inflection points:
 
+- 2026-04-29 — Analysis / Recommendations chart UX pass: workflow charts now
+  default to compact presets instead of crowded overlays, surface hover
+  snapshot values for time / close / volume plus visible indicators only, and
+  show a value-rich legend with quick hide toggles. This stayed frontend-only;
+  scoring, replay, orders, schemas, and provider execution behavior were not
+  changed.
 - 2026-04-29 — Phase 8A planning started: `docs/options-architecture.md`
   added with safe follow-on slices for read-only option contracts, replay,
   paper lifecycle, and operator risk UX. This was a docs-only pass; no

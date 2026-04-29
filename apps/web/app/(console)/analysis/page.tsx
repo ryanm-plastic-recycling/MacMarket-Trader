@@ -1,19 +1,16 @@
 "use client";
 
-import { createChart, LineStyle, type CandlestickData, type IChartApi, type Time } from "lightweight-charts";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { fetchHacoChart } from "@/lib/haco-api";
+import { WorkflowChart } from "@/components/charts/workflow-chart";
+import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
-import { IndicatorSelector } from "@/components/charts/indicator-selector";
-import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
-import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
 import { fetchStrategyRegistry, filterStrategiesByMode, type MarketMode, type StrategyRegistryEntry } from "@/lib/strategy-registry";
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, GUIDED_FLOW_LABEL, parseGuidedFlowState } from "@/lib/guided-workflow";
@@ -81,8 +78,6 @@ export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const chartRef = useRef<HTMLDivElement | null>(null);
-  const chartApiRef = useRef<IChartApi | null>(null);
 
   const [draftSymbol, setDraftSymbol] = useState("AAPL");
   const [draftMarketMode, setDraftMarketMode] = useState<MarketMode>("equities");
@@ -97,42 +92,16 @@ export default function Page() {
 
   const [source, setSource] = useState("workflow pending");
   const [setup, setSetup] = useState<SetupPayload | null>(null);
-  const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
-  const [unsupportedIndicators, setUnsupportedIndicators] = useState<string[]>([]);
+  const [chartPayload, setChartPayload] = useState<HacoChartPayload | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [workbenchState, setWorkbenchState] = useState<WorkbenchState>("auth_initializing");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
-  const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
   const guidedMode = guidedState.guided;
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    try {
-      const parsed = raw ? (JSON.parse(raw) as string[]) : [];
-      const normalized = normalizeSelection(parsed);
-      const unsupported = normalized.filter((id) => !FIRST_CLASS_WORKFLOW_INDICATORS.includes(id));
-      setUnsupportedIndicators(unsupported);
-      setSelectedIndicators(normalized.filter((id) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(id)));
-    } catch {
-      setUnsupportedIndicators([]);
-      setSelectedIndicators(normalizeSelection([]).filter((id) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(id)));
-    }
-  }, []);
-
-  function setIndicators(next: IndicatorId[]) {
-    const normalized = normalizeSelection(next).filter((id) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(id));
-    setUnsupportedIndicators([]);
-    setSelectedIndicators(normalized);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    }
-  }
-
   const runAnalysis = async (nextSymbol: string, nextMode: MarketMode, nextTimeframe: SupportedTimeframe, nextStrategy: string): Promise<string | null> => {
-    if (!authReady || !chartRef.current) {
+    if (!authReady) {
       setWorkbenchState("auth_initializing");
       setFeedback({ state: "loading", message: "Authentication session is initializing for protected workbench routes…" });
       return null;
@@ -174,38 +143,9 @@ export default function Page() {
       }
 
       const payload = await fetchHacoChart({ symbol: nextSymbol, timeframe: nextTimeframe, include_heikin_ashi: nextStrategy === "HACO Context" });
+      setChartPayload(payload);
       const workflowSource = payload.fallback_mode ? `fallback (${payload.data_source})` : payload.data_source;
       setSource(workflowSource || "workflow source pending");
-
-      if (chartApiRef.current) {
-        chartApiRef.current.remove();
-      }
-      const chart = createChart(chartRef.current, { height: 380, autoSize: true, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
-      chartApiRef.current = chart;
-
-      const candles: Array<CandlestickData<Time> & { volume: number }> = payload.candles.slice(-180).map((c) => ({
-        time: c.time as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      }));
-
-      chart.addCandlestickSeries().setData(candles);
-      applyIndicatorsToChart(chart, candles, selectedIndicators);
-
-      if (setupPayload?.entry_zone) {
-        const entry = chart.addLineSeries({ color: "#6ea8fe", lineWidth: 2 });
-        const stop = chart.addLineSeries({ color: "#ff8b8b", lineStyle: LineStyle.Dashed, lineWidth: 2 });
-        const target = chart.addLineSeries({ color: "#7ee787", lineStyle: LineStyle.Dotted, lineWidth: 2 });
-        entry.setData(candles.map((c) => ({ time: c.time, value: (setupPayload.entry_zone.low + setupPayload.entry_zone.high) / 2 })));
-        stop.setData(candles.map((c) => ({ time: c.time, value: setupPayload.invalidation.price })));
-        if (setupPayload.targets[0]) {
-          target.setData(candles.map((c) => ({ time: c.time, value: setupPayload.targets[0] })));
-        }
-      }
-      chart.timeScale().fitContent();
 
       setWorkbenchState(payload.fallback_mode ? "fallback_mode" : "ready");
       setFeedback({ state: "success", message: "Analysis loaded. Strategy and indicators are synced to one canonical bar series." });
@@ -227,14 +167,6 @@ export default function Page() {
     setInitialLoadDone(true);
     void runAnalysis(appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy);
   }, [isLoaded, isSignedIn, initialLoadDone, appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy]);
-
-  useEffect(() => {
-    if (!initialLoadDone) return;
-    void runAnalysis(appliedSymbol, appliedMarketMode, appliedTimeframe, appliedStrategy);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIndicators]);
-
-  useEffect(() => () => chartApiRef.current?.remove(), []);
   useEffect(() => {
     if (feedback.state !== "success") return;
     const timer = window.setTimeout(() => setFeedback({ state: "idle", message: "" }), 2800);
@@ -322,6 +254,15 @@ export default function Page() {
     return `Trigger: ${setup.trigger} · Entry ${setup.entry_zone.low}-${setup.entry_zone.high} · Invalidation ${setup.invalidation.price}`;
   }, [setup]);
 
+  const overlayLevels = useMemo(
+    () => [
+      { label: "entry", value: setup ? (setup.entry_zone.low + setup.entry_zone.high) / 2 : null, color: "#6ea8fe", lineWidth: 2 },
+      { label: "stop", value: setup?.invalidation.price ?? null, color: "#ff8b8b", lineStyle: 2, lineWidth: 2 },
+      { label: "target", value: setup?.targets?.[0] ?? null, color: "#7ee787", lineStyle: 3, lineWidth: 2 },
+    ],
+    [setup],
+  );
+
   return <section className="op-stack">
     <PageHeader title="Trade Setup" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
     <WorkflowBanner
@@ -362,14 +303,6 @@ export default function Page() {
       </div>
     ) : null}
 
-
-    {unsupportedIndicators.length > 0 ? (
-      <ErrorState
-        title="Indicator availability note"
-        hint={`Selected but not yet renderable on this chart: ${unsupportedIndicators.join(", ")}. Choose from supported indicators below.`}
-      />
-    ) : null}
-
     <Card>
       <div className="op-grid-4">
         <div><label>Symbol</label><input value={draftSymbol} onChange={(e) => setDraftSymbol(e.target.value.toUpperCase())} /></div>
@@ -396,11 +329,6 @@ export default function Page() {
         </div>
       ) : null}
       <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void refreshAnalysis()} />
-    </Card>
-
-    <Card title="Indicator panel">
-      <div className="op-row"><button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button></div>
-      {showOperatorDetail ? <IndicatorSelector selected={selectedIndicators} onChange={setIndicators} enabledIds={FIRST_CLASS_WORKFLOW_INDICATORS} /> : null}
     </Card>
 
     <div className="op-grid-2">
@@ -518,7 +446,14 @@ export default function Page() {
         ? <EmptyState title="Auth initializing" hint="Waiting for authenticated session before loading protected market context." />
         : null}
       {workbenchState === "hard_failure" ? <ErrorState title="Analysis failed" hint="Retry analysis after checking provider health and auth state." /> : null}
-      <div ref={chartRef} />
+      <WorkflowChart
+        chartPayload={chartPayload}
+        storageKey={STORAGE_KEY}
+        overlayLevels={overlayLevels}
+        emptyTitle="No chart context loaded"
+        emptyHint="Refresh analysis to render price context, presets, and indicator hover values."
+        sourceLabel={setup?.workflow_source ?? source}
+      />
     </Card>
   </section>;
 }

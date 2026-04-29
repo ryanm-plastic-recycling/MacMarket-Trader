@@ -18,6 +18,8 @@ describe('indicator framework', () => {
       volume: 1_000_000,
     }));
     const snapshot = calculateIndicatorSnapshot(bars);
+    expect(snapshot).toHaveProperty('sma20');
+    expect(snapshot).toHaveProperty('sma50');
     expect(snapshot).toHaveProperty('ema20');
     expect(snapshot).toHaveProperty('relativeVolume');
   });

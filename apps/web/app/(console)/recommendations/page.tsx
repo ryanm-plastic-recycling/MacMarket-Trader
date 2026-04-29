@@ -1,19 +1,16 @@
 "use client";
 
-import { createChart, type CandlestickData, type IChartApi, type Time } from "lightweight-charts";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
-import { IndicatorSelector } from "@/components/charts/indicator-selector";
-import { normalizeSelection, type IndicatorId } from "@/lib/indicator-framework";
+import { WorkflowChart } from "@/components/charts/workflow-chart";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
-import { fetchHacoChart } from "@/lib/haco-api";
-import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS } from "@/lib/chart-indicators";
+import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
@@ -91,8 +88,6 @@ export default function RecommendationsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
-  const chartRef = useRef<HTMLDivElement | null>(null);
-  const chartApiRef = useRef<IChartApi | null>(null);
 
   const [rows, setRows] = useState<StoredRecommendation[]>([]);
   const [queue, setQueue] = useState<QueueCandidate[]>([]);
@@ -102,8 +97,8 @@ export default function RecommendationsPage() {
   const [symbols, setSymbols] = useState("AAPL,MSFT,NVDA,AMZN");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, saveAlt: false, approve: false });
+  const [chartPayload, setChartPayload] = useState<HacoChartPayload | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
-  const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const [tableSymbolFilter, setTableSymbolFilter] = useState("");
   const [tableStrategyFilter, setTableStrategyFilter] = useState("");
@@ -339,62 +334,23 @@ export default function RecommendationsPage() {
   }, [rows, prefill.recommendationId]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    try {
-      setSelectedIndicators(normalizeSelection(raw ? (JSON.parse(raw) as string[]) : []).filter((item) => FIRST_CLASS_WORKFLOW_INDICATORS.includes(item)));
-    } catch {
-      setSelectedIndicators(["ema20", "vwap", "prior_day_levels"]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedIndicators));
-  }, [selectedIndicators]);
-
-  useEffect(() => {
     let cancelled = false;
     async function renderChart() {
       const chartSymbol = selectedRecommendation?.symbol ?? selectedQueue?.symbol;
       const timeframe = selectedQueue?.timeframe ?? "1D";
-      if (!chartRef.current || !chartSymbol || fallbackDerived) return;
-      const payload = await fetchHacoChart({ symbol: chartSymbol, timeframe, include_heikin_ashi: false });
-      // If the effect was cleaned up while fetchHacoChart was in flight, bail out
-      // before touching the chart ref — it may already be disposed by the cleanup.
-      if (cancelled) return;
-      if (chartApiRef.current) {
-        chartApiRef.current.remove();
-        chartApiRef.current = null;
+      if (!chartSymbol || fallbackDerived) {
+        setChartPayload(null);
+        return;
       }
-      const chart = createChart(chartRef.current, { height: 320, autoSize: true, layout: { background: { color: "#0b1219" }, textColor: "#d9e2ef" } });
-      chartApiRef.current = chart;
-      const candles: Array<CandlestickData<Time> & { volume: number }> = payload.candles
-        .slice(-120)
-        .map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
-      const priceSeries = chart.addCandlestickSeries();
-      priceSeries.setData(candles);
-      applyIndicatorsToChart(chart, candles, selectedIndicators);
-
-      // Overlay entry zone, stop, and target price lines from current selection
-      const levels = extractLevels(selectedRecommendation, selectedQueue);
-      if (levels.entryLow != null) priceSeries.createPriceLine({ price: levels.entryLow, color: "#21c06e", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "entry low" });
-      if (levels.entryHigh != null) priceSeries.createPriceLine({ price: levels.entryHigh, color: "#21c06e", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "entry high" });
-      if (levels.stop != null) priceSeries.createPriceLine({ price: levels.stop, color: "#f44336", lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: "stop" });
-      if (levels.target1 != null) priceSeries.createPriceLine({ price: levels.target1, color: "#4caf50", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "T1" });
-      if (levels.target2 != null) priceSeries.createPriceLine({ price: levels.target2, color: "#4caf50", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "T2" });
-
-      chart.timeScale().fitContent();
+      const payload = await fetchHacoChart({ symbol: chartSymbol, timeframe, include_heikin_ashi: false });
+      if (cancelled) return;
+      setChartPayload(payload);
     }
     void renderChart();
     return () => {
       cancelled = true;
-      if (chartApiRef.current) {
-        chartApiRef.current.remove();
-        chartApiRef.current = null;
-      }
     };
-  }, [selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, selectedRecommendation?.id, selectedQueueKey, fallbackDerived, selectedIndicators]);
+  }, [selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, selectedRecommendation?.id, selectedQueueKey, fallbackDerived]);
 
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
   const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
@@ -426,6 +382,16 @@ export default function RecommendationsPage() {
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))),
     [rows, tableStatusFilter, tableStrategyFilter, tableSymbolFilter],
   );
+  const chartOverlayLevels = useMemo(() => {
+    const levels = extractLevels(selectedRecommendation, selectedQueue);
+    return [
+      { label: "entry low", value: levels.entryLow, color: "#21c06e", lineStyle: 2 },
+      { label: "entry high", value: levels.entryHigh, color: "#21c06e", lineStyle: 2 },
+      { label: "stop", value: levels.stop, color: "#f44336", lineStyle: 2, lineWidth: 2 },
+      { label: "T1", value: levels.target1, color: "#4caf50", lineStyle: 2 },
+      { label: "T2", value: levels.target2, color: "#4caf50", lineStyle: 1 },
+    ];
+  }, [selectedQueue, selectedRecommendation]);
 
   return (
     <section className="op-stack">
@@ -777,8 +743,18 @@ export default function RecommendationsPage() {
           <StatusBadge tone={fallbackDerived ? "warn" : "good"}>workflow source: {selectedSource}</StatusBadge>
           {fallbackDerived ? <StatusBadge tone="warn">Chart overlays disabled to avoid mixed provider/fallback context.</StatusBadge> : null}
         </div>
-        {!guidedState.guided || showOperatorDetail ? <IndicatorSelector selected={selectedIndicators} onChange={setSelectedIndicators} enabledIds={FIRST_CLASS_WORKFLOW_INDICATORS} /> : null}
-        {fallbackDerived ? <EmptyState title="Chart overlays disabled" hint="Selected queue/recommendation was generated from fallback bars, so provider-backed chart overlays stay disabled." /> : <div ref={chartRef} />}
+        {fallbackDerived ? (
+          <EmptyState title="Chart overlays disabled" hint="Selected queue/recommendation was generated from fallback bars, so provider-backed chart overlays stay disabled." />
+        ) : (
+          <WorkflowChart
+            chartPayload={chartPayload}
+            storageKey={STORAGE_KEY}
+            overlayLevels={chartOverlayLevels}
+            emptyTitle="No chart context loaded"
+            emptyHint="Select a queue candidate or stored recommendation to inspect the source-matched chart."
+            sourceLabel={selectedSource}
+          />
+        )}
       </Card> : null}
     </section>
   );

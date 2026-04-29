@@ -46,13 +46,15 @@ describe("applyIndicatorsToChart", () => {
 
   it("renders first-class workflow indicators with data-bearing series", () => {
     const { chart, series, scaleCalls } = buildChartRecorder();
-    const selected: IndicatorId[] = ["ema20", "ema50", "ema200", "vwap", "bollinger", "prior_day_levels", "volume", "rsi"];
-    applyIndicatorsToChart(chart as never, candles as never, selected);
+    const selected: IndicatorId[] = ["volume", "sma20", "sma50", "ema20", "ema50", "ema200", "vwap", "bollinger", "prior_day_levels", "rsi"];
+    const result = applyIndicatorsToChart(chart as never, candles as never, selected);
 
-    expect(series.length).toBeGreaterThanOrEqual(11);
+    expect(series.length).toBeGreaterThanOrEqual(13);
     expect(series.some((entry) => entry.kind === "histogram" && entry.data.length === candles.length)).toBe(true);
     expect(series.some((entry) => entry.options?.priceScaleId === "rsi" && entry.data.length > 0)).toBe(true);
     expect(scaleCalls.some((call) => call.id === "volume")).toBe(true);
     expect(scaleCalls.some((call) => call.id === "rsi")).toBe(true);
+    expect(result.legendEntries.some((entry) => entry.label === "SMA 20" && entry.latestValue != null)).toBe(true);
+    expect(result.legendEntries.some((entry) => entry.label === "RSI 14" && entry.pane === "momentum")).toBe(true);
   });
 });
