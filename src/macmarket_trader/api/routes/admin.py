@@ -73,6 +73,95 @@ def _equity_trade_pnl(*, entry_price: float, exit_price: float, quantity: float,
     return gross_pnl, net_pnl
 
 
+# Phase 7 note: keep the fee-preview helper local for now to avoid a broader
+# refactor. If Phase 7 grows further, centralize fee math into a dedicated
+# module shared across replay/order/provider-readiness surfaces.
+def _round_money(value: float | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return round(numeric, 2)
+
+
+def _projected_equity_gross_pnl(rec: TradeRecommendation) -> float | None:
+    try:
+        shares = float(rec.sizing.shares)
+        zone_low = float(rec.entry.zone_low)
+        zone_high = float(rec.entry.zone_high)
+        target_1 = float(rec.targets.target_1)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if shares <= 0:
+        return None
+    values = (shares, zone_low, zone_high, target_1)
+    if any(not math.isfinite(value) for value in values):
+        return None
+    entry_mid = (zone_low + zone_high) / 2.0
+    direction = _trade_direction_multiplier(getattr(rec.side, "value", rec.side))
+    return (target_1 - entry_mid) * shares * direction
+
+
+def _equity_fee_preview(
+    *,
+    commission_per_trade: float,
+    projected_gross_pnl: float | None = None,
+    trade_event_count: int = 2,
+) -> dict[str, object]:
+    event_count = max(0, int(trade_event_count))
+    estimated_entry_fee = commission_per_trade if event_count >= 1 else 0.0
+    estimated_exit_fee = commission_per_trade if event_count >= 2 else 0.0
+    estimated_total_fees = estimated_entry_fee + estimated_exit_fee
+    projected_net_pnl = (
+        None if projected_gross_pnl is None else projected_gross_pnl - estimated_total_fees
+    )
+    return {
+        "estimated_entry_fee": _round_money(estimated_entry_fee),
+        "estimated_exit_fee": _round_money(estimated_exit_fee),
+        "estimated_total_fees": _round_money(estimated_total_fees),
+        "projected_gross_pnl": _round_money(projected_gross_pnl),
+        "projected_net_pnl": _round_money(projected_net_pnl),
+        "fee_model": "equity_per_trade",
+    }
+
+
+def _position_close_fee_preview(*, commission_per_trade: float) -> dict[str, object]:
+    return {
+        "estimated_close_fee": _round_money(commission_per_trade),
+        "fee_model": "equity_per_trade",
+    }
+
+
+def _recommendation_fee_preview(rec: TradeRecommendation | None, *, commission_per_trade: float) -> dict[str, object]:
+    projected_gross_pnl = _projected_equity_gross_pnl(rec) if rec is not None else None
+    return _equity_fee_preview(
+        commission_per_trade=commission_per_trade,
+        projected_gross_pnl=projected_gross_pnl,
+        trade_event_count=2,
+    )
+
+
+def _recommendation_fee_preview_from_uid(
+    recommendation_id: str | None,
+    *,
+    commission_per_trade: float,
+) -> dict[str, object]:
+    if not recommendation_id:
+        return _recommendation_fee_preview(None, commission_per_trade=commission_per_trade)
+    rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+    if rec_row is None:
+        return _recommendation_fee_preview(None, commission_per_trade=commission_per_trade)
+    try:
+        rec = TradeRecommendation.model_validate(rec_row.payload or {})
+    except Exception:
+        return _recommendation_fee_preview(None, commission_per_trade=commission_per_trade)
+    return _recommendation_fee_preview(rec, commission_per_trade=commission_per_trade)
+
+
 def _record_audit_event(*, recommendation_id: str, payload: dict[str, object]) -> None:
     """Write a row into audit_logs. Reuses the same table the recommendation
     audit trail uses; the payload's `event` field distinguishes lifecycle
@@ -696,6 +785,7 @@ def set_recommendation_approved(recommendation_uid: str, req: dict[str, object],
 @user_router.get("/replay-runs")
 def replay_runs(_user=Depends(require_approved_user)):
     rows = replay_repo.list_runs(app_user_id=_user.id)
+    commission_per_trade = _effective_commission_per_trade(_user)
     output: list[dict[str, object]] = []
     for row in rows:
         source = "workflow_snapshot_unavailable"
@@ -708,6 +798,10 @@ def replay_runs(_user=Depends(require_approved_user)):
             fallback = workflow.get("fallback_mode")
             if fallback is not None:
                 fallback_mode = bool(fallback)
+        fee_preview = _recommendation_fee_preview_from_uid(
+            row.stageable_recommendation_id,
+            commission_per_trade=commission_per_trade,
+        )
         output.append(
             {
                 "id": row.id,
@@ -727,6 +821,7 @@ def replay_runs(_user=Depends(require_approved_user)):
                 "created_at": row.created_at,
                 "market_data_source": row.source_market_data_source or source,
                 "fallback_mode": row.source_fallback_mode if row.source_fallback_mode is not None else fallback_mode,
+                **fee_preview,
             }
         )
     return output
@@ -782,6 +877,11 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         source_market_data_source=source,
         source_fallback_mode=fallback_mode,
     )
+    stageable_rec = next((rec for rec in response.recommendations if rec.approved), None)
+    fee_preview = _recommendation_fee_preview(
+        stageable_rec,
+        commission_per_trade=_effective_commission_per_trade(_user),
+    )
     for rec in response.recommendations:
         recommendation_repo.attach_workflow_metadata(
             rec.recommendation_id,
@@ -816,6 +916,7 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         "has_stageable_candidate": bool(run_row.has_stageable_candidate) if run_row else False,
         "stageable_recommendation_id": run_row.stageable_recommendation_id if run_row else None,
         "stageable_reason": run_row.stageable_reason if run_row else None,
+        **fee_preview,
     }
 
 
@@ -826,6 +927,10 @@ def replay_run_detail(run_id: int, _user=Depends(require_approved_user)):
         raise HTTPException(status_code=404, detail="Replay run not found")
     source_rec = recommendation_repo.get_by_recommendation_uid(run.source_recommendation_id) if run.source_recommendation_id else None
     source_payload = (source_rec.payload or {}) if source_rec else {}
+    fee_preview = _recommendation_fee_preview_from_uid(
+        run.stageable_recommendation_id,
+        commission_per_trade=_effective_commission_per_trade(_user),
+    )
     return {
         "id": run.id,
         "symbol": run.symbol,
@@ -847,6 +952,7 @@ def replay_run_detail(run_id: int, _user=Depends(require_approved_user)):
         "has_stageable_candidate": run.has_stageable_candidate,
         "stageable_recommendation_id": run.stageable_recommendation_id,
         "stageable_reason": run.stageable_reason,
+        **fee_preview,
     }
 
 
@@ -883,7 +989,18 @@ def replay_steps(run_id: int, _user=Depends(require_approved_user)):
 
 @user_router.get("/orders")
 def list_orders(_user=Depends(require_approved_user)):
-    return order_repo.list_with_fills(app_user_id=_user.id)
+    commission_per_trade = _effective_commission_per_trade(_user)
+    rows = order_repo.list_with_fills(app_user_id=_user.id)
+    return [
+        {
+            **row,
+            **_recommendation_fee_preview_from_uid(
+                str(row.get("recommendation_id") or "") or None,
+                commission_per_trade=commission_per_trade,
+            ),
+        }
+        for row in rows
+    ]
 
 
 @user_router.get("/orders/portfolio-summary")
@@ -1018,6 +1135,10 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         app_user_id=_user.id,
     )
     recommendation_service.persist_fill(fill)
+    fee_preview = _recommendation_fee_preview(
+        rec,
+        commission_per_trade=_effective_commission_per_trade(_user),
+    )
     # Auto-create / aggregate paper_positions on fill (equities only — Phase 1 scope).
     # Use the actual fill price/shares so weighted-average entry tracks broker reality.
     if market_mode == MarketMode.EQUITIES and fill.filled_shares > 0:
@@ -1043,10 +1164,11 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         "source": source,
         "market_data_source": source,
         "fallback_mode": fallback_mode,
+        **fee_preview,
     }
 
 
-def _serialize_position(row) -> dict[str, object]:
+def _serialize_position(row, *, commission_per_trade: float) -> dict[str, object]:
     return {
         "id": row.id,
         "symbol": row.symbol,
@@ -1061,6 +1183,7 @@ def _serialize_position(row) -> dict[str, object]:
         "recommendation_id": row.recommendation_id,
         "replay_run_id": row.replay_run_id,
         "order_id": row.order_id,
+        **_position_close_fee_preview(commission_per_trade=commission_per_trade),
     }
 
 
@@ -1099,7 +1222,8 @@ def list_paper_positions(
     if status not in {"open", "closed", "all"}:
         raise HTTPException(status_code=400, detail="status must be one of: open, closed, all.")
     rows = paper_portfolio_repo.list_positions(app_user_id=_user.id, status=status, limit=limit)
-    return [_serialize_position(row) for row in rows]
+    commission_per_trade = _effective_commission_per_trade(_user)
+    return [_serialize_position(row, commission_per_trade=commission_per_trade) for row in rows]
 
 
 @user_router.get("/paper-trades")
@@ -1275,7 +1399,10 @@ def reopen_paper_trade(trade_id: int, _user=Depends(require_approved_user)):
         # Should not happen — reopen_position only returns None if the row was
         # deleted concurrently. Surface as 500 so the operator retries.
         raise HTTPException(status_code=500, detail="Position vanished during reopen.")
-    return _serialize_position(updated)
+    return _serialize_position(
+        updated,
+        commission_per_trade=_effective_commission_per_trade(_user),
+    )
 
 
 @user_router.get("/analysis/setup")

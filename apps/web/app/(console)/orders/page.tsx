@@ -23,7 +23,27 @@ import {
 } from "@/lib/orders-helpers";
 import { formatLineageBreadcrumb } from "@/lib/lineage-format";
 
-type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; canceled_at?: string | null; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
+type Order = {
+  order_id: string;
+  recommendation_id: string;
+  replay_run_id?: number | null;
+  symbol: string;
+  status: string;
+  side: string;
+  shares: number;
+  limit_price: number;
+  created_at: string;
+  canceled_at?: string | null;
+  market_data_source?: string | null;
+  fallback_mode?: boolean | null;
+  estimated_entry_fee?: number | null;
+  estimated_exit_fee?: number | null;
+  estimated_total_fees?: number | null;
+  projected_gross_pnl?: number | null;
+  projected_net_pnl?: number | null;
+  fee_model?: string | null;
+  fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }>;
+};
 type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; gross_realized_pnl: number; net_realized_pnl: number; total_commission_paid: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
 type CloseResult = { order_id: string; symbol: string; gross_pnl: number; net_pnl: number; commission_paid: number; realized_pnl: number; entry_price: number; close_price: number; shares: number };
 
@@ -41,6 +61,8 @@ type PaperPosition = {
   recommendation_id: string | null;
   replay_run_id: number | null;
   order_id: string | null;
+  estimated_close_fee?: number | null;
+  fee_model?: string | null;
 };
 
 type PaperTrade = {
@@ -70,6 +92,30 @@ function formatSignedDollars(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
+function tradeDirectionMultiplier(side: string | null | undefined): number {
+  const normalized = String(side ?? "").trim().toLowerCase();
+  return normalized === "short" || normalized === "sell" ? -1 : 1;
+}
+
+function parseFiniteNumber(value: string): number | null {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function estimateClosePnl(params: {
+  entryPrice: number;
+  exitPrice: number;
+  quantity: number;
+  side: string;
+  estimatedCloseFee: number;
+}): { gross: number; net: number } | null {
+  const { entryPrice, exitPrice, quantity, side, estimatedCloseFee } = params;
+  const values = [entryPrice, exitPrice, quantity, estimatedCloseFee];
+  if (values.some((value) => !Number.isFinite(value))) return null;
+  const gross = (exitPrice - entryPrice) * quantity * tradeDirectionMultiplier(side);
+  return { gross, net: gross - estimatedCloseFee };
+}
+
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
@@ -85,7 +131,16 @@ export default function Page() {
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
-  const [replayOutcome, setReplayOutcome] = useState<{ has_stageable_candidate: boolean; stageable_reason?: string | null } | null>(null);
+  const [replayOutcome, setReplayOutcome] = useState<{
+    has_stageable_candidate: boolean;
+    stageable_reason?: string | null;
+    estimated_entry_fee?: number | null;
+    estimated_exit_fee?: number | null;
+    estimated_total_fees?: number | null;
+    projected_gross_pnl?: number | null;
+    projected_net_pnl?: number | null;
+    fee_model?: string | null;
+  } | null>(null);
   const [closeInputVisible, setCloseInputVisible] = useState(false);
   const [closePriceInput, setClosePriceInput] = useState("");
   const [closeResults, setCloseResults] = useState<Record<string, CloseResult>>({});
@@ -106,6 +161,29 @@ export default function Page() {
   const [displayIdMap, setDisplayIdMap] = useState<Record<string, string>>({});
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
+  const selectedOpenPosition = useMemo(() => {
+    if (!selected) return null;
+    return (
+      positions.find((position) => position.order_id === selected.order_id)
+      ?? positions.find((position) => position.symbol === selected.symbol && position.side === selected.side)
+      ?? null
+    );
+  }, [positions, selected]);
+  const selectedClosePreview = useMemo(() => {
+    if (!selected || !closeInputVisible) return null;
+    const closePrice = parseFiniteNumber(closePriceInput);
+    if (closePrice == null) return null;
+    const entryPrice = selectedOpenPosition?.avg_entry_price ?? selected.fills[0]?.fill_price ?? selected.limit_price;
+    const quantity = selectedOpenPosition?.remaining_qty ?? selected.shares;
+    const estimatedCloseFee = selectedOpenPosition?.estimated_close_fee ?? selected.estimated_exit_fee ?? 0;
+    return estimateClosePnl({
+      entryPrice,
+      exitPrice: closePrice,
+      quantity,
+      side: selected.side,
+      estimatedCloseFee,
+    });
+  }, [closeInputVisible, closePriceInput, selected, selectedOpenPosition]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
   const detailRef = useRef<HTMLDivElement | null>(null);
 
@@ -188,7 +266,24 @@ export default function Page() {
       if (guidedState.replayRunId) body.replay_run_id = Number(guidedState.replayRunId);
     }
 
-    const result = await fetchWorkflowApi<{ order_id: string; market_data_source?: string; fallback_mode?: boolean; recommendation_id?: string; replay_run_id?: number; symbol?: string; side?: string; shares?: number; limit_price?: number; status?: string }>(
+    const result = await fetchWorkflowApi<{
+      order_id: string;
+      market_data_source?: string;
+      fallback_mode?: boolean;
+      recommendation_id?: string;
+      replay_run_id?: number;
+      symbol?: string;
+      side?: string;
+      shares?: number;
+      limit_price?: number;
+      status?: string;
+      estimated_entry_fee?: number | null;
+      estimated_exit_fee?: number | null;
+      estimated_total_fees?: number | null;
+      projected_gross_pnl?: number | null;
+      projected_net_pnl?: number | null;
+      fee_model?: string | null;
+    }>(
       "/api/user/orders",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
@@ -220,6 +315,12 @@ export default function Page() {
         created_at: new Date().toISOString(),
         market_data_source: sourceName,
         fallback_mode: fallbackMode,
+        estimated_entry_fee: result.data.estimated_entry_fee ?? null,
+        estimated_exit_fee: result.data.estimated_exit_fee ?? null,
+        estimated_total_fees: result.data.estimated_total_fees ?? null,
+        projected_gross_pnl: result.data.projected_gross_pnl ?? null,
+        projected_net_pnl: result.data.projected_net_pnl ?? null,
+        fee_model: result.data.fee_model ?? null,
         fills: [],
       };
       setOrders((prev) => [hydrated, ...prev.filter((item) => item.order_id !== hydrated.order_id)]);
@@ -397,7 +498,16 @@ export default function Page() {
   useEffect(() => {
     if (!authReady || !guidedState.replayRunId) return;
     void (async () => {
-      const result = await fetchWorkflowApi<{ has_stageable_candidate: boolean; stageable_reason?: string | null }>(
+      const result = await fetchWorkflowApi<{
+        has_stageable_candidate: boolean;
+        stageable_reason?: string | null;
+        estimated_entry_fee?: number | null;
+        estimated_exit_fee?: number | null;
+        estimated_total_fees?: number | null;
+        projected_gross_pnl?: number | null;
+        projected_net_pnl?: number | null;
+        fee_model?: string | null;
+      }>(
         `/api/user/replay-runs/${guidedState.replayRunId}`,
       );
       if (result.ok) setReplayOutcome(result.data ?? null);
@@ -499,6 +609,28 @@ export default function Page() {
             <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.recommendationId ?? "—"}</span></div>
             <div><strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.replayRunId ?? "—"}</span></div>
             <div><strong>symbol:</strong> {guidedState.symbol ?? "—"} · <strong>strategy:</strong> {guidedState.strategy ?? "—"}</div>
+            {replayOutcome ? (
+              <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only round trip (entry + exit)</div>
+                <div><strong>Fees:</strong> ${replayOutcome.estimated_total_fees?.toFixed(2) ?? "0.00"} ({replayOutcome.fee_model ?? "equity_per_trade"})</div>
+                <div><strong>Entry fee:</strong> ${replayOutcome.estimated_entry_fee?.toFixed(2) ?? "0.00"} · <strong>Exit fee:</strong> ${replayOutcome.estimated_exit_fee?.toFixed(2) ?? "0.00"}</div>
+                <div>
+                  <strong>Projected net outcome:</strong>{" "}
+                  {replayOutcome.projected_net_pnl != null
+                    ? `${formatSignedDollars(replayOutcome.projected_net_pnl)}`
+                    : "Unavailable for this candidate"}
+                </div>
+                {replayOutcome.projected_gross_pnl != null ? (
+                  <div style={{ color: "var(--op-muted, #7a8999)" }}>
+                    Gross {formatSignedDollars(replayOutcome.projected_gross_pnl)} using existing recommendation levels.
+                  </div>
+                ) : (
+                  <div style={{ color: "var(--op-muted, #7a8999)" }}>
+                    Fees are estimated before staging. Net stays unavailable when a gross projection is not safe to derive.
+                  </div>
+                )}
+              </div>
+            ) : null}
             <button className="op-btn-primary-cta op-btn-pulse" style={{ marginTop: 8, width: "100%" }} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now →"}</button>
             {replayOutcome?.has_stageable_candidate === false ? <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)" }}>No paper order can be staged from this replay. {replayOutcome.stageable_reason ?? ""}</div> : null}
           </div>
@@ -507,6 +639,9 @@ export default function Page() {
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><strong>symbol:</strong> {selected.symbol} · <strong>side:</strong> <StatusBadge tone={selected.side?.toLowerCase() === "buy" ? "good" : "warn"}>{selected.side}</StatusBadge> · <strong>shares:</strong> {selected.shares} · <strong>limit:</strong> {selected.limit_price}</div>
             <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{selected.recommendation_id}</span> · <strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{selected.replay_run_id ?? "—"}</span></div>
             <div><strong>source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)} · <strong>status:</strong> {selected.status}</div>
+            <div style={{ color: "var(--op-muted, #7a8999)" }}>
+              Estimated round-trip fees (entry + exit) ${selected.estimated_total_fees?.toFixed(2) ?? "0.00"} · paper-only preview
+            </div>
           </>
         )}
       </Card>
@@ -559,6 +694,17 @@ export default function Page() {
                   </tr>,
                 ];
                 if (closingPositionId === p.id) {
+                  const closePreview = (() => {
+                    const mark = parseFiniteNumber(closeMarkInput);
+                    if (mark == null) return null;
+                    return estimateClosePnl({
+                      entryPrice: p.avg_entry_price,
+                      exitPrice: mark,
+                      quantity: p.remaining_qty,
+                      side: p.side,
+                      estimatedCloseFee: p.estimated_close_fee ?? 0,
+                    });
+                  })();
                   rows.push(
                     <tr key={`${p.id}-ticket`}>
                       <td colSpan={7} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
@@ -583,6 +729,15 @@ export default function Page() {
                           <button className="op-btn op-btn-destructive" onClick={() => void confirmClosePosition(p.id)} disabled={busy}>{busy ? "Closing…" : "Confirm close"}</button>
                           <button onClick={cancelClosePosition} disabled={busy}>Cancel</button>
                         </div>
+                        <div style={{ marginTop: 8, fontSize: "0.85rem", color: "var(--op-muted, #7a8999)" }}>
+                          Estimated close-only fee ${p.estimated_close_fee?.toFixed(2) ?? "0.00"} · paper-only preview
+                        </div>
+                        {closePreview ? (
+                          <div style={{ marginTop: 4, fontSize: "0.9rem" }}>
+                            Gross <span style={{ color: pnlColor(closePreview.gross), fontWeight: 600 }}>{formatSignedDollars(closePreview.gross)}</span>
+                            {" "}· Net after fees <span style={{ color: pnlColor(closePreview.net), fontWeight: 600 }}>{formatSignedDollars(closePreview.net)}</span>
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -663,6 +818,20 @@ export default function Page() {
             <div><strong>Limit:</strong> {selected.limit_price}</div>
             <div><strong>Status:</strong> {selected.status}</div>
             <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)}</div>
+            <div style={{ marginTop: 4, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+              <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only lifecycle (entry + exit)</div>
+              <div><strong>Entry fee:</strong> ${selected.estimated_entry_fee?.toFixed(2) ?? "0.00"} · <strong>Exit fee:</strong> ${selected.estimated_exit_fee?.toFixed(2) ?? "0.00"}</div>
+              <div><strong>Total fees:</strong> ${selected.estimated_total_fees?.toFixed(2) ?? "0.00"} ({selected.fee_model ?? "equity_per_trade"})</div>
+              <div>
+                <strong>Projected net outcome:</strong>{" "}
+                {selected.projected_net_pnl != null ? formatSignedDollars(selected.projected_net_pnl) : "Unavailable"}
+              </div>
+              {selected.projected_gross_pnl != null ? (
+                <div style={{ color: "var(--op-muted, #7a8999)" }}>
+                  Gross {formatSignedDollars(selected.projected_gross_pnl)} using existing recommendation levels.
+                </div>
+              ) : null}
+            </div>
             {(!guidedState.guided || showOperatorDetail) ? <><div><strong>Created at:</strong> {selected.created_at}</div><div><strong>Fills:</strong></div>{selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}</> : null}
             {selected.status === "closed" ? (
               <div style={{ marginTop: 6, fontWeight: 600, color: closeResults[selected.order_id]?.net_pnl != null && closeResults[selected.order_id].net_pnl >= 0 ? "#21c06e" : "#f44336" }}>
@@ -672,14 +841,25 @@ export default function Page() {
               </div>
             ) : (
               <div style={{ marginTop: 6 }}>
+                <div style={{ marginBottom: 6, color: "var(--op-muted, #7a8999)" }}>
+                  Estimated close-only fee ${selectedOpenPosition?.estimated_close_fee?.toFixed(2) ?? selected.estimated_exit_fee?.toFixed(2) ?? "0.00"} · paper-only preview
+                </div>
                 {!closeInputVisible ? (
                   <button className="op-btn op-btn-destructive" onClick={() => { setCloseInputVisible(true); setClosePriceInput(String(selected.limit_price)); }} disabled={busy}>Close position</button>
                 ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <input type="number" step="0.01" value={closePriceInput} onChange={(e) => setClosePriceInput(e.target.value)} style={{ width: 120 }} placeholder="Close price" />
-                    <button className="op-btn op-btn-destructive" onClick={() => void closePosition(selected.order_id)} disabled={busy}>{busy ? "Closing…" : "Confirm close"}</button>
-                    <button onClick={() => { setCloseInputVisible(false); setClosePriceInput(""); }} disabled={busy}>Cancel</button>
-                  </div>
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <input type="number" step="0.01" value={closePriceInput} onChange={(e) => setClosePriceInput(e.target.value)} style={{ width: 120 }} placeholder="Close price" />
+                      <button className="op-btn op-btn-destructive" onClick={() => void closePosition(selected.order_id)} disabled={busy}>{busy ? "Closing…" : "Confirm close"}</button>
+                      <button onClick={() => { setCloseInputVisible(false); setClosePriceInput(""); }} disabled={busy}>Cancel</button>
+                    </div>
+                    {selectedClosePreview ? (
+                      <div style={{ marginTop: 8 }}>
+                        Gross <span style={{ color: pnlColor(selectedClosePreview.gross), fontWeight: 600 }}>{formatSignedDollars(selectedClosePreview.gross)}</span>
+                        {" "}· Net after fees <span style={{ color: pnlColor(selectedClosePreview.net), fontWeight: 600 }}>{formatSignedDollars(selectedClosePreview.net)}</span>
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             )}

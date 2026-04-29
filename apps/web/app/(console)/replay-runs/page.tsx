@@ -14,7 +14,29 @@ import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickReplayRunSelection } from "@/lib/workflow-selection";
 import { formatLineageBreadcrumb } from "@/lib/lineage-format";
 
-type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null; source_recommendation_id?: string | null; source_strategy?: string | null; has_stageable_candidate?: boolean; stageable_recommendation_id?: string | null; stageable_reason?: string | null };
+type Run = {
+  id: number;
+  symbol: string;
+  created_at: string;
+  recommendation_count: number;
+  approved_count: number;
+  fill_count: number;
+  ending_heat: number;
+  ending_open_notional: number;
+  market_data_source?: string;
+  fallback_mode?: boolean | null;
+  source_recommendation_id?: string | null;
+  source_strategy?: string | null;
+  has_stageable_candidate?: boolean;
+  stageable_recommendation_id?: string | null;
+  stageable_reason?: string | null;
+  estimated_entry_fee?: number | null;
+  estimated_exit_fee?: number | null;
+  estimated_total_fees?: number | null;
+  projected_gross_pnl?: number | null;
+  projected_net_pnl?: number | null;
+  fee_model?: string | null;
+};
 type RunDetail = Run & { source_recommendation_id?: string | null; source_strategy?: string | null; source_market_mode?: string | null; thesis?: string | null; key_levels?: { entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null } | null; summary_metrics?: Record<string, number> | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; rejection_reason?: string | null; thesis?: string | null; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; quality?: number | null; confidence?: number | null; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown>; timestamp?: string | null; event_text?: string | null };
 type ActiveRecommendation = { recommendation_id: string; display_id?: string; symbol: string; payload?: { thesis?: string; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; workflow?: { source_strategy?: string } } };
@@ -145,7 +167,20 @@ export default function Page() {
       if (guidedState.recommendationId) body.recommendation_id = guidedState.recommendationId;
       if (guidedState.strategy) body.strategy = guidedState.strategy;
     }
-    const run = await fetchWorkflowApi<{ id: number; market_data_source?: string; fallback_mode?: boolean; summary_metrics?: Record<string, number>; thesis?: string; key_levels?: Record<string, unknown> }>(
+    const run = await fetchWorkflowApi<{
+      id: number;
+      market_data_source?: string;
+      fallback_mode?: boolean;
+      summary_metrics?: Record<string, number>;
+      thesis?: string;
+      key_levels?: Record<string, unknown>;
+      estimated_entry_fee?: number | null;
+      estimated_exit_fee?: number | null;
+      estimated_total_fees?: number | null;
+      projected_gross_pnl?: number | null;
+      projected_net_pnl?: number | null;
+      fee_model?: string | null;
+    }>(
       "/api/user/replay-runs",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     );
@@ -183,6 +218,12 @@ export default function Page() {
       thesis: typeof run.data.thesis === "string" ? run.data.thesis : null,
       key_levels: run.data.key_levels as RunDetail["key_levels"],
       summary_metrics: run.data.summary_metrics as Record<string, number> | null,
+      estimated_entry_fee: run.data.estimated_entry_fee ?? null,
+      estimated_exit_fee: run.data.estimated_exit_fee ?? null,
+      estimated_total_fees: run.data.estimated_total_fees ?? null,
+      projected_gross_pnl: run.data.projected_gross_pnl ?? null,
+      projected_net_pnl: run.data.projected_net_pnl ?? null,
+      fee_model: run.data.fee_model ?? null,
     } : null);
 
     const query = buildGuidedQuery({
@@ -341,6 +382,26 @@ export default function Page() {
         <div><strong>symbol:</strong> {runDetail?.symbol ?? selected?.symbol ?? activeRecommendation?.symbol ?? guidedState.symbol ?? "—"} · <strong>strategy:</strong> {runDetail?.source_strategy ?? guidedState.strategy ?? "—"}</div>
         <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{runDetail?.source_recommendation_id ?? selected?.source_recommendation_id ?? guidedState.recommendationId ?? "—"}</span> · <strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{selectedRunId ?? "—"}</span></div>
         {(runDetail?.thesis ?? activeRecommendation?.payload?.thesis) ? <div><strong>thesis:</strong> {runDetail?.thesis ?? activeRecommendation?.payload?.thesis}</div> : null}
+        {runDetail?.estimated_total_fees != null ? (
+          <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+            <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only round trip (entry + exit)</div>
+            <div><strong>Fees:</strong> ${runDetail.estimated_total_fees.toFixed(2)} ({runDetail.fee_model ?? "equity_per_trade"})</div>
+            <div><strong>Entry fee:</strong> ${runDetail.estimated_entry_fee?.toFixed(2) ?? "0.00"} · <strong>Exit fee:</strong> ${runDetail.estimated_exit_fee?.toFixed(2) ?? "0.00"}</div>
+            <div>
+              <strong>Projected net outcome:</strong>{" "}
+              {runDetail.projected_net_pnl != null ? `${runDetail.projected_net_pnl >= 0 ? "+" : ""}${runDetail.projected_net_pnl.toFixed(2)}` : "Unavailable"}
+            </div>
+            {runDetail.projected_gross_pnl != null ? (
+              <div style={{ color: "var(--op-muted, #7a8999)" }}>
+                Gross {runDetail.projected_gross_pnl >= 0 ? "+" : ""}{runDetail.projected_gross_pnl.toFixed(2)} using existing recommendation levels.
+              </div>
+            ) : (
+              <div style={{ color: "var(--op-muted, #7a8999)" }}>
+                Fees are estimated even when a gross projection is not safe to derive.
+              </div>
+            )}
+          </div>
+        ) : null}
         {!selected && guidedState.recommendationId ? (
           <div className="op-card" style={{ marginTop: 10, padding: 12 }}>
             <h3 style={{ margin: "0 0 6px 0" }}>No replay run yet for this recommendation</h3>
@@ -377,6 +438,12 @@ export default function Page() {
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
           <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource}</div>
+          {runDetail?.estimated_total_fees != null ? (
+            <div className="op-card" style={{ marginBottom: 8, padding: 10 }}>
+              <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only stageable candidate preview (entry + exit)</div>
+              <div><strong>Fees:</strong> ${runDetail.estimated_total_fees.toFixed(2)} · <strong>Projected net:</strong> {runDetail.projected_net_pnl != null ? `${runDetail.projected_net_pnl >= 0 ? "+" : ""}${runDetail.projected_net_pnl.toFixed(2)}` : "Unavailable"}</div>
+            </div>
+          ) : null}
           {selected.has_stageable_candidate === false ? (
             <div className="op-error" style={{ marginBottom: 8 }}>
               <strong>Replay produced no stageable candidate</strong>

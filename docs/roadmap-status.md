@@ -13,7 +13,8 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
 Tests: pytest 210, vitest 99, Playwright 31. tsc clean.
-Active passes: Phase 7 started early — commission-aware paper P&L credibility.
+Active passes: Phase 7 partially implemented — commission-aware realized
+paper P&L and equity fee-preview/operator-trust slices.
 
 ## Completed Phases
 
@@ -65,20 +66,55 @@ Active passes: Phase 7 started early — commission-aware paper P&L credibility.
 
 ## Upcoming Phases
 
-### Phase 7 — Brokerage fees + commission modeling
-- Started early in repo:
+### Phase 7A — Commission-aware realized paper P&L
+- Complete in current slice:
   `gross_pnl` / `net_pnl` split in `paper_trades`
-- Started early in repo:
-  per-trade equity commission (default `$0`) applied to paper close math
-- Started early in repo:
+- Complete in current slice:
+  per-trade equity commission (default `$0`) applied to realized paper close
+  math
+- Complete in current slice:
   commission settings exposed in user Settings page
-- Started early in repo:
+- Complete in current slice:
   backend fields on `paper_trades` and per-user `commission_per_trade` /
   `commission_per_contract` on `app_users` with env fallback defaults
+
+### Phase 7B — Equity fee previews / projected net paper outcomes
+- Complete in current slice:
+  replay / order / open-position operator surfaces show explicit equity-only
+  fee estimates
+- Complete in current slice:
+  projected net outcome is shown only when projected gross can be derived
+  safely from existing recommendation levels
+- Note:
+  current fee-preview math lives in `admin.py` for speed and reviewability;
+  centralizing fee math into a dedicated module can happen in a later cleanup
+  slice if Phase 7 grows further
+
+### Phase 7C — Provider health + operator readiness
+- Admin / Provider Health should show explicit Alpaca status and readiness:
+  selected provider, mock vs paper mode, key/config presence, and latest
+  connectivity / health result where practical
+- Add FRED and news-provider health checks where available or practical so the
+  operator can verify macro/news context inputs explicitly
+- Frame this as a pre-provider-expansion operator-readiness gate, not
+  live-trading enablement
+- Recommendation / Replay / Orders operator surfaces should be able to point
+  back to provider-health truth when provider-backed flows are degraded or in
+  fallback mode
+
+### Phase 7D — Closure criteria / remaining cleanup
 - Still open:
-  per-contract options commission parity in options replay / paper lifecycle
+  `commission_per_contract` is stored and exposed, but not yet applied to
+  options replay, options paper lifecycle, or options-fee parity flows
 - Still open:
-  broader fee modeling beyond current equity paper close flows
+  options-fee parity remains deferred to the options phase
+- Still open:
+  broader fee modeling is not yet implemented:
+  per-share fees, regulatory fees, borrow / locate assumptions, and richer
+  unrealized net P&L assumptions remain out of scope for the current slice
+- Do not mark Phase 7 fully complete until:
+  equity-side fee credibility is stable in operator workflows and the repo has
+  an explicit decision on what stays in Phase 7 versus what defers to Phase 8
 
 ### Phase 8 — Options execution (research → paper parity)
 - 8A: Options replay — historical P&L tracking for multi-leg structures using
@@ -186,6 +222,10 @@ preserved in git history. Run `git log --oneline -- docs/roadmap-status.md`
 for the chronological list, or `git log -p docs/roadmap-status.md` for full
 diffs. Notable recent inflection points:
 
+- 2026-04-29 — Phase 7A/7B partial: commission-aware gross/net realized paper
+  P&L, per-user commission settings, replay/order/open-position fee previews,
+  orders/settings UI updates, equity close-math fee application.
+  `commission_per_contract` storage landed, but options parity remains open.
 - 2026-04-29 — Pass 4: `display_id`, per-user risk dollars, Settings page,
   invite-email welcome CTA, schedules timezone display, MFA runbook, brand
   header on pre-auth, dashboard 401 hardening (`pending-approval` redirect).
