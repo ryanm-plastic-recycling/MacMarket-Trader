@@ -444,6 +444,248 @@ Recommended initial boundary:
 - replay one structure at a time
 - iron condor and simple verticals before broader strategy coverage
 
+#### What "options replay" means in 8C
+
+For Phase 8C, options replay should mean a **read-only replay preview** for a
+single defined-risk structure using historical underlying bars plus explicit
+structure assumptions already surfaced in Analysis / Recommendations.
+
+Initial 8C replay should answer:
+
+- would this structure have been allowed through the replay gate?
+- what structure was evaluated?
+- what premium / commission assumptions were used?
+- what max profit / max loss / breakevens applied?
+- what would payoff look like at expiration under the replayed underlying path?
+- what blockers prevented a trustworthy replay preview?
+
+Phase 8C should **not** yet mean:
+
+- staged options orders
+- options fill simulation parity with a broker
+- open options positions or closed options trades
+- assignment / exercise automation
+- intraday mark-to-market or Greek-driven valuation parity
+- using options replay results to unlock paper-order execution
+
+Recommended posture:
+
+- 8C starts as recommendation/history simulation plus deterministic
+  payoff-at-expiration preview
+- mark-to-market approximation is explicitly deferred until later provider-depth
+  work provides safer quote assumptions
+- replay remains paper-only and research-oriented until 8D introduces an actual
+  options paper lifecycle
+
+#### Initial supported structures
+
+Target structures for 8C:
+
+- bull call debit spread
+- bear put debit spread
+- iron condor
+
+Recommended implementation order:
+
+1. vertical debit spreads first
+2. iron condor second, using the same leg/payoff helper foundation
+
+Reasoning:
+
+- verticals are the smallest defined-risk structure with reusable debit / width /
+  max-profit / max-loss math
+- iron condor is still a required early target, but it should build on the same
+  per-leg payoff helper rather than being the first structure implemented
+- long single-leg calls/puts may be added later, but they should not displace
+  the defined-risk path as the primary 8C target
+
+Blocked early structures:
+
+- naked short call
+- naked short put
+- covered call replay that depends on inventory / assignment modeling
+
+#### Data required and assumption hierarchy
+
+Required for a valid 8C replay preview:
+
+- underlying price history from the same workflow source used to generate the
+  research setup
+- `market_mode=options`
+- explicit structure definition from Analysis / Recommendations
+- expiration / DTE
+- strike / right / action for each leg
+- premium assumption at the structure level at minimum
+
+Preferred but not required in the first slice:
+
+- chain preview reference rows
+- IV snapshot
+- expected range
+- contract-level provider symbols
+
+Assumption hierarchy for 8C:
+
+1. use the existing `option_structure` payload as the source of leg identity,
+   debit/credit, max profit/loss, and breakevens
+2. use historical underlying bars for expiration payoff checks
+3. use expected range only as contextual/operator guidance, not as payoff math
+4. use `commission_per_contract` for estimated fees only when contract counts
+   are explicit enough to do so deterministically
+
+Missing-data behavior:
+
+- if structure legs are incomplete, block replay preview with explicit reason
+- if premium / debit / credit is missing, block replay preview rather than
+  inventing price assumptions
+- if chain preview is unavailable, replay may still proceed if structure math is
+  already explicit in the setup payload
+- if expected range is blocked or omitted, replay still proceeds and shows the
+  reason as contextual research metadata
+
+#### Persistence posture
+
+Phase 8C can and should remain **non-persisted** in its safest first slice.
+
+Recommended first implementation:
+
+- API returns a read-only options replay preview response
+- frontend renders the preview without creating replay DB rows
+- no options recommendation persistence is required
+
+If lightweight persistence becomes desirable before schema work, the smallest
+schema-safe option is:
+
+- continue using the existing `replay_runs` / `replay_steps` tables only after a
+  mode-aware payload field exists in the persisted row contract, or
+- write preview-only trace details into existing JSON audit payloads rather than
+  creating new options tables
+
+However, 8C should not require that on day one. The existing replay tables are
+currently equity-shaped (`recommendation_count`, `fill_count`,
+`stageable_recommendation_id`, portfolio snapshots) and should not be stretched
+into pseudo-options persistence until the non-persisted replay preview has
+proven useful.
+
+#### Equity replay isolation
+
+Hard separation rules:
+
+- keep current `ReplayEngine` behavior unchanged for `market_mode=equities`
+- do not route options replay through `RecommendationService.generate()`
+- do not fabricate equity-style `TradeRecommendation`, `OrderIntent`,
+  `OrderRecord`, or `FillRecord` for options replay
+- use a separate request/response branch keyed by `market_mode=options`
+
+Recommended contract direction:
+
+- retain current equity `ReplayRunRequest` / `ReplayRunResponse`
+- add mode-aware option replay request/response contracts later rather than
+  overloading the equity ones
+- keep replay UI and route handlers explicitly mode-branching
+
+#### Replay UI contract
+
+The 8C replay UI should show:
+
+- underlying symbol
+- structure type
+- expiration / DTE
+- explicit legs
+- entry debit / credit assumption
+- estimated contract commissions
+- max profit
+- max loss
+- breakeven low / high where applicable
+- expiration payoff summary under the replayed underlying path
+- blocked / rejected reasons
+- paper-only / research-only disclaimer
+
+It should not show:
+
+- stage order now
+- promote to execution
+- simulated fill timeline pretending to be broker-realistic
+
+Safe rendering rules:
+
+- unavailable values render as `Unavailable` or `—`
+- blocked replay states show a deterministic reason
+- contextual expected-range data remains visibly separate from payoff outputs
+
+#### Test plan
+
+Backend tests required later:
+
+- pure payoff-math unit tests for vertical spreads and iron condor
+- commission estimate tests using `commission_per_contract`
+- blocked replay tests for missing legs / missing premium / unsupported
+  structure
+- equity replay regression tests proving `ReplayEngine` behavior is unchanged
+
+Frontend tests required later:
+
+- options replay preview renders structure, payoff summary, and blockers
+- options replay mode suppresses order/staging CTAs
+- missing values render safely
+- expected range stays contextual and does not masquerade as payoff math
+
+Recommended regression anchors:
+
+- `tests/test_replay_engine.py`
+- `tests/test_phase1_workflow_hardening.py`
+- `tests/test_recommendations_api.py`
+- existing frontend recommendations/options preview tests
+
+#### Safest implementation slices
+
+##### Phase 8C1 — Planning and contracts
+
+- define mode-specific request/response shapes for options replay preview
+- keep them separate from current equity replay contracts where practical
+- no persistence, no schema, no migration
+
+##### Phase 8C2 — Pure payoff math helper
+
+- add a deterministic helper for per-leg and structure-level expiration payoff
+- support vertical debit spreads first
+- add iron condor using the same helper
+- add `commission_per_contract` estimation only, not live execution logic
+
+##### Phase 8C3 — API response / read-only replay preview
+
+- add an options replay preview endpoint or mode branch
+- validate structure completeness
+- return payoff summary, max profit/loss, breakevens, commission estimates, and
+  blocked reasons
+- do not create replay DB rows in the first slice
+
+##### Phase 8C4 — UI surface
+
+- add a read-only options replay preview to the Replay workspace
+- keep equity replay UI unchanged
+- suppress stage/order CTAs for options mode
+
+##### Phase 8C5 — Tests and docs closure
+
+- add payoff-math unit tests
+- add frontend rendering tests
+- add explicit equity replay regression coverage
+- update roadmap/docs once the non-persisted options replay preview is working
+
+#### Recommended first implementation slice after this planning pass
+
+Proceed with **8C2 first** after contract confirmation:
+
+- implement the pure payoff math helper for vertical debit spreads
+- extend it to iron condor in the same helper module or adjacent options replay
+  utility
+- keep it frontend-invisible at first if needed
+
+That is the safest slice because it is deterministic, testable, schema-free,
+and it proves the core replay math before any route or UI work tries to present
+it to the operator.
+
 ### Phase 8D — Options paper order and position lifecycle
 
 Scope:

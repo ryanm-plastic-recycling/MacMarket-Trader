@@ -157,9 +157,10 @@ deferred to later phases and do not block Phase 8 planning.
 
 ### Phase 8 — Options research → paper parity
 - Status:
-  8A architecture planning complete; 8B started with read-only options
-  research preview on Analysis / Recommendations. No schema, migration,
-  replay, order-lifecycle, or execution-enablement changes have landed.
+  8A architecture planning complete; 8B complete for the current non-persisted
+  research-visibility scope; 8C planning started for read-only options replay
+  on defined-risk structures. No schema, migration, order-lifecycle, or
+  execution-enablement changes have landed.
 - Detailed plan:
   see [options-architecture.md](options-architecture.md)
 - 8A:
@@ -184,7 +185,9 @@ deferred to later phases and do not block Phase 8 planning.
   are not required to consider the read-only research slice complete
 - 8C:
   options replay for defined-risk structures, including any future replay CTA
-  enablement, kept mode-separate from current equity replay
+  enablement, kept mode-separate from current equity replay; initial planning
+  keeps 8C read-only / non-persisted until the replay math and payload
+  contracts are proven
 - 8D:
   options paper order / fill / position / trade lifecycle with
   `commission_per_contract` application, plus any future stage/order CTA
@@ -255,7 +258,7 @@ deferred to later phases and do not block Phase 8 planning.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 106
+- vitest: 114
 - Playwright: 31
 
 ## Core product pillars
@@ -321,6 +324,11 @@ diffs. Notable recent inflection points:
   options-mode execution CTAs remain intentionally unavailable. This stayed
   frontend-only; no schema, migration, replay, order-lifecycle, or execution
   behavior changed.
+- 2026-04-29 — Phase 8C planning pass: `docs/options-architecture.md` now
+  defines options replay as a read-only, non-persisted replay-preview mode for
+  defined-risk structures first, with vertical debit spreads and iron condor as
+  the initial targets. Existing equity replay remains isolated, while staging,
+  options paper lifecycle, and live routing stay deferred to later slices.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI
