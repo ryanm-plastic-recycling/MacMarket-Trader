@@ -38,25 +38,37 @@ Full architecture charter: `README.md` (canonical — do not summarize or replac
 
 ```
 src/macmarket_trader/
-  api/routes/admin.py          — protected user + admin route handlers
-  api/routes/analysis.py       — strategy workbench backend
-  replay/engine.py             — deterministic replay runner
-  recommendation/service.py    — recommendation generation
-  indicators/                  — HACO/HACOLT indicator math
+  api/routes/admin.py                    — protected user + admin route handlers
+  api/routes/analysis.py                 — strategy workbench backend
+  replay/engine.py                       — deterministic replay runner
+  recommendation/service.py              — recommendation generation
+  indicators/                            — HACO/HACOLT indicator math
+  execution/                             — broker scaffolds (mock + AlpacaBrokerProvider)
 apps/web/
-  app/(console)/               — operator console pages
-    analysis/page.tsx          — Strategy Workbench
-    recommendations/page.tsx   — Recommendations workspace
-    replay-runs/page.tsx       — Replay workspace
-    orders/page.tsx            — Paper Orders workspace
+  app/(console)/                         — operator console pages
+    analysis/page.tsx                    — Strategy Workbench
+    recommendations/page.tsx             — Recommendations workspace
+    replay-runs/page.tsx                 — Replay workspace
+    orders/page.tsx                      — Paper Orders workspace
+    settings/page.tsx                    — user settings
+    welcome/page.tsx                     — alpha welcome guide
   components/
-    workflow-banner.tsx        — guided flow context chip bar
-    guided-step-rail.tsx       — step 1–4 rail navigation
+    workflow-banner.tsx                  — guided flow context chip bar
+    guided-step-rail.tsx                 — step 1–4 rail navigation
+    active-trade-banner.tsx              — sticky trade context (guided mode)
+    brand-header.tsx                     — pre-auth brand header
   lib/
-    guided-workflow.ts         — guided state parse/build helpers
-    recommendations.ts         — queue/provenance helpers
-tests/                         — backend pytest suite
-apps/web/tests/e2e/            — Playwright e2e suite
+    guided-workflow.ts                   — guided state parse/build helpers
+    recommendations.ts                   — queue/provenance helpers
+    lineage-format.ts                    — display_id formatting
+    orders-helpers.ts                    — PnL + duration helpers
+docs/alpha-user-welcome.md               — canonical welcome doc (rendered at /welcome)
+docs/roadmap-status.md                   — full phase history
+docs/private-alpha-operator-runbook.md   — deployment runbook
+scripts/run-due-schedules.ps1            — scheduler wrapper
+scripts/backup-db.ps1                    — daily DB backup
+tests/                                   — backend pytest suite
+apps/web/tests/e2e/                      — Playwright e2e suite
 ```
 
 ---
@@ -114,8 +126,11 @@ cd apps/web && npm run build
 # Seed demo data
 python -m macmarket_trader.cli seed-demo-data
 
-# Run due scheduled reports
+# Run due scheduled reports (also wired to MacMarket-StrategyScheduler task)
 python -m macmarket_trader.cli run-due-strategy-schedules
+
+# Poll Alpaca paper fills (Phase 9 — not yet active)
+python -m macmarket_trader.cli poll-alpaca-fills
 ```
 
 ---
@@ -132,20 +147,29 @@ python -m macmarket_trader.cli run-due-strategy-schedules
 
 ## Guided workflow
 
-Primary operator path: **Analysis → Recommendations → Replay → Paper Orders**
+Primary operator path: **Analyze → Recommendation → Replay → Paper Order → Position → Close**.
 
 Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `market_mode`, `source`, `recommendation` (UID), `replay_run` (ID), `order` (ID).
 
-`WorkflowBanner` (`components/workflow-banner.tsx`) renders the active lineage as chips.
+`WorkflowBanner` (`components/workflow-banner.tsx`) renders the active lineage as chips and prefers `display_id` over the canonical `rec_<hex>`.
+`ActiveTradeBanner` (`components/active-trade-banner.tsx`) is a sticky top strip in guided mode showing SYMBOL · strategy · `display_id` · status.
 `GuidedStepRail` renders the 1–4 step rail.
 `parseGuidedFlowState` / `buildGuidedQuery` in `lib/guided-workflow.ts` are the canonical helpers.
+
+In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" auto-advances to `/orders` (skipped if `has_stageable_candidate=false`). "Stage paper order now" is the terminal step. Cancel staged order is allowed pre-fill; reopen closed position is allowed within a 5-minute window.
 
 ---
 
 ## Important implementation constraints
 
 - `user_is_approved=True` must be passed to `recommendation_service.generate()` during replay so quality-gate overrides apply and `has_stageable_candidate` is computed correctly.
-- Promote endpoint (`/user/recommendations/queue/promote`) now accepts `action` field (`make_active` / `save_alternative`) — stored in `ranking_provenance` and returned in response.
+- Order `side` field uses `Direction` enum: `"long"` (not `"buy"`) and `"short"` (not `"sell"`). Check `order.side.value == "long"` for buy-side position creation.
+- Promote endpoint (`/user/recommendations/queue/promote`) accepts `action` field (`make_active` / `save_alternative`) — stored in `ranking_provenance` and returned in response.
+- `display_id` format: `{SYMBOL}-{STRATEGY_ABBREV}-{YYYYMMDD}-{HHMM}`. Generated at recommendation creation. Falls back to `display_id_or_fallback()` for legacy rows (returns `Rec #shortid`). Canonical `recommendation_id` (`rec_<hex>`) stays the unique key — `display_id` is a label only, never used as FK.
+- `console_url` in `config.py` is a `@property` that mirrors `app_base_url`. Do not add a separate `CONSOLE_URL` env var.
+- `apply_schema_updates()` handles all new columns automatically on startup. No manual Alembic migrations needed for nullable columns.
+- Identity reconciliation: `upsert_from_auth` matches by Clerk sub, then by email, then by `invited::email` prefix. Preserves `approval_status` and `app_role` through merge.
+- `BROKER_PROVIDER=mock` is the current production setting. Do not change to `alpaca` without completing Phase 9.
 - Sticky `thead th` pattern: inline styles `position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)"`.
 - `op-error` block style: `border: 1px dashed #7c4040; background: #2a1717`.
 
@@ -153,184 +177,36 @@ Context threads through URL query params: `guided=1`, `symbol`, `strategy`, `mar
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–6 complete + post-launch polish. 166 backend tests. 8 Playwright e2e. tsc clean.**
+**CURRENT STATE: Phases 0–6 + Pass 4 complete. Private alpha live at https://macmarket.io. 3 alpha users. Phase 9 (Alpaca paper integration) is next.**
 
-### Completed (DataNotEntitledError / 402 handling — 2026-04-16)
+Tests (2026-04-29): pytest 210, vitest 99, Playwright 31 (all passing, 0 skipped). tsc clean.
 
-**`DataNotEntitledError` (`market_data.py`, `admin.py`, `analysis/page.tsx`)**
-- `DataNotEntitledError(Exception)` added to `market_data.py` — distinct from `ProviderUnavailableError`.
-- `_fetch_url`: HTTP 403 → `DataNotEntitledError("Not entitled to this data. Upgrade plan at https://polygon.io/pricing")`.
-- `MarketDataService.historical_bars` / `latest_snapshot`: re-raise alongside `SymbolNotFoundError` (no fallback).
-- `_workflow_bars` in `admin.py`: catches `DataNotEntitledError` → HTTP 402 `{ "error": "data_not_entitled", "message": "Your data plan does not include {symbol}. Index bar data (SPX, NDX, VIX) requires a plan upgrade." }`.
-- Frontend: 402 response sets `workbenchState = "data_not_entitled"` — shows `StatusBadge tone="warn"` notice with ETF substitution hints (SPY/QQQ). Does not show provider-unavailable banner. `WorkbenchState` union updated.
-- 3 new tests → 166 total: 403→`DataNotEntitledError` via module-level `urlopen` patch, service-level propagation, full route 402 response test.
+Deployment: `https://macmarket.io` via Cloudflare Tunnel; backend `uvicorn` on `127.0.0.1:9510`; frontend Next.js on `0.0.0.0:9500`; SQLite at `C:\Dashboard\MacMarket-Trader\macmarket_trader.db`; daily 3 AM backup via `MacMarket-DB-Backup` task; strategy scheduler every 5 min via `MacMarket-StrategyScheduler` task.
 
-### Completed (Polygon options chain preview — 2026-04-16)
-
-**Fix 3 — Options chain preview (`market_data.py`, `admin.py`, `analysis/page.tsx`)**
-- `PolygonMarketDataProvider.fetch_options_chain_preview(symbol, limit=50)` — calls `/v3/reference/options/contracts` (Polygon Options Basic plan). Returns nearest-expiry calls/puts as `{ strike, expiry, last_price: null, volume: null }`. Gracefully handles 404/empty/unavailable.
-- `MarketDataService.options_chain_preview(symbol, limit)` — delegates to Polygon; returns `None` for non-Polygon providers.
-- `analysis_setup` adds `options_chain_preview` to payload when `market_mode == OPTIONS`.
-- Frontend: "Options chain preview" `Card` on analysis page for options mode. Shows calls/puts tables or reason message. `SetupPayload` type updated.
-- `INDEX_SYMBOLS` updated to include "OEX".
-- 5 new tests → 163 total.
-
-### Completed (Polygon symbol handling — 2026-04-16)
-
-**Fix 1 — `SymbolNotFoundError` (`market_data.py`, `admin.py`)**
-- New `SymbolNotFoundError(Exception)` class in `market_data.py` — distinct from `ProviderUnavailableError`.
-- `_fetch_url`: HTTP 404 → `SymbolNotFoundError`. Other HTTP errors → `ProviderUnavailableError` (unchanged).
-- `get_historical_bars`: raises `SymbolNotFoundError` when no results returned after pagination.
-- `get_latest_snapshot`: raises `SymbolNotFoundError` when `ticker` is None in Polygon response.
-- `MarketDataService.historical_bars` / `latest_snapshot`: re-raise `SymbolNotFoundError` (not caught → no fallback).
-- `_workflow_bars` catches `SymbolNotFoundError` → HTTP 400 `{ "error": "symbol_not_found", "message": "..." }`.
-
-**Fix 2 — Index symbol normalization (`market_data.py`)**
-- `INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP"}` constant.
-- `normalize_polygon_ticker(symbol)` helper — maps known indices to `I:{symbol}`, passes others unchanged.
-- Applied in `get_historical_bars` and `get_latest_snapshot` before building Polygon URL paths.
-
-**7 new tests → 158 total**: normalize_polygon_ticker, index ticker URL paths, SymbolNotFoundError propagation, full 400 route test.
-
-### Completed (admin hardening pass 2 — 2026-04-16)
-
-**Fix 1 — Sign-up error boundary**
-- `apps/web/app/sign-up/[[...sign-up]]/error.tsx` — route-level error boundary with "Try again" + "Go to sign in" links
-- `apps/web/app/global-error.tsx` — root-level global error boundary with full `<html>` wrapper
-
-**Fix 2 — Unsuspend / re-approve (`admin.py`, `[userId]/unsuspend/route.ts`)**
-- `POST /admin/users/{user_id}/unsuspend` — sets status → approved; 409 if self; 404 if not found
-- `approve_user` already handles rejected → approved; both flows covered
-
-**Fix 3 — Hard delete user (`admin.py`, `repositories.py`, `[userId]/route.ts`)**
-- `DELETE /admin/users/{user_id}` — 409 if self, 404 if not found; removes local DB record permanently
-
-**Fix 4 — Force re-login via Clerk session invalidation (`admin.py`, `[userId]/force-password-reset/route.ts`)**
-- `POST /admin/users/{user_id}/force-password-reset` — calls Clerk `DELETE /v1/users/{clerk_id}/sessions`; guards against invalid IDs, missing key, network failure (502)
-
-**Fix 5 — Status-aware action matrix (`admin-users-panel.tsx`)**
-- `approved`: Suspend + role toggle in row; Force re-login + Delete in expanded row
-- `suspended`: Unsuspend in row; Force re-login + Delete in expanded row
-- `rejected`: Approve in row; Delete in expanded row
-- `pending`: Approve + Reject in row; Delete in expanded row
-- Own row: all mutating actions hidden with tooltip
-
-**New proxy routes**: `[userId]/unsuspend/route.ts`
-
-**Backend tests (5 new → 151 total)**
-- `test_re_approve_suspended_user`, `test_re_approve_rejected_user`, `test_delete_user_scoped_to_admin`, `test_delete_user_cannot_target_self`, `test_force_relogin_calls_clerk_session_invalidation`
-
-### Completed (transactional email polish — 2026-04-15)
-
-**Approval notification email**
-- `render_approval_html(to_email, display_name, console_url)` in `email_templates.py` — dark-themed, inline CSS, table layout matching strategy report style; green accent line; "Open the console" CTA → `CONSOLE_URL`
-- `approve_user` route in `admin.py` now sends the branded HTML
-
-**Rejection / access-denied email**
-- `render_rejection_html(to_email, display_name)` — same structure, red accent line, polite copy
-- `reject_user` route now sends branded HTML with updated subject
-
-**CONSOLE_URL env var**
-- `console_url` added to `Settings` (default `http://localhost:9500`)
-- `.env.example` documents `CONSOLE_URL` with comment
-
-**Invite email** was already HTML-templated via `render_invite_html` — unchanged.
-
-### Completed (admin user management hardening — 2026-04-16)
-
-**Fix 2 — Delete/revoke invite**
-- `DELETE /admin/invites/{invite_id}` — admin-scoped; 404 if not found
-- `InviteRepository.delete()` + `get_by_id()` methods
-- Frontend: `[inviteId]/route.ts` DELETE proxy; "Revoke" button with inline confirm in `pending-users-panel.tsx`
-
-**Fix 3 — Resend invite**
-- `AppInviteModel` gains nullable `sent_at` column (auto-added by `apply_schema_updates`)
-- `POST /admin/invites/{invite_id}/resend` — re-sends email, updates `sent_at`
-- Frontend: `[inviteId]/resend/route.ts`; "Resend" button with 5s disable + badge in `pending-users-panel.tsx`
-
-**Fix 4 — Change user role**
-- `POST /admin/users/{user_id}/set-role` — 409 if targeting self
-- `UserRepository.set_app_role()` + `get_by_id()` methods
-- Frontend: `[userId]/set-role/route.ts`; "Make admin" / "Make user" toggle in `admin-users-panel.tsx` (own row disabled)
-
-**Fix 5 — Suspend user**
-- `POST /admin/users/{user_id}/suspend` — 409 if targeting self; `ApprovalStatus.SUSPENDED` already existed
-- Console layout already redirects `suspended` → `/access-denied`
-- Frontend: `[userId]/suspend/route.ts`; "Suspend" button with inline confirm (own row excluded)
-
-**Fix 6 — Expandable user detail rows (UI only)**
-- Click any row in `admin-users-panel.tsx` to expand: email, role, approval, timestamps, Clerk ID + "Copy user ID"
-
-**Tests:** 5 new backend tests → 146 total
-**Runbook:** Section 11 added — full user management action reference
-
-### Completed (branded From display name — 2026-04-16)
-
-**`BRAND_FROM_NAME` env var**
-- `brand_from_name: str = "MacMarket Trader"` added to `Settings` in `config.py`
-- `ResendEmailProvider` now accepts `from_name` and builds `from_address` as `"Name <email>"` (falls back to bare email when name is empty)
-- `build_email_provider()` in `registry.py` passes `settings.brand_from_name` to `ResendEmailProvider`
-- `.env.example` documents `BRAND_FROM_NAME=MacMarket Trader` with inbox display comment
-- Applies to all outbound emails: invites, approvals, rejections, strategy reports
-
-### Completed (email logo URL + Task Scheduler — 2026-04-15)
-
-**Email logo URL (Fix 1)**
-- `_logo_img()` in `email_templates.py` checks `BRAND_LOGO_URL` env var first; falls back to base64 embed, then CSS lockup — no broken image ever rendered
-- `BRAND_LOGO_URL` in `config.py` and `.env.example` — defaults to GitHub raw asset URL, can be overridden
-
-**Windows Task Scheduler (Fix 2)**
-- `scripts/deploy_windows.bat` prints `[WARN]` reminder if `MacMarket-StrategyScheduler` task is not registered
-- `docs/private-alpha-operator-runbook.md` Section 10: schtask register/verify/check/remove commands for 15-minute strategy schedule runner
-
-### Completed (Options B + C — 2026-04-15)
-
-**Option C — Scheduled reports polish (`schedules/page.tsx`)**
-- Schedule list: last run relative time + top-candidate badge per row
-- Run history rows: scannable "N top · N watch · N no-trade" summary
-- Top candidate rows: "Analyze in guided mode →" link to `/analysis?guided=1`
-- Empty state: descriptive guidance + "Create your first schedule" CTA with scroll-to-form ref
-- Backend `last_run_at` + `top_candidate_count` already present — no changes needed
-
-**Option B — Operational readiness (5 audits, all pass or fixed)**
-- Audit 1 (deploy script): PASS — current, no changes
-- Audit 2 (runbook): UPDATED — Phase 1 refs → Phase 5/6, full guided flow walkthrough, close-trade lifecycle, new Section 8 (Clerk config requirements), new Section 9 (second operator onboarding checklist — 6 steps)
-- Audit 3 (invite flow): PASS — no code gaps, config requirements documented
-- Audit 4 (data isolation): ALL PASS — 7/7 entities scoped by `app_user_id`: recommendations, replay_runs, orders, paper_positions, paper_trades, onboarding_status, strategy_schedules
-- Audit 5 (empty states): FIXED — dashboard 4 cards + replay/orders tables now show operator-useful hint rows for zero-data new operators
-
-**Options/crypto research preview surfacing**
-- Analysis market mode selector: "Options (research preview)" / "Crypto (research preview)" labels + full preview notice paragraph (not bare badge)
-- Analysis guided CTA: disabled with inline reason when non-equity mode selected
-- Recommendations page: `isPreviewMode` gate — shows preview notice card with restart link, hides all workflow content (queue, hero, grids, chart)
-- Dashboard: dismissible `op-card` notice explains equities vs. preview modes; localStorage key `macmarket-preview-modes-noted` suppresses after first dismiss
-
-**Polygon.io live market data — wired and verified**
-- `ProviderUnavailableError` exception added to `market_data.py` — raised by `PolygonMarketDataProvider` on HTTP/connection/timeout errors; caught by `MarketDataService` to trigger fallback
-- `_fetch_url` helper refactored from `_request_json`; pagination in `get_historical_bars` follows `next_url` (max 3 pages) to collect full `limit` bars
-- `health_check` simplified to single snapshot probe (was two calls); catches `ProviderUnavailableError`
-- `.env.example` market data section now has full comment block with Polygon free tier note and opt-in instructions
-- `docs/local-development.md` has new "Live market data via Polygon.io" subsection with setup, UI changes, and verification steps
+Phase 6 + Pass 4 ships the full Analyze → Recommendation → Replay → Paper Order → Position → Close workflow with cancel-staged + reopen-closed (5 min) lifecycle, `display_id` labels (`AAPL-EVCONT-20260429-0830`), per-user `risk_dollars_per_trade` + Settings page at `/settings`, welcome guide at `/welcome` with brand header on pre-auth pages, invite email with welcome CTA, timezone-aware schedules, role-conditional sidebar, sticky Active Trade banner, auto-advance guided CTAs, Polygon market data (equities live; options chain preview research-only), and Cloudflare Access invite-only enforcement. See `docs/roadmap-status.md` for full phase history.
 
 ---
 
-## Important implementation constraints
+## Open Items (Phase 9 is next)
 
-- Order `side` field uses `Direction` enum: `"long"` (not `"buy"`) and `"short"` (not `"sell"`). Check `order.side.value == "long"` for buy-side position creation.
+### Phase 9 — Alpaca paper integration (NEXT)
+Wire `BROKER_PROVIDER=alpaca` for real paper fills. Keys configured in deployed `.env`: `APCA_API_KEY_ID=PK...`, `APCA_API_SECRET_KEY=...`, `ALPACA_PAPER_BASE_URL=https://paper-api.alpaca.markets`. Scaffold exists in `src/macmarket_trader/execution/`. `AlpacaBrokerProvider` needs: `place_order`, `get_order`, `cancel_order`, `get_account`. Fill polling via CLI `poll-alpaca-fills`, run every 5 min via existing scheduler script.
 
-## Open Items
+### Phase 7 — Brokerage fees + commission modeling
+`gross_pnl` / `net_pnl` split in `paper_trades`. Per-contract options commission (default `$0.65`). Per-trade equity commission (default `$0`). Commission settings in user Settings page.
 
-### Priority: high value (next build)
-- Email delivery: verify Resend adapter works end-to-end for scheduled report delivery to a real inbox (logo URL configurable via `BRAND_LOGO_URL`, From display name configurable via `BRAND_FROM_NAME`)
+### Phase 8 — Options execution (research → paper parity)
+8A: Options replay. 8B: Options paper orders with expiry tracking. 8C: Greeks + IV display. 8D: IV rank as Iron Condor strategy gate. Prerequisite: Phase 7 commission model.
 
-### Priority: polish
-- HACO workspace: deeper indicator controls and signal visibility
-- `atm_straddle_mid` expected-range method (contract-allowed, not yet emitted)
+### Phase 10 — Crypto
+Crypto-native strategy design + paper execution via Alpaca. Prerequisite: user specifies desired strategies before build.
 
----
-
-## Not started (do not touch without explicit authorization)
-
-- Options/crypto replay mode-native semantics
-- Full options chain / IV surface / Greeks provider integration
-- Crypto venue funding/basis/OI live data
+### Known gaps (no phase assigned)
+- `/account` page does not render Clerk `<UserProfile>` for MFA enrollment (Clerk MFA requires paid plan — deferred)
+- `MacMarket-Strategy-Reports` scheduled task may be redundant with `MacMarket-StrategyScheduler` — verify and delete if duplicate
+- `display_id` collision if two recs created for same symbol+strategy within same minute — needs suffix handling
+- npm vitest/vite/esbuild moderate vulns (dev-server only, not production) — deferred until vitest 4 migration
+- `save_alternative` backend action variant not yet implemented (UI button exists, disabled)
+- `atm_straddle_mid` expected-range method not yet emitted
+- Options/crypto replay and paper orders blocked at research-preview only — Phase 8 addresses this
+- Invite reconciliation: manually patched for current alpha users; `upsert_from_auth` handles it going forward but verify with next new-user signup
