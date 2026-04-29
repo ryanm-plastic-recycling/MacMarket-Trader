@@ -455,7 +455,7 @@ export default function RecommendationsPage() {
         title="Recommendations"
         subtitle={
           isOptionsPreviewMode
-            ? "Read-only options research preview sourced from the Analysis setup contract. No execution support."
+            ? "Read-only options research and payoff preview sourced from the Analysis setup contract. No execution support."
             : "Step 2 of the guided paper-trade flow: review and promote Analysis setups (equities live-prep only)."
         }
         actions={
@@ -485,7 +485,7 @@ export default function RecommendationsPage() {
         nextDisabled={isPreviewMode || (guidedState.guided && !selectedRecommendation?.recommendation_id)}
         nextDisabledReason={
           isOptionsPreviewMode
-            ? "Options research stops here in Phase 8B. Replay and paper orders remain equities-only."
+            ? "Options research and payoff preview stop here in Phase 8C. Persisted replay runs and paper orders remain unavailable."
             : isCryptoPreviewMode
               ? "Crypto remains research preview only. Replay and paper orders remain unavailable."
               : "Guided replay requires a persisted recommendation. Promote the selected queue candidate first."

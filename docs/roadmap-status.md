@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 114, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 122, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
@@ -158,9 +158,10 @@ deferred to later phases and do not block Phase 8 planning.
 ### Phase 8 — Options research → paper parity
 - Status:
   `8A` complete, `8B` complete for the current non-persisted research-only
-  scope, and `8C` / `8D` / `8E` / `8F` now have detailed blueprint docs.
-  Implementation has not started beyond 8B. No schema, migration,
-  order-lifecycle, or execution-enablement changes have landed for options.
+  scope, `8C2` / `8C3` / `8C4` are now implemented for the current
+  non-persisted replay-preview scope, and `8D` / `8E` / `8F` remain planned.
+  No schema, migration, order-lifecycle, or execution-enablement changes have
+  landed for options.
 - Master plan:
   [options-architecture.md](options-architecture.md)
 - Companion docs:
@@ -183,7 +184,7 @@ deferred to later phases and do not block Phase 8 planning.
   persisted options recommendations, options replay, options orders, options
   fills, options positions, and options trades
 - 8C status:
-  `8C2` and `8C3` complete; `8C4+` not started
+  `8C2` / `8C3` / `8C4` complete; `8C5` not started
 - 8C acceptance target:
   read-only, non-persisted replay preview for supported defined-risk
   structures, starting with vertical debit spreads and quickly extending to
@@ -192,13 +193,15 @@ deferred to later phases and do not block Phase 8 planning.
   isolated pure payoff math helpers plus a dedicated read-only options replay
   preview contract at `POST /user/options/replay-preview`, with focused backend
   tests for long-option primitives, vertical debit spreads, iron condor,
-  blocked invalid/naked-short payloads, and explicit non-persistence
+  blocked invalid/naked-short payloads, explicit non-persistence, and a
+  Recommendations-side operator payoff preview UI with compact summary and
+  expiration payoff table
 - 8C must not change:
   current equity `ReplayEngine`, equity replay persistence semantics, equity
   `RecommendationService.generate()` behavior, or equity order/fill semantics
 - 8C not included:
-  replay UI, staged options orders, options positions/trades, mark-to-market
-  parity, assignment/exercise automation, or live routing
+  staged options orders, options positions/trades, mark-to-market parity,
+  assignment/exercise automation, or live routing
 - 8D status:
   planning complete; implementation not started
 - 8D acceptance target:
@@ -305,7 +308,7 @@ deferred to later phases and do not block Phase 8 planning.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 114
+- vitest: 122
 - Playwright: 31
 
 ## Core product pillars
@@ -391,6 +394,11 @@ diffs. Notable recent inflection points:
   isolated payoff helper and focused backend tests for ready/blocked/
   unsupported responses plus non-persistence. This remained schema-free,
   non-persisted, UI-free, and separate from existing equity replay routes.
+- 2026-04-29 — Phase 8C4 complete: Recommendations options research mode now
+  exposes an operator-facing replay payoff preview panel that calls the
+  read-only preview contract, renders compact expiration payoff summaries and
+  blocked reasons safely, and keeps persisted replay/order/staging CTAs
+  suppressed. This remained frontend-focused and non-persisted.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

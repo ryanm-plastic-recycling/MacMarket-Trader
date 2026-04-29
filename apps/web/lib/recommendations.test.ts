@@ -1,12 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const { fetchWorkflowApiMock } = vi.hoisted(() => ({
+  fetchWorkflowApiMock: vi.fn(),
+}));
+
+vi.mock("@/lib/api-client", () => ({
+  fetchWorkflowApi: fetchWorkflowApiMock,
+}));
 
 import {
+  buildOptionsReplayPreviewRequest,
   canRenderOptionsResearchChart,
+  fetchOptionsReplayPreview,
   formatOptionsLegLabel,
+  formatOptionsReplayToken,
   getExpectedRangeReasonText,
   getOptionsChainUnavailableMessage,
   getOptionsLegDisplayLines,
+  getOptionsReplayPreviewAvailability,
+  getOptionsReplayPreviewBreakevens,
+  getOptionsReplayPreviewPayoffRows,
   formatResearchCell,
+  formatResearchCurrency,
   formatResearchValue,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
@@ -190,6 +205,8 @@ describe("research preview helpers", () => {
     expect(formatResearchValue("")).toBe("Unavailable");
     expect(formatResearchValue(0)).toBe("0");
     expect(formatResearchCell(undefined)).toBe("—");
+    expect(formatResearchCurrency(undefined)).toBe("Unavailable");
+    expect(formatResearchCurrency(0)).toBe("$0.00");
   });
 
   it("formats option-leg labels with explicit action, right, strike, and label", () => {
@@ -221,6 +238,150 @@ describe("research preview helpers", () => {
   it("returns muted safe copy for missing chain preview states", () => {
     expect(getOptionsChainUnavailableMessage({ reason: "plan_not_configured" })).toBe("plan_not_configured");
     expect(getOptionsChainUnavailableMessage(null)).toBe("Options chain preview unavailable. This phase exposes config-backed research visibility only.");
+  });
+
+  it("builds a replay preview request from a supported vertical debit research structure", () => {
+    const request = buildOptionsReplayPreviewRequest({
+      symbol: "AAPL",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Bull Call Debit Spread",
+      option_structure: {
+        type: "bull_call_debit_spread",
+        expiration: "2026-05-16",
+        net_debit: 2.4,
+        legs: [
+          { action: "buy", right: "call", strike: 205, label: "long call" },
+          { action: "sell", right: "call", strike: 215, label: "short call" },
+        ],
+      },
+    });
+
+    expect(request).toEqual({
+      structure_type: "vertical_debit_spread",
+      legs: [
+        { action: "buy", right: "call", strike: 205, premium: 2.4, quantity: 1, multiplier: 100, label: "long call" },
+        { action: "sell", right: "call", strike: 215, premium: 0, quantity: 1, multiplier: 100, label: "short call" },
+      ],
+      underlying_symbol: "AAPL",
+      expiration: "2026-05-16",
+      notes: ["Premium assumptions derived from the read-only research contract for expiration payoff preview."],
+      source: "polygon",
+      workflow_source: "polygon",
+    });
+  });
+
+  it("builds an iron condor replay preview request from structure-level credit assumptions", () => {
+    const request = buildOptionsReplayPreviewRequest({
+      symbol: "SPY",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        net_credit: 2.5,
+        legs: [
+          { action: "buy", right: "put", strike: 90, label: "lower long put" },
+          { action: "sell", right: "put", strike: 95, label: "short put" },
+          { action: "sell", right: "call", strike: 105, label: "short call" },
+          { action: "buy", right: "call", strike: 110, label: "higher long call" },
+        ],
+      },
+    });
+
+    expect(request?.structure_type).toBe("iron_condor");
+    expect(request?.legs.map((leg) => leg.premium)).toEqual([0, 1.25, 1.25, 0]);
+  });
+
+  it("surfaces a disabled reason when the research structure is unsupported or incomplete", () => {
+    expect(
+      getOptionsReplayPreviewAvailability({
+        symbol: "AAPL",
+        market_mode: "options",
+        workflow_source: "polygon",
+        strategy: "Covered Call",
+        option_structure: {
+          type: "covered_call",
+          legs: [{ action: "sell", right: "call", strike: 200 }],
+        },
+      }),
+    ).toEqual({
+      request: null,
+      reason: "Replay payoff preview is currently supported only for long calls/puts, vertical debit spreads, and iron condors.",
+    });
+
+    expect(
+      getOptionsReplayPreviewAvailability({
+        symbol: "AAPL",
+        market_mode: "options",
+        workflow_source: "polygon",
+        strategy: "Bull Call Debit Spread",
+        option_structure: {
+          type: "bull_call_debit_spread",
+          legs: [{ action: "buy", right: "call", strike: 205 }],
+        },
+      }),
+    ).toEqual({
+      request: null,
+      reason: "Replay payoff preview requires complete legs plus usable debit/credit or premium assumptions from the current research contract.",
+    });
+  });
+
+  it("formats replay tokens and filters preview rows safely", () => {
+    expect(formatOptionsReplayToken("naked_short_option_not_supported")).toBe("Naked Short Option Not Supported");
+    expect(getOptionsReplayPreviewBreakevens({
+      execution_enabled: false,
+      persistence_enabled: false,
+      market_mode: "options",
+      preview_type: "expiration_payoff",
+      status: "ready",
+      is_defined_risk: true,
+      breakevens: [102.5, Number.NaN, 110],
+      payoff_points: [
+        { underlying_price: 100, total_payoff: -50 },
+        { underlying_price: Number.NaN, total_payoff: 20 },
+        { underlying_price: 110, total_payoff: Number.POSITIVE_INFINITY },
+      ],
+    })).toEqual([102.5, 110]);
+    expect(getOptionsReplayPreviewPayoffRows({
+      execution_enabled: false,
+      persistence_enabled: false,
+      market_mode: "options",
+      preview_type: "expiration_payoff",
+      status: "ready",
+      is_defined_risk: true,
+      payoff_points: [
+        { underlying_price: 100, total_payoff: -50 },
+        { underlying_price: Number.NaN, total_payoff: 20 },
+        { underlying_price: 110, total_payoff: Number.POSITIVE_INFINITY },
+      ],
+    })).toEqual([{ underlying_price: 100, total_payoff: -50 }]);
+  });
+
+  it("posts replay preview requests through the same-origin helper", async () => {
+    fetchWorkflowApiMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { status: "ready" },
+      items: [],
+      error: null,
+      raw: { status: "ready" },
+    });
+
+    await fetchOptionsReplayPreview({
+      structure_type: "vertical_debit_spread",
+      legs: [{ action: "buy", right: "call", strike: 205, premium: 2.4 }],
+    });
+
+    expect(fetchWorkflowApiMock).toHaveBeenCalledWith("/api/user/options/replay-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        structure_type: "vertical_debit_spread",
+        legs: [{ action: "buy", right: "call", strike: 205, premium: 2.4 }],
+      }),
+    });
   });
 
   it("only allows options research charts when source and symbol matching are safe", () => {

@@ -291,6 +291,10 @@ Rollback:
 
 ### 8C4 - Operator UI preview
 
+Status:
+
+- complete
+
 Complete when:
 
 - operators can inspect the replay preview safely
@@ -351,6 +355,11 @@ Phase 8C2 and 8C3 are now implemented in:
 - `src/macmarket_trader/api/routes/admin.py`
 - `tests/test_options_payoff.py`
 - `tests/test_options_replay_preview.py`
+- `apps/web/components/recommendations/options-research-preview.tsx`
+- `apps/web/app/api/user/options/replay-preview/route.ts`
+- `apps/web/lib/recommendations.ts`
+- `apps/web/components/recommendations/options-research-preview.test.tsx`
+- `apps/web/app/api/user/options/replay-preview/route.test.ts`
 
 Implemented scope:
 
@@ -365,21 +374,27 @@ Implemented scope:
 - safe `ready`, `blocked`, and `unsupported` response states
 - deterministic generated payoff grids when underlying prices are omitted
 - no replay DB rows, orders, or recommendations created by preview requests
+- operator-facing replay payoff preview inside Recommendations options research
+  mode
+- compact read-only payoff summary, blocked reasons, warnings/caveats, and
+  expiration payoff table
+- options-mode execution CTAs remain suppressed while preview stays
+  non-persisted and paper/research only
 
 Still deferred:
 
-- any replay UI
 - any persistence
 - any commission application
 
 ## Recommended next implementation slice
 
-Proceed with `8C4.1` next:
+Proceed with `8C5` next:
 
-- add an operator-facing replay preview UI for options mode
-- consume the existing read-only preview contract without adding persistence
-- keep order, staging, and lifecycle CTAs suppressed
+- close out the 8C slice with final docs/test alignment
+- keep replay preview non-persisted and mode-isolated
+- avoid folding 8D lifecycle work into replay preview
 - keep equity replay untouched
 
-That is the safest next step because the core payoff math and backend preview
-contract are now proven, and the remaining work is isolated UI inspection.
+That is the safest next step because the payoff math, preview contract, and
+operator UI are now proven, and the remaining work is closure discipline
+rather than new options behavior.
