@@ -302,6 +302,39 @@ Current closure note:
   automation, persisted options recommendations, broader Orders parity,
   advanced Expected Move visualization, or live routing/execution
 
+## Phase 9 planned test areas
+
+Planning note:
+
+- `9A` is planning only
+- `9B`, `9C`, and `9D` are the next future options test areas after Phase 8
+  closure
+
+### 9B future tests — durable operator visibility
+
+- open paper option positions render outside Recommendations with clear
+  paper-only labels
+- closed paper option trades render outside Recommendations with structure,
+  expiry, leg, gross/commission/net visibility
+- equity Orders behavior and copy remain unchanged while options records gain
+  their own durable operator surface
+- missing position/trade fields still render as `Unavailable` or `-`
+
+### 9C future tests — provider/source/as-of parity
+
+- provider/source/as-of labels remain consistent across research preview,
+  payoff preview, paper lifecycle, and future durable options listings
+- reference-only snapshots, missing `last` / `volume`, incomplete call/put
+  sides, and stale-data caveats stay explicit across those surfaces
+- missing market fields are never interpreted as `0`
+
+### 9D future tests — Expected Move visualization
+
+- Expected Move remains explicitly contextual and never reads like payoff math
+- visualization uses the current status/method/bounds/reason contract without
+  implying execution approval
+- visualization does not alter replay or paper lifecycle math semantics
+
 ## Suggested future test file direction
 
 Backend:

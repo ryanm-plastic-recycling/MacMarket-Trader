@@ -43,6 +43,10 @@ Current implementation note:
   fields can reflect current provider/source/tier limits, incomplete
   call-only or put-only previews are called out explicitly, and guided Step 5
   is labeled as a paper-close result rather than a generic saved result
+- post-Phase 8 the next UX maturity target is not live execution; it is
+  durable operator visibility for paper option positions/trades outside
+  Recommendations plus consistent provider/source/as-of and missing-data
+  warning presentation across future options surfaces
 - broader Orders dashboard parity remains deferred
 
 ## UX goals

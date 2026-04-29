@@ -384,6 +384,8 @@ Current project status, in operator terms:
 - Phase 8F complete: final closure for the current scoped paper-first options
   capability
 - Phase 8 is closed for the current scoped paper-first options capability
+- Phase 9 planned next:
+  options operator parity and data-quality hardening
 
 Current options boundary:
 
@@ -391,6 +393,7 @@ Current options boundary:
 - replay payoff preview is live
 - paper open/manual-close lifecycle is live
 - current scoped Phase 8 paper-first options capability is complete
+- broader durable options Orders/Positions visibility is planned next
 - expiration settlement is still deferred
 - broader Orders parity for durable options positions/trades is still deferred
 

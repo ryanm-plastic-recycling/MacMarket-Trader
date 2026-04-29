@@ -34,6 +34,8 @@ moving beyond the scoped paper-first options capability.
 Phase 8F is complete, and Phase 8 is now closed for the current scoped
 paper-first options capability only. Broader provider/source parity across
 other options surfaces and advanced Expected Move visualization stay deferred.
+Phase 9A planning is complete for options operator parity and data-quality
+hardening. Phase 9B / 9C / 9D remain planned.
 
 ## Completed Phases
 
@@ -368,7 +370,46 @@ other options surfaces and advanced Expected Move visualization stay deferred.
   the current contextual summary, and live routing remain outside the current
   implementation scope
 
-### Phase 9 — Alpaca paper integration
+### Phase 9 — Options operator parity and data-quality hardening
+- Status:
+  `9A` complete for planning; `9B`, `9C`, and `9D` remain planned
+- Theme:
+  durable operator visibility for current paper-first options plus consistent
+  provider/data-quality framing, without adding live execution semantics
+- 9A acceptance:
+  scope, sequencing, safety boundaries, and explicit deferrals are documented
+  for the post-Phase 8 options maturity pass
+- 9B scope:
+  options Orders/Positions dashboard parity
+- 9B acceptance target:
+  operators can see saved paper option positions and closed paper option
+  trades outside Recommendations with clear paper-only labels, structure
+  summaries, leg context, status, and gross/commission/net values where
+  available, without contaminating current equity Orders behavior
+- 9C scope:
+  provider/source/as-of parity across options surfaces
+- 9C acceptance target:
+  source/as-of context, reference-only chain caveats, incomplete call/put
+  side warnings, and missing market-field handling are presented consistently
+  across options research, payoff preview, paper lifecycle, and future durable
+  operator surfaces
+- 9D scope:
+  Expected Move visualization
+- 9D acceptance target:
+  Expected Move remains research context only, gains clearer visualization
+  only after durable operator visibility and provider/data-quality parity are
+  stable, and still does not modify payoff math unless a later phase
+  explicitly changes that contract
+- Phase 9 implementation order:
+  `9A` planning -> `9B` durable options Orders/Positions visibility -> `9C`
+  provider/source/as-of parity across options surfaces -> `9D` Expected Move
+  visualization
+- Phase 9 not included:
+  expiration settlement, assignment/exercise automation, persisted options
+  recommendations, options replay persistence into equity replay flows, live
+  routing/execution, broker integrations, or naked-short support
+
+### Phase 10 — Alpaca paper integration
 - Wire `BROKER_PROVIDER=alpaca` for real paper fills
 - Order placement via `https://paper-api.alpaca.markets`
 - Poll for fills, reconcile against local `paper_positions`
@@ -376,7 +417,7 @@ other options surfaces and advanced Expected Move visualization stay deferred.
   `ALPACA_PAPER_BASE_URL`. Scaffold exists at
   `src/macmarket_trader/execution/AlpacaBrokerProvider`. Not yet active.
 
-### Phase 10 — Crypto
+### Phase 11 — Crypto
 - Crypto-native strategy design (separate from equity momentum patterns —
   mean reversion, funding rate, BTC dominance regime)
 - Crypto paper execution via Alpaca
@@ -407,9 +448,10 @@ other options surfaces and advanced Expected Move visualization stay deferred.
   settings remain deferred beyond the coordinated lower-panel pass
 - Sticky table headers + richer active-context toggles on Replay / Orders
   history tables (beyond current contained-scroll + lineage-first selection)
-- Options/crypto live execution semantics — currently blocked at research
-  preview only on `/recommendations` (full execution parity tracked under
-  Phase 8 / Phase 10)
+- Options/crypto live execution semantics — current options support is still
+  paper-first only (research preview, read-only payoff preview, and
+  paper-only lifecycle). Durable operator parity is tracked under Phase 9;
+  crypto remains Phase 11; live execution remains deferred.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -420,7 +462,7 @@ other options surfaces and advanced Expected Move visualization stay deferred.
 - Backup: daily 3 AM via `MacMarket-DB-Backup` scheduled task
 - Scheduler: every 5 min via `MacMarket-StrategyScheduler` scheduled task
 - Alpha users: 3 (admin + 2 approved)
-- Alpaca paper API keys: configured, `BROKER_PROVIDER=mock` (Phase 9 activates)
+- Alpaca paper API keys: configured, `BROKER_PROVIDER=mock` (Phase 10 activates)
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
@@ -455,11 +497,12 @@ decide and size; LLMs never produce trade decisions.
 provenance. Decision logic remains deterministic.
 
 ## Multi-asset expansion policy
-Equities are first-class today. Options and crypto are research-preview only
-on `/recommendations`. Live replay and paper orders for options unlock with
-Phase 8; crypto unlocks with Phase 10. Cross-mode `expected_range` semantics
-remain spec-defined only until preview payloads, scoring, and replay carry
-method-tagged fields per mode.
+Equities are first-class today. Options now support a scoped paper-first
+research/replay-preview/manual-close lifecycle centered on
+`/recommendations`, with broader operator parity planned in Phase 9. Crypto
+remains future work under Phase 11. Cross-mode `expected_range` semantics
+remain spec-defined only until preview payloads, scoring, replay, and later
+mode-native operator surfaces carry method-tagged fields per mode.
 
 ## Detailed change log
 Pass-by-pass detail (every closeout, every test count delta, every fix) is
@@ -599,6 +642,12 @@ diffs. Notable recent inflection points:
   keeping expiration settlement, assignment/exercise automation, persisted
   options recommendations, broader Orders parity, advanced Expected Move
   visualization, and live routing/execution explicitly deferred.
+- 2026-04-29 — Phase 9 planning update complete: roadmap now defines `9A`
+  through `9D` as the next options maturity phase focused on durable operator
+  visibility and provider/data-quality parity, renumbers later Alpaca/crypto
+  phases to preserve ordering, and keeps settlement, assignment, persisted
+  options recommendations, live routing, and broker integration explicitly
+  deferred.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI
