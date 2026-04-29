@@ -47,7 +47,9 @@ Current implementation note:
   durable operator visibility for paper option positions/trades outside
   Recommendations plus consistent provider/source/as-of and missing-data
   warning presentation across future options surfaces
-- broader Orders dashboard parity remains deferred
+- `9B` now adds a durable paper-options visibility section on Orders, while
+  broader multi-surface parity and richer expiration/status views remain
+  future work
 
 ## UX goals
 
@@ -169,13 +171,20 @@ Later replay UX should add:
 
 ### Orders
 
-Later paper-lifecycle UX should add:
+Current paper-lifecycle UX now adds:
+
+- a dedicated `Paper Options Positions` section on Orders
+- separate open versus closed paper option lifecycle visibility
+- leg summaries plus open/manual-close state copy
+- gross/opening/closing/total/net result visibility for closed paper option
+  positions
+- paper-only labels that stay separate from the existing equity Orders tables
+
+Later Orders maturity can still add:
 
 - leg-aware paper ticket
-- open/close summaries
-- gross and net P&L
 - expiration status
-- durable options position/trade listing once backend read APIs are added
+- richer multi-position workflow actions
 
 ## 8E implementation slices
 

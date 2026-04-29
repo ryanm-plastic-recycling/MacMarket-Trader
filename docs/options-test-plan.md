@@ -167,7 +167,6 @@ Required now for `8D7` frontend operator UI:
 
 Required later for broader options paper lifecycle UI:
 
-- durable Orders parity for open option positions/trades
 - expiration-status display
 - broader multi-position operator workflow coverage
 
@@ -273,6 +272,11 @@ Use this short manual pass when closing the current `8D` scope:
    brokerage-routing language.
 10. Verify the guided stepper advances sensibly from structure review to
     payoff preview, paper save, manual close, and result review.
+11. Open Orders and confirm the dedicated `Paper Options Positions` section
+    shows the saved open paper option position outside Recommendations.
+12. After manual close, confirm Orders shows the closed paper result with
+    gross, opening commissions, closing commissions, total commissions, and
+    net P&L.
 
 ### 8E gate
 
@@ -299,23 +303,29 @@ Current closure note:
 
 - Phase 8 is complete for the current scoped paper-first options capability
 - this does not include expiration settlement, assignment/exercise
-  automation, persisted options recommendations, broader Orders parity,
-  advanced Expected Move visualization, or live routing/execution
+  automation, persisted options recommendations, advanced Expected Move
+  visualization, or live routing/execution
+- durable Orders visibility for paper option positions/trades now lands in
+  `9B`, while broader provider/source/as-of parity remains `9C`
 
 ## Phase 9 planned test areas
 
 Planning note:
 
 - `9A` is planning only
-- `9B`, `9C`, and `9D` are the next future options test areas after Phase 8
-  closure
+- `9B` is now implemented/current
+- `9C` and `9D` remain future options test areas after the current `9B`
+  durable-visibility scope
 
-### 9B future tests — durable operator visibility
+### 9B current tests — durable operator visibility
 
-- open paper option positions render outside Recommendations with clear
-  paper-only labels
-- closed paper option trades render outside Recommendations with structure,
-  expiry, leg, gross/commission/net visibility
+- backend list endpoint returns only the current user's paper option
+  positions and folds in closed-trade gross/commission/net fields when
+  present
+- open paper option positions render on Orders with clear paper-only labels
+  and pending-manual-close messaging
+- closed paper option trades render on Orders with structure, leg,
+  gross/opening/closing/total/net visibility
 - equity Orders behavior and copy remain unchanged while options records gain
   their own durable operator surface
 - missing position/trade fields still render as `Unavailable` or `-`

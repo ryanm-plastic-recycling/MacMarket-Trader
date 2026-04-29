@@ -285,6 +285,60 @@ export type OptionsPaperTradeLeg = {
   label?: string | null;
 };
 
+export type OptionsPaperLifecycleSummaryLeg = {
+  action: string;
+  right: string;
+  strike: number;
+  expiration: string;
+  quantity: number;
+  multiplier: number;
+  entry_premium?: number | null;
+  exit_premium?: number | null;
+  status?: string | null;
+  label?: string | null;
+  leg_gross_pnl?: number | null;
+  leg_commission?: number | null;
+  leg_net_pnl?: number | null;
+};
+
+export type OptionsPaperLifecycleSummary = {
+  position_id: number;
+  trade_id?: number | null;
+  market_mode: "options";
+  underlying_symbol: string;
+  structure_type: string;
+  status: string;
+  expiration?: string | null;
+  opened_at: string;
+  closed_at?: string | null;
+  source_order_id?: number | null;
+  contract_count?: number | null;
+  leg_count: number;
+  opening_net_debit?: number | null;
+  opening_net_credit?: number | null;
+  max_profit?: number | null;
+  max_loss?: number | null;
+  breakevens?: number[] | null;
+  settlement_mode?: string | null;
+  gross_pnl?: number | null;
+  opening_commissions?: number | null;
+  closing_commissions?: number | null;
+  total_commissions?: number | null;
+  net_pnl?: number | null;
+  execution_enabled: boolean;
+  persistence_enabled: boolean;
+  paper_only: boolean;
+  operator_disclaimer?: string | null;
+  legs: OptionsPaperLifecycleSummaryLeg[];
+};
+
+export type OptionsPaperLifecycleListResponse = {
+  market_mode: "options";
+  paper_only: boolean;
+  operator_disclaimer?: string | null;
+  items: OptionsPaperLifecycleSummary[];
+};
+
 export type OptionsPaperCloseResponse = {
   position_id: number;
   trade_id: number;
@@ -700,6 +754,12 @@ export async function fetchOptionsPaperClose(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
+}
+
+export async function fetchOptionsPaperPositions(
+  fetcher: typeof fetchWorkflowApi = fetchWorkflowApi,
+): Promise<NormalizedApiResult<OptionsPaperLifecycleSummary>> {
+  return fetcher<OptionsPaperLifecycleSummary>("/api/user/options/paper-structures");
 }
 
 export async function fetchOptionsCommissionSettings(

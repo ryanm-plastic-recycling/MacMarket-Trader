@@ -36,9 +36,10 @@ The product center is:
 3. Replay
 4. Orders
 
-For options, the current operator center is Analysis plus Recommendations.
-Replay payoff preview and paper lifecycle actions live there now; broader
-Orders parity for durable options positions/trades is still deferred.
+For options, the current operator center is Analysis plus Recommendations for
+setup, payoff preview, and open/manual-close actions, with Orders now
+providing durable paper-options position/trade visibility outside the
+Recommendations page.
 
 ## 2. Current operating modes
 
@@ -98,6 +99,8 @@ Two workflow styles also matter:
    supported.
 5. Close manually by entering one exit premium per leg.
 6. Review gross P&L, commissions, and net P&L.
+7. Open **Orders** later to review the durable saved paper option position or
+   closed paper trade result outside Recommendations.
 
 ## 4. Options training
 
@@ -384,18 +387,21 @@ Current project status, in operator terms:
 - Phase 8F complete: final closure for the current scoped paper-first options
   capability
 - Phase 8 is closed for the current scoped paper-first options capability
-- Phase 9 planned next:
-  options operator parity and data-quality hardening
+- Phase 9A complete: options operator parity and data-quality planning
+- Phase 9B complete: durable paper-options Orders/Positions visibility
+- Phase 9C planned next: provider/source/as-of parity across options surfaces
 
 Current options boundary:
 
 - research preview is live
 - replay payoff preview is live
 - paper open/manual-close lifecycle is live
+- Orders now provides durable paper-options position/trade visibility outside
+  Recommendations
 - current scoped Phase 8 paper-first options capability is complete
-- broader durable options Orders/Positions visibility is planned next
 - expiration settlement is still deferred
-- broader Orders parity for durable options positions/trades is still deferred
+- broader provider/source/as-of parity and richer options dashboard depth are
+  still deferred
 
 ## Final operator reminder
 

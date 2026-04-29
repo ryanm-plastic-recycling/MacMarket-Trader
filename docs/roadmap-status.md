@@ -35,7 +35,8 @@ Phase 8F is complete, and Phase 8 is now closed for the current scoped
 paper-first options capability only. Broader provider/source parity across
 other options surfaces and advanced Expected Move visualization stay deferred.
 Phase 9A planning is complete for options operator parity and data-quality
-hardening. Phase 9B / 9C / 9D remain planned.
+hardening. Phase 9B is complete for durable paper-options Orders/Positions
+visibility. Phase 9C / 9D remain planned.
 
 ## Completed Phases
 
@@ -187,9 +188,9 @@ hardening. Phase 9B / 9C / 9D remain planned.
   options persistence tables, internal repository contracts, and open/manual
   close paper lifecycle paths now exist, the manual-close path now stores
   contract-commission-aware net P&L, and Recommendations now hosts a
-  paper-only operator UI for open/manual-close workflows, but expiration
-  settlement, broader Orders parity, and execution-enablement changes remain
-  deferred.
+  paper-only operator UI for open/manual-close workflows, while expiration
+  settlement, broader provider/source parity across additional options
+  surfaces, and execution-enablement changes remain deferred.
 - Master plan:
   [options-architecture.md](options-architecture.md)
 - Companion docs:
@@ -270,8 +271,8 @@ hardening. Phase 9B / 9C / 9D remain planned.
   the newly opened position only, and closure-reviewed operator wording that
   keeps replay preview separate from persisted paper lifecycle actions
 - 8D still deferred:
-  expiration settlement mode and broader Orders dashboard parity for durable
-  options positions/trades
+  expiration settlement mode; durable Orders visibility later landed in `9B`
+  while broader provider/source parity remains future work
 - 8D not included:
   naked short options, early partial fills, assignment/exercise automation, or
   live brokerage execution
@@ -330,15 +331,14 @@ hardening. Phase 9B / 9C / 9D remain planned.
   preview, current paper-only open/manual-close lifecycle, commission-aware
   gross/net paper close results, and Recommendations risk/operator UX are all
   present and separately labeled without implying live routing, broker
-  execution, expiration settlement, assignment/exercise automation, or
-  broader Orders parity
+  execution, expiration settlement, assignment/exercise automation, or other
+  future options-parity work
 - Phase 8 closure note:
   Phase 8 is complete for the current scoped paper-first options capability
-  only. This does not imply advanced Expected Move visualization, broader
-  provider/source/as-of parity across other options surfaces, broader Orders
-  dashboard parity, expiration settlement, assignment/exercise automation,
-  persisted options recommendations, options replay persistence, or live
-  routing/execution.
+  only. This does not imply advanced Expected Move visualization,
+  provider/source/as-of parity across other options surfaces, expiration
+  settlement, assignment/exercise automation, persisted options
+  recommendations, options replay persistence, or live routing/execution.
 - Phase 8 conservative sequence:
   `8C2.1` pure payoff math module and tests ->
   `8C2.2` vertical debit spread helpers/tests ->
@@ -372,7 +372,8 @@ hardening. Phase 9B / 9C / 9D remain planned.
 
 ### Phase 9 — Options operator parity and data-quality hardening
 - Status:
-  `9A` complete for planning; `9B`, `9C`, and `9D` remain planned
+  `9A` complete for planning; `9B` complete for the current durable paper
+  options Orders/Positions visibility scope; `9C` and `9D` remain planned
 - Theme:
   durable operator visibility for current paper-first options plus consistent
   provider/data-quality framing, without adding live execution semantics
@@ -386,6 +387,13 @@ hardening. Phase 9B / 9C / 9D remain planned.
   trades outside Recommendations with clear paper-only labels, structure
   summaries, leg context, status, and gross/commission/net values where
   available, without contaminating current equity Orders behavior
+- 9B implemented now:
+  Orders now includes a dedicated `Paper Options Positions` section backed by
+  a user-scoped `GET /user/options/paper-structures` contract and same-origin
+  frontend proxy, showing open versus closed paper option lifecycle rows with
+  status, timestamps, leg summaries, and gross/opening/closing/total/net
+  paper results where available, while leaving existing equity Orders tables
+  and actions unchanged
 - 9C scope:
   provider/source/as-of parity across options surfaces
 - 9C acceptance target:
@@ -401,9 +409,9 @@ hardening. Phase 9B / 9C / 9D remain planned.
   stable, and still does not modify payoff math unless a later phase
   explicitly changes that contract
 - Phase 9 implementation order:
-  `9A` planning -> `9B` durable options Orders/Positions visibility -> `9C`
-  provider/source/as-of parity across options surfaces -> `9D` Expected Move
-  visualization
+  `9A` planning -> `9B` durable options Orders/Positions visibility
+  complete -> `9C` provider/source/as-of parity across options surfaces ->
+  `9D` Expected Move visualization
 - Phase 9 not included:
   expiration settlement, assignment/exercise automation, persisted options
   recommendations, options replay persistence into equity replay flows, live
@@ -450,8 +458,9 @@ hardening. Phase 9B / 9C / 9D remain planned.
   history tables (beyond current contained-scroll + lineage-first selection)
 - Options/crypto live execution semantics — current options support is still
   paper-first only (research preview, read-only payoff preview, and
-  paper-only lifecycle). Durable operator parity is tracked under Phase 9;
-  crypto remains Phase 11; live execution remains deferred.
+  paper-only lifecycle plus durable Orders visibility). Broader provider and
+  data-quality parity remains tracked under Phase 9; crypto remains Phase 11;
+  live execution remains deferred.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -499,7 +508,8 @@ provenance. Decision logic remains deterministic.
 ## Multi-asset expansion policy
 Equities are first-class today. Options now support a scoped paper-first
 research/replay-preview/manual-close lifecycle centered on
-`/recommendations`, with broader operator parity planned in Phase 9. Crypto
+`/recommendations`, plus durable paper-options visibility on `/orders` from
+Phase 9B. Broader provider/source/as-of parity remains Phase 9 work. Crypto
 remains future work under Phase 11. Cross-mode `expected_range` semantics
 remain spec-defined only until preview payloads, scoring, replay, and later
 mode-native operator surfaces carry method-tagged fields per mode.
@@ -648,6 +658,12 @@ diffs. Notable recent inflection points:
   phases to preserve ordering, and keeps settlement, assignment, persisted
   options recommendations, live routing, and broker integration explicitly
   deferred.
+- 2026-04-29 — Phase 9B complete for the current durable paper-options
+  Orders/Positions visibility scope: a user-scoped paper-options list
+  contract now surfaces saved open and closed paper option lifecycle records
+  through Orders, using the dedicated options persistence path without
+  changing equity order/replay behavior, live-routing boundaries, or options
+  lifecycle math. Frontend and targeted backend validation passed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

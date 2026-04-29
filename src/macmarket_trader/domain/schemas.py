@@ -534,6 +534,64 @@ class OptionPaperTradeRecord(BaseModel):
     legs: list[OptionPaperTradeLegRecord] = Field(default_factory=list)
 
 
+class OptionPaperLifecycleLegSummary(BaseModel):
+    action: str
+    right: str
+    strike: float
+    expiration: date
+    quantity: int
+    multiplier: int
+    entry_premium: float | None = None
+    exit_premium: float | None = None
+    status: str | None = None
+    label: str | None = None
+    leg_gross_pnl: float | None = None
+    leg_commission: float | None = None
+    leg_net_pnl: float | None = None
+
+
+class OptionPaperLifecycleSummary(BaseModel):
+    position_id: int
+    trade_id: int | None = None
+    market_mode: MarketMode = MarketMode.OPTIONS
+    underlying_symbol: str
+    structure_type: str
+    status: str
+    expiration: date | None = None
+    opened_at: datetime
+    closed_at: datetime | None = None
+    source_order_id: int | None = None
+    contract_count: int | None = None
+    leg_count: int = 0
+    opening_net_debit: float | None = None
+    opening_net_credit: float | None = None
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float] = Field(default_factory=list)
+    settlement_mode: str | None = None
+    gross_pnl: float | None = None
+    opening_commissions: float | None = None
+    closing_commissions: float | None = None
+    total_commissions: float | None = None
+    net_pnl: float | None = None
+    execution_enabled: bool = False
+    persistence_enabled: bool = True
+    paper_only: bool = True
+    operator_disclaimer: str = (
+        "Persisted paper-only options lifecycle record. No broker order, live routing, or expiration settlement automation."
+    )
+    legs: list[OptionPaperLifecycleLegSummary] = Field(default_factory=list)
+
+
+class OptionPaperLifecycleSummaryListResponse(BaseModel):
+    market_mode: MarketMode = MarketMode.OPTIONS
+    paper_only: bool = True
+    operator_disclaimer: str = (
+        "Paper-only options lifecycle listing. No broker execution, live routing, or replay persistence."
+    )
+    items: list[OptionPaperLifecycleSummary] = Field(default_factory=list)
+
+
 class OptionPaperOpenStructureResponse(BaseModel):
     order_id: int
     position_id: int

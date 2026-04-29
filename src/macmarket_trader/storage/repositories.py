@@ -40,6 +40,8 @@ from macmarket_trader.domain.models import (
 from macmarket_trader.domain.schemas import (
     FillRecord,
     OptionPaperCloseLegInput,
+    OptionPaperLifecycleLegSummary,
+    OptionPaperLifecycleSummary,
     OptionPaperCloseStructureResponse,
     OptionPaperOrderLegRecord,
     OptionPaperOpenStructureResponse,
@@ -1046,6 +1048,61 @@ class OptionPaperRepository:
                 return None
             return self._serialize_position_record(session, row)
 
+    def list_position_summaries(
+        self,
+        *,
+        app_user_id: int,
+        limit: int = 100,
+    ) -> list[OptionPaperLifecycleSummary]:
+        with self.session_factory() as session:
+            position_rows = list(
+                session.execute(
+                    select(PaperOptionPositionModel)
+                    .where(PaperOptionPositionModel.app_user_id == app_user_id)
+                    .order_by(
+                        func.coalesce(
+                            PaperOptionPositionModel.closed_at,
+                            PaperOptionPositionModel.opened_at,
+                        ).desc(),
+                        PaperOptionPositionModel.id.desc(),
+                    )
+                    .limit(limit)
+                ).scalars()
+            )
+            if not position_rows:
+                return []
+
+            trade_rows = list(
+                session.execute(
+                    select(PaperOptionTradeModel)
+                    .where(
+                        PaperOptionTradeModel.app_user_id == app_user_id,
+                        PaperOptionTradeModel.position_id.in_([row.id for row in position_rows]),
+                    )
+                    .order_by(
+                        func.coalesce(
+                            PaperOptionTradeModel.closed_at,
+                            PaperOptionTradeModel.opened_at,
+                        ).desc(),
+                        PaperOptionTradeModel.id.desc(),
+                    )
+                ).scalars()
+            )
+            latest_trade_by_position: dict[int, PaperOptionTradeModel] = {}
+            for trade_row in trade_rows:
+                if trade_row.position_id is None or trade_row.position_id in latest_trade_by_position:
+                    continue
+                latest_trade_by_position[trade_row.position_id] = trade_row
+
+            return [
+                self._serialize_lifecycle_summary(
+                    session,
+                    position_row=row,
+                    trade_row=latest_trade_by_position.get(row.id),
+                )
+                for row in position_rows
+            ]
+
     def close_structure_manual(
         self,
         *,
@@ -1398,6 +1455,108 @@ class OptionPaperRepository:
                 )
                 for leg in legs
             ],
+        )
+
+    @staticmethod
+    def _split_total_option_commissions(
+        total_commissions: float | None,
+    ) -> tuple[float | None, float | None]:
+        if total_commissions is None:
+            return None, None
+        opening_commissions = _clean_option_money(total_commissions / 2.0)
+        if opening_commissions is None:
+            return None, None
+        closing_commissions = _clean_option_money(total_commissions - opening_commissions)
+        return opening_commissions, closing_commissions
+
+    @staticmethod
+    def _contract_count_from_quantities(quantities: list[int]) -> int | None:
+        normalized = [quantity for quantity in quantities if isinstance(quantity, int) and quantity > 0]
+        if not normalized:
+            return None
+        if len(set(normalized)) == 1:
+            return normalized[0]
+        return sum(normalized)
+
+    def _serialize_lifecycle_summary(
+        self,
+        session: Session,
+        *,
+        position_row: PaperOptionPositionModel,
+        trade_row: PaperOptionTradeModel | None,
+    ) -> OptionPaperLifecycleSummary:
+        position_record = self._serialize_position_record(session, position_row)
+        trade_record = self._serialize_trade_record(session, trade_row) if trade_row is not None else None
+        opening_commissions, closing_commissions = self._split_total_option_commissions(
+            trade_record.total_commissions if trade_record is not None else None
+        )
+
+        if trade_record is not None:
+            legs = [
+                OptionPaperLifecycleLegSummary(
+                    action=leg.action,
+                    right=leg.right,
+                    strike=leg.strike,
+                    expiration=leg.expiration,
+                    quantity=leg.quantity,
+                    multiplier=leg.multiplier,
+                    entry_premium=leg.entry_premium,
+                    exit_premium=leg.exit_premium,
+                    status="closed",
+                    label=leg.label,
+                    leg_gross_pnl=leg.leg_gross_pnl,
+                    leg_commission=leg.leg_commission,
+                    leg_net_pnl=leg.leg_net_pnl,
+                )
+                for leg in trade_record.legs
+            ]
+        else:
+            legs = [
+                OptionPaperLifecycleLegSummary(
+                    action=leg.action,
+                    right=leg.right,
+                    strike=leg.strike,
+                    expiration=leg.expiration,
+                    quantity=leg.quantity,
+                    multiplier=leg.multiplier,
+                    entry_premium=leg.entry_premium,
+                    exit_premium=leg.exit_premium,
+                    status=leg.status,
+                    label=leg.label,
+                )
+                for leg in position_record.legs
+            ]
+
+        return OptionPaperLifecycleSummary(
+            position_id=position_record.id,
+            trade_id=trade_record.id if trade_record is not None else None,
+            underlying_symbol=position_record.underlying_symbol,
+            structure_type=position_record.structure_type,
+            status=position_record.status,
+            expiration=position_record.expiration,
+            opened_at=position_record.opened_at,
+            closed_at=position_record.closed_at,
+            source_order_id=position_record.source_order_id,
+            contract_count=self._contract_count_from_quantities([leg.quantity for leg in legs]),
+            leg_count=len(legs),
+            opening_net_debit=position_record.opening_net_debit,
+            opening_net_credit=position_record.opening_net_credit,
+            max_profit=position_record.max_profit,
+            max_loss=position_record.max_loss,
+            breakevens=list(position_record.breakevens or []),
+            settlement_mode=trade_record.settlement_mode if trade_record is not None else None,
+            gross_pnl=trade_record.gross_pnl if trade_record is not None else None,
+            opening_commissions=opening_commissions,
+            closing_commissions=closing_commissions,
+            total_commissions=trade_record.total_commissions if trade_record is not None else None,
+            net_pnl=trade_record.net_pnl if trade_record is not None else None,
+            execution_enabled=False,
+            persistence_enabled=True,
+            paper_only=True,
+            operator_disclaimer=(
+                "Persisted paper-only options lifecycle record. No broker order, live routing, or expiration settlement automation."
+            ),
+            legs=legs,
         )
 
     def _serialize_open_response(

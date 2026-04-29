@@ -17,6 +17,7 @@ import {
   estimateOptionsCommissionPerEvent,
   fetchOptionsPaperClose,
   fetchOptionsPaperOpen,
+  fetchOptionsPaperPositions,
   fetchOptionsReplayPreview,
   formatOptionsLegLabel,
   formatOptionsReplayToken,
@@ -642,6 +643,21 @@ describe("research preview helpers", () => {
         legs: [{ position_leg_id: 101, exit_premium: 5.5 }],
       }),
     });
+  });
+
+  it("loads paper option positions through the same-origin helper", async () => {
+    fetchWorkflowApiMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: null,
+      items: [{ position_id: 42, status: "open" }],
+      error: null,
+      raw: { items: [{ position_id: 42, status: "open" }] },
+    });
+
+    await fetchOptionsPaperPositions();
+
+    expect(fetchWorkflowApiMock).toHaveBeenCalledWith("/api/user/options/paper-structures");
   });
 
   it("estimates options commissions per contract per leg without multiplying by 100", () => {

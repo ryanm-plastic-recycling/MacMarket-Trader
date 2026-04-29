@@ -23,6 +23,7 @@ from macmarket_trader.domain.schemas import (
     InviteCreateRequest,
     OptionPaperCloseStructureRequest,
     OptionPaperCloseStructureResponse,
+    OptionPaperLifecycleSummaryListResponse,
     OptionPaperOpenStructureResponse,
     OptionPaperStructureInput,
     OptionReplayPreviewRequest,
@@ -889,6 +890,23 @@ def close_user_option_paper_structure(
         )
     except OptionPaperCloseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.reason) from exc
+
+
+@user_router.get(
+    "/options/paper-structures",
+    response_model=OptionPaperLifecycleSummaryListResponse,
+)
+def list_user_option_paper_structures(
+    limit: int = 100,
+    user=Depends(require_approved_user),
+) -> OptionPaperLifecycleSummaryListResponse:
+    safe_limit = max(1, min(int(limit), 200))
+    return OptionPaperLifecycleSummaryListResponse(
+        items=option_paper_repo.list_position_summaries(
+            app_user_id=user.id,
+            limit=safe_limit,
+        )
+    )
 
 
 @user_router.post("/replay-runs")

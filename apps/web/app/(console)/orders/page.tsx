@@ -14,6 +14,7 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickOrderSelection } from "@/lib/workflow-selection";
+import { PaperOptionsPositionsSection } from "@/components/orders/paper-options-positions-section";
 import {
   canReopenTrade,
   formatHoldDuration,
@@ -749,6 +750,8 @@ export default function Page() {
         </div>
       )}
     </Card>
+
+    <PaperOptionsPositionsSection enabled={authReady} />
 
     <div className="op-grid-2">
       <Card title={guidedState.guided ? "Order history (secondary)" : "Order history"}>
