@@ -17,7 +17,7 @@ import { formatLineageBreadcrumb } from "@/lib/lineage-format";
 type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null; source_recommendation_id?: string | null; source_strategy?: string | null; has_stageable_candidate?: boolean; stageable_recommendation_id?: string | null; stageable_reason?: string | null };
 type RunDetail = Run & { source_recommendation_id?: string | null; source_strategy?: string | null; source_market_mode?: string | null; thesis?: string | null; key_levels?: { entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null } | null; summary_metrics?: Record<string, number> | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; rejection_reason?: string | null; thesis?: string | null; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; quality?: number | null; confidence?: number | null; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown>; timestamp?: string | null; event_text?: string | null };
-type ActiveRecommendation = { recommendation_id: string; symbol: string; payload?: { thesis?: string; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; workflow?: { source_strategy?: string } } };
+type ActiveRecommendation = { recommendation_id: string; display_id?: string; symbol: string; payload?: { thesis?: string; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; workflow?: { source_strategy?: string } } };
 
 // Phase 6 close-out follow-up — Section 5: format the step timestamp into a
 // short operator-readable form. Falls through to the raw string on parse
@@ -330,6 +330,7 @@ export default function Page() {
         symbol: selected?.symbol ?? activeRecommendation?.symbol ?? guidedState.symbol,
         strategy: runDetail?.source_strategy ?? selected?.source_strategy ?? activeRecommendation?.payload?.workflow?.source_strategy ?? guidedState.strategy,
         recommendationId: selected?.source_recommendation_id ?? runDetail?.source_recommendation_id ?? guidedState.recommendationId,
+        recommendationDisplayId: activeRecommendation?.display_id ?? null,
         replayRunId: selectedRunId ?? guidedState.replayRunId,
         orderId: guidedState.orderId,
       })}</div>

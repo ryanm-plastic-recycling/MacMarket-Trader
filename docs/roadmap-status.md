@@ -19,6 +19,81 @@ The defensible edge is:
 MacMarket-Trader has completed **Phases 1–6** and post-launch polish. **Phase 5 is fully closed** (last gaps — strategy regime hints + role-conditional sidebar — landed this pass). **Phase 6 close-trade lifecycle is e2e-gated** end-to-end (open-positions list, inline close ticket, closed-trades blotter, lineage extension).
 The system is verified: 173 backend tests passing, TypeScript clean, 74 vitest unit tests, **26 Playwright e2e** (all passing, no skips).
 
+### 2026-04-29 Pass 4 — display_id labels + per-user risk dollars + Settings page
+
+Three tracks in one pass. Test counts: pytest **193 → 210** (+17 across the new gate file), vitest **97 → 99** (+2 lineage tests for the display_id-aware breadcrumb), Playwright **31** unchanged, tsc clean.
+
+#### Track A — Display-friendly recommendation IDs
+
+**Schema (`src/macmarket_trader/domain/models.py`)**
+- New `RecommendationModel.display_id` column: nullable `String(64)`, indexed. Auto-applied by `apply_schema_updates` on next backend startup — no migration file needed.
+
+**Helper + repo (`src/macmarket_trader/storage/repositories.py`)**
+- `_STRATEGY_ABBREVIATIONS` dict maps the four well-known strategy display names ("Event Continuation" → `EVCONT`, "Breakout / Prior-Day High" → `BRKOUT`, "Pullback / Trend Continuation" → `PULLBK`, "Iron Condor" → `ICOND`).
+- `_abbreviate_strategy(strategy)` falls through to the first 6 uppercased non-whitespace chars for unknown strategies; empty/None returns `UNKNWN`.
+- `make_display_id(symbol, strategy, created_at)` produces e.g. `AAPL-EVCONT-20260429-0830`. Naive datetimes are treated as UTC.
+- `display_id_or_fallback(row.display_id, row.recommendation_id)` returns `display_id` when set, otherwise synthesizes `Rec #shortid` from the last 6 chars of the canonical id — so legacy rows never render blank.
+- `RecommendationRepository.create()` now accepts an optional `strategy=` kwarg and auto-fills `display_id` on insert. When the caller doesn't pass strategy, it derives one from `payload.entry.setup_type` so even unsynchronized creates get a meaningful label.
+- New `RecommendationRepository.update_display_id_strategy(uid, *, strategy)` re-renders the label once the friendly strategy name is known (the promote endpoint calls this with its strategy parameter so labels read "Event Continuation" rather than "event_continuation").
+
+**API (`src/macmarket_trader/api/routes/admin.py`)**
+- `GET /user/recommendations` and `GET /user/recommendations/{id}` now serialize `display_id` (with the legacy fallback). `POST /user/recommendations/queue/promote` calls `update_display_id_strategy` and returns `display_id` in the response payload.
+
+**Frontend label propagation**
+- `apps/web/lib/recommendations.ts` — `StoredRecommendation` type gained `display_id?: string`.
+- `apps/web/lib/lineage-format.ts` — `LineageSelection.recommendationDisplayId` (optional) is preferred over the auto-shortener inside `formatLineageBreadcrumb`. Two new vitest cases lock the prefer-display_id and fall-back-to-shortener behavior.
+- `apps/web/components/active-trade-banner.tsx` — fetches `/api/user/recommendations` once per active rec, finds the matching `display_id`, and renders it as a green-bordered monospace chip in the banner. Failures suppress the chip silently — the banner never breaks.
+- `apps/web/app/(console)/recommendations/page.tsx` — Active recommendation card and Stored recommendation detail card both render `display_id ?? recommendation_id`.
+- `apps/web/app/(console)/replay-runs/page.tsx` — `ActiveRecommendation` type gained `display_id`; the Workflow lineage card threads it into `formatLineageBreadcrumb`.
+- `apps/web/app/(console)/orders/page.tsx` — fetches a `recommendation_id → display_id` map on mount, threads it into both the Workflow lineage card and the Open positions table's recommendation Link cell.
+
+**Backend tests (`tests/test_display_id_and_user_settings.py`)** — 8 new tests cover all four spec'd cases plus extras:
+- Each known strategy abbreviates to the curated code (`EVCONT`, `BRKOUT`, `PULLBK`, `ICOND`).
+- Unknown strategy ("Mean Reversion") truncates to first 6 uppercased non-whitespace chars (`MEANRE`).
+- Empty/None strategy returns `UNKNWN`.
+- `make_display_id` format gate, including naive-datetime → UTC.
+- Two promotions of the same symbol+strategy at different minutes get different rec IDs (display_id is uniqueness-friendly; canonical rec_<hex> is the actual key).
+- A row inserted with `display_id=None` (legacy) is returned by `GET /user/recommendations` with `"Rec #abcdef"` synthesized from the canonical id tail.
+
+#### Track B — Per-user `risk_dollars_per_trade`
+
+**Schema (`src/macmarket_trader/domain/models.py`)**
+- New `AppUserModel.risk_dollars_per_trade: float | None` column, nullable, default null. NULL means fall back to `settings.risk_dollars_per_trade`.
+
+**Repo + endpoint**
+- `UserRepository.set_risk_dollars_per_trade(user_id, *, value)` writes the override; `value=None` clears it back to default.
+- `GET /user/me` now returns `risk_dollars_per_trade` (the override, possibly null) and `risk_dollars_per_trade_default` (the env value), so the UI can render "using default" vs "override".
+- `PATCH /user/settings` accepts only `{ "risk_dollars_per_trade": float | null }` for now. Validation: `0 < value <= 50000`; non-numeric, missing field, and out-of-range all return 400 with a specific message. Returns the refreshed override + default.
+
+**Sizing fallback**
+- `RecommendationService.generate()` accepts an optional `risk_dollars=` kwarg and uses it when present, else falls back to `settings.risk_dollars_per_trade`. The `SizingMetadata.risk_dollars` written into the recommendation payload reflects the effective value, not the env default.
+- `_effective_risk_dollars(user)` helper in `admin.py` resolves user-override-or-env. All three `recommendation_service.generate()` call sites in admin.py (promote, generate, stage_order fallback) now pass it.
+
+**Backend tests** — 9 new tests:
+- `PATCH /user/settings` happy path; `/user/me` reflects the new override.
+- 400 on `0`, negative, > 50000, non-numeric, missing field.
+- New recommendation's `payload.sizing.risk_dollars` matches the env default when no override exists, and matches the override after a PATCH. End-to-end via the promote endpoint.
+
+#### Track C — Settings page
+
+**New client page (`apps/web/app/(console)/settings/page.tsx`)**
+- "Trade sizing" Card: number input (min=1, max=50000, step=1) wired to `PATCH /api/user/settings`. Helper text per spec. Inline feedback. Adjacent muted line shows `Currently using default: $1000` or `Currently override: $2500` so the operator can tell which path they're on at a glance.
+- "Account" Card (read-only): email, display name, role badge, approval badge, MFA badge. When MFA is not enabled, surfaces the operator copy from the spec: "MFA is not enabled. Contact admin to enroll. (Self-service enrollment requires Clerk paid plan.)"
+
+**Proxy route (`apps/web/app/api/user/settings/route.ts`)** — PATCH proxy reuses `proxyWorkflowRequest`.
+
+**Sidebar nav (`apps/web/components/console-shell.tsx`)** — new "Preferences" section with single "Settings" → `/settings` link, visible to all approved users (no admin gating).
+
+**Verification**
+- `pytest -q` — **210 passed** (was 193, +17 across `tests/test_display_id_and_user_settings.py`).
+- `npx tsc --noEmit` clean.
+- `npm test` — **99 passed** (was 97, +2 new lineage display_id tests).
+- `npx playwright test --reporter=list` — **31 passed**, 0 skipped (unchanged; existing assertions tolerate the display_id substitution because rows in the e2e mocks have no `display_id` field, so the auto-shortener fallback still emits the legacy `Rec #shortid` form).
+
+#### "Still open" items closed by this pass
+- *Display-friendly recommendation ID* — closed. Schema column lands automatically via `apply_schema_updates`; legacy rows render `Rec #shortid` so no backfill is needed.
+- *Per-user `risk_dollars_per_trade` configuration* — closed. PATCH endpoint, sizing fallback, and Settings page all in place.
+
 ### 2026-04-29 Invite reconciliation hardening + brand-header confirmation
 
 Two-track polish pass. Backend pytest **190 → 193** (+3 reconciliation gates). Frontend vitest **97** unchanged. Frontend tsc clean.

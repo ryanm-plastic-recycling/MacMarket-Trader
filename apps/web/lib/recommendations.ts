@@ -26,6 +26,11 @@ export type StoredRecommendation = {
   created_at: string;
   symbol: string;
   recommendation_id: string;
+  // Pass 4 — operator-readable label, e.g. "AAPL-EVCONT-20260429-0830".
+  // Backend always populates either the generated value or a "Rec #shortid"
+  // fallback for legacy rows; the frontend should prefer this over the raw
+  // canonical recommendation_id whenever it is shown to the operator.
+  display_id?: string;
   payload: Record<string, unknown>;
   market_data_source?: string;
   fallback_mode?: boolean;

@@ -96,6 +96,11 @@ class RecommendationModel(Base):
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     payload: Mapped[dict[str, object]] = mapped_column(JSON)
+    # Pass 4 — Display-friendly recommendation label, e.g.
+    # "AAPL-EVCONT-20260429-0830". Auto-generated from symbol + strategy +
+    # created_at on insert. Never used as FK; canonical recommendation_id
+    # (rec_<hex>) remains the unique identifier across all relations.
+    display_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 class RecommendationEvidenceModel(Base):
@@ -205,6 +210,9 @@ class AppUserModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Pass 4 — Per-user risk-dollars override. NULL means fall back to
+    # settings.risk_dollars_per_trade (env RISK_DOLLARS_PER_TRADE).
+    risk_dollars_per_trade: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class UserApprovalRequestModel(Base):

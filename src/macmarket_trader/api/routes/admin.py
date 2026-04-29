@@ -25,8 +25,20 @@ from macmarket_trader.email_templates import render_approval_html, render_invite
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository, display_id_or_fallback
 from macmarket_trader.domain.models import AuditLogModel
+
+
+def _effective_risk_dollars(user) -> float:
+    """Pass 4 — per-user risk override. Falls back to env default
+    (settings.risk_dollars_per_trade) when the user has no override set."""
+    override = getattr(user, "risk_dollars_per_trade", None)
+    if override is None:
+        return float(settings.risk_dollars_per_trade)
+    try:
+        return float(override)
+    except (TypeError, ValueError):
+        return float(settings.risk_dollars_per_trade)
 
 
 def _record_audit_event(*, recommendation_id: str, payload: dict[str, object]) -> None:
@@ -232,6 +244,40 @@ def me(user=Depends(current_user)):
         "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
         "last_authenticated_at": user.last_authenticated_at.isoformat() if user.last_authenticated_at else None,
         "identity_warning": warning,
+        # Pass 4 — per-user risk override. NULL → fall back to env default
+        # so the UI can render "1000 (default)" vs an explicit user override.
+        "risk_dollars_per_trade": user.risk_dollars_per_trade,
+        "risk_dollars_per_trade_default": settings.risk_dollars_per_trade,
+    }
+
+
+@user_router.patch("/settings")
+def update_user_settings(req: dict[str, object], user=Depends(require_approved_user)):
+    """Update operator-controlled settings. Currently only
+    risk_dollars_per_trade is accepted; the body is intentionally narrow so
+    new fields require an explicit follow-up pass."""
+    if "risk_dollars_per_trade" not in req:
+        raise HTTPException(status_code=400, detail="risk_dollars_per_trade is required.")
+    raw = req.get("risk_dollars_per_trade")
+    try:
+        value = float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="risk_dollars_per_trade must be numeric.")
+    if value is None:
+        # Allow null to clear the override and fall back to env default.
+        user_repo.set_risk_dollars_per_trade(user.id, value=None)
+    else:
+        if value <= 0 or value > 50000:
+            raise HTTPException(
+                status_code=400,
+                detail="risk_dollars_per_trade must be > 0 and <= 50000.",
+            )
+        user_repo.set_risk_dollars_per_trade(user.id, value=value)
+    refreshed = user_repo.get_by_id(user.id)
+    return {
+        "id": refreshed.id,
+        "risk_dollars_per_trade": refreshed.risk_dollars_per_trade,
+        "risk_dollars_per_trade_default": settings.risk_dollars_per_trade,
     }
 
 
@@ -369,6 +415,7 @@ def list_recommendations(_user=Depends(require_approved_user)):
             "created_at": row.created_at,
             "symbol": row.symbol,
             "recommendation_id": row.recommendation_id,
+            "display_id": display_id_or_fallback(row.display_id, row.recommendation_id),
             "payload": row.payload,
             "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
             "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
@@ -424,6 +471,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         market_mode=promote_market_mode,
         user_is_approved=user_is_approved,
         app_user_id=_user.id,
+        risk_dollars=_effective_risk_dollars(_user),
     )
 
     ranking_provenance = {
@@ -461,12 +509,17 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         rec.recommendation_id,
         ranking_provenance=ranking_provenance,
     )
+    # Pass 4 — refresh display_id now that the friendly strategy name is known
+    # (the initial create() defaulted it from setup_type, which is less
+    # readable than the promote-time strategy label).
+    recommendation_repo.update_display_id_strategy(rec.recommendation_id, strategy=strategy)
 
     persisted = recommendation_repo.get_by_recommendation_uid(rec.recommendation_id)
     workflow = (persisted.payload or {}).get("workflow", {}) if persisted else {}
     return {
         "id": persisted.id if persisted else None,
         "recommendation_id": rec.recommendation_id,
+        "display_id": display_id_or_fallback(persisted.display_id if persisted else None, rec.recommendation_id),
         "symbol": rec.symbol,
         "strategy": strategy,
         "action": action,
@@ -497,6 +550,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         market_mode=market_mode,
         user_is_approved=user_is_approved,
         app_user_id=_user.id,
+        risk_dollars=_effective_risk_dollars(_user),
     )
     recommendation_repo.attach_workflow_metadata(
         rec.recommendation_id,
@@ -537,6 +591,7 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
         "created_at": row.created_at,
         "symbol": row.symbol,
         "recommendation_id": row.recommendation_id,
+        "display_id": display_id_or_fallback(row.display_id, row.recommendation_id),
         "payload": row.payload,
         "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
         "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
@@ -853,6 +908,7 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
             event=None,
             portfolio=PortfolioSnapshot(),
             app_user_id=_user.id,
+            risk_dollars=_effective_risk_dollars(_user),
         )
 
     if not rec.approved:

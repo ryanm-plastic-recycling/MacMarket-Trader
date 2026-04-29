@@ -94,6 +94,9 @@ export default function Page() {
   // 30-second tick used to refresh the reopen-window countdown so stale rows
   // automatically lose their button when the 5-minute window closes.
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  // Pass 4 — display_id lookup for the workflow lineage card. Fetched once
+  // per page mount; falls back to the auto-shortened "Rec #..." when missing.
+  const [displayIdMap, setDisplayIdMap] = useState<Record<string, string>>({});
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
@@ -371,6 +374,19 @@ export default function Page() {
     return () => window.clearInterval(id);
   }, []);
 
+  // Pass 4 — fetch display_id map for the workflow lineage card.
+  useEffect(() => {
+    if (!authReady) return;
+    void fetchWorkflowApi<{ recommendation_id?: string; display_id?: string }>("/api/user/recommendations").then((r) => {
+      if (!r.ok) return;
+      const map: Record<string, string> = {};
+      for (const item of r.items) {
+        if (item.recommendation_id && item.display_id) map[item.recommendation_id] = item.display_id;
+      }
+      setDisplayIdMap(map);
+    });
+  }, [authReady]);
+
   useEffect(() => {
     if (!authReady || !guidedState.replayRunId) return;
     void (async () => {
@@ -431,13 +447,18 @@ export default function Page() {
       <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)" }}>Arriving here does not stage an order.</div>
     </Card>
     <Card title="Workflow lineage">
-      <div>{formatLineageBreadcrumb(guidedState, {
-        symbol: selected?.symbol ?? guidedState.symbol,
-        strategy: guidedState.strategy,
-        recommendationId: selected?.recommendation_id ?? guidedState.recommendationId,
-        replayRunId: selected?.replay_run_id ?? guidedState.replayRunId,
-        orderId: selected?.order_id ?? guidedState.orderId,
-      })}</div>
+      <div>{(() => {
+        const recId = selected?.recommendation_id ?? guidedState.recommendationId ?? null;
+        const displayId = recId && displayIdMap[recId] ? displayIdMap[recId] : null;
+        return formatLineageBreadcrumb(guidedState, {
+          symbol: selected?.symbol ?? guidedState.symbol,
+          strategy: guidedState.strategy,
+          recommendationId: recId,
+          recommendationDisplayId: displayId,
+          replayRunId: selected?.replay_run_id ?? guidedState.replayRunId,
+          orderId: selected?.order_id ?? guidedState.orderId,
+        });
+      })()}</div>
       {selected?.order_id ? (() => {
         const matchingOpen = positions.find((p) => p.order_id === selected.order_id);
         const matchingTrade = trades.find((t) => t.order_id === selected.order_id);
@@ -515,7 +536,7 @@ export default function Page() {
                           href={`/recommendations?${buildGuidedQuery({ ...guidedState, recommendationId: p.recommendation_id, symbol: p.symbol })}`}
                           style={{ fontFamily: "monospace", fontSize: "0.8rem" }}
                         >
-                          {p.recommendation_id}
+                          {displayIdMap[p.recommendation_id] ?? p.recommendation_id}
                         </Link>
                       ) : "—"}
                     </td>

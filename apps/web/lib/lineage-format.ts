@@ -9,6 +9,9 @@ export type LineageSelection = {
   symbol?: string | null;
   strategy?: string | null;
   recommendationId?: string | null;
+  // Pass 4 — operator-readable label from the backend. When present, the
+  // breadcrumb shows it verbatim instead of the auto-shortened "Rec #xxxxxx".
+  recommendationDisplayId?: string | null;
   replayRunId?: string | number | null;
   orderId?: string | null;
 };
@@ -50,10 +53,15 @@ export function formatLineageBreadcrumb(
   const symbol = selected?.symbol ?? state?.symbol ?? "—";
   const strategy = selected?.strategy ?? state?.strategy ?? "—";
   const recId = selected?.recommendationId ?? state?.recommendationId ?? null;
+  const displayId = selected?.recommendationDisplayId ?? null;
   const runId = selected?.replayRunId ?? state?.replayRunId ?? null;
   const orderId = selected?.orderId ?? state?.orderId ?? null;
 
+  // Prefer the backend-provided display_id when available; fall back to the
+  // auto-shortener only when the caller has no display_id to pass through.
+  const recLabel = displayId ? displayId : shortRecommendationId(recId);
+
   const head = `${symbol} ${strategy}`.trim();
-  const chain = `${shortRecommendationId(recId)} → ${shortReplayRunId(runId)} → ${shortOrderId(orderId)}`;
+  const chain = `${recLabel} → ${shortReplayRunId(runId)} → ${shortOrderId(orderId)}`;
   return `${head} · ${chain}`;
 }

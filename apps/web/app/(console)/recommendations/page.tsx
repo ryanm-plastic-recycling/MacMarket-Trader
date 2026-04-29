@@ -477,7 +477,7 @@ export default function RecommendationsPage() {
         <Card title="Active recommendation">
           {activeRecommendation ? (
             <>
-              <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{activeRecommendation.recommendation_id}</span></div>
+              <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{activeRecommendation.display_id ?? activeRecommendation.recommendation_id}</span></div>
               <div>
                 <strong>symbol:</strong> {activeRecommendation.symbol} · <strong>strategy:</strong>{" "}
                 {String(
@@ -765,7 +765,7 @@ export default function RecommendationsPage() {
                 ) : (
                   <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>Not promoted from a ranked queue candidate.</div>
                 )}
-                <div style={{ marginTop: 4 }}><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selectedRecommendation.recommendation_id}</span></div>
+                <div style={{ marginTop: 4 }}><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{selectedRecommendation.display_id ?? selectedRecommendation.recommendation_id}</span></div>
               </div>
             );
           })()}

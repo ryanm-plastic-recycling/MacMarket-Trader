@@ -37,6 +37,10 @@ const navSections = [
     links: [["/welcome", "Welcome guide"]],
   },
   {
+    title: "Preferences",
+    links: [["/settings", "Settings"]],
+  },
+  {
     title: "Admin",
     links: [
       ["/admin/pending-users", "Admin / Invites"],

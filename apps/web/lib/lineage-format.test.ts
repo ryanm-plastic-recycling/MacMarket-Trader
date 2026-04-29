@@ -97,4 +97,24 @@ describe("formatLineageBreadcrumb", () => {
       "TSLA Mean Reversion · — → Replay pending → Order pending",
     );
   });
+
+  it("prefers backend display_id when provided", () => {
+    expect(
+      formatLineageBreadcrumb(baseState, {
+        recommendationId: "rec_a65757eb8d23",
+        recommendationDisplayId: "AAPL-EVCONT-20260429-0830",
+        replayRunId: 25,
+      }),
+    ).toBe("AAPL Event Continuation · AAPL-EVCONT-20260429-0830 → Replay #25 → Order pending");
+  });
+
+  it("falls back to auto-shortened rec id when display_id is empty", () => {
+    expect(
+      formatLineageBreadcrumb(baseState, {
+        recommendationId: "rec_a65757eb8d23",
+        recommendationDisplayId: null,
+        replayRunId: 25,
+      }),
+    ).toBe("AAPL Event Continuation · Rec #eb8d23 → Replay #25 → Order pending");
+  });
 });

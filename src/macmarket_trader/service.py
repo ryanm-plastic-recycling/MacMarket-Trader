@@ -66,7 +66,13 @@ class RecommendationService:
         market_mode: MarketMode = MarketMode.EQUITIES,
         user_is_approved: bool = False,
         app_user_id: int | None = None,
+        risk_dollars: float | None = None,
     ) -> TradeRecommendation:
+        # Pass 4 — `risk_dollars` overrides settings.risk_dollars_per_trade
+        # when the caller (route handler) has resolved the per-user override.
+        effective_risk_dollars = (
+            float(risk_dollars) if risk_dollars is not None else settings.risk_dollars_per_trade
+        )
         portfolio_state = portfolio or PortfolioSnapshot()
         structured_event = event or self.extractor.extract(symbol=symbol, text=event_text or "")
         technical_context = self.provider.build_technical_context(bars)
@@ -74,7 +80,7 @@ class RecommendationService:
         setup = self.setup_engine.generate(structured_event, regime, technical_context)
         shares, stop_distance, approved, rejection_reason, constraint_report = self.risk_engine.size_position(
             setup=setup,
-            risk_dollars=settings.risk_dollars_per_trade,
+            risk_dollars=effective_risk_dollars,
             portfolio=portfolio_state,
             max_portfolio_heat=settings.max_portfolio_heat,
             max_position_notional=settings.max_position_notional,
@@ -165,7 +171,7 @@ class RecommendationService:
                 reason="Event half-life exhausted",
             ),
             sizing=SizingMetadata(
-                risk_dollars=settings.risk_dollars_per_trade,
+                risk_dollars=effective_risk_dollars,
                 stop_distance=stop_distance,
                 shares=shares if approved else 0,
             ),

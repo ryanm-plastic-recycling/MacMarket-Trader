@@ -35,18 +35,91 @@ from macmarket_trader.domain.schemas import FillRecord, OrderRecord, PortfolioSn
 SessionFactory = Callable[[], Session]
 
 
+# Pass 4 — display_id support.
+# Map well-known strategy display names to short abbreviations used in the
+# operator-facing display_id label (e.g. "AAPL-EVCONT-20260429-0830").
+_STRATEGY_ABBREVIATIONS: dict[str, str] = {
+    "event continuation": "EVCONT",
+    "breakout / prior-day high": "BRKOUT",
+    "pullback / trend continuation": "PULLBK",
+    "iron condor": "ICOND",
+}
+
+
+def _abbreviate_strategy(strategy: str | None) -> str:
+    """Return a short uppercase strategy code for the display_id middle segment.
+    Known strategies map to a curated 6-char code. Unknown strategies fall
+    through to the first 6 characters of the upper-cased name with whitespace
+    stripped. Empty input returns 'UNKNWN'.
+    """
+    if not strategy:
+        return "UNKNWN"
+    key = strategy.strip().lower()
+    if key in _STRATEGY_ABBREVIATIONS:
+        return _STRATEGY_ABBREVIATIONS[key]
+    cleaned = "".join(ch for ch in strategy.upper() if not ch.isspace())
+    return cleaned[:6] if cleaned else "UNKNWN"
+
+
+def make_display_id(*, symbol: str, strategy: str | None, created_at: datetime) -> str:
+    """Build the operator-facing display_id label.
+
+    Format: {SYMBOL}-{ABBREV}-{YYYYMMDD}-{HHMM}, where the timestamp is the
+    UTC wall-clock of `created_at`. Example: "AAPL-EVCONT-20260429-0830".
+    """
+    abbrev = _abbreviate_strategy(strategy)
+    sym = (symbol or "UNK").upper().strip() or "UNK"
+    ts = created_at if created_at.tzinfo is not None else created_at.replace(tzinfo=timezone.utc)
+    return f"{sym}-{abbrev}-{ts.strftime('%Y%m%d')}-{ts.strftime('%H%M')}"
+
+
+def display_id_or_fallback(row_display_id: str | None, recommendation_id: str) -> str:
+    """Pick the human-readable label for API responses. Legacy rows without
+    display_id (created before the column was added) fall back to a short
+    truncation of the canonical recommendation_id."""
+    if row_display_id:
+        return row_display_id
+    tail = (recommendation_id or "")[-6:] if recommendation_id else ""
+    return f"Rec #{tail}" if tail else "Rec #—"
+
+
 class RecommendationRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
-    def create(self, recommendation: TradeRecommendation, *, app_user_id: int | None = None) -> RecommendationModel:
+    def create(
+        self,
+        recommendation: TradeRecommendation,
+        *,
+        app_user_id: int | None = None,
+        strategy: str | None = None,
+    ) -> RecommendationModel:
         payload = recommendation.model_dump(mode="json")
+        # Derive the display_id at insert time so the human-readable label is
+        # stable from creation onward. If `strategy` is not provided by the
+        # caller, fall back to the lower-level setup_type from the
+        # TradeRecommendation payload.
+        from macmarket_trader.domain.time import utc_now
+        derived_strategy = strategy
+        if not derived_strategy:
+            entry = payload.get("entry") if isinstance(payload, dict) else None
+            if isinstance(entry, dict):
+                raw_setup = entry.get("setup_type")
+                if isinstance(raw_setup, str):
+                    derived_strategy = raw_setup
+        created_at_for_id = utc_now()
+        display_id = make_display_id(
+            symbol=recommendation.symbol,
+            strategy=derived_strategy,
+            created_at=created_at_for_id,
+        )
         with self.session_factory() as session:
             row = RecommendationModel(
                 recommendation_id=recommendation.recommendation_id,
                 app_user_id=app_user_id,
                 symbol=recommendation.symbol,
                 payload=payload,
+                display_id=display_id,
             )
             session.add(row)
             session.flush()
@@ -55,6 +128,23 @@ class RecommendationRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def update_display_id_strategy(self, recommendation_uid: str, *, strategy: str) -> None:
+        """Re-generate display_id once a more specific strategy label becomes
+        known after creation (e.g. the promote endpoint's strategy parameter
+        is friendlier than the SetupType enum used at create time)."""
+        with self.session_factory() as session:
+            row = session.execute(
+                select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
+            ).scalar_one_or_none()
+            if row is None:
+                return
+            row.display_id = make_display_id(
+                symbol=row.symbol,
+                strategy=strategy,
+                created_at=row.created_at,
+            )
+            session.commit()
 
     def list_recent(self, limit: int = 200, *, app_user_id: int | None = None) -> list[RecommendationModel]:
         with self.session_factory() as session:
@@ -942,6 +1032,18 @@ class UserRepository:
             user.approved_by = approved_by
             user.approved_at = utc_now() if status == ApprovalStatus.APPROVED else None
             session.add(UserApprovalRequestModel(app_user_id=user.id, status=status.value, note=note))
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def set_risk_dollars_per_trade(self, user_id: int, *, value: float | None) -> AppUserModel:
+        """Pass 4 — set or clear the per-user risk-dollars override. Pass
+        `value=None` to clear and fall back to settings.risk_dollars_per_trade."""
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                raise ValueError("User not found")
+            user.risk_dollars_per_trade = value
             session.commit()
             session.refresh(user)
             return user
