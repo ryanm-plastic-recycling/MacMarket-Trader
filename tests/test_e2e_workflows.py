@@ -558,11 +558,19 @@ def test_workflow5_provider_health() -> None:
     assert len(payload["providers"]) > 0, "providers array is empty"
     assert "checked_at" in payload, "response missing 'checked_at'"
 
-    # All three known providers must be present
+    # Known provider/readiness entries must be present
     provider_names = {p["provider"] for p in payload["providers"]}
     assert "auth" in provider_names, f"auth provider missing from: {provider_names}"
     assert "email" in provider_names, f"email provider missing from: {provider_names}"
+    assert "alpaca_paper" in provider_names, f"alpaca_paper provider missing from: {provider_names}"
+    assert "fred" in provider_names, f"fred provider missing from: {provider_names}"
+    assert "news" in provider_names, f"news provider missing from: {provider_names}"
     assert "market_data" in provider_names, f"market_data provider missing from: {provider_names}"
+
+    alpaca_entry = next(p for p in payload["providers"] if p["provider"] == "alpaca_paper")
+    assert "configured" in alpaca_entry, "alpaca_paper missing configured flag"
+    assert "probe_status" in alpaca_entry, "alpaca_paper missing probe_status"
+    assert "readiness_scope" in alpaca_entry, "alpaca_paper missing readiness_scope"
 
     # Locate the market_data provider entry
     market_data_entry = next(

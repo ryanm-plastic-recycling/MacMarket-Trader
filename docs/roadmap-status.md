@@ -14,7 +14,7 @@ Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
 Tests: pytest 210, vitest 99, Playwright 31. tsc clean.
 Active passes: Phase 7 partially implemented — commission-aware realized
-paper P&L and equity fee-preview/operator-trust slices.
+paper P&L, equity fee-preview/operator-trust, and provider-readiness slices.
 
 ## Completed Phases
 
@@ -91,16 +91,24 @@ paper P&L and equity fee-preview/operator-trust slices.
   slice if Phase 7 grows further
 
 ### Phase 7C — Provider health + operator readiness
-- Admin / Provider Health should show explicit Alpaca status and readiness:
-  selected provider, mock vs paper mode, key/config presence, and latest
-  connectivity / health result where practical
-- Add FRED and news-provider health checks where available or practical so the
-  operator can verify macro/news context inputs explicitly
-- Frame this as a pre-provider-expansion operator-readiness gate, not
-  live-trading enablement
-- Recommendation / Replay / Orders operator surfaces should be able to point
-  back to provider-health truth when provider-backed flows are degraded or in
-  fallback mode
+- Complete in current slice:
+  Admin / Provider Health now surfaces explicit Alpaca paper-provider
+  readiness, including selected mode, configuration presence, and paper-only
+  readiness framing without exposing secrets
+- Complete in current slice:
+  FRED and news readiness now appear alongside existing auth, email, and
+  market-data health so operators can verify macro/news context inputs
+  explicitly
+- Complete in current slice:
+  provider-health is framed as a pre-provider-expansion operator-readiness
+  gate, not live-trading enablement
+- Note:
+  FRED/news readiness is currently configuration-first and marks live probe
+  status as unavailable where no dedicated safe lightweight probe exists yet
+- Note:
+  market-data workflow mode, fallback/blocking behavior, latency, and sample
+  symbol remain the source-of-truth provider health contract for
+  recommendation/replay/orders workflow trust
 
 ### Phase 7D — Closure criteria / remaining cleanup
 - Still open:
@@ -226,6 +234,10 @@ diffs. Notable recent inflection points:
   P&L, per-user commission settings, replay/order/open-position fee previews,
   orders/settings UI updates, equity close-math fee application.
   `commission_per_contract` storage landed, but options parity remains open.
+- 2026-04-29 — Phase 7C partial: Admin / Provider Health expanded into an
+  operator-readiness console with explicit Alpaca paper readiness plus FRED
+  and news readiness entries. This remains a paper/provider trust gate only;
+  no live brokerage execution was enabled.
 - 2026-04-29 — Pass 4: `display_id`, per-user risk dollars, Settings page,
   invite-email welcome CTA, schedules timezone display, MFA runbook, brand
   header on pre-auth, dashboard 401 hardening (`pending-approval` redirect).

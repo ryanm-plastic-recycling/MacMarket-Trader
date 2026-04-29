@@ -2216,6 +2216,111 @@ def provider_health_summary() -> dict[str, str]:
     }
 
 
+def _readiness_status(*, configured: bool) -> str:
+    return "configured" if configured else "unconfigured"
+
+
+def _alpaca_paper_readiness() -> dict[str, object]:
+    broker_mode = settings.broker_provider.strip().lower() or "mock"
+    api_key_present = bool(settings.alpaca_api_key_id.strip())
+    api_secret_present = bool(settings.alpaca_api_secret_key.strip())
+    base_url_present = bool(settings.alpaca_paper_base_url.strip())
+    configured = api_key_present and api_secret_present and base_url_present
+    selected_note = (
+        "BROKER_PROVIDER is currently alpaca paper."
+        if broker_mode == "alpaca"
+        else "BROKER_PROVIDER is currently mock; Alpaca remains a readiness gate only."
+    )
+    details = (
+        "Alpaca paper credentials and base URL appear present. "
+        "This surface reports paper-provider readiness only and does not enable live trading or order routing. "
+        f"{selected_note}"
+        if configured
+        else "Alpaca paper readiness is incomplete: API key, secret, or paper base URL is missing. "
+        "This surface reports readiness only and does not enable live trading or order routing."
+    )
+    return {
+        "provider": "alpaca_paper",
+        "mode": broker_mode,
+        "status": _readiness_status(configured=configured),
+        "details": details,
+        "configured": configured,
+        "selected_provider": broker_mode,
+        "probe_status": "unavailable" if configured else "not_configured",
+        "readiness_scope": "paper_provider",
+        "operational_impact": (
+            "Use this as a paper-provider readiness gate before deeper provider expansion. "
+            "It does not activate brokerage execution."
+        ),
+    }
+
+
+def _fred_readiness() -> dict[str, object]:
+    macro_mode = settings.macro_calendar_provider.strip().lower() or "mock"
+    api_key_present = bool(settings.fred_api_key.strip())
+    base_url_present = bool(settings.fred_base_url.strip())
+    configured = api_key_present and base_url_present
+    selected_note = (
+        "MACRO_CALENDAR_PROVIDER is currently fred."
+        if macro_mode == "fred"
+        else "MACRO_CALENDAR_PROVIDER is currently mock; FRED remains a readiness gate only."
+    )
+    details = (
+        "FRED API key and base URL appear present. This surface currently reports configuration readiness only; "
+        f"no dedicated lightweight live probe exists here. {selected_note}"
+        if configured
+        else "FRED readiness is incomplete: API key or base URL is missing. "
+        "This surface currently reports configuration readiness only."
+    )
+    return {
+        "provider": "fred",
+        "mode": macro_mode,
+        "status": _readiness_status(configured=configured),
+        "details": details,
+        "configured": configured,
+        "selected_provider": macro_mode,
+        "probe_status": "unavailable" if configured else "not_configured",
+        "readiness_scope": "macro_context",
+        "operational_impact": (
+            "Use this to verify macro-calendar input readiness before broader provider expansion. "
+            "It does not affect brokerage execution."
+        ),
+    }
+
+
+def _news_readiness() -> dict[str, object]:
+    news_mode = settings.news_provider.strip().lower() or "mock"
+    polygon_key_present = bool(settings.polygon_api_key.strip())
+    base_url_present = bool(settings.polygon_base_url.strip())
+    configured = polygon_key_present and base_url_present
+    selected_note = (
+        "NEWS_PROVIDER is currently polygon."
+        if news_mode == "polygon"
+        else "NEWS_PROVIDER is currently mock; provider-backed news remains a readiness gate only."
+    )
+    details = (
+        "Provider-backed news configuration appears present via Polygon API key and base URL. "
+        f"This surface currently reports configuration readiness only. {selected_note}"
+        if configured
+        else "Provider-backed news readiness is incomplete: Polygon API key or base URL is missing. "
+        "This surface currently reports configuration readiness only."
+    )
+    return {
+        "provider": "news",
+        "mode": news_mode,
+        "status": _readiness_status(configured=configured),
+        "details": details,
+        "configured": configured,
+        "selected_provider": news_mode,
+        "probe_status": "unavailable" if configured else "not_configured",
+        "readiness_scope": "news_context",
+        "operational_impact": (
+            "Use this to verify provider-backed news context readiness before deeper provider expansion. "
+            "Recommendation, replay, and orders remain paper-only."
+        ),
+    }
+
+
 @router.get("/provider-health")
 def provider_health(_admin=Depends(require_admin)):
     summary = provider_health_summary()
@@ -2246,6 +2351,9 @@ def provider_health(_admin=Depends(require_admin)):
                 "status": "ok",
                 "details": "Approval notifications are sent through provider boundary with audit logs.",
             },
+            _alpaca_paper_readiness(),
+            _fred_readiness(),
+            _news_readiness(),
             {
                 "provider": "market_data",
                 "mode": summary["market_data"],

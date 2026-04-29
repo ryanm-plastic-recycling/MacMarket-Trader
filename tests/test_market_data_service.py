@@ -144,6 +144,16 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     monkeypatch.setattr(settings, "polygon_enabled", True)
     monkeypatch.setattr(settings, "workflow_demo_fallback", False)
     monkeypatch.setattr(settings, "environment", "test")
+    monkeypatch.setattr(settings, "broker_provider", "alpaca")
+    monkeypatch.setattr(settings, "alpaca_api_key_id", "alpaca-key")
+    monkeypatch.setattr(settings, "alpaca_api_secret_key", "alpaca-secret")
+    monkeypatch.setattr(settings, "alpaca_paper_base_url", "https://paper-api.alpaca.markets")
+    monkeypatch.setattr(settings, "macro_calendar_provider", "fred")
+    monkeypatch.setattr(settings, "fred_api_key", "fred-key")
+    monkeypatch.setattr(settings, "fred_base_url", "https://api.stlouisfed.org/fred")
+    monkeypatch.setattr(settings, "news_provider", "polygon")
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
 
     client = TestClient(app)
     from macmarket_trader.domain.models import AppUserModel
@@ -160,6 +170,28 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     response = client.get("/admin/provider-health", headers={"Authorization": "Bearer admin-token"})
     assert response.status_code == 200
     payload = response.json()
+
+    alpaca_entry = next(item for item in payload["providers"] if item["provider"] == "alpaca_paper")
+    assert alpaca_entry["status"] == "configured"
+    assert alpaca_entry["configured"] is True
+    assert alpaca_entry["selected_provider"] == "alpaca"
+    assert alpaca_entry["probe_status"] == "unavailable"
+    assert alpaca_entry["readiness_scope"] == "paper_provider"
+
+    fred_entry = next(item for item in payload["providers"] if item["provider"] == "fred")
+    assert fred_entry["status"] == "configured"
+    assert fred_entry["configured"] is True
+    assert fred_entry["selected_provider"] == "fred"
+    assert fred_entry["probe_status"] == "unavailable"
+    assert fred_entry["readiness_scope"] == "macro_context"
+
+    news_entry = next(item for item in payload["providers"] if item["provider"] == "news")
+    assert news_entry["status"] == "configured"
+    assert news_entry["configured"] is True
+    assert news_entry["selected_provider"] == "polygon"
+    assert news_entry["probe_status"] == "unavailable"
+    assert news_entry["readiness_scope"] == "news_context"
+
     market_entry = next(item for item in payload["providers"] if item["provider"] == "market_data")
     assert market_entry["configured_provider"] == "polygon"
     assert market_entry["effective_read_mode"] == "polygon"

@@ -6,7 +6,25 @@ import { Card, ErrorState, PageHeader, StatusBadge } from "@/components/operator
 import { fetchWorkflowApi } from "@/lib/api-client";
 
 type ProviderHealth = {
-  providers: Array<{ provider: string; mode: string; status: string; details: string; operational_impact?: string; configured_provider?: string; effective_read_mode?: string; workflow_execution_mode?: string; failure_reason?: string | null; configured?: boolean; feed?: string; sample_symbol?: string; latency_ms?: number | null; last_success_at?: string | null }>;
+  providers: Array<{
+    provider: string;
+    mode: string;
+    status: string;
+    details: string;
+    operational_impact?: string;
+    configured_provider?: string;
+    effective_read_mode?: string;
+    workflow_execution_mode?: string;
+    failure_reason?: string | null;
+    configured?: boolean;
+    feed?: string;
+    sample_symbol?: string;
+    latency_ms?: number | null;
+    last_success_at?: string | null;
+    selected_provider?: string;
+    probe_status?: string;
+    readiness_scope?: string;
+  }>;
   checked_at: string;
 };
 
@@ -37,9 +55,12 @@ export function ProviderHealthPanel() {
   useEffect(() => { void load(); }, []);
 
   if (loading && !data) return <p>Loading provider health…</p>;
-  if (error && !data) return <ErrorState title="Provider health unavailable" hint={error} />;
+  if (error && !data) return <ErrorState title="Provider readiness unavailable" hint={error} />;
 
   const market = data?.providers.find((p) => p.provider === "market_data");
+  const alpacaPaper = data?.providers.find((p) => p.provider === "alpaca_paper");
+  const fred = data?.providers.find((p) => p.provider === "fred");
+  const news = data?.providers.find((p) => p.provider === "news");
   const workflowBlocked = market?.workflow_execution_mode === "blocked";
   const workflowDemoFallback = market?.workflow_execution_mode === "demo_fallback";
   const healthyProvider = market?.workflow_execution_mode === "provider";
@@ -49,8 +70,8 @@ export function ProviderHealthPanel() {
   return (
     <section style={{ display: "grid", gap: 12 }}>
       <PageHeader
-        title="Provider health"
-        subtitle={`Checked at ${data?.checked_at ?? "unknown"}.`}
+        title="Provider readiness"
+        subtitle={`Checked at ${data?.checked_at ?? "unknown"}. This console is for workflow and provider readiness, not live-trading enablement.`}
         actions={
           <button onClick={() => void reprobe()} disabled={reprobing || loading} style={{ fontSize: "0.82rem" }}>
             {reprobing ? "Re-probing…" : "Re-probe now"}
@@ -67,21 +88,29 @@ export function ProviderHealthPanel() {
           {market?.latency_ms != null ? <span>latency: {market.latency_ms} ms</span> : null}
           {market?.last_success_at ? <span style={muted}>last success: {market.last_success_at}</span> : null}
         </div>
+        <div className="op-row" style={{ flexWrap: "wrap", marginTop: 8 }}>
+          {alpacaPaper ? <StatusBadge tone={alpacaPaper.status === "configured" ? "good" : "warn"}>alpaca paper: {alpacaPaper.status}</StatusBadge> : null}
+          {fred ? <StatusBadge tone={fred.status === "configured" ? "good" : "warn"}>fred: {fred.status}</StatusBadge> : null}
+          {news ? <StatusBadge tone={news.status === "configured" ? "good" : "warn"}>news: {news.status}</StatusBadge> : null}
+        </div>
         {healthyProvider ? <p style={{ color: "#7ee787", margin: "8px 0 0" }}>Live provider mode is active and healthy.</p> : null}
         {workflowBlocked ? <p style={{ color: "#f7b267", margin: "8px 0 0" }}>Configured provider probe failed and workflow demo fallback is disabled. Workflow execution is blocked until provider health recovers.</p> : null}
         {workflowDemoFallback ? <p style={{ color: "#f7b267", margin: "8px 0 0" }}>Configured provider probe failed or provider mode is disabled; workflows are running on explicit deterministic demo fallback bars.</p> : null}
         {market?.failure_reason ? <p style={{ ...muted, margin: "6px 0 0" }}>Failure reason: {market.failure_reason}</p> : null}
         <p style={{ ...muted, margin: "6px 0 0" }}>{market?.operational_impact ?? "Market-data mode determines whether recommendations, replay, and orders run on provider-backed bars or explicit fallback bars."}</p>
+        <p style={{ ...muted, margin: "6px 0 0" }}>
+          Alpaca readiness on this page is paper-provider readiness only. No live brokerage execution or credential entry is enabled here.
+        </p>
       </Card>
 
       <div className="op-grid-3">
         {data?.providers.map((p) => {
-          const isOk = p.status === "ok";
+          const isHealthy = p.status === "ok" || p.status === "configured";
           return (
             <Card key={p.provider} title={p.provider}>
               <div style={{ display: "grid", gap: 4 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <StatusBadge tone={isOk ? "good" : "warn"}>{p.status}</StatusBadge>
+                  <StatusBadge tone={isHealthy ? "good" : "warn"}>{p.status}</StatusBadge>
                   <span style={{ fontSize: "0.82rem" }}>{p.mode}</span>
                 </div>
                 {p.configured !== undefined ? (
@@ -89,11 +118,27 @@ export function ProviderHealthPanel() {
                     <span style={muted}>configured: </span>{p.configured ? "yes" : "no"}
                   </div>
                 ) : null}
+                {p.selected_provider ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>selected mode: </span>{p.selected_provider}
+                  </div>
+                ) : null}
+                {p.probe_status ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>probe: </span>{p.probe_status}
+                  </div>
+                ) : null}
+                {p.readiness_scope ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>scope: </span>{p.readiness_scope}
+                  </div>
+                ) : null}
                 {p.feed ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>feed: </span>{p.feed}</div> : null}
                 {p.latency_ms != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>latency: </span>{p.latency_ms} ms</div> : null}
                 {p.last_success_at ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>last success: </span>{p.last_success_at}</div> : null}
                 {p.failure_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>failure: {p.failure_reason}</div> : null}
                 {p.details ? <div style={{ ...muted, fontSize: "0.78rem", marginTop: 2 }}>{p.details}</div> : null}
+                {p.operational_impact ? <div style={{ ...muted, fontSize: "0.78rem" }}>{p.operational_impact}</div> : null}
               </div>
             </Card>
           );
