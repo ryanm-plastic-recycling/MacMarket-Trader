@@ -25,7 +25,7 @@ from macmarket_trader.email_templates import render_approval_html, render_invite
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository, display_id_or_fallback
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository, commission_paid_for_trade, display_id_or_fallback, gross_pnl_or_fallback, net_pnl_or_fallback
 from macmarket_trader.domain.models import AuditLogModel
 
 
@@ -39,6 +39,38 @@ def _effective_risk_dollars(user) -> float:
         return float(override)
     except (TypeError, ValueError):
         return float(settings.risk_dollars_per_trade)
+
+
+def _effective_commission_per_trade(user) -> float:
+    override = getattr(user, "commission_per_trade", None)
+    if override is None:
+        return float(settings.commission_per_trade)
+    try:
+        return float(override)
+    except (TypeError, ValueError):
+        return float(settings.commission_per_trade)
+
+
+def _effective_commission_per_contract(user) -> float:
+    override = getattr(user, "commission_per_contract", None)
+    if override is None:
+        return float(settings.commission_per_contract)
+    try:
+        return float(override)
+    except (TypeError, ValueError):
+        return float(settings.commission_per_contract)
+
+
+def _trade_direction_multiplier(side: str | None) -> float:
+    normalized = str(side or "").strip().lower()
+    return -1.0 if normalized in {"short", "sell"} else 1.0
+
+
+def _equity_trade_pnl(*, entry_price: float, exit_price: float, quantity: float, side: str | None, commission_per_trade: float) -> tuple[float, float]:
+    direction = _trade_direction_multiplier(side)
+    gross_pnl = (exit_price - entry_price) * quantity * direction
+    net_pnl = gross_pnl - commission_per_trade
+    return gross_pnl, net_pnl
 
 
 def _record_audit_event(*, recommendation_id: str, payload: dict[str, object]) -> None:
@@ -248,36 +280,85 @@ def me(user=Depends(current_user)):
         # so the UI can render "1000 (default)" vs an explicit user override.
         "risk_dollars_per_trade": user.risk_dollars_per_trade,
         "risk_dollars_per_trade_default": settings.risk_dollars_per_trade,
+        "commission_per_trade": user.commission_per_trade,
+        "commission_per_trade_default": settings.commission_per_trade,
+        "commission_per_contract": user.commission_per_contract,
+        "commission_per_contract_default": settings.commission_per_contract,
     }
 
 
 @user_router.patch("/settings")
 def update_user_settings(req: dict[str, object], user=Depends(require_approved_user)):
-    """Update operator-controlled settings. Currently only
-    risk_dollars_per_trade is accepted; the body is intentionally narrow so
-    new fields require an explicit follow-up pass."""
-    if "risk_dollars_per_trade" not in req:
-        raise HTTPException(status_code=400, detail="risk_dollars_per_trade is required.")
-    raw = req.get("risk_dollars_per_trade")
-    try:
-        value = float(raw) if raw is not None else None
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="risk_dollars_per_trade must be numeric.")
-    if value is None:
-        # Allow null to clear the override and fall back to env default.
-        user_repo.set_risk_dollars_per_trade(user.id, value=None)
-    else:
-        if value <= 0 or value > 50000:
-            raise HTTPException(
-                status_code=400,
-                detail="risk_dollars_per_trade must be > 0 and <= 50000.",
-            )
-        user_repo.set_risk_dollars_per_trade(user.id, value=value)
+    """Update operator-controlled settings for sizing and commission defaults."""
+    allowed_keys = {
+        "risk_dollars_per_trade",
+        "commission_per_trade",
+        "commission_per_contract",
+    }
+    provided_keys = [key for key in allowed_keys if key in req]
+    if not provided_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of risk_dollars_per_trade, commission_per_trade, or commission_per_contract is required.",
+        )
+
+    if "risk_dollars_per_trade" in req:
+        raw = req.get("risk_dollars_per_trade")
+        try:
+            value = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="risk_dollars_per_trade must be numeric.")
+        if value is None:
+            user_repo.set_risk_dollars_per_trade(user.id, value=None)
+        else:
+            if value <= 0 or value > 50000:
+                raise HTTPException(
+                    status_code=400,
+                    detail="risk_dollars_per_trade must be > 0 and <= 50000.",
+                )
+            user_repo.set_risk_dollars_per_trade(user.id, value=value)
+
+    if "commission_per_trade" in req:
+        raw = req.get("commission_per_trade")
+        try:
+            value = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="commission_per_trade must be numeric.")
+        if value is None:
+            user_repo.set_commission_per_trade(user.id, value=None)
+        else:
+            if value < 0 or value > 1000:
+                raise HTTPException(
+                    status_code=400,
+                    detail="commission_per_trade must be >= 0 and <= 1000.",
+                )
+            user_repo.set_commission_per_trade(user.id, value=value)
+
+    if "commission_per_contract" in req:
+        raw = req.get("commission_per_contract")
+        try:
+            value = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="commission_per_contract must be numeric.")
+        if value is None:
+            user_repo.set_commission_per_contract(user.id, value=None)
+        else:
+            if value < 0 or value > 100:
+                raise HTTPException(
+                    status_code=400,
+                    detail="commission_per_contract must be >= 0 and <= 100.",
+                )
+            user_repo.set_commission_per_contract(user.id, value=value)
+
     refreshed = user_repo.get_by_id(user.id)
     return {
         "id": refreshed.id,
         "risk_dollars_per_trade": refreshed.risk_dollars_per_trade,
         "risk_dollars_per_trade_default": settings.risk_dollars_per_trade,
+        "commission_per_trade": refreshed.commission_per_trade,
+        "commission_per_trade_default": settings.commission_per_trade,
+        "commission_per_contract": refreshed.commission_per_contract,
+        "commission_per_contract_default": settings.commission_per_contract,
     }
 
 
@@ -832,7 +913,14 @@ def close_order(order_id: str, req: dict[str, object], _user=Depends(require_app
     avg_entry = position.average_price if position is not None else order_row.limit_price
     quantity = position.quantity if position is not None else float(order_row.shares)
     opened_at = position.opened_at if position is not None else order_row.created_at
-    realized_pnl = (close_price - avg_entry) * quantity
+    commission_per_trade = _effective_commission_per_trade(_user)
+    gross_pnl, net_pnl = _equity_trade_pnl(
+        entry_price=float(avg_entry),
+        exit_price=float(close_price),
+        quantity=float(quantity),
+        side=order_row.side,
+        commission_per_trade=commission_per_trade,
+    )
     paper_portfolio_repo.create_trade(
         app_user_id=_user.id,
         symbol=order_row.symbol,
@@ -840,9 +928,15 @@ def close_order(order_id: str, req: dict[str, object], _user=Depends(require_app
         entry_price=avg_entry,
         exit_price=close_price,
         quantity=quantity,
-        realized_pnl=realized_pnl,
+        gross_pnl=gross_pnl,
+        net_pnl=net_pnl,
+        realized_pnl=net_pnl,
         opened_at=opened_at,
         closed_at=now,
+        position_id=position.id if position is not None else None,
+        recommendation_id=position.recommendation_id if position is not None else order_row.recommendation_id,
+        replay_run_id=position.replay_run_id if position is not None else order_row.replay_run_id,
+        order_id=order_row.order_id,
     )
     if position is not None:
         paper_portfolio_repo.close_position(position_id=position.id, closed_at=now)
@@ -850,7 +944,10 @@ def close_order(order_id: str, req: dict[str, object], _user=Depends(require_app
     return {
         "order_id": order_id,
         "symbol": order_row.symbol,
-        "realized_pnl": round(realized_pnl, 2),
+        "gross_pnl": round(gross_pnl, 2),
+        "net_pnl": round(net_pnl, 2),
+        "commission_paid": round(commission_per_trade, 2),
+        "realized_pnl": round(net_pnl, 2),
         "entry_price": round(avg_entry, 2),
         "close_price": round(close_price, 2),
         "shares": int(quantity),
@@ -968,6 +1065,9 @@ def _serialize_position(row) -> dict[str, object]:
 
 
 def _serialize_trade(row) -> dict[str, object]:
+    gross_pnl = gross_pnl_or_fallback(row)
+    net_pnl = net_pnl_or_fallback(row)
+    commission_paid = commission_paid_for_trade(row)
     return {
         "id": row.id,
         "symbol": row.symbol,
@@ -975,7 +1075,10 @@ def _serialize_trade(row) -> dict[str, object]:
         "qty": float(row.quantity),
         "entry_price": float(row.entry_price),
         "exit_price": float(row.exit_price) if row.exit_price is not None else None,
-        "realized_pnl": float(row.realized_pnl),
+        "gross_pnl": gross_pnl,
+        "net_pnl": net_pnl,
+        "commission_paid": commission_paid,
+        "realized_pnl": net_pnl,
         "opened_at": row.opened_at.isoformat() if row.opened_at else None,
         "closed_at": row.closed_at.isoformat() if row.closed_at else None,
         "hold_seconds": row.hold_seconds,
@@ -1025,8 +1128,14 @@ def close_paper_position(position_id: int, req: dict[str, object], _user=Depends
 
     remaining = float(position.remaining_qty if position.remaining_qty is not None else position.quantity)
     avg_entry = float(position.average_price)
-    direction = 1.0 if position.side == "long" else -1.0
-    realized_pnl = (mark_price - avg_entry) * remaining * direction
+    commission_per_trade = _effective_commission_per_trade(_user)
+    gross_pnl, net_pnl = _equity_trade_pnl(
+        entry_price=avg_entry,
+        exit_price=mark_price,
+        quantity=remaining,
+        side=position.side,
+        commission_per_trade=commission_per_trade,
+    )
 
     now = utc_now()
     opened_at = position.opened_at
@@ -1043,7 +1152,9 @@ def close_paper_position(position_id: int, req: dict[str, object], _user=Depends
         entry_price=avg_entry,
         exit_price=mark_price,
         quantity=remaining,
-        realized_pnl=realized_pnl,
+        gross_pnl=gross_pnl,
+        net_pnl=net_pnl,
+        realized_pnl=net_pnl,
         opened_at=opened_at or now,
         closed_at=now,
         position_id=position.id,

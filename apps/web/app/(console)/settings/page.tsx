@@ -14,15 +14,25 @@ type UserMe = {
   mfa_enabled: boolean | null;
   risk_dollars_per_trade: number | null;
   risk_dollars_per_trade_default: number | null;
+  commission_per_trade: number | null;
+  commission_per_trade_default: number | null;
+  commission_per_contract: number | null;
+  commission_per_contract_default: number | null;
 };
 
 const RISK_MIN = 1;
 const RISK_MAX = 50000;
+const COMMISSION_PER_TRADE_MIN = 0;
+const COMMISSION_PER_TRADE_MAX = 1000;
+const COMMISSION_PER_CONTRACT_MIN = 0;
+const COMMISSION_PER_CONTRACT_MAX = 100;
 
 export default function SettingsPage() {
   const [user, setUser] = useState<UserMe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [riskInput, setRiskInput] = useState<string>("");
+  const [commissionPerTradeInput, setCommissionPerTradeInput] = useState<string>("");
+  const [commissionPerContractInput, setCommissionPerContractInput] = useState<string>("");
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({
     state: "idle",
     message: "",
@@ -40,6 +50,10 @@ export default function SettingsPage() {
     setUser(r.data);
     const effective = r.data?.risk_dollars_per_trade ?? r.data?.risk_dollars_per_trade_default ?? 1000;
     setRiskInput(String(Math.round(Number(effective))));
+    const effectiveCommissionPerTrade = r.data?.commission_per_trade ?? r.data?.commission_per_trade_default ?? 0;
+    setCommissionPerTradeInput(String(Number(effectiveCommissionPerTrade).toFixed(2)));
+    const effectiveCommissionPerContract = r.data?.commission_per_contract ?? r.data?.commission_per_contract_default ?? 0.65;
+    setCommissionPerContractInput(String(Number(effectiveCommissionPerContract).toFixed(2)));
     setFeedback({ state: "success", message: "Account settings loaded." });
   }
 
@@ -47,32 +61,71 @@ export default function SettingsPage() {
     void loadMe();
   }, []);
 
-  async function saveRisk() {
-    const value = Number(riskInput);
-    if (!Number.isFinite(value) || value < RISK_MIN || value > RISK_MAX) {
+  async function saveTradeSettings() {
+    const riskValue = Number(riskInput);
+    const commissionPerTradeValue = Number(commissionPerTradeInput);
+    const commissionPerContractValue = Number(commissionPerContractInput);
+    if (!Number.isFinite(riskValue) || riskValue < RISK_MIN || riskValue > RISK_MAX) {
       setFeedback({ state: "error", message: `Risk per trade must be between $${RISK_MIN} and $${RISK_MAX}.` });
       return;
     }
+    if (
+      !Number.isFinite(commissionPerTradeValue)
+      || commissionPerTradeValue < COMMISSION_PER_TRADE_MIN
+      || commissionPerTradeValue > COMMISSION_PER_TRADE_MAX
+    ) {
+      setFeedback({
+        state: "error",
+        message: `Equity commission per trade must be between $${COMMISSION_PER_TRADE_MIN} and $${COMMISSION_PER_TRADE_MAX}.`,
+      });
+      return;
+    }
+    if (
+      !Number.isFinite(commissionPerContractValue)
+      || commissionPerContractValue < COMMISSION_PER_CONTRACT_MIN
+      || commissionPerContractValue > COMMISSION_PER_CONTRACT_MAX
+    ) {
+      setFeedback({
+        state: "error",
+        message: `Options commission per contract must be between $${COMMISSION_PER_CONTRACT_MIN} and $${COMMISSION_PER_CONTRACT_MAX}.`,
+      });
+      return;
+    }
     setFeedback({ state: "loading", message: "Saving…" });
-    const r = await fetchWorkflowApi<{ risk_dollars_per_trade: number | null; risk_dollars_per_trade_default: number | null }>(
+    const r = await fetchWorkflowApi<{
+      risk_dollars_per_trade: number | null;
+      risk_dollars_per_trade_default: number | null;
+      commission_per_trade: number | null;
+      commission_per_trade_default: number | null;
+      commission_per_contract: number | null;
+      commission_per_contract_default: number | null;
+    }>(
       "/api/user/settings",
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ risk_dollars_per_trade: value }),
+        body: JSON.stringify({
+          risk_dollars_per_trade: riskValue,
+          commission_per_trade: commissionPerTradeValue,
+          commission_per_contract: commissionPerContractValue,
+        }),
       },
     );
     if (!r.ok) {
       setFeedback({ state: "error", message: r.error ?? "Save failed." });
       return;
     }
-    setFeedback({ state: "success", message: "Risk per trade updated." });
+    setFeedback({ state: "success", message: "Trade settings updated." });
     // Refresh /me so the displayed value matches what the backend persisted.
     await loadMe();
   }
 
   const effectiveRisk = user?.risk_dollars_per_trade ?? user?.risk_dollars_per_trade_default ?? null;
-  const usingDefault = user?.risk_dollars_per_trade == null;
+  const usingDefaultRisk = user?.risk_dollars_per_trade == null;
+  const effectiveCommissionPerTrade = user?.commission_per_trade ?? user?.commission_per_trade_default ?? null;
+  const usingDefaultCommissionPerTrade = user?.commission_per_trade == null;
+  const effectiveCommissionPerContract = user?.commission_per_contract ?? user?.commission_per_contract_default ?? null;
+  const usingDefaultCommissionPerContract = user?.commission_per_contract == null;
 
   return (
     <section className="op-stack">
@@ -82,7 +135,7 @@ export default function SettingsPage() {
       />
       {error ? <ErrorState title="Settings unavailable" hint={error} /> : null}
 
-      <Card title="Trade sizing">
+      <Card title="Trade sizing + fees">
         <div className="op-row">
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span>Risk per trade ($)</span>
@@ -96,17 +149,53 @@ export default function SettingsPage() {
               style={{ width: 140 }}
             />
           </label>
-          <button onClick={() => void saveRisk()} disabled={feedback.state === "loading"}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span>Equity commission / trade ($)</span>
+            <input
+              type="number"
+              min={COMMISSION_PER_TRADE_MIN}
+              max={COMMISSION_PER_TRADE_MAX}
+              step={0.01}
+              value={commissionPerTradeInput}
+              onChange={(e) => setCommissionPerTradeInput(e.target.value)}
+              style={{ width: 140 }}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span>Options commission / contract ($)</span>
+            <input
+              type="number"
+              min={COMMISSION_PER_CONTRACT_MIN}
+              max={COMMISSION_PER_CONTRACT_MAX}
+              step={0.01}
+              value={commissionPerContractInput}
+              onChange={(e) => setCommissionPerContractInput(e.target.value)}
+              style={{ width: 140 }}
+            />
+          </label>
+          <button onClick={() => void saveTradeSettings()} disabled={feedback.state === "loading"}>
             {feedback.state === "loading" ? "Saving…" : "Save"}
           </button>
-          {effectiveRisk != null ? (
-            <span style={{ fontSize: "0.82rem", color: "var(--op-muted, #7a8999)" }}>
-              Currently {usingDefault ? "using default" : "override"}: <strong>${Number(effectiveRisk).toFixed(0)}</strong>
-            </span>
-          ) : null}
         </div>
         <div style={{ marginTop: 8, fontSize: "0.82rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
-          Amount risked per paper trade. Applied to all new recommendations. Does not affect existing open positions.
+          Risk per trade applies to new recommendations only. Equity commission is applied to new paper-trade close calculations. Options commission is stored now for Phase 8 parity work and does not yet affect current equity-only close flows.
+        </div>
+        <div style={{ marginTop: 10, display: "grid", gap: 4, fontSize: "0.82rem", color: "var(--op-muted, #7a8999)" }}>
+          {effectiveRisk != null ? (
+            <div>
+              Risk per trade: {usingDefaultRisk ? "default" : "override"} <strong>${Number(effectiveRisk).toFixed(0)}</strong>
+            </div>
+          ) : null}
+          {effectiveCommissionPerTrade != null ? (
+            <div>
+              Equity commission / trade: {usingDefaultCommissionPerTrade ? "default" : "override"} <strong>${Number(effectiveCommissionPerTrade).toFixed(2)}</strong>
+            </div>
+          ) : null}
+          {effectiveCommissionPerContract != null ? (
+            <div>
+              Options commission / contract: {usingDefaultCommissionPerContract ? "default" : "override"} <strong>${Number(effectiveCommissionPerContract).toFixed(2)}</strong>
+            </div>
+          ) : null}
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadMe()} />
       </Card>

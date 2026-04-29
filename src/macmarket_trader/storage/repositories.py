@@ -83,6 +83,37 @@ def display_id_or_fallback(row_display_id: str | None, recommendation_id: str) -
     return f"Rec #{tail}" if tail else "Rec #—"
 
 
+def gross_pnl_or_fallback(row: PaperTradeModel) -> float:
+    """Phase 7 — prefer stored gross_pnl, but preserve legacy trade rows.
+
+    Existing trade rows created before the gross/net split will have
+    realized_pnl populated and newly-added gross/net columns defaulted to 0.0.
+    Treat those rows as gross == net == realized so old history still renders
+    credibly after schema extension.
+    """
+    gross = float(getattr(row, "gross_pnl", 0.0) or 0.0)
+    net = float(getattr(row, "net_pnl", 0.0) or 0.0)
+    realized = float(getattr(row, "realized_pnl", 0.0) or 0.0)
+    if gross == 0.0 and net == 0.0 and realized != 0.0:
+        return realized
+    return gross
+
+
+def net_pnl_or_fallback(row: PaperTradeModel) -> float:
+    gross = float(getattr(row, "gross_pnl", 0.0) or 0.0)
+    net = float(getattr(row, "net_pnl", 0.0) or 0.0)
+    realized = float(getattr(row, "realized_pnl", 0.0) or 0.0)
+    if gross == 0.0 and net == 0.0 and realized != 0.0:
+        return realized
+    return net if net != 0.0 or gross != 0.0 or realized == 0.0 else realized
+
+
+def commission_paid_for_trade(row: PaperTradeModel) -> float:
+    gross = gross_pnl_or_fallback(row)
+    net = net_pnl_or_fallback(row)
+    return max(0.0, gross - net)
+
+
 class RecommendationRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
@@ -478,12 +509,19 @@ class PaperPortfolioRepository:
                 ).scalars()
             )
             closed_count = len(closed_trades)
-            wins = sum(1 for trade in closed_trades if trade.realized_pnl > 0)
+            wins = sum(1 for trade in closed_trades if net_pnl_or_fallback(trade) > 0)
+            gross_realized_pnl = float(sum(gross_pnl_or_fallback(trade) for trade in closed_trades))
+            net_realized_pnl = float(sum(net_pnl_or_fallback(trade) for trade in closed_trades))
             return {
                 "open_positions": len(open_positions),
                 "total_open_notional": float(sum(position.open_notional for position in open_positions)),
                 "unrealized_pnl": float(sum(position.unrealized_pnl for position in open_positions)),
-                "realized_pnl": float(sum(trade.realized_pnl for trade in closed_trades)),
+                "gross_realized_pnl": gross_realized_pnl,
+                "net_realized_pnl": net_realized_pnl,
+                "total_commission_paid": float(sum(commission_paid_for_trade(trade) for trade in closed_trades)),
+                # Back-compat alias used by existing UI/tests. From Phase 7
+                # onward this represents net realized P&L after commission.
+                "realized_pnl": net_realized_pnl,
                 "closed_trade_count": closed_count,
                 "win_rate": float((wins / closed_count) if closed_count else 0.0),
             }
@@ -664,6 +702,8 @@ class PaperPortfolioRepository:
         entry_price: float,
         exit_price: float,
         quantity: float,
+        gross_pnl: float,
+        net_pnl: float,
         realized_pnl: float,
         opened_at: datetime,
         closed_at: datetime,
@@ -682,6 +722,8 @@ class PaperPortfolioRepository:
                 entry_price=entry_price,
                 exit_price=exit_price,
                 quantity=quantity,
+                gross_pnl=gross_pnl,
+                net_pnl=net_pnl,
                 realized_pnl=realized_pnl,
                 opened_at=opened_at,
                 closed_at=closed_at,
@@ -1044,6 +1086,26 @@ class UserRepository:
             if user is None:
                 raise ValueError("User not found")
             user.risk_dollars_per_trade = value
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def set_commission_per_trade(self, user_id: int, *, value: float | None) -> AppUserModel:
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                raise ValueError("User not found")
+            user.commission_per_trade = value
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def set_commission_per_contract(self, user_id: int, *, value: float | None) -> AppUserModel:
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                raise ValueError("User not found")
+            user.commission_per_contract = value
             session.commit()
             session.refresh(user)
             return user

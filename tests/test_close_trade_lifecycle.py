@@ -47,6 +47,14 @@ def _seed_approved_user(token: str = "user-token", external_id: str = "clerk_use
         return user.id
 
 
+def _set_equity_commission(user_id: int, commission_per_trade: float) -> None:
+    with SessionLocal() as session:
+        user = session.get(AppUserModel, user_id)
+        assert user is not None
+        user.commission_per_trade = commission_per_trade
+        session.commit()
+
+
 def _stage_order_and_get_position(rec_uid: str, token: str = "user-token") -> dict:
     """Stage a paper order from a recommendation and return the resulting open position row."""
     order_resp = client.post(
@@ -153,7 +161,8 @@ def test_multiple_fills_aggregate_with_weighted_average() -> None:
 # ---------------------------------------------------------------------------
 
 def test_close_position_realized_pnl_long() -> None:
-    _seed_approved_user()
+    user_id = _seed_approved_user()
+    _set_equity_commission(user_id, 1.25)
     rec_uid = _seed_recommendation()
     bundle = _stage_order_and_get_position(rec_uid)
     position = bundle["position"]
@@ -161,7 +170,8 @@ def test_close_position_realized_pnl_long() -> None:
     avg = float(position["avg_entry_price"])
     qty = float(position["remaining_qty"])
     mark = avg + 7.50  # well-defined gain over avg entry
-    expected_pnl = (mark - avg) * qty
+    expected_gross_pnl = (mark - avg) * qty
+    expected_net_pnl = expected_gross_pnl - 1.25
 
     close_resp = client.post(
         f"/user/paper-positions/{position['id']}/close",
@@ -175,7 +185,10 @@ def test_close_position_realized_pnl_long() -> None:
     assert trade["entry_price"] == avg
     assert trade["exit_price"] == mark
     assert trade["qty"] == qty
-    assert abs(float(trade["realized_pnl"]) - expected_pnl) < 1e-6
+    assert abs(float(trade["gross_pnl"]) - expected_gross_pnl) < 1e-6
+    assert abs(float(trade["net_pnl"]) - expected_net_pnl) < 1e-6
+    assert abs(float(trade["commission_paid"]) - 1.25) < 1e-6
+    assert abs(float(trade["realized_pnl"]) - expected_net_pnl) < 1e-6
     assert trade["close_reason"] == "target_1 hit"
     assert trade["position_id"] == position["id"]
     assert trade["recommendation_id"] == rec_uid
@@ -193,6 +206,7 @@ def test_close_position_realized_pnl_long() -> None:
 
 def test_close_position_realized_pnl_short() -> None:
     user_id = _seed_approved_user()
+    _set_equity_commission(user_id, 2.50)
     # Seed a synthetic short position directly — short orders don't flow through
     # stage_order in Phase 1, but the close endpoint must handle short PnL.
     with SessionLocal() as session:
@@ -216,7 +230,8 @@ def test_close_position_realized_pnl_short() -> None:
         position_id = pos.id
 
     mark = 380.0  # short profits when mark < avg_entry
-    expected_pnl = (mark - 400.0) * 100.0 * -1.0  # = +2000
+    expected_gross_pnl = (mark - 400.0) * 100.0 * -1.0  # = +2000
+    expected_net_pnl = expected_gross_pnl - 2.50
 
     close_resp = client.post(
         f"/user/paper-positions/{position_id}/close",
@@ -227,15 +242,72 @@ def test_close_position_realized_pnl_short() -> None:
     trade = close_resp.json()
 
     assert trade["side"] == "short"
-    assert abs(float(trade["realized_pnl"]) - expected_pnl) < 1e-6, (
-        f"short PnL incorrect: expected {expected_pnl}, got {trade['realized_pnl']}"
+    assert abs(float(trade["gross_pnl"]) - expected_gross_pnl) < 1e-6, (
+        f"short gross PnL incorrect: expected {expected_gross_pnl}, got {trade['gross_pnl']}"
     )
+    assert abs(float(trade["net_pnl"]) - expected_net_pnl) < 1e-6, (
+        f"short net PnL incorrect: expected {expected_net_pnl}, got {trade['net_pnl']}"
+    )
+    assert abs(float(trade["commission_paid"]) - 2.50) < 1e-6
+    assert abs(float(trade["realized_pnl"]) - expected_net_pnl) < 1e-6
     assert trade["entry_price"] == 400.0
     assert trade["exit_price"] == 380.0
 
 
 # ---------------------------------------------------------------------------
-# Test 5 — Close endpoint blocks non-owner with 404 (scope isolation)
+# Test 5 — Order close stores gross/net/fees and portfolio summary reports net
+# ---------------------------------------------------------------------------
+
+def test_order_close_and_portfolio_summary_include_gross_net_and_fees() -> None:
+    user_id = _seed_approved_user()
+    _set_equity_commission(user_id, 3.00)
+    rec_uid = _seed_recommendation(symbol="NVDA")
+    bundle = _stage_order_and_get_position(rec_uid)
+    order = bundle["order"]
+    position = bundle["position"]
+
+    entry_price = float(position["avg_entry_price"])
+    qty = float(position["remaining_qty"])
+    close_price = entry_price + 5.0
+    expected_gross_pnl = (close_price - entry_price) * qty
+    expected_net_pnl = expected_gross_pnl - 3.00
+
+    resp = client.post(
+        f"/user/orders/{order['order_id']}/close",
+        headers=_USER_AUTH,
+        json={"close_price": close_price},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["order_id"] == order["order_id"]
+    assert body["gross_pnl"] == round(expected_gross_pnl, 2)
+    assert body["net_pnl"] == round(expected_net_pnl, 2)
+    assert body["commission_paid"] == 3.00
+    assert body["realized_pnl"] == round(expected_net_pnl, 2)
+
+    trades_resp = client.get("/user/paper-trades", headers=_USER_AUTH)
+    assert trades_resp.status_code == 200, trades_resp.text
+    matching_trade = next(
+        (trade for trade in trades_resp.json() if trade["order_id"] == order["order_id"]),
+        None,
+    )
+    assert matching_trade is not None
+    assert matching_trade["gross_pnl"] == round(expected_gross_pnl, 2)
+    assert matching_trade["net_pnl"] == round(expected_net_pnl, 2)
+    assert matching_trade["commission_paid"] == 3.00
+    assert matching_trade["realized_pnl"] == round(expected_net_pnl, 2)
+
+    summary_resp = client.get("/user/orders/portfolio-summary", headers=_USER_AUTH)
+    assert summary_resp.status_code == 200, summary_resp.text
+    summary = summary_resp.json()
+    assert summary["gross_realized_pnl"] >= round(expected_gross_pnl, 2)
+    assert summary["net_realized_pnl"] >= round(expected_net_pnl, 2)
+    assert summary["total_commission_paid"] >= 3.00
+    assert summary["realized_pnl"] == summary["net_realized_pnl"]
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — Close endpoint blocks non-owner with 404 (scope isolation)
 # ---------------------------------------------------------------------------
 
 def test_close_position_blocks_non_owner_with_404() -> None:
@@ -258,7 +330,7 @@ def test_close_position_blocks_non_owner_with_404() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 6 — Close endpoint blocks already-closed position with 400
+# Test 7 — Close endpoint blocks already-closed position with 400
 # ---------------------------------------------------------------------------
 
 def test_close_position_already_closed_returns_400() -> None:
@@ -284,7 +356,7 @@ def test_close_position_already_closed_returns_400() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 7 — List endpoints scope to owning user only
+# Test 8 — List endpoints scope to owning user only
 # ---------------------------------------------------------------------------
 
 def test_list_endpoints_scope_to_owning_user() -> None:

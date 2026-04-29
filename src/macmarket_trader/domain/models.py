@@ -213,6 +213,10 @@ class AppUserModel(Base):
     # Pass 4 — Per-user risk-dollars override. NULL means fall back to
     # settings.risk_dollars_per_trade (env RISK_DOLLARS_PER_TRADE).
     risk_dollars_per_trade: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Phase 7 — Per-user commission overrides. NULL means fall back to env
+    # defaults in settings.commission_per_trade / commission_per_contract.
+    commission_per_trade: Mapped[float | None] = mapped_column(Float, nullable=True)
+    commission_per_contract: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class UserApprovalRequestModel(Base):
@@ -322,6 +326,8 @@ class PaperTradeModel(Base):
     entry_price: Mapped[float] = mapped_column(Float)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     quantity: Mapped[float] = mapped_column(Float)
+    gross_pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    net_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)

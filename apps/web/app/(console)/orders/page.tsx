@@ -24,8 +24,8 @@ import {
 import { formatLineageBreadcrumb } from "@/lib/lineage-format";
 
 type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; canceled_at?: string | null; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
-type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
-type CloseResult = { order_id: string; symbol: string; realized_pnl: number; entry_price: number; close_price: number; shares: number };
+type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; gross_realized_pnl: number; net_realized_pnl: number; total_commission_paid: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
+type CloseResult = { order_id: string; symbol: string; gross_pnl: number; net_pnl: number; commission_paid: number; realized_pnl: number; entry_price: number; close_price: number; shares: number };
 
 type PaperPosition = {
   id: number;
@@ -50,6 +50,9 @@ type PaperTrade = {
   qty: number;
   entry_price: number;
   exit_price: number | null;
+  gross_pnl: number;
+  net_pnl: number;
+  commission_paid: number;
   realized_pnl: number;
   opened_at: string | null;
   closed_at: string | null;
@@ -62,6 +65,10 @@ type PaperTrade = {
 };
 
 const CLOSE_REASONS = ["Target hit", "Stop hit", "Manual exit", "Time exit", "Other"] as const;
+
+function formatSignedDollars(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -316,7 +323,7 @@ export default function Page() {
     cancelClosePosition();
     setFeedback({
       state: "success",
-      message: `Position closed — realized P&L ${result.data && result.data.realized_pnl >= 0 ? "+" : ""}${result.data ? result.data.realized_pnl.toFixed(2) : "—"}`,
+      message: `Position closed — net P&L ${result.data ? formatSignedDollars(result.data.net_pnl) : "—"}`,
     });
     await Promise.all([loadPositions(), loadTrades(), loadPortfolioSummary()]);
     setBusy(false);
@@ -429,10 +436,13 @@ export default function Page() {
           <div><div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Open positions</div><strong>{portfolioSummary.open_positions}</strong></div>
           <div><div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Open notional</div><strong>${portfolioSummary.total_open_notional.toFixed(2)}</strong></div>
           <div>
-            <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Realized P&L</div>
-            <strong style={{ color: portfolioSummary.realized_pnl > 0 ? "#21c06e" : portfolioSummary.realized_pnl < 0 ? "#f44336" : "inherit" }}>
-              {portfolioSummary.realized_pnl >= 0 ? "+" : ""}{portfolioSummary.realized_pnl.toFixed(2)}
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Realized net P&amp;L</div>
+            <strong style={{ color: portfolioSummary.net_realized_pnl > 0 ? "#21c06e" : portfolioSummary.net_realized_pnl < 0 ? "#f44336" : "inherit" }}>
+              {formatSignedDollars(portfolioSummary.net_realized_pnl)}
             </strong>
+            <div style={{ marginTop: 4, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
+              Gross {formatSignedDollars(portfolioSummary.gross_realized_pnl)} · Fees ${portfolioSummary.total_commission_paid.toFixed(2)}
+            </div>
           </div>
           <div>
             <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Win rate</div>
@@ -469,10 +479,11 @@ export default function Page() {
             {matchingOpen && matchingTrade ? <span> · </span> : null}
             {matchingTrade ? (
               <span>
-                ↳ closed trade #{matchingTrade.id} · realized{" "}
-                <span style={{ color: pnlColor(matchingTrade.realized_pnl), fontWeight: 600 }}>
-                  {matchingTrade.realized_pnl >= 0 ? "+" : ""}{matchingTrade.realized_pnl.toFixed(2)}
-                </span>
+                ↳ closed trade #{matchingTrade.id} · net{" "}
+                <span style={{ color: pnlColor(matchingTrade.net_pnl), fontWeight: 600 }}>
+                  {formatSignedDollars(matchingTrade.net_pnl)}
+                </span>{" "}
+                after ${matchingTrade.commission_paid.toFixed(2)} fees
               </span>
             ) : null}
           </div>
@@ -654,9 +665,9 @@ export default function Page() {
             <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)}</div>
             {(!guidedState.guided || showOperatorDetail) ? <><div><strong>Created at:</strong> {selected.created_at}</div><div><strong>Fills:</strong></div>{selected.fills.map((fill, idx) => <div key={idx}>#{idx + 1} {fill.filled_shares} @ {fill.fill_price} ({fill.timestamp})</div>)}</> : null}
             {selected.status === "closed" ? (
-              <div style={{ marginTop: 6, fontWeight: 600, color: closeResults[selected.order_id]?.realized_pnl != null && closeResults[selected.order_id].realized_pnl >= 0 ? "#21c06e" : "#f44336" }}>
+              <div style={{ marginTop: 6, fontWeight: 600, color: closeResults[selected.order_id]?.net_pnl != null && closeResults[selected.order_id].net_pnl >= 0 ? "#21c06e" : "#f44336" }}>
                 {closeResults[selected.order_id]
-                  ? `Closed — P&L: ${closeResults[selected.order_id].realized_pnl >= 0 ? "+" : ""}$${Math.abs(closeResults[selected.order_id].realized_pnl).toFixed(2)}`
+                  ? `Closed — Net P&L: ${formatSignedDollars(closeResults[selected.order_id].net_pnl)} (gross ${formatSignedDollars(closeResults[selected.order_id].gross_pnl)}, fees $${closeResults[selected.order_id].commission_paid.toFixed(2)})`
                   : "Position closed"}
               </div>
             ) : (
@@ -689,7 +700,9 @@ export default function Page() {
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>qty</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>entry → exit</th>
-                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>realized P&amp;L</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>gross P&amp;L</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fees</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>net P&amp;L</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>hold</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>reason</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>closed</th>
@@ -706,8 +719,12 @@ export default function Page() {
                     <td><span className={`op-side-badge is-${t.side.toLowerCase()}`}>{t.side}</span></td>
                     <td>{t.qty}</td>
                     <td>{t.entry_price.toFixed(2)} → {t.exit_price != null ? t.exit_price.toFixed(2) : "—"}</td>
-                    <td style={{ color: pnlColor(t.realized_pnl), fontWeight: 600 }}>
-                      {t.realized_pnl >= 0 ? "+" : ""}{t.realized_pnl.toFixed(2)}
+                    <td style={{ color: pnlColor(t.gross_pnl), fontWeight: 600 }}>
+                      {formatSignedDollars(t.gross_pnl)}
+                    </td>
+                    <td>${t.commission_paid.toFixed(2)}</td>
+                    <td style={{ color: pnlColor(t.net_pnl), fontWeight: 600 }}>
+                      {formatSignedDollars(t.net_pnl)}
                     </td>
                     <td>{formatHoldDuration(t.hold_seconds)}</td>
                     <td>{t.close_reason ?? "—"}</td>
@@ -729,7 +746,7 @@ export default function Page() {
                 if (reopenable && reopeningTradeId === t.id) {
                   tradeRows.push(
                     <tr key={`${t.id}-reopen-confirm`}>
-                      <td colSpan={9} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
+                      <td colSpan={11} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                           <span style={{ fontSize: "0.9rem" }}>Are you sure? This cannot be undone.</span>
                           <button

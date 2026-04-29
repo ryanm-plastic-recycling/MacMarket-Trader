@@ -13,7 +13,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
 Tests: pytest 210, vitest 99, Playwright 31. tsc clean.
-Active passes: none.
+Active passes: Phase 7 started early — commission-aware paper P&L credibility.
 
 ## Completed Phases
 
@@ -66,13 +66,19 @@ Active passes: none.
 ## Upcoming Phases
 
 ### Phase 7 — Brokerage fees + commission modeling
-- `gross_pnl` / `net_pnl` split in `paper_trades` table
-- Per-contract options commission (default `$0.65/contract`)
-- Per-trade equity commission (default `$0` — commission-free is the modern default)
-- Commission settings exposed in user Settings page
-- Backend: `gross_pnl` and `net_pnl` fields on `paper_trades`;
-  `commission_per_contract` and `commission_per_trade` on `app_users`
-  (env fallback defaults via `settings.*`)
+- Started early in repo:
+  `gross_pnl` / `net_pnl` split in `paper_trades`
+- Started early in repo:
+  per-trade equity commission (default `$0`) applied to paper close math
+- Started early in repo:
+  commission settings exposed in user Settings page
+- Started early in repo:
+  backend fields on `paper_trades` and per-user `commission_per_trade` /
+  `commission_per_contract` on `app_users` with env fallback defaults
+- Still open:
+  per-contract options commission parity in options replay / paper lifecycle
+- Still open:
+  broader fee modeling beyond current equity paper close flows
 
 ### Phase 8 — Options execution (research → paper parity)
 - 8A: Options replay — historical P&L tracking for multi-leg structures using
@@ -159,7 +165,7 @@ Active passes: none.
 3. `/recommendations?guided=1&recommendation=…` → "Make active" auto-advances.
 4. `/replay-runs?guided=1&…` → "Run replay now" auto-advances if stageable.
 5. `/orders?guided=1&…` → "Stage paper order now" → blotter with lineage.
-6. Close position → realized P&L; reopen within 5 min if needed.
+6. Close position → gross/net P&L with fees; reopen within 5 min if needed.
 
 ## LLM role
 **Today:** extract events, summarize catalysts, explain context. Engines

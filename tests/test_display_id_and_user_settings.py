@@ -167,6 +167,34 @@ def test_patch_user_settings_updates_risk_dollars_per_trade() -> None:
     assert me["risk_dollars_per_trade"] == 2500.0
 
 
+def test_user_me_and_patch_settings_support_commission_fields() -> None:
+    _seed_approved_user()
+
+    me = client.get("/user/me", headers=_USER_AUTH)
+    assert me.status_code == 200, me.text
+    me_body = me.json()
+    assert me_body["commission_per_trade"] is None
+    assert me_body["commission_per_trade_default"] == settings.commission_per_trade
+    assert me_body["commission_per_contract"] is None
+    assert me_body["commission_per_contract_default"] == settings.commission_per_contract
+
+    resp = client.patch(
+        "/user/settings",
+        headers=_USER_AUTH,
+        json={"commission_per_trade": 1.25, "commission_per_contract": 0.95},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["commission_per_trade"] == 1.25
+    assert body["commission_per_trade_default"] == settings.commission_per_trade
+    assert body["commission_per_contract"] == 0.95
+    assert body["commission_per_contract_default"] == settings.commission_per_contract
+
+    me = client.get("/user/me", headers=_USER_AUTH).json()
+    assert me["commission_per_trade"] == 1.25
+    assert me["commission_per_contract"] == 0.95
+
+
 # ---------------------------------------------------------------------------
 # Track B — validation: <= 0, > 50000, non-numeric, missing key
 # ---------------------------------------------------------------------------
@@ -201,6 +229,28 @@ def test_patch_user_settings_rejects_non_numeric() -> None:
         json={"risk_dollars_per_trade": "lots"},
     )
     assert resp.status_code == 400, resp.text
+
+
+def test_patch_user_settings_rejects_invalid_commission_per_trade() -> None:
+    _seed_approved_user()
+    for payload in (
+        {"commission_per_trade": -0.01},
+        {"commission_per_trade": 1000.01},
+        {"commission_per_trade": "fees"},
+    ):
+        resp = client.patch("/user/settings", headers=_USER_AUTH, json=payload)
+        assert resp.status_code == 400, resp.text
+
+
+def test_patch_user_settings_rejects_invalid_commission_per_contract() -> None:
+    _seed_approved_user()
+    for payload in (
+        {"commission_per_contract": -0.01},
+        {"commission_per_contract": 100.01},
+        {"commission_per_contract": "contracts"},
+    ):
+        resp = client.patch("/user/settings", headers=_USER_AUTH, json=payload)
+        assert resp.status_code == 400, resp.text
 
 
 def test_patch_user_settings_requires_field() -> None:
