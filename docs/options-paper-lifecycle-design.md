@@ -11,12 +11,12 @@ lifecycle support.
 `8D1` design, `8D2` schema foundation, `8D3` repository/service contracts,
 `8D4` open paper option structure behavior, `8D5` manual close paper
 option structure behavior, `8D6` `commission_per_contract` net-P&L
-modeling, and `8D7` frontend operator UI are now implemented. The
-dedicated options persistence branch exists and now authorizes supported
-defined-risk structures to open and close manually through
-options-specific paper-only backend paths, with Recommendations hosting the
-first operator UI for the persisted paper lifecycle. It still does not
-authorize:
+modeling, `8D7` frontend operator UI, and `8D8` closure review/tests/docs
+alignment are now implemented. The dedicated options persistence branch
+exists and now authorizes supported defined-risk structures to open and
+close manually through options-specific paper-only backend paths, with
+Recommendations hosting the first operator UI for the persisted paper
+lifecycle. It still does not authorize:
 
 - options order staging
 - expiration settlement behavior
@@ -895,6 +895,34 @@ Complete when:
 - equity regressions pass
 - supported structures and deferred items are documented accurately
 
+Implemented now:
+
+- backend lifecycle tests pass for schema, repository contracts, open path,
+  manual close path, commission modeling, payoff math, replay preview
+  contract, and equity regression anchors
+- frontend tests pass for settings commission copy, replay-preview
+  separation, paper open/manual-close surfaces, proxy routes, and safe
+  missing-value rendering
+- roadmap/design docs now reflect `8D1` through `8D8` accurately for the
+  current paper-only manual-close scope
+- a short manual smoke checklist now exists for operator verification
+
+Manual smoke checklist:
+
+1. Set `commission_per_contract` in Settings and confirm the guardrail copy
+   says "Not per share. Do not multiply by 100."
+2. Open Recommendations in options mode and confirm the research preview
+   loads with expected range context and no equity queue/promote actions.
+3. Run Replay payoff preview and confirm it remains read-only and
+   non-persisted.
+4. Open paper option structure and confirm the page shows estimated opening
+   and open + close commissions.
+5. Enter exit premium per leg and manually close the paper structure.
+6. Verify gross P&L, opening commissions, closing commissions, total
+   commissions, and net P&L.
+7. Verify the page stays paper-only and does not present live-trading or
+   brokerage-routing language.
+
 ## Guardrails
 
 - no equity lifecycle breakage
@@ -904,6 +932,8 @@ Complete when:
   - `8D4` open-only paper structure
   - `8D5` manual close paper structure
   - `8D6` contract-commission net-P&L modeling
+  - `8D7` compact Recommendations-side operator UI
+  - `8D8` closure/docs/test alignment
 - no expiration settlement until a later approved slice
 - no automatic assignment or exercise in the early lifecycle pass
 - no naked shorts early
@@ -912,11 +942,10 @@ Complete when:
 
 ## Recommended implementation prompt after this checkpoint
 
-After the completed `8D6` contract-commission paper lifecycle slice, the safest next
-implementation prompt is:
+After the completed `8D8` closure pass, the safest next implementation prompt
+is:
 
-- `Implement 8D7 only: add operator UI for the dedicated paper options
-  lifecycle branch, reading the existing open/manual-close persistence plus
-  gross/net commission fields, with no expiration settlement mode, no live
-  routing, and no changes to existing equity Orders behavior beyond
-  mode-aware coexistence.`
+- `Implement 8E1 only: add compact options risk-summary UX for supported
+  paper-only structures, covering legs, debit/credit, max profit/loss,
+  breakevens, DTE, and paper-only caveats, with no expiration settlement,
+  no assignment/exercise automation, and no live-routing changes.`

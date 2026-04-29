@@ -26,4 +26,25 @@ describe("/api/user/options/paper-structures/[positionId]/close route", () => {
       }),
     );
   });
+
+  it("passes through blocked close responses safely", async () => {
+    proxyWorkflowRequestMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: "option_position_not_open" }), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const { POST } = await import("@/app/api/user/options/paper-structures/[positionId]/close/route");
+
+    const response = await POST(
+      new Request("http://localhost/api/user/options/paper-structures/42/close", {
+        method: "POST",
+        body: JSON.stringify({ settlement_mode: "manual_close" }),
+      }),
+      { params: Promise.resolve({ positionId: "42" }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ detail: "option_position_not_open" });
+  });
 });

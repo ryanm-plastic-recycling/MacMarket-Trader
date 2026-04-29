@@ -92,7 +92,9 @@ describe("OptionsReplayPreviewPanel", () => {
     expect(html).toContain("$400.00");
     expect(html).toContain("$104.00");
     expect(html).toContain("Expiration payoff table");
+    expect(html).toContain("Read-only boundary");
     expect(html).toContain("$0.00");
+    expect(html).not.toContain("Execution disabled");
     expect(html).not.toContain("Promote selected queue candidate");
     expect(html).not.toContain("Go to Replay step");
     expect(html).not.toContain("Go to Paper Order step");
@@ -235,9 +237,11 @@ describe("OptionsResearchPreview", () => {
     expect(html).toContain("Paper option lifecycle");
     expect(html).toContain("Open paper option structure");
     expect(html).toContain("Paper-only options lifecycle");
+    expect(html).toContain("Persisted paper position");
     expect(html).toContain("Not per share. Do not multiply by 100.");
     expect(html).toContain("Total options commission = commission per contract x contracts x legs x open/close events.");
     expect(html).toContain("Example: $0.65 commission, 1 iron condor, 4 legs, open + close = $0.65 x 1 x 4 x 2 = $5.20 total estimated commission.");
+    expect(html).not.toContain("broker orders");
     expect(html).not.toContain("Go to Replay step");
     expect(html).not.toContain("Go to Paper Order step");
   });
@@ -409,6 +413,7 @@ describe("OptionsPaperLifecyclePanel", () => {
     expect(html).toContain("$297.40");
     expect(html).toContain("$2.60");
     expect(html).toContain("Commission is per contract per leg, not multiplied by 100.");
+    expect(html).not.toContain("Order #");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
     expect(html).not.toContain("NaN");

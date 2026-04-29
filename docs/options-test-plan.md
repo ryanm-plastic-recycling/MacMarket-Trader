@@ -152,6 +152,7 @@ Required now for `8D7` frontend operator UI:
 - same-origin frontend proxy tests cover:
   - open route
   - close route
+  - success and failure pass-through behavior
 - helper tests cover:
   - paper open request shaping
   - commission estimate math
@@ -160,6 +161,9 @@ Required now for `8D7` frontend operator UI:
   - per-leg exit premium inputs appear
   - gross/commission/net close summary renders safely
   - missing values remain `Unavailable` or `-`
+  - replay preview stays visually distinct from the persisted paper lifecycle
+  - operator-facing paper lifecycle copy avoids live-routing, brokerage, and
+    equity staging language
 
 Required later for broader options paper lifecycle UI:
 
@@ -181,7 +185,8 @@ Required later for operator risk UX:
 Phase 8 should continue to prove:
 
 - options mode does not call queue/promote routes in 8B or 8C
-- options mode does not expose order/staging CTAs before 8D
+- options mode does not expose equity staging/order CTAs outside the dedicated
+  8D paper lifecycle panel
 - options mode does not expose live-routing language
 
 If dedicated options replay preview routes are added later, add tests proving:
@@ -202,6 +207,24 @@ If dedicated options replay preview routes are added later, add tests proving:
 - options lifecycle tests pass
 - options lifecycle UI tests pass
 - equity paper workflow regressions pass
+
+## Manual smoke checklist
+
+Use this short manual pass when closing the current `8D` scope:
+
+1. Set `commission_per_contract` in Settings and confirm the page says "Not
+   per share. Do not multiply by 100."
+2. Open Recommendations in options mode and confirm the research preview loads
+   with expected range context.
+3. Run Replay payoff preview and confirm it stays read-only and
+   non-persisted.
+4. Open paper option structure and verify the page shows estimated opening and
+   open + close commissions.
+5. Enter exit premium per leg and manually close the paper structure.
+6. Verify gross P&L, opening commissions, closing commissions, total
+   commissions, and net P&L.
+7. Verify the page stays paper-only and does not present live-trading or
+   brokerage-routing language.
 
 ### 8E gate
 

@@ -11,8 +11,13 @@ first slice.
 
 Current implementation note:
 
-- `8D7` now ships the first paper-options operator UI inside Recommendations
-- that UI is intentionally compact and paper-only
+- `8D7` and `8D8` now close the first paper-options operator UI scope inside
+  Recommendations
+- the replay payoff preview stays visibly read-only/non-persisted and the
+  paper lifecycle panel stays visibly separate and paper-only
+- commission-per-contract guardrails now appear in both Settings and the
+  paper lifecycle panel, explicitly stating that commission is not multiplied
+  by 100
 - broader Orders dashboard parity remains deferred
 
 ## UX goals

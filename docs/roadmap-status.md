@@ -12,13 +12,14 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 133, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 135, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
-Phase 8D7 operator UI is complete for the current paper-only manual-close
-options paper lifecycle scope; expiration settlement, broader Orders parity,
-and final 8D closure remain deferred.
+Phase 8D is complete for the current paper-only manual-close options paper
+lifecycle scope, including dedicated persistence, repository/service
+contracts, open/manual-close behavior, contract-commission net P&L, frontend
+operator UI, and closure audit/docs alignment.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -165,10 +166,10 @@ deferred to later phases and do not block Phase 8 planning.
   `8A` complete, `8B` complete for the current non-persisted research-only
   scope, `8C` complete for the current read-only, non-persisted
   replay-preview scope, `8D1` / `8D2` / `8D3` / `8D4` / `8D5` / `8D6` /
-  `8D7` complete for design, schema, repository/service contracts,
+  `8D7` / `8D8` complete for design, schema, repository/service contracts,
   open/manual-close paper lifecycle behavior, contract-commission net-P&L
-  modeling, and frontend operator UI, and `8D8` / `8E` / `8F` remain
-  planned. Dedicated
+  modeling, frontend operator UI, and closure audit/docs alignment. `8E` /
+  `8F` remain planned. Dedicated
   options persistence tables, internal repository contracts, and open/manual
   close paper lifecycle paths now exist, the manual-close path now stores
   contract-commission-aware net P&L, and Recommendations now hosts a
@@ -223,8 +224,9 @@ deferred to later phases and do not block Phase 8 planning.
   `8D1` design checkpoint, `8D2` schema/migration foundation, `8D3`
   repository/service contracts, `8D4` open paper option structure behavior,
   `8D5` manual close paper option structure behavior, `8D6`
-  `commission_per_contract` net-P&L modeling, and `8D7` frontend operator UI
-  are complete; `8D8` remains deferred
+  `commission_per_contract` net-P&L modeling, `8D7` frontend operator UI,
+  and `8D8` closure audit/docs alignment are complete for the current
+  paper-only manual-close scope
 - 8D acceptance target:
   supported defined-risk structures can move through an options-specific paper
   lifecycle with explicit leg summaries, contract-multiplier math,
@@ -250,14 +252,20 @@ deferred to later phases and do not block Phase 8 planning.
   and replay/order behavior untouched; Recommendations now hosts a separate
   paper-only options lifecycle panel with same-origin open/close proxies,
   explicit commission-per-contract formula guidance, estimated opening/open +
-  close commission visibility, and in-memory manual close inputs/results for
-  the newly opened position only
+  close commission visibility, in-memory manual close inputs/results for
+  the newly opened position only, and closure-reviewed operator wording that
+  keeps replay preview separate from persisted paper lifecycle actions
 - 8D still deferred:
-  expiration settlement mode, broader Orders dashboard parity for durable
-  options positions/trades, and final 8D closure/docs pass
+  expiration settlement mode and broader Orders dashboard parity for durable
+  options positions/trades
 - 8D not included:
   naked short options, early partial fills, assignment/exercise automation, or
   live brokerage execution
+- 8D manual smoke checklist:
+  set `commission_per_contract` in Settings, open Recommendations in options
+  mode, review research preview, run replay payoff preview, open paper
+  option structure, manually close with per-leg exit premiums, verify
+  gross/commission/net math, and confirm no live-trading language appears
 - 8E status:
   planning complete; implementation not started
 - 8E acceptance target:
@@ -494,6 +502,13 @@ diffs. Notable recent inflection points:
   position only. Replay payoff preview remains read-only/non-persisted, equity
   workflows remain untouched, and broader Orders parity plus expiration
   settlement remain deferred.
+- 2026-04-29 — Phase 8D8 closure/audit complete for the current paper-only
+  manual-close scope: roadmap/design/test docs now align on `8D1` through
+  `8D8`, the Recommendations options surfaces now keep replay preview wording
+  distinct from the persisted paper lifecycle wording, proxy tests now cover
+  success plus failure pass-through behavior, and the manual smoke checklist
+  is documented. Expiration settlement, broader Orders parity, and `8E` risk
+  UX remain deferred.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

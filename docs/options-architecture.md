@@ -24,10 +24,12 @@ Current planning state:
   scope: `8C2` pure payoff math, `8C3` read-only replay preview contract,
   `8C4` operator UI preview, and `8C5` closure review/tests/docs alignment
   are complete
-- `8D` advanced: `8D1` design checkpoint, `8D2` dedicated schema
-  foundation, `8D3` repository/service contracts, `8D4` open paper option
-  structure behavior, `8D5` manual close behavior, and `8D6`
-  `commission_per_contract` net-P&L modeling are complete
+- `8D` complete for the current paper-only manual-close lifecycle scope:
+  `8D1` design checkpoint, `8D2` dedicated schema foundation, `8D3`
+  repository/service contracts, `8D4` open paper option structure behavior,
+  `8D5` manual close behavior, `8D6` `commission_per_contract` net-P&L
+  modeling, `8D7` frontend operator UI, and `8D8` closure review/tests/docs
+  alignment are complete
 - `8E` planned only: implementation not started
 - `8F` planned only: closure criteria defined, implementation not started
 
@@ -146,6 +148,8 @@ Status:
 - `8D4` open paper option structure complete
 - `8D5` manual close paper option structure complete
 - `8D6` options contract-commission net-P&L modeling complete
+- `8D7` frontend operator UI complete
+- `8D8` closure review/tests/docs alignment complete
 
 Detailed design:
 
@@ -176,9 +180,16 @@ Planned now:
 - dedicated paper-only open and manual-close lifecycle paths now exist
 - `commission_per_contract` now applies to the dedicated options paper
   lifecycle branch without changing the equity fee model
+- Recommendations now exposes a separate paper-only operator panel for
+  open/manual-close lifecycle actions with explicit commission guardrails
+- the closure pass now includes a manual smoke checklist and explicit audit
+  coverage for user scoping, gross/net commission math, proxy boundaries, and
+  paper-only UX wording
 
 Not complete:
 
+- expiration settlement mode
+- broader Orders dashboard parity for durable option positions/trades
 - naked short options
 - assignment / exercise automation
 - partial fills in the earliest lifecycle slice

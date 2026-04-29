@@ -25,4 +25,24 @@ describe("/api/user/options/paper-structures/open route", () => {
       }),
     );
   });
+
+  it("passes through proxy failures without exposing additional data", async () => {
+    proxyWorkflowRequestMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Authentication required" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const { POST } = await import("@/app/api/user/options/paper-structures/open/route");
+
+    const response = await POST(
+      new Request("http://localhost/api/user/options/paper-structures/open", {
+        method: "POST",
+        body: JSON.stringify({ structure_type: "vertical_debit_spread" }),
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ detail: "Authentication required" });
+  });
 });

@@ -248,8 +248,8 @@ export function OptionsPaperLifecyclePanel({
       </div>
 
       <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
-        Opening here creates a persisted paper option order and paper option position.
-        It stays separate from the read-only replay payoff preview above and never creates broker orders.
+        Opening here records a persisted paper position for the current options structure.
+        It stays separate from the read-only replay payoff preview above.
       </div>
 
       <div className="op-grid-2" style={{ gap: 12, marginBottom: 12 }}>
@@ -331,7 +331,6 @@ export function OptionsPaperLifecyclePanel({
               {closeResult ? "Paper option structure closed" : "Paper option structure open"}
             </StatusBadge>
             <StatusBadge tone="neutral">Position #{openResult.position_id}</StatusBadge>
-            <StatusBadge tone="neutral">Order #{openResult.order_id}</StatusBadge>
           </div>
 
           <div className="op-grid-2" style={{ gap: 12, marginBottom: 12 }}>
@@ -506,13 +505,13 @@ export function OptionsReplayPreviewPanel({
     <Card title="Replay payoff preview">
       <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
         <StatusBadge tone="warn">Options replay preview — expiration payoff only</StatusBadge>
-        <StatusBadge tone="neutral">Execution disabled</StatusBadge>
+        <StatusBadge tone="neutral">Read-only boundary</StatusBadge>
         <StatusBadge tone="neutral">Non-persisted</StatusBadge>
         {preview ? <StatusBadge tone={statusTone}>{formatOptionsReplayToken(preview.status)}</StatusBadge> : null}
       </div>
 
       <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 10 }}>
-        Research only. Does not create replay runs, orders, or positions.
+        Research only. This preview stays read-only and non-persisted.
         {canRunPreview
           ? " Uses the current options structure plus read-only debit/credit assumptions from the research contract."
           : ""}
@@ -533,7 +532,7 @@ export function OptionsReplayPreviewPanel({
           </div>
         ) : (
           <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
-            Read-only operator preview only. Persisted replay, orders, and paper positions remain unavailable.
+            Read-only operator preview only. Use the separate paper lifecycle panel below for persisted paper-state actions.
           </div>
         )}
       </div>
@@ -706,7 +705,7 @@ export function OptionsResearchPreview({
           <StatusBadge tone="neutral">{setup.workflow_source}</StatusBadge>
         </div>
         <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55 }}>
-          {setup.operator_disclaimer ?? "Options research — paper only. Not execution support."} Recommendation queue, persisted equity replay runs, and broker-facing order actions remain intentionally unavailable in options mode. Replay payoff preview below stays read-only, while the paper option lifecycle panel remains explicitly paper-only.
+          {setup.operator_disclaimer ?? "Options research — paper only. Not execution support."} Recommendation queue and persisted equity replay flows remain intentionally unavailable in options mode. Replay payoff preview below stays read-only, while the paper option lifecycle panel records a separate paper-only position.
         </div>
       </Card>
 
