@@ -1,9 +1,15 @@
 "use client";
 
+import React from "react";
 import { useEffect, useState } from "react";
 
 import { Card, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { fetchWorkflowApi } from "@/lib/api-client";
+import {
+  OPTIONS_COMMISSION_EXAMPLE_TEXT,
+  OPTIONS_COMMISSION_FORMULA_TEXT,
+  OPTIONS_COMMISSION_NOT_PER_SHARE_TEXT,
+} from "@/lib/recommendations";
 
 type UserMe = {
   id: number;
@@ -162,7 +168,7 @@ export default function SettingsPage() {
             />
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>Options commission / contract ($)</span>
+            <span>Options commission per contract ($)</span>
             <input
               type="number"
               min={COMMISSION_PER_CONTRACT_MIN}
@@ -178,7 +184,19 @@ export default function SettingsPage() {
           </button>
         </div>
         <div style={{ marginTop: 8, fontSize: "0.82rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
-          Risk per trade applies to new recommendations only. Equity commission is applied to new paper-trade close calculations. Options commission is stored now for Phase 8 parity work and does not yet affect current equity-only close flows.
+          Risk per trade applies to new recommendations only. Equity commission per trade applies to the current equity paper close workflow only.
+        </div>
+        <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--op-border, #1e2d3d)", background: "rgba(18, 28, 40, 0.35)" }}>
+          <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>Options commission guardrails</div>
+          <div style={{ fontSize: "0.82rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+            {OPTIONS_COMMISSION_NOT_PER_SHARE_TEXT}
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+            {OPTIONS_COMMISSION_FORMULA_TEXT}
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+            {OPTIONS_COMMISSION_EXAMPLE_TEXT}
+          </div>
         </div>
         <div style={{ marginTop: 10, display: "grid", gap: 4, fontSize: "0.82rem", color: "var(--op-muted, #7a8999)" }}>
           {effectiveRisk != null ? (
@@ -193,7 +211,7 @@ export default function SettingsPage() {
           ) : null}
           {effectiveCommissionPerContract != null ? (
             <div>
-              Options commission / contract: {usingDefaultCommissionPerContract ? "default" : "override"} <strong>${Number(effectiveCommissionPerContract).toFixed(2)}</strong>
+              Options commission per contract: {usingDefaultCommissionPerContract ? "default" : "override"} <strong>${Number(effectiveCommissionPerContract).toFixed(2)}</strong>
             </div>
           ) : null}
         </div>

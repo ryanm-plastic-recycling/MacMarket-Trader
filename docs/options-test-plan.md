@@ -136,14 +136,36 @@ Equity regression tests required alongside 8D:
 
 ## 8D frontend tests
 
-Required later for options paper lifecycle UI:
+Required now for `8D7` frontend operator UI:
 
-- leg-aware paper ticket rendering
-- debit/credit display
-- commission display
-- gross/net P&L display
+- settings page renders explicit `commission_per_contract` guardrails:
+  - per contract
+  - not per share
+  - do not multiply by 100
+  - formula plus compact example
+- Recommendations options research preview renders a separate paper option
+  lifecycle panel
+- replay payoff preview remains visually distinct from persisted paper
+  lifecycle actions
+- paper option open UI disables safely for unsupported or incomplete
+  structures
+- same-origin frontend proxy tests cover:
+  - open route
+  - close route
+- helper tests cover:
+  - paper open request shaping
+  - commission estimate math
+  - no `x100` commission mistake
+- if manual close UI is rendered:
+  - per-leg exit premium inputs appear
+  - gross/commission/net close summary renders safely
+  - missing values remain `Unavailable` or `-`
+
+Required later for broader options paper lifecycle UI:
+
+- durable Orders parity for open option positions/trades
 - expiration-status display
-- paper-only warning display
+- broader multi-position operator workflow coverage
 
 ## 8E frontend tests
 

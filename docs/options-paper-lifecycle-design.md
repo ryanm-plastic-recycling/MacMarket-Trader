@@ -10,11 +10,13 @@ lifecycle support.
 
 `8D1` design, `8D2` schema foundation, `8D3` repository/service contracts,
 `8D4` open paper option structure behavior, `8D5` manual close paper
-option structure behavior, and `8D6` `commission_per_contract` net-P&L
-modeling are now implemented. The dedicated options
-persistence branch exists and now authorizes supported defined-risk
-structures to open and close manually through options-specific paper-only
-backend paths. It still does not authorize:
+option structure behavior, `8D6` `commission_per_contract` net-P&L
+modeling, and `8D7` frontend operator UI are now implemented. The
+dedicated options persistence branch exists and now authorizes supported
+defined-risk structures to open and close manually through
+options-specific paper-only backend paths, with Recommendations hosting the
+first operator UI for the persisted paper lifecycle. It still does not
+authorize:
 
 - options order staging
 - expiration settlement behavior
@@ -356,7 +358,8 @@ Current guardrails:
 - naked short single-leg structures remain blocked
 - multi-expiration structures remain blocked
 - no expiration settlement exists yet
-- no frontend operator UI exists yet
+- the `8D4` slice itself does not require frontend UI; operator UI is added
+  later in `8D7`
 
 ## 8D5 manual close paper option structure implemented now
 
@@ -393,7 +396,8 @@ Current guardrails:
 - no recommendation rows are created
 - no staged options orders are created
 - no expiration settlement exists yet
-- no frontend operator UI exists yet
+- the `8D5` slice itself does not require frontend UI; operator UI is added
+  later in `8D7`
 
 ## 8D6 `commission_per_contract` net P&L implemented now
 
@@ -597,6 +601,68 @@ These are future payload sketches only. They are not approved for runtime yet.
 
 The current `8D6` implementation uses `commission_per_contract` only for the
 dedicated options paper lifecycle branch.
+
+## 8D7 frontend operator UI implemented now
+
+Recommendations now hosts the first operator-facing UI for the dedicated
+options paper lifecycle branch.
+
+Implemented now:
+
+- same-origin frontend proxies for:
+  - `POST /user/options/paper-structures/open`
+  - `POST /user/options/paper-structures/{position_id}/close`
+- Recommendations-side paper option lifecycle panel inside the options
+  research preview
+- explicit separation between:
+  - read-only replay payoff preview
+  - persisted paper option lifecycle actions
+- settings-page commission guardrails for `commission_per_contract`
+- in-memory manual close inputs/results for the newly opened paper option
+  position only
+
+Current operator behavior:
+
+- operators can open a supported paper option structure from the existing
+  options research preview
+- operators see:
+  - structure summary
+  - normalized legs
+  - net debit/credit
+  - max profit/loss
+  - breakevens
+  - estimated opening commissions
+  - estimated open + close commissions
+- operators can manually close the newly opened paper option position by
+  entering one exit premium per leg
+- close results render:
+  - gross P&L
+  - opening commissions
+  - closing commissions
+  - total commissions
+  - net P&L
+  - leg-level gross/commission/net detail
+
+Current commission guardrails:
+
+- settings explicitly label commission as "per contract"
+- settings and Recommendations both say:
+  - not per share
+  - do not multiply by 100
+- settings and Recommendations both show:
+  - commission formula:
+    `commission per contract x contracts x legs x open/close events`
+  - a compact iron-condor example
+- current structure estimates stay paper-only and do not imply broker routing
+
+Current guardrails:
+
+- replay payoff preview remains read-only and non-persisted
+- paper open/close UI remains paper-only and broker-order-free
+- no expiration-settlement UI exists yet
+- no assignment/exercise UI exists yet
+- broader Orders dashboard parity for durable option positions/trades remains
+  deferred
 
 Current rules:
 
@@ -810,8 +876,12 @@ Must not change:
 
 Complete when:
 
-- Orders exposes the options paper lifecycle clearly
+- Recommendations exposes the options paper lifecycle clearly for the current
+  paper-only scope
+- settings make `commission_per_contract` unmistakable as per contract, not
+  per share or contract multiplier
 - read-only replay preview remains distinct from persisted paper lifecycle
+- paper open/manual-close actions stay visibly paper-only
 
 Must not change:
 

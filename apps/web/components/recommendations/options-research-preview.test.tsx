@@ -27,6 +27,7 @@ vi.mock("@/components/operator-ui", async () => {
 });
 
 import {
+  OptionsPaperLifecyclePanel,
   OptionsReplayPreviewPanel,
   OptionsResearchPreview,
 } from "@/components/recommendations/options-research-preview";
@@ -189,6 +190,225 @@ describe("OptionsResearchPreview", () => {
 
     expect(html).toContain("Expected range is research context only. It does not change expiration payoff math or enable execution.");
     expect(html).toContain("missing_iv_snapshot");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+  });
+
+  it("renders paper lifecycle guardrails separately from replay preview", () => {
+    const html = renderToStaticMarkup(
+      <OptionsResearchPreview
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "2026-05-15",
+            dte: 16,
+            net_credit: 2.5,
+            max_profit: 250,
+            max_loss: 250,
+            breakeven_low: 92.5,
+            breakeven_high: 107.5,
+            legs: [
+              { action: "buy", right: "put", strike: 90, label: "Long put wing" },
+              { action: "sell", right: "put", strike: 95, label: "Short put body" },
+              { action: "sell", right: "call", strike: 105, label: "Short call body" },
+              { action: "buy", right: "call", strike: 110, label: "Long call wing" },
+            ],
+          },
+          expected_range: null,
+          options_chain_preview: null,
+        }}
+        loading={false}
+        error={null}
+        chartPayload={null}
+        chartStorageKey="test-options-preview"
+        chartSourceLabel="polygon"
+        chartBlockedByFallback={false}
+      />,
+    );
+
+    expect(html).toContain("Replay payoff preview");
+    expect(html).toContain("Paper option lifecycle");
+    expect(html).toContain("Open paper option structure");
+    expect(html).toContain("Paper-only options lifecycle");
+    expect(html).toContain("Not per share. Do not multiply by 100.");
+    expect(html).toContain("Total options commission = commission per contract x contracts x legs x open/close events.");
+    expect(html).toContain("Example: $0.65 commission, 1 iron condor, 4 legs, open + close = $0.65 x 1 x 4 x 2 = $5.20 total estimated commission.");
+    expect(html).not.toContain("Go to Replay step");
+    expect(html).not.toContain("Go to Paper Order step");
+  });
+});
+
+describe("OptionsPaperLifecyclePanel", () => {
+  const setup = {
+    symbol: "AAPL",
+    market_mode: "options",
+    workflow_source: "polygon",
+    strategy: "Bull Call Debit Spread",
+    option_structure: {
+      type: "bull_call_debit_spread",
+      expiration: "2026-05-16",
+      dte: 17,
+      net_debit: 2.4,
+      max_profit: 760,
+      max_loss: 240,
+      breakeven_low: 207.4,
+      legs: [
+        { action: "buy", right: "call", strike: 205, label: "Long call" },
+        { action: "sell", right: "call", strike: 215, label: "Short call" },
+      ],
+    },
+    expected_range: null,
+    options_chain_preview: null,
+  };
+
+  it("renders a disabled message for unsupported or incomplete paper structures", () => {
+    const html = renderToStaticMarkup(
+      <OptionsPaperLifecyclePanel
+        setup={{
+          ...setup,
+          option_structure: {
+            type: "covered_call",
+            legs: [{ action: "sell", right: "call", strike: 210, label: "Short call" }],
+          },
+        }}
+        loadCommissionOnMount={false}
+      />,
+    );
+
+    expect(html).toContain("Paper option open currently supports long calls/puts, vertical debit spreads, and iron condors only.");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+  });
+
+  it("renders manual close results with gross, commissions, and net values", () => {
+    const html = renderToStaticMarkup(
+      <OptionsPaperLifecyclePanel
+        setup={setup}
+        initialCommissionPerContract={0.65}
+        initialOpenResult={{
+          order_id: 11,
+          position_id: 12,
+          market_mode: "options",
+          structure_type: "vertical_debit_spread",
+          underlying_symbol: "AAPL",
+          status: "open",
+          order_status: "opened",
+          position_status: "open",
+          opening_net_debit: 2.4,
+          opening_net_credit: null,
+          commission_per_contract: 0.65,
+          opening_commissions: 1.3,
+          max_profit: 760,
+          max_loss: 240,
+          breakevens: [207.4],
+          execution_enabled: false,
+          persistence_enabled: true,
+          paper_only: true,
+          operator_disclaimer: "paper only",
+          order_created_at: "2026-04-29T13:00:00Z",
+          position_opened_at: "2026-04-29T13:00:00Z",
+          legs: [
+            {
+              id: 101,
+              position_id: 12,
+              action: "buy",
+              right: "call",
+              strike: 205,
+              expiration: "2026-05-16",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 4.2,
+              exit_premium: null,
+              status: "open",
+              label: "Long call",
+            },
+            {
+              id: 102,
+              position_id: 12,
+              action: "sell",
+              right: "call",
+              strike: 215,
+              expiration: "2026-05-16",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 1.8,
+              exit_premium: null,
+              status: "open",
+              label: "Short call",
+            },
+          ],
+        }}
+        initialCloseResult={{
+          position_id: 12,
+          trade_id: 22,
+          market_mode: "options",
+          structure_type: "vertical_debit_spread",
+          underlying_symbol: "AAPL",
+          status: "closed",
+          position_status: "closed",
+          settlement_mode: "manual_close",
+          commission_per_contract: 0.65,
+          opening_commissions: 1.3,
+          closing_commissions: 1.3,
+          gross_pnl: 300,
+          net_pnl: 297.4,
+          total_commissions: 2.6,
+          execution_enabled: false,
+          persistence_enabled: true,
+          paper_only: true,
+          operator_disclaimer: "paper only",
+          closed_at: "2026-04-29T15:00:00Z",
+          legs: [
+            {
+              id: 201,
+              trade_id: 22,
+              action: "buy",
+              right: "call",
+              strike: 205,
+              expiration: "2026-05-16",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 4.2,
+              exit_premium: 6.3,
+              leg_gross_pnl: 210,
+              leg_commission: 1.3,
+              leg_net_pnl: 208.7,
+              label: "Long call",
+            },
+            {
+              id: 202,
+              trade_id: 22,
+              action: "sell",
+              right: "call",
+              strike: 215,
+              expiration: "2026-05-16",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 1.8,
+              exit_premium: 0.9,
+              leg_gross_pnl: 90,
+              leg_commission: 1.3,
+              leg_net_pnl: 88.7,
+              label: "Short call",
+            },
+          ],
+        }}
+        loadCommissionOnMount={false}
+      />,
+    );
+
+    expect(html).toContain("Manual paper close recorded");
+    expect(html).toContain("Gross P&amp;L:");
+    expect(html).toContain("$300.00");
+    expect(html).toContain("$297.40");
+    expect(html).toContain("$2.60");
+    expect(html).toContain("Commission is per contract per leg, not multiplied by 100.");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
     expect(html).not.toContain("NaN");

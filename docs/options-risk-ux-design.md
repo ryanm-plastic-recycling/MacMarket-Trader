@@ -9,6 +9,12 @@ This document defines the operator-facing risk UX for future options support.
 It is planning only. It does not require a full charting implementation in the
 first slice.
 
+Current implementation note:
+
+- `8D7` now ships the first paper-options operator UI inside Recommendations
+- that UI is intentionally compact and paper-only
+- broader Orders dashboard parity remains deferred
+
 ## UX goals
 
 - keep options surfaces operator-grade, not retail-broker-like
@@ -111,7 +117,12 @@ Continue to emphasize:
 
 - read-only research context first
 - structure summary and expected range context
-- no execution CTAs until later phases
+- replay payoff preview stays read-only and non-persisted
+- paper option lifecycle actions stay visually separate and explicitly
+  paper-only
+- commission-per-contract guardrails stay visible where paper lifecycle
+  actions appear
+- no broker-order or live-routing CTAs
 
 ### Replay
 
@@ -130,6 +141,7 @@ Later paper-lifecycle UX should add:
 - open/close summaries
 - gross and net P&L
 - expiration status
+- durable options position/trade listing once backend read APIs are added
 
 ## 8E implementation slices
 

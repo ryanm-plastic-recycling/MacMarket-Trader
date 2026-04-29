@@ -181,6 +181,154 @@ export type OptionsReplayPreviewAvailability = {
   reason: string | null;
 };
 
+export type OptionsPaperStructureType =
+  | "long_call"
+  | "long_put"
+  | "vertical_debit_spread"
+  | "iron_condor";
+
+export type OptionsPaperLegRequest = {
+  action: "buy" | "sell";
+  right: "call" | "put";
+  strike: number;
+  expiration: string;
+  premium: number;
+  quantity: number;
+  multiplier: number;
+  label?: string | null;
+};
+
+export type OptionsPaperOpenRequest = {
+  market_mode: "options";
+  structure_type: OptionsPaperStructureType;
+  underlying_symbol: string;
+  expiration?: string | null;
+  legs: OptionsPaperLegRequest[];
+  net_debit?: number | null;
+  net_credit?: number | null;
+  max_profit?: number | null;
+  max_loss?: number | null;
+  breakevens: number[];
+  notes?: string | null;
+};
+
+export type OptionsPaperPositionLeg = {
+  id: number;
+  position_id: number;
+  action: string;
+  right: string;
+  strike: number;
+  expiration: string;
+  quantity: number;
+  multiplier: number;
+  entry_premium: number;
+  exit_premium?: number | null;
+  status: string;
+  label?: string | null;
+};
+
+export type OptionsPaperOpenResponse = {
+  order_id: number;
+  position_id: number;
+  market_mode: "options";
+  structure_type: string;
+  underlying_symbol: string;
+  status: string;
+  order_status: string;
+  position_status: string;
+  opening_net_debit?: number | null;
+  opening_net_credit?: number | null;
+  commission_per_contract?: number | null;
+  opening_commissions?: number | null;
+  max_profit?: number | null;
+  max_loss?: number | null;
+  breakevens?: number[] | null;
+  execution_enabled: boolean;
+  persistence_enabled: boolean;
+  paper_only: boolean;
+  operator_disclaimer?: string | null;
+  legs: OptionsPaperPositionLeg[];
+  order_created_at: string;
+  position_opened_at: string;
+};
+
+export type OptionsPaperCloseLegRequest = {
+  position_leg_id: number;
+  exit_premium: number;
+};
+
+export type OptionsPaperCloseRequest = {
+  settlement_mode: "manual_close";
+  legs: OptionsPaperCloseLegRequest[];
+  notes?: string | null;
+};
+
+export type OptionsPaperTradeLeg = {
+  id: number;
+  trade_id: number;
+  action: string;
+  right: string;
+  strike: number;
+  expiration: string;
+  quantity: number;
+  multiplier: number;
+  entry_premium?: number | null;
+  exit_premium?: number | null;
+  leg_gross_pnl?: number | null;
+  leg_commission?: number | null;
+  leg_net_pnl?: number | null;
+  label?: string | null;
+};
+
+export type OptionsPaperCloseResponse = {
+  position_id: number;
+  trade_id: number;
+  market_mode: "options";
+  structure_type: string;
+  underlying_symbol: string;
+  status: string;
+  position_status: string;
+  settlement_mode: string;
+  commission_per_contract?: number | null;
+  opening_commissions?: number | null;
+  closing_commissions?: number | null;
+  gross_pnl?: number | null;
+  net_pnl?: number | null;
+  total_commissions?: number | null;
+  execution_enabled: boolean;
+  persistence_enabled: boolean;
+  paper_only: boolean;
+  operator_disclaimer?: string | null;
+  legs: OptionsPaperTradeLeg[];
+  closed_at: string;
+};
+
+export type OptionsPaperOpenAvailability = {
+  request: OptionsPaperOpenRequest | null;
+  reason: string | null;
+};
+
+export type OptionsCommissionSettings = {
+  commission_per_contract: number | null;
+  commission_per_contract_default: number | null;
+};
+
+type NormalizedOptionsStructureLeg = {
+  action: "buy" | "sell";
+  right: "call" | "put";
+  strike: number;
+  premium: number;
+  quantity: number;
+  multiplier: number;
+  label: string | null;
+};
+
+export const OPTIONS_COMMISSION_NOT_PER_SHARE_TEXT = "Not per share. Do not multiply by 100.";
+export const OPTIONS_COMMISSION_FORMULA_TEXT =
+  "Total options commission = commission per contract x contracts x legs x open/close events.";
+export const OPTIONS_COMMISSION_EXAMPLE_TEXT =
+  "Example: $0.65 commission, 1 iron condor, 4 legs, open + close = $0.65 x 1 x 4 x 2 = $5.20 total estimated commission.";
+
 export function parseRecommendationSearchParams(params: URLSearchParams): RecommendationSearchPrefill {
   const rawSymbols = [params.get("symbols") ?? "", params.get("symbol") ?? ""]
     .join(",")
@@ -278,9 +426,17 @@ function normalizeOptionsReplayStructureType(
   }
 }
 
-function buildReplayPreviewLegsFromExplicitPremiums(
+function normalizeOptionsPaperStructureType(
+  value: string | null | undefined,
+): OptionsPaperStructureType | null {
+  const normalized = normalizeOptionsReplayStructureType(value);
+  if (normalized === "custom_defined_risk") return null;
+  return normalized;
+}
+
+function buildNormalizedOptionsLegsFromExplicitPremiums(
   structure: OptionsResearchStructure,
-): OptionsReplayPreviewLegRequest[] | null {
+): NormalizedOptionsStructureLeg[] | null {
   const rawLegs = structure.legs ?? [];
   if (rawLegs.length === 0) return null;
   const mapped = rawLegs.map((leg) => {
@@ -290,22 +446,22 @@ function buildReplayPreviewLegsFromExplicitPremiums(
     const premium = toFiniteNumber(leg.premium);
     if (!action || !right || strike == null || premium == null || premium < 0) return null;
     return {
-      action,
-      right,
+      action: action as "buy" | "sell",
+      right: right as "call" | "put",
       strike,
       premium: roundPreviewNumber(premium),
       quantity: toPositiveInteger(leg.quantity, 1),
       multiplier: toPositiveInteger(leg.multiplier, 100),
       label: typeof leg.label === "string" && leg.label.trim() ? leg.label.trim() : null,
-    } satisfies OptionsReplayPreviewLegRequest;
+    } satisfies NormalizedOptionsStructureLeg;
   });
-  return mapped.every(Boolean) ? (mapped as OptionsReplayPreviewLegRequest[]) : null;
+  return mapped.every(Boolean) ? (mapped as NormalizedOptionsStructureLeg[]) : null;
 }
 
-function buildReplayPreviewLegsFromStructureAssumptions(
+function buildNormalizedOptionsLegsFromStructureAssumptions(
   structure: OptionsResearchStructure,
   structureType: OptionsReplayPreviewStructureType,
-): OptionsReplayPreviewLegRequest[] | null {
+): NormalizedOptionsStructureLeg[] | null {
   const rawLegs = structure.legs ?? [];
   if (rawLegs.length === 0) return null;
 
@@ -315,8 +471,8 @@ function buildReplayPreviewLegsFromStructureAssumptions(
     const strike = toFiniteNumber(leg.strike);
     if (!action || !right || strike == null) return null;
     return {
-      action,
-      right,
+      action: action as "buy" | "sell",
+      right: right as "call" | "put",
       strike,
       quantity: toPositiveInteger(leg.quantity, 1),
       multiplier: toPositiveInteger(leg.multiplier, 100),
@@ -324,9 +480,7 @@ function buildReplayPreviewLegsFromStructureAssumptions(
     };
   });
   if (!mappedBase.every(Boolean)) return null;
-  const baseLegs = mappedBase as Array<
-    Omit<OptionsReplayPreviewLegRequest, "premium"> & { action: string; right: string; strike: number }
-  >;
+  const baseLegs = mappedBase as Array<Omit<NormalizedOptionsStructureLeg, "premium">>;
 
   if (structureType === "vertical_debit_spread") {
     const netDebit = toFiniteNumber(structure.net_debit);
@@ -367,6 +521,27 @@ function buildReplayPreviewLegsFromStructureAssumptions(
   return null;
 }
 
+function buildNormalizedOptionsStructureLegs(
+  structure: OptionsResearchStructure,
+  structureType: OptionsReplayPreviewStructureType,
+): NormalizedOptionsStructureLeg[] | null {
+  return (
+    buildNormalizedOptionsLegsFromExplicitPremiums(structure)
+    ?? buildNormalizedOptionsLegsFromStructureAssumptions(structure, structureType)
+  );
+}
+
+function mapNormalizedLegsToReplayPreviewRequest(
+  legs: NormalizedOptionsStructureLeg[],
+): OptionsReplayPreviewLegRequest[] {
+  return legs.map((leg) => ({ ...leg }));
+}
+
+function extractOptionsStructureBreakevens(structure: OptionsResearchStructure | null | undefined): number[] {
+  const values = [structure?.breakeven_low, structure?.breakeven_high];
+  return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
 export function getOptionsReplayPreviewAvailability(
   setup: OptionsResearchSetup | null | undefined,
 ): OptionsReplayPreviewAvailability {
@@ -391,9 +566,7 @@ export function getOptionsReplayPreviewAvailability(
     };
   }
 
-  const legs =
-    buildReplayPreviewLegsFromExplicitPremiums(structure)
-    ?? buildReplayPreviewLegsFromStructureAssumptions(structure, structureType);
+  const legs = buildNormalizedOptionsStructureLegs(structure, structureType);
 
   if (!legs) {
     return {
@@ -405,7 +578,7 @@ export function getOptionsReplayPreviewAvailability(
   return {
     request: {
       structure_type: structureType,
-      legs,
+      legs: mapNormalizedLegsToReplayPreviewRequest(legs),
       underlying_symbol: normalizeResearchSymbol(setup.symbol),
       expiration: typeof structure.expiration === "string" && structure.expiration.trim() ? structure.expiration.trim() : null,
       notes: ["Premium assumptions derived from the read-only research contract for expiration payoff preview."],
@@ -431,6 +604,164 @@ export async function fetchOptionsReplayPreview(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
+}
+
+export function getOptionsPaperOpenAvailability(
+  setup: OptionsResearchSetup | null | undefined,
+): OptionsPaperOpenAvailability {
+  if (!setup) {
+    return { request: null, reason: "No options research contract loaded." };
+  }
+  if (!isOptionsResearchMode(setup.market_mode)) {
+    return { request: null, reason: "Paper option open is only available for options research mode." };
+  }
+  const structure = setup.option_structure;
+  if (!structure) {
+    return { request: null, reason: "Paper option open requires a visible options structure." };
+  }
+  if (!structure.legs || structure.legs.length === 0) {
+    return { request: null, reason: "Paper option open requires visible option legs." };
+  }
+  const structureType = normalizeOptionsPaperStructureType(structure.type);
+  if (!structureType) {
+    return {
+      request: null,
+      reason: "Paper option open currently supports long calls/puts, vertical debit spreads, and iron condors only.",
+    };
+  }
+  const expiration =
+    typeof structure.expiration === "string" && structure.expiration.trim()
+      ? structure.expiration.trim()
+      : null;
+  if (!expiration) {
+    return { request: null, reason: "Paper option open requires a visible expiration for every leg." };
+  }
+  const normalizedStructureType = normalizeOptionsReplayStructureType(structureType);
+  if (!normalizedStructureType) {
+    return { request: null, reason: "Paper option open structure type is unsupported." };
+  }
+  const legs = buildNormalizedOptionsStructureLegs(structure, normalizedStructureType);
+  if (!legs) {
+    return {
+      request: null,
+      reason: "Paper option open requires complete legs plus usable debit/credit or premium assumptions from the current research contract.",
+    };
+  }
+  return {
+    request: {
+      market_mode: "options",
+      structure_type: structureType,
+      underlying_symbol: normalizeResearchSymbol(setup.symbol) ?? setup.symbol,
+      expiration,
+      legs: legs.map((leg) => ({
+        ...leg,
+        expiration,
+      })),
+      net_debit: toFiniteNumber(structure.net_debit),
+      net_credit: toFiniteNumber(structure.net_credit),
+      max_profit: toFiniteNumber(structure.max_profit),
+      max_loss: toFiniteNumber(structure.max_loss),
+      breakevens: extractOptionsStructureBreakevens(structure),
+      notes: "Derived from the read-only options research contract for persisted paper-only lifecycle preview.",
+    },
+    reason: null,
+  };
+}
+
+export function buildOptionsPaperOpenRequest(
+  setup: OptionsResearchSetup | null | undefined,
+): OptionsPaperOpenRequest | null {
+  return getOptionsPaperOpenAvailability(setup).request;
+}
+
+export async function fetchOptionsPaperOpen(
+  request: OptionsPaperOpenRequest,
+  fetcher: typeof fetchWorkflowApi = fetchWorkflowApi,
+): Promise<NormalizedApiResult<OptionsPaperOpenResponse>> {
+  return fetcher<OptionsPaperOpenResponse>("/api/user/options/paper-structures/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export async function fetchOptionsPaperClose(
+  positionId: number,
+  request: OptionsPaperCloseRequest,
+  fetcher: typeof fetchWorkflowApi = fetchWorkflowApi,
+): Promise<NormalizedApiResult<OptionsPaperCloseResponse>> {
+  return fetcher<OptionsPaperCloseResponse>(`/api/user/options/paper-structures/${positionId}/close`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export async function fetchOptionsCommissionSettings(
+  fetcher: typeof fetchWorkflowApi = fetchWorkflowApi,
+): Promise<NormalizedApiResult<OptionsCommissionSettings>> {
+  return fetcher<OptionsCommissionSettings>("/api/user/me");
+}
+
+export function getEffectiveOptionsCommissionPerContract(
+  value: OptionsCommissionSettings | null | undefined,
+): number | null {
+  const configured = toFiniteNumber(value?.commission_per_contract);
+  if (configured != null && configured >= 0) return configured;
+  const fallback = toFiniteNumber(value?.commission_per_contract_default);
+  if (fallback != null && fallback >= 0) return fallback;
+  return null;
+}
+
+export function estimateOptionsCommissionPerEvent(
+  legs: Array<Pick<OptionsPaperLegRequest | OptionsPaperPositionLeg | OptionsPaperTradeLeg, "quantity">> | null | undefined,
+  commissionPerContract: number | null | undefined,
+): number | null {
+  const commission = toFiniteNumber(commissionPerContract);
+  if (commission == null || commission < 0) return null;
+  const normalizedLegs = (legs ?? []).filter(
+    (leg): leg is Pick<OptionsPaperLegRequest | OptionsPaperPositionLeg | OptionsPaperTradeLeg, "quantity"> =>
+      typeof leg?.quantity === "number" && Number.isFinite(leg.quantity) && leg.quantity > 0,
+  );
+  if (normalizedLegs.length === 0) return null;
+  const totalContracts = normalizedLegs.reduce((sum, leg) => sum + leg.quantity, 0);
+  return roundPreviewNumber(commission * totalContracts);
+}
+
+export function estimateOptionsCommissionForEvents(
+  legs: Array<Pick<OptionsPaperLegRequest | OptionsPaperPositionLeg | OptionsPaperTradeLeg, "quantity">> | null | undefined,
+  commissionPerContract: number | null | undefined,
+  eventCount: number,
+): number | null {
+  const perEvent = estimateOptionsCommissionPerEvent(legs, commissionPerContract);
+  if (perEvent == null) return null;
+  if (!Number.isFinite(eventCount) || eventCount <= 0) return null;
+  return roundPreviewNumber(perEvent * eventCount);
+}
+
+export function describeOptionsCommissionEstimate(args: {
+  commissionPerContract: number | null | undefined;
+  legs: Array<Pick<OptionsPaperLegRequest, "quantity">> | null | undefined;
+  eventCount: number;
+  eventLabel: string;
+}): string | null {
+  const commission = toFiniteNumber(args.commissionPerContract);
+  if (commission == null || commission < 0) return null;
+  const normalizedLegs = (args.legs ?? []).filter(
+    (leg): leg is Pick<OptionsPaperLegRequest, "quantity"> =>
+      typeof leg?.quantity === "number" && Number.isFinite(leg.quantity) && leg.quantity > 0,
+  );
+  if (normalizedLegs.length === 0) return null;
+  const quantities = normalizedLegs.map((leg) => leg.quantity);
+  const uniformContracts = quantities.every((quantity) => quantity === quantities[0]);
+  const eventCount = Math.max(1, Math.round(args.eventCount));
+  const totalCommission = estimateOptionsCommissionForEvents(normalizedLegs, commission, eventCount);
+  if (totalCommission == null) return null;
+  if (uniformContracts) {
+    return `${formatResearchCurrency(commission)} x ${quantities[0]} contract${quantities[0] === 1 ? "" : "s"} x ${normalizedLegs.length} leg${normalizedLegs.length === 1 ? "" : "s"} x ${eventCount} ${args.eventLabel} event${eventCount === 1 ? "" : "s"} = ${formatResearchCurrency(totalCommission)}.`;
+  }
+  const totalContracts = quantities.reduce((sum, quantity) => sum + quantity, 0);
+  return `${formatResearchCurrency(commission)} x ${totalContracts} total contracts across ${normalizedLegs.length} leg${normalizedLegs.length === 1 ? "" : "s"} x ${eventCount} ${args.eventLabel} event${eventCount === 1 ? "" : "s"} = ${formatResearchCurrency(totalCommission)}.`;
 }
 
 export function formatResearchValue(value: unknown, fallback = "Unavailable"): string {

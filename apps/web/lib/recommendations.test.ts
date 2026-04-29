@@ -10,13 +10,20 @@ vi.mock("@/lib/api-client", () => ({
 
 import {
   buildOptionsReplayPreviewRequest,
+  buildOptionsPaperOpenRequest,
   canRenderOptionsResearchChart,
+  describeOptionsCommissionEstimate,
+  estimateOptionsCommissionForEvents,
+  estimateOptionsCommissionPerEvent,
+  fetchOptionsPaperClose,
+  fetchOptionsPaperOpen,
   fetchOptionsReplayPreview,
   formatOptionsLegLabel,
   formatOptionsReplayToken,
   getExpectedRangeReasonText,
   getOptionsChainUnavailableMessage,
   getOptionsLegDisplayLines,
+  getOptionsPaperOpenAvailability,
   getOptionsReplayPreviewAvailability,
   getOptionsReplayPreviewBreakevens,
   getOptionsReplayPreviewPayoffRows,
@@ -294,6 +301,62 @@ describe("research preview helpers", () => {
     expect(request?.legs.map((leg) => leg.premium)).toEqual([0, 1.25, 1.25, 0]);
   });
 
+  it("builds a paper option open request from a supported research structure", () => {
+    const request = buildOptionsPaperOpenRequest({
+      symbol: "AAPL",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Bull Call Debit Spread",
+      option_structure: {
+        type: "bull_call_debit_spread",
+        expiration: "2026-05-16",
+        net_debit: 2.4,
+        max_profit: 7.6,
+        max_loss: 2.4,
+        breakeven_low: 207.4,
+        legs: [
+          { action: "buy", right: "call", strike: 205, label: "long call" },
+          { action: "sell", right: "call", strike: 215, label: "short call" },
+        ],
+      },
+    });
+
+    expect(request).toEqual({
+      market_mode: "options",
+      structure_type: "vertical_debit_spread",
+      underlying_symbol: "AAPL",
+      expiration: "2026-05-16",
+      legs: [
+        {
+          action: "buy",
+          right: "call",
+          strike: 205,
+          expiration: "2026-05-16",
+          premium: 2.4,
+          quantity: 1,
+          multiplier: 100,
+          label: "long call",
+        },
+        {
+          action: "sell",
+          right: "call",
+          strike: 215,
+          expiration: "2026-05-16",
+          premium: 0,
+          quantity: 1,
+          multiplier: 100,
+          label: "short call",
+        },
+      ],
+      net_debit: 2.4,
+      net_credit: null,
+      max_profit: 7.6,
+      max_loss: 2.4,
+      breakevens: [207.4],
+      notes: "Derived from the read-only options research contract for persisted paper-only lifecycle preview.",
+    });
+  });
+
   it("surfaces a disabled reason when the research structure is unsupported or incomplete", () => {
     expect(
       getOptionsReplayPreviewAvailability({
@@ -325,6 +388,25 @@ describe("research preview helpers", () => {
     ).toEqual({
       request: null,
       reason: "Replay payoff preview requires complete legs plus usable debit/credit or premium assumptions from the current research contract.",
+    });
+
+    expect(
+      getOptionsPaperOpenAvailability({
+        symbol: "AAPL",
+        market_mode: "options",
+        workflow_source: "polygon",
+        strategy: "Bull Call Debit Spread",
+        option_structure: {
+          type: "bull_call_debit_spread",
+          legs: [
+            { action: "buy", right: "call", strike: 205, premium: 2.4 },
+            { action: "sell", right: "call", strike: 215, premium: 0 },
+          ],
+        },
+      }),
+    ).toEqual({
+      request: null,
+      reason: "Paper option open requires a visible expiration for every leg.",
     });
   });
 
@@ -382,6 +464,88 @@ describe("research preview helpers", () => {
         legs: [{ action: "buy", right: "call", strike: 205, premium: 2.4 }],
       }),
     });
+  });
+
+  it("posts paper option open requests through the same-origin helper", async () => {
+    fetchWorkflowApiMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { position_id: 10 },
+      items: [],
+      error: null,
+      raw: { position_id: 10 },
+    });
+
+    await fetchOptionsPaperOpen({
+      market_mode: "options",
+      structure_type: "vertical_debit_spread",
+      underlying_symbol: "AAPL",
+      expiration: "2026-05-16",
+      legs: [
+        { action: "buy", right: "call", strike: 205, expiration: "2026-05-16", premium: 2.4, quantity: 1, multiplier: 100 },
+      ],
+      breakevens: [],
+    });
+
+    expect(fetchWorkflowApiMock).toHaveBeenCalledWith("/api/user/options/paper-structures/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        market_mode: "options",
+        structure_type: "vertical_debit_spread",
+        underlying_symbol: "AAPL",
+        expiration: "2026-05-16",
+        legs: [
+          { action: "buy", right: "call", strike: 205, expiration: "2026-05-16", premium: 2.4, quantity: 1, multiplier: 100 },
+        ],
+        breakevens: [],
+      }),
+    });
+  });
+
+  it("posts paper option close requests through the same-origin helper", async () => {
+    fetchWorkflowApiMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { trade_id: 77 },
+      items: [],
+      error: null,
+      raw: { trade_id: 77 },
+    });
+
+    await fetchOptionsPaperClose(42, {
+      settlement_mode: "manual_close",
+      legs: [{ position_leg_id: 101, exit_premium: 5.5 }],
+    });
+
+    expect(fetchWorkflowApiMock).toHaveBeenCalledWith("/api/user/options/paper-structures/42/close", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settlement_mode: "manual_close",
+        legs: [{ position_leg_id: 101, exit_premium: 5.5 }],
+      }),
+    });
+  });
+
+  it("estimates options commissions per contract per leg without multiplying by 100", () => {
+    const legs = [
+      { quantity: 1 },
+      { quantity: 1 },
+      { quantity: 1 },
+      { quantity: 1 },
+    ];
+
+    expect(estimateOptionsCommissionPerEvent(legs, 0.65)).toBe(2.6);
+    expect(estimateOptionsCommissionForEvents(legs, 0.65, 2)).toBe(5.2);
+    expect(
+      describeOptionsCommissionEstimate({
+        commissionPerContract: 0.65,
+        legs,
+        eventCount: 2,
+        eventLabel: "open/close",
+      }),
+    ).toBe("$0.65 x 1 contract x 4 legs x 2 open/close events = $5.20.");
   });
 
   it("only allows options research charts when source and symbol matching are safe", () => {
