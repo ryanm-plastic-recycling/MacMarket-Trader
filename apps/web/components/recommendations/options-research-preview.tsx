@@ -22,6 +22,8 @@ import {
   formatResearchValue,
   getEffectiveOptionsCommissionPerContract,
   getExpectedRangeReasonText,
+  getOptionsChainIncompleteSideWarning,
+  getOptionsChainPreviewNotes,
   getOptionsChainUnavailableMessage,
   getOptionsResearchDataQualityWarnings,
   getOptionsLegDisplayLines,
@@ -254,7 +256,7 @@ export function OptionsWorkflowStepper({
     "Preview payoff",
     "Save paper position",
     "Manually close",
-    "Review result",
+    "Review paper close result",
   ][currentStep - 1] ?? "Review structure";
   const steps = [
     {
@@ -279,8 +281,8 @@ export function OptionsWorkflowStepper({
     },
     {
       step: 5,
-      label: "Review result",
-      detail: "Gross, commission, and net paper outcome.",
+      label: "Review paper close result",
+      detail: "Shown after manual close: gross P&L, opening/closing commissions, total commissions, and net paper P&L.",
     },
   ].map((item) => ({
     ...item,
@@ -1231,6 +1233,8 @@ export function OptionsResearchPreview({
   const chainPreview = setup.options_chain_preview ?? null;
   const expectedRangeReason = getExpectedRangeReasonText(setup.expected_range);
   const chainUnavailableMessage = getOptionsChainUnavailableMessage(chainPreview);
+  const chainIncompleteSideWarning = getOptionsChainIncompleteSideWarning(chainPreview);
+  const chainPreviewNotes = getOptionsChainPreviewNotes(chainPreview);
   const chartCanRender = canRenderOptionsResearchChart({
     marketMode: setup.market_mode,
     requestedSymbol: setup.symbol,
@@ -1376,6 +1380,22 @@ export function OptionsResearchPreview({
                 ({formatResearchValue(chainPreview.source, "Source unavailable")})
               </span>
             </div>
+            {chainIncompleteSideWarning ? (
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(242, 160, 63, 0.3)",
+                  background: "rgba(242, 160, 63, 0.08)",
+                  color: "var(--op-muted, #7a8999)",
+                  fontSize: "0.82rem",
+                  lineHeight: 1.5,
+                }}
+              >
+                {chainIncompleteSideWarning}
+              </div>
+            ) : null}
             <div className="op-grid-2" style={{ gap: 12 }}>
               <div>
                 <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 4 }}>Calls</div>
@@ -1419,6 +1439,13 @@ export function OptionsResearchPreview({
                 ? `Reference data as of ${formatResearchTimestamp(chainPreview.data_as_of)}. Research preview only — no execution support.`
                 : "As-of unavailable. Reference-only options chain preview. Missing values remain Unavailable or — until deeper provider work lands."}
             </div>
+            {chainPreviewNotes.length > 0 ? (
+              <div className="op-stack" style={{ marginTop: 8, gap: 4, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
+                {chainPreviewNotes.map((note) => (
+                  <div key={note}>{note}</div>
+                ))}
+              </div>
+            ) : null}
           </>
         )}
       </Card>

@@ -192,6 +192,11 @@ Required now for `8E2` broader provider/data-quality coverage:
 - missing source/as-of values render `Source unavailable` / `As-of
   unavailable` safely
 - chain-preview unavailable warnings render with provider-plan/payload wording
+- reference-only chain-preview copy explains that missing `last` / `volume`
+  fields can reflect current provider/source/tier limits and do not change
+  payoff math
+- incomplete call-only or put-only chain snapshots render a compact warning
+  for defined-risk structure review
 - blocked or omitted Expected Range reasons stay visible without reading like
   payoff math
 - SPX/NDX provider-plan caveats appear when index symbols are in play
@@ -202,6 +207,8 @@ Required now for `8E3` guided workflow clarity:
 
 - guided options stepper renders and reflects preview/open/manual-close/result
   state correctly
+- the final step reads as a paper-close result rather than a generic saved
+  result, and it stays future/pending until manual close actually happens
 - replay payoff preview remains labeled read-only/non-persisted
 - paper save wording states that it creates paper-only records and does not
   place a broker order

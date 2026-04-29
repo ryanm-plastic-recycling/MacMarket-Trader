@@ -260,7 +260,7 @@ describe("OptionsWorkflowStepper", () => {
         closeDraftActive
       />,
     );
-    expect(closedHtml).toContain("Current step: Step 5 — Review result");
+    expect(closedHtml).toContain("Current step: Step 5 — Review paper close result");
   });
 });
 
@@ -369,6 +369,61 @@ describe("OptionsResearchPreview", () => {
     expect(html).not.toContain("broker orders");
     expect(html).not.toContain("Go to Replay step");
     expect(html).not.toContain("Go to Paper Order step");
+  });
+
+  it("explains reference-only chain snapshots and incomplete chain sides safely", () => {
+    const html = renderToStaticMarkup(
+      <OptionsResearchPreview
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "2026-05-15",
+            dte: 16,
+            net_credit: 2.5,
+            max_profit: 250,
+            max_loss: 250,
+            breakeven_low: 92.5,
+            breakeven_high: 107.5,
+            legs: [
+              { action: "buy", right: "put", strike: 90, label: "Long put wing" },
+              { action: "sell", right: "put", strike: 95, label: "Short put body" },
+              { action: "sell", right: "call", strike: 105, label: "Short call body" },
+              { action: "buy", right: "call", strike: 110, label: "Long call wing" },
+            ],
+          },
+          expected_range: null,
+          options_chain_preview: {
+            underlying: "SPY",
+            expiry: "2026-05-15",
+            calls: [{ strike: 590, expiry: "2026-05-15", last_price: null, volume: null }],
+            puts: null,
+            data_as_of: "2026-04-29T13:01:00Z",
+            source: "polygon_options_basic",
+            reason: null,
+          },
+        }}
+        loading={false}
+        error={null}
+        chartPayload={null}
+        chartStorageKey="test-options-preview"
+        chartSourceLabel="polygon"
+        chartBlockedByFallback={false}
+      />,
+    );
+
+    expect(html).toContain("Chain preview is showing available reference data. Last/volume may be unavailable from the current provider source or tier.");
+    expect(html).toContain("Missing quote or volume fields are not used for payoff math. Liquidity quality cannot be fully assessed from this chain snapshot.");
+    expect(html).toContain("Incomplete chain side: puts were not returned for this expiry/source. Defined-risk structures such as iron condors require both call and put context for a complete chain review.");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("Infinity");
+    expect(html).not.toContain("live trading");
+    expect(html).not.toContain("broker execution");
   });
 });
 

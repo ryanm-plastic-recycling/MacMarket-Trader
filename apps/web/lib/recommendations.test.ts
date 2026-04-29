@@ -21,6 +21,8 @@ import {
   formatOptionsLegLabel,
   formatOptionsReplayToken,
   getExpectedRangeReasonText,
+  getOptionsChainIncompleteSideWarning,
+  getOptionsChainPreviewNotes,
   getOptionsChainUnavailableMessage,
   getOptionsResearchDataQualityWarnings,
   getOptionsLegDisplayLines,
@@ -249,6 +251,34 @@ describe("research preview helpers", () => {
     expect(getOptionsChainUnavailableMessage(null)).toBe("Chain preview unavailable on current provider plan or payload.");
   });
 
+  it("explains reference-only chain snapshots and incomplete call/put coverage safely", () => {
+    expect(
+      getOptionsChainPreviewNotes({
+        underlying: "SPY",
+        expiry: "2026-05-15",
+        calls: [{ strike: 590, expiry: "2026-05-15", last_price: null, volume: null }],
+        puts: null,
+        data_as_of: "2026-04-29T13:01:00Z",
+        source: "polygon_options_basic",
+        reason: null,
+      }),
+    ).toEqual([
+      "Chain preview is showing available reference data. Last/volume may be unavailable from the current provider source or tier.",
+      "Missing quote or volume fields are not used for payoff math. Liquidity quality cannot be fully assessed from this chain snapshot.",
+    ]);
+    expect(
+      getOptionsChainIncompleteSideWarning({
+        underlying: "SPY",
+        expiry: "2026-05-15",
+        calls: [{ strike: 590, expiry: "2026-05-15", last_price: null, volume: null }],
+        puts: null,
+        data_as_of: "2026-04-29T13:01:00Z",
+        source: "polygon_options_basic",
+        reason: null,
+      }),
+    ).toBe("Incomplete chain side: puts were not returned for this expiry/source. Defined-risk structures such as iron condors require both call and put context for a complete chain review.");
+  });
+
   it("formats as-of timestamps deterministically and renders unavailable safely", () => {
     expect(formatResearchTimestamp("2026-04-29T13:01:00Z")).toBe("2026-04-29 13:01 UTC");
     expect(formatResearchTimestamp("")).toBe("As-of unavailable");
@@ -295,6 +325,42 @@ describe("research preview helpers", () => {
     expect(warnings).toContain("Expected Range blocked: Missing IV Snapshot.");
     expect(warnings).toContain("Chain preview unavailable on current provider plan or payload.");
     expect(warnings).toContain("SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.");
+  });
+
+  it("adds an incomplete-side warning when only one chain side is available", () => {
+    const warnings = getOptionsResearchDataQualityWarnings({
+      symbol: "SPY",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-15",
+        dte: 16,
+        net_credit: 2.5,
+        iv_snapshot: 0.22,
+        theta_context: null,
+        vega_context: null,
+        legs: [
+          { action: "buy", right: "put", strike: 560, label: "long put wing" },
+          { action: "sell", right: "put", strike: 565, label: "short put" },
+          { action: "sell", right: "call", strike: 590, label: "short call" },
+          { action: "buy", right: "call", strike: 595, label: "long call wing" },
+        ],
+      },
+      expected_range: null,
+      options_chain_preview: {
+        underlying: "SPY",
+        expiry: "2026-05-15",
+        calls: [{ strike: 590, expiry: "2026-05-15", last_price: null, volume: null }],
+        puts: null,
+        data_as_of: "2026-04-29T13:01:00Z",
+        source: "polygon_options_basic",
+        reason: null,
+      },
+    });
+
+    expect(warnings).toContain("Incomplete chain side: puts were not returned for this expiry/source. Defined-risk structures such as iron condors require both call and put context for a complete chain review.");
   });
 
   it("builds a replay preview request from a supported vertical debit research structure", () => {

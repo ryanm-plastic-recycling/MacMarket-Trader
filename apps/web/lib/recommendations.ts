@@ -873,6 +873,43 @@ export function getOptionsChainUnavailableMessage(preview: OptionsChainPreview |
   return "Chain preview unavailable on current provider plan or payload.";
 }
 
+function getOptionsChainPreviewRows(
+  preview: OptionsChainPreview | null | undefined,
+): OptionsChainPreviewRow[] {
+  if (!preview || preview.reason) return [];
+  return [...(preview.calls ?? []), ...(preview.puts ?? [])];
+}
+
+function hasUnavailableChainMarketFields(rows: OptionsChainPreviewRow[]): boolean {
+  return rows.some((row) => toFiniteNumber(row.last_price) == null || toFiniteNumber(row.volume) == null);
+}
+
+export function getOptionsChainIncompleteSideWarning(
+  preview: OptionsChainPreview | null | undefined,
+): string | null {
+  if (!preview || preview.reason) return null;
+  const hasCallRows = Array.isArray(preview.calls) && preview.calls.length > 0;
+  const hasPutRows = Array.isArray(preview.puts) && preview.puts.length > 0;
+  if (hasCallRows && !hasPutRows) {
+    return "Incomplete chain side: puts were not returned for this expiry/source. Defined-risk structures such as iron condors require both call and put context for a complete chain review.";
+  }
+  if (!hasCallRows && hasPutRows) {
+    return "Incomplete chain side: calls were not returned for this expiry/source. Defined-risk structures such as iron condors require both call and put context for a complete chain review.";
+  }
+  return null;
+}
+
+export function getOptionsChainPreviewNotes(
+  preview: OptionsChainPreview | null | undefined,
+): string[] {
+  const rows = getOptionsChainPreviewRows(preview);
+  if (rows.length === 0 || !hasUnavailableChainMarketFields(rows)) return [];
+  return [
+    "Chain preview is showing available reference data. Last/volume may be unavailable from the current provider source or tier.",
+    "Missing quote or volume fields are not used for payoff math. Liquidity quality cannot be fully assessed from this chain snapshot.",
+  ];
+}
+
 function isLikelyIndexOptionsSymbol(symbol: string | null | undefined): boolean {
   const normalized = normalizeResearchSymbol(symbol);
   if (!normalized) return false;
@@ -955,6 +992,10 @@ export function getOptionsResearchDataQualityWarnings(
     const hasPutRows = Array.isArray(chainPreview.puts) && chainPreview.puts.length > 0;
     if (!hasCallRows && !hasPutRows) {
       warnings.add("Chain preview returned no call or put rows.");
+    }
+    const incompleteSideWarning = getOptionsChainIncompleteSideWarning(chainPreview);
+    if (incompleteSideWarning) {
+      warnings.add(incompleteSideWarning);
     }
   }
 

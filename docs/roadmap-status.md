@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 143, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 146, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -28,6 +28,9 @@ Phase 8E3 is complete for the current guided Recommendations options workflow
 UX.
 Phase 8E is complete for the current Recommendations options risk/operator UX
 surface only.
+Post-8E smoke-test polish clarified reference-only chain-preview data
+availability and Step 5 paper-close-result wording on Recommendations without
+moving Phase 8F forward.
 Phase 8F remains open for final Phase 8 closure, while broader provider/source
 parity across other options surfaces and advanced Expected Move visualization
 stay deferred.
@@ -301,11 +304,15 @@ stay deferred.
   chain, IV, Greeks, open interest, missing expiration/DTE, and SPX/NDX
   index-data caveats without implying execution approval; it now also adds a
   guided stepper for structure -> payoff preview -> paper save -> manual
-  close -> result review, clearer paper-save wording that says no broker
+  close -> paper-close result review, clearer paper-save wording that says no broker
   order is sent, explicit exit-premium instructions plus long/short hints,
   a stronger post-close result card, and lighter progressive disclosure so
   detailed provider/warning context stays available without overwhelming the
-  operator
+  operator; smoke-test polish now clarifies that the current chain preview is
+  a lightweight reference snapshot, explains missing `last` / `volume`
+  fields plus incomplete call-only or put-only chain sides safely, and labels
+  the final guided step as the paper-close result rather than a generic saved
+  result
 - 8E not included:
   full chart-heavy payoff tooling, advanced Expected Move visualization in the
   first risk-UX slice, broader provider/source/as-of parity across additional
@@ -403,7 +410,7 @@ stay deferred.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 143
+- vitest: 146
 - Playwright: 31
 
 ## Core product pillars

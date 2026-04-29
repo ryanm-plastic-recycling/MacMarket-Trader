@@ -36,6 +36,11 @@ Current implementation note:
   paper save -> manual close -> result, clearer paper-only save wording,
   explicit exit-premium instructions, a stronger post-close result card, and
   lighter progressive disclosure for detailed warnings/provider context
+- post-`8E` smoke-test polish now clarifies that the Recommendations chain
+  preview is a lightweight reference snapshot: missing `last` / `volume`
+  fields can reflect current provider/source/tier limits, incomplete
+  call-only or put-only previews are called out explicitly, and guided Step 5
+  is labeled as a paper-close result rather than a generic saved result
 - broader Orders dashboard parity remains deferred
 
 ## UX goals
@@ -205,6 +210,10 @@ Implemented now:
   Greeks / open interest context, blocked/omitted Expected Range reasons,
   unsupported or incomplete structures, missing expiration/DTE, and SPX/NDX
   provider-plan caveats
+- chain-preview copy now explains when reference rows are present but
+  quote/liquidity fields such as `last` / `volume` remain unavailable, and it
+  explicitly warns when only calls or only puts are returned for the current
+  expiry/source
 - Expected Range remains first-class research context while staying explicit
   that it does not modify payoff math or imply execution approval
 
@@ -222,10 +231,13 @@ Implemented now:
 
 - a compact stepper now makes the five-stage flow explicit:
   review structure -> preview payoff -> save paper position -> manually close
-  -> review result
+  -> review paper close result
 - replay payoff preview and paper lifecycle now use clearer operator wording:
   replay preview is read-only/non-persisted, while paper lifecycle creates
   persisted paper-only records and does not place a broker order
+- the final workflow step now makes it explicit that gross/commission/net
+  outcome fields appear only after manual paper close and belong to the saved
+  paper options lifecycle
 - manual close inputs now explain what `exit premium` means, include a
   per-leg example plus long/short direction hint, and restate that premium
   uses `x100` while commission does not
