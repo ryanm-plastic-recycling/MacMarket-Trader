@@ -155,15 +155,33 @@ deferred to later phases and do not block Phase 8 planning.
 - Alpaca readiness remains paper/provider-readiness only, not live routing or
   brokerage enablement
 
-### Phase 8 — Options execution (research → paper parity)
-- 8A: Options replay — historical P&L tracking for multi-leg structures using
-  Polygon options data
-- 8B: Options paper orders — stage, fill, position tracking, expiry awareness,
-  auto-close on expiry
-- 8C: Greeks + IV display on recommendations (delta, theta, vega, gamma,
-  IV rank/percentile)
-- 8D: IV rank as Iron Condor strategy gate input
-- Prerequisite: Phase 7 commission model (options fees materially affect P&L)
+### Phase 8 — Options research → paper parity
+- Status:
+  architecture planning started; no schema, migration, or application-code
+  changes landed in this pass
+- Detailed plan:
+  see [options-architecture.md](options-architecture.md)
+- 8A:
+  architecture and contract planning only
+- 8B:
+  safest first implementation slice after approval — read-only options
+  research contracts in Analysis / Recommendations using existing chain
+  preview and expected-range scaffolding where practical
+- 8C:
+  options replay for defined-risk structures, kept mode-separate from current
+  equity replay
+- 8D:
+  options paper order / fill / position / trade lifecycle with
+  `commission_per_contract` application
+- 8E:
+  operator risk UX for legs, credits/debits, max profit/loss, breakevens, and
+  expiration caveats
+- 8F:
+  closure criteria for supported options paper-parity flows
+- Phase 8 guardrails:
+  paper-only, no live routing, no naked short options in early
+  implementation, no assignment/exercise automation, and no margin assumptions
+  unless explicitly modeled later
 
 ### Phase 9 — Alpaca paper integration
 - Wire `BROKER_PROVIDER=alpaca` for real paper fills
@@ -261,6 +279,10 @@ preserved in git history. Run `git log --oneline -- docs/roadmap-status.md`
 for the chronological list, or `git log -p docs/roadmap-status.md` for full
 diffs. Notable recent inflection points:
 
+- 2026-04-29 — Phase 8A planning started: `docs/options-architecture.md`
+  added with safe follow-on slices for read-only option contracts, replay,
+  paper lifecycle, and operator risk UX. This was a docs-only pass; no
+  schema, migration, or application-code changes landed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI
