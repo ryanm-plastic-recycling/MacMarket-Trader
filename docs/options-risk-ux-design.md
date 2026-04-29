@@ -8,8 +8,10 @@ This document defines the operator-facing risk UX for the current
 Recommendations options surface and its planned follow-on slices.
 
 The current Recommendations options surface now satisfies `8E1` through `8E3`
-plus closure review for the scoped risk/operator UX pass. It does not require
-a full charting implementation in the first slice, and later options surfaces
+plus closure review for the scoped risk/operator UX pass. `8F` now confirms
+that this current Recommendations risk/operator UX surface is closed as part
+of the scoped paper-first Phase 8 options capability. It does not require a
+full charting implementation in the first slice, and later options surfaces
 may still add more depth.
 
 Current implementation note:
@@ -268,7 +270,9 @@ Current closure status:
 - broader provider/source/as-of parity across other options surfaces remains
   deferred
 - advanced Expected Move visualization remains deferred
-- `8F` remains the next full Phase 8 closure pass
+- `8F` is now complete for the current scoped paper-first options capability
+- full live-routing, settlement, assignment/exercise, and broader Orders
+  parity remain explicitly outside this scope
 
 8E is not complete if:
 

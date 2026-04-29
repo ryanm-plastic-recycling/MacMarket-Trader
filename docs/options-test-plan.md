@@ -286,13 +286,21 @@ Use this short manual pass when closing the current `8D` scope:
 Current status:
 
 - the `8E` gate is satisfied for the current Recommendations options surface
-- `8F` remains open for the broader Phase 8 closure pass
+- the `8F` gate is satisfied for the current scoped paper-first options
+  capability
 
 ### 8F gate
 
 - supported defined-risk options flow is testable end to end for the intended
   paper-only scope
 - deferred items remain documented rather than implied complete
+
+Current closure note:
+
+- Phase 8 is complete for the current scoped paper-first options capability
+- this does not include expiration settlement, assignment/exercise
+  automation, persisted options recommendations, broader Orders parity,
+  advanced Expected Move visualization, or live routing/execution
 
 ## Suggested future test file direction
 

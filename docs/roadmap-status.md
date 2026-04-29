@@ -30,10 +30,10 @@ Phase 8E is complete for the current Recommendations options risk/operator UX
 surface only.
 Post-8E smoke-test polish clarified reference-only chain-preview data
 availability and Step 5 paper-close-result wording on Recommendations without
-moving Phase 8F forward.
-Phase 8F remains open for final Phase 8 closure, while broader provider/source
-parity across other options surfaces and advanced Expected Move visualization
-stay deferred.
+moving beyond the scoped paper-first options capability.
+Phase 8F is complete, and Phase 8 is now closed for the current scoped
+paper-first options capability only. Broader provider/source parity across
+other options surfaces and advanced Expected Move visualization stay deferred.
 
 ## Completed Phases
 
@@ -180,8 +180,8 @@ stay deferred.
   replay-preview scope, `8D1` / `8D2` / `8D3` / `8D4` / `8D5` / `8D6` /
   `8D7` / `8D8` complete for design, schema, repository/service contracts,
   open/manual-close paper lifecycle behavior, contract-commission net-P&L
-  modeling, frontend operator UI, and closure audit/docs alignment. `8E` /
-  `8F` remain planned. Dedicated
+  modeling, frontend operator UI, and closure audit/docs alignment. `8E` and
+  `8F` are now complete for the current scoped paper-first options capability. Dedicated
   options persistence tables, internal repository contracts, and open/manual
   close paper lifecycle paths now exist, the manual-close path now stores
   contract-commission-aware net P&L, and Recommendations now hosts a
@@ -283,8 +283,7 @@ stay deferred.
   `8E2` complete for the current Recommendations provider/source/as-of and
   data-quality warning scope; `8E3` complete for the current guided
   Recommendations workflow-clarity scope. `8E` is now closed for the current
-  Recommendations options surface only, while `8F` remains open for broader
-  final closure
+  Recommendations options surface only.
 - 8E acceptance target:
   operators can see strategy summary, legs, debit/credit, max profit/loss,
   breakevens, DTE/expiration, payoff context, warnings, provider/source
@@ -318,11 +317,26 @@ stay deferred.
   first risk-UX slice, broader provider/source/as-of parity across additional
   options surfaces, or live-liquidity realism
 - 8F status:
-  planned only; closure criteria defined
+  complete for the current scoped paper-first options capability
 - 8F acceptance target:
   supported options flows are coherent from research to replay to paper for the
   intended paper-only scope, tests are in place, deferred items remain
   explicit, and equity regressions stay green
+- 8F implemented now:
+  final closure audit confirms the current scoped options capability is
+  complete: read-only research preview, read-only/non-persisted payoff
+  preview, current paper-only open/manual-close lifecycle, commission-aware
+  gross/net paper close results, and Recommendations risk/operator UX are all
+  present and separately labeled without implying live routing, broker
+  execution, expiration settlement, assignment/exercise automation, or
+  broader Orders parity
+- Phase 8 closure note:
+  Phase 8 is complete for the current scoped paper-first options capability
+  only. This does not imply advanced Expected Move visualization, broader
+  provider/source/as-of parity across other options surfaces, broader Orders
+  dashboard parity, expiration settlement, assignment/exercise automation,
+  persisted options recommendations, options replay persistence, or live
+  routing/execution.
 - Phase 8 conservative sequence:
   `8C2.1` pure payoff math module and tests ->
   `8C2.2` vertical debit spread helpers/tests ->
@@ -576,6 +590,15 @@ diffs. Notable recent inflection points:
   preview no longer echoes execution-enabled copy; the current operator risk,
   provider/source, Expected Range, guided workflow, and manual-close clarity
   gates are documented as satisfied without implying full Phase 8 closure.
+- 2026-04-29 — Phase 8F final closure complete for the current scoped
+  paper-first options capability: frontend (`npm test`, `npx tsc --noEmit`)
+  plus backend (`tests/test_options_paper_open_lifecycle.py`,
+  `tests/test_options_paper_close_lifecycle.py`,
+  `tests/test_options_replay_preview.py`) validation passed; docs now mark
+  `8A` through `8F` complete for the scoped paper-first capability while
+  keeping expiration settlement, assignment/exercise automation, persisted
+  options recommendations, broader Orders parity, advanced Expected Move
+  visualization, and live routing/execution explicitly deferred.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

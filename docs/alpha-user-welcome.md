@@ -381,13 +381,16 @@ Current project status, in operator terms:
 - Phase 8D complete for the current paper-options lifecycle scope
 - Phase 8E complete for the current Recommendations options risk/operator UX
   scope
-- Phase 8F comes later: final options-phase closure review
+- Phase 8F complete: final closure for the current scoped paper-first options
+  capability
+- Phase 8 is closed for the current scoped paper-first options capability
 
 Current options boundary:
 
 - research preview is live
 - replay payoff preview is live
 - paper open/manual-close lifecycle is live
+- current scoped Phase 8 paper-first options capability is complete
 - expiration settlement is still deferred
 - broader Orders parity for durable options positions/trades is still deferred
 

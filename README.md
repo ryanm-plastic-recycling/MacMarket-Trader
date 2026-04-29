@@ -67,16 +67,16 @@ Those are handled by deterministic engines with full audit trails.
 - static percentage exits like “take profit at 5%” without structure-based support
 - UI-heavy work before engine credibility exists
 
-## Future multi-asset expansion architecture (planned)
+## Future multi-asset expansion architecture
 
 ### Market mode policy
 
 MacMarket keeps **equities** as the only live execution-prep mode in v1/private alpha.
 
-Future expansion is designed around explicit, typed `market_mode` + `instrument_type` contracts:
+Current and future expansion is designed around explicit, typed `market_mode` + `instrument_type` contracts:
 
 - `equities` (live in v1 scope)
-- `options` (planned research preview / paper-first later)
+- `options` (current scoped paper-first research / replay-preview / manual-close lifecycle support only; no live execution)
 - `crypto` (planned research preview / paper-first later)
 
 Every major workflow contract should carry mode context:
@@ -89,9 +89,13 @@ Every major workflow contract should carry mode context:
 
 Design constraint: replay/live parity must hold **within each mode** before that mode is promoted.
 
-### Options research mode (planned)
+### Options research mode
 
-Options research mode requires chain-aware and structure-aware contracts (not equity shortcuts):
+Options research mode now exists in a scoped paper-first form: read-only
+research preview, read-only/non-persisted expiration-payoff preview, and a
+separate paper-only open/manual-close lifecycle for the currently supported
+defined-risk structures. It still requires chain-aware and structure-aware
+contracts rather than equity shortcuts:
 
 - expiration / DTE,
 - strikes and rights,
@@ -103,6 +107,15 @@ Options research mode requires chain-aware and structure-aware contracts (not eq
 Initial options strategy planning includes defined-risk structures first (including **Iron Condor**), while covered calls stay later due to inventory/assignment modeling dependencies.
 
 When options research preview setup payloads expose an expected move, the normalized backend contract is `expected_range` with explicit method-tagged provenance (`iv_1sigma` or `atm_straddle_mid`) and status (`computed`, `blocked`, `omitted`). Expected range must stay separate from breakevens/payoff math and must not imply live options execution support.
+
+Current scoped exclusions remain explicit:
+
+- no live routing or broker execution
+- no expiration settlement automation
+- no assignment/exercise automation
+- no naked short options
+- no persisted options recommendations
+- no options replay persistence into equity replay flows
 
 ### Crypto research mode (planned)
 
