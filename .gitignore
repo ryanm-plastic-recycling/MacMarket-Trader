@@ -87,8 +87,3 @@ macmarket_trader.db-journal
 .pytest_cache/
 __pycache__/
 *.pyc
-
-.deps/
-.pytest_cache/
-__pycache__/
-*.pyc

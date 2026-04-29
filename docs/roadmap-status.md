@@ -13,8 +13,9 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
 Tests: pytest 210, vitest 99, Playwright 31. tsc clean.
-Active passes: Phase 7 partially implemented — commission-aware realized
-paper P&L, equity fee-preview/operator-trust, and provider-readiness slices.
+Active passes: Phase 7A–7C are complete for the current equity/paper-readiness
+scope. Phase 7 remains open until the explicit Phase 7D closure items are
+resolved or formally deferred to later phases.
 
 ## Completed Phases
 
@@ -67,22 +68,22 @@ paper P&L, equity fee-preview/operator-trust, and provider-readiness slices.
 ## Upcoming Phases
 
 ### Phase 7A — Commission-aware realized paper P&L
-- Complete in current slice:
+- Complete for current equity/paper scope:
   `gross_pnl` / `net_pnl` split in `paper_trades`
-- Complete in current slice:
+- Complete for current equity/paper scope:
   per-trade equity commission (default `$0`) applied to realized paper close
   math
-- Complete in current slice:
+- Complete for current equity/paper scope:
   commission settings exposed in user Settings page
-- Complete in current slice:
+- Complete for current equity/paper scope:
   backend fields on `paper_trades` and per-user `commission_per_trade` /
   `commission_per_contract` on `app_users` with env fallback defaults
 
 ### Phase 7B — Equity fee previews / projected net paper outcomes
-- Complete in current slice:
+- Complete for current equity/paper scope:
   replay / order / open-position operator surfaces show explicit equity-only
   fee estimates
-- Complete in current slice:
+- Complete for current equity/paper scope:
   projected net outcome is shown only when projected gross can be derived
   safely from existing recommendation levels
 - Note:
@@ -91,15 +92,15 @@ paper P&L, equity fee-preview/operator-trust, and provider-readiness slices.
   slice if Phase 7 grows further
 
 ### Phase 7C — Provider health + operator readiness
-- Complete in current slice:
+- Complete for current paper/provider-readiness scope:
   Admin / Provider Health now surfaces explicit Alpaca paper-provider
   readiness, including selected mode, configuration presence, and paper-only
   readiness framing without exposing secrets
-- Complete in current slice:
+- Complete for current paper/provider-readiness scope:
   FRED and news readiness now appear alongside existing auth, email, and
   market-data health so operators can verify macro/news context inputs
   explicitly
-- Complete in current slice:
+- Complete for current paper/provider-readiness scope:
   provider-health is framed as a pre-provider-expansion operator-readiness
   gate, not live-trading enablement
 - Note:
@@ -116,6 +117,10 @@ paper P&L, equity fee-preview/operator-trust, and provider-readiness slices.
   options replay, options paper lifecycle, or options-fee parity flows
 - Still open:
   options-fee parity remains deferred to the options phase
+- Still open:
+  FRED/news dedicated safe lightweight live probes remain deferred; current
+  provider-health entries are readiness/configuration-first unless deeper
+  probe infrastructure is added later
 - Still open:
   broader fee modeling is not yet implemented:
   per-share fees, regulatory fees, borrow / locate assumptions, and richer
@@ -230,14 +235,16 @@ preserved in git history. Run `git log --oneline -- docs/roadmap-status.md`
 for the chronological list, or `git log -p docs/roadmap-status.md` for full
 diffs. Notable recent inflection points:
 
-- 2026-04-29 — Phase 7A/7B partial: commission-aware gross/net realized paper
-  P&L, per-user commission settings, replay/order/open-position fee previews,
-  orders/settings UI updates, equity close-math fee application.
-  `commission_per_contract` storage landed, but options parity remains open.
-- 2026-04-29 — Phase 7C partial: Admin / Provider Health expanded into an
-  operator-readiness console with explicit Alpaca paper readiness plus FRED
-  and news readiness entries. This remains a paper/provider trust gate only;
-  no live brokerage execution was enabled.
+- 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
+  commission-aware gross/net realized paper P&L, per-user commission
+  settings, replay/order/open-position fee previews, orders/settings UI
+  updates, and equity close-math fee application. `commission_per_contract`
+  storage landed, but options parity remains open.
+- 2026-04-29 — Phase 7C complete for current paper/provider-readiness scope:
+  Admin / Provider Health expanded into an operator-readiness console with
+  explicit Alpaca paper readiness plus FRED and news readiness entries. This
+  remains a paper/provider trust gate only; no live brokerage execution was
+  enabled.
 - 2026-04-29 — Pass 4: `display_id`, per-user risk dollars, Settings page,
   invite-email welcome CTA, schedules timezone display, MFA runbook, brand
   header on pre-auth, dashboard 401 hardening (`pending-approval` redirect).
