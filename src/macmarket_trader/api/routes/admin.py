@@ -16,8 +16,19 @@ from macmarket_trader.data.providers.market_data import DataNotEntitledError, De
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
-from macmarket_trader.domain.schemas import ApprovalActionRequest, Bar, ExpectedRange, InviteCreateRequest, PortfolioSnapshot, ReplayRunRequest, TradeRecommendation
+from macmarket_trader.domain.schemas import (
+    ApprovalActionRequest,
+    Bar,
+    ExpectedRange,
+    InviteCreateRequest,
+    OptionReplayPreviewRequest,
+    OptionReplayPreviewResponse,
+    PortfolioSnapshot,
+    ReplayRunRequest,
+    TradeRecommendation,
+)
 from macmarket_trader.execution.paper_broker import PaperBroker
+from macmarket_trader.options.replay_preview import build_options_replay_preview
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
 from macmarket_trader.service import RecommendationService
@@ -825,6 +836,14 @@ def replay_runs(_user=Depends(require_approved_user)):
             }
         )
     return output
+
+
+@user_router.post("/options/replay-preview", response_model=OptionReplayPreviewResponse)
+def options_replay_preview(
+    req: OptionReplayPreviewRequest,
+    _user=Depends(require_approved_user),
+) -> OptionReplayPreviewResponse:
+    return build_options_replay_preview(req)
 
 
 @user_router.post("/replay-runs")

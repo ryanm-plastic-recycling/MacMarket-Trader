@@ -270,6 +270,10 @@ Rollback:
 
 ### 8C3 - Read-only replay preview contract
 
+Status:
+
+- complete
+
 Complete when:
 
 - a dedicated preview response exists for options mode
@@ -340,10 +344,13 @@ Frontend:
 
 ## Current implementation note
 
-Phase 8C2 is now implemented in:
+Phase 8C2 and 8C3 are now implemented in:
 
 - `src/macmarket_trader/options/payoff.py`
+- `src/macmarket_trader/options/replay_preview.py`
+- `src/macmarket_trader/api/routes/admin.py`
 - `tests/test_options_payoff.py`
+- `tests/test_options_replay_preview.py`
 
 Implemented scope:
 
@@ -353,22 +360,26 @@ Implemented scope:
 - structure analysis for iron condor
 - explicit blocked results for unsupported or invalid inputs, including naked
   short single-leg structures
+- a dedicated read-only options replay preview contract at
+  `POST /user/options/replay-preview`
+- safe `ready`, `blocked`, and `unsupported` response states
+- deterministic generated payoff grids when underlying prices are omitted
+- no replay DB rows, orders, or recommendations created by preview requests
 
 Still deferred:
 
-- any replay API contract
 - any replay UI
 - any persistence
 - any commission application
 
 ## Recommended next implementation slice
 
-Proceed with `8C3.1` next:
+Proceed with `8C4.1` next:
 
-- define the read-only replay preview contract
-- keep it mode-separate from current equity replay
-- keep it non-persisted
-- keep UI work deferred until the contract is stable
+- add an operator-facing replay preview UI for options mode
+- consume the existing read-only preview contract without adding persistence
+- keep order, staging, and lifecycle CTAs suppressed
+- keep equity replay untouched
 
-That is the safest next step because the core payoff math is now proven and the
-remaining risk is contract design, not structure math.
+That is the safest next step because the core payoff math and backend preview
+contract are now proven, and the remaining work is isolated UI inspection.

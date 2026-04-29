@@ -22,7 +22,8 @@ Current planning state:
 - `8A` complete: architecture and contract planning foundations
 - `8B` complete: read-only, non-persisted options research visibility in
   Analysis / Recommendations
-- `8C` planning complete in blueprint form: implementation not started
+- `8C` implementation started: `8C2` pure payoff math and `8C3` read-only
+  replay preview contract complete; `8C4+` remain deferred
 - `8D` planned only: implementation not started
 - `8E` planned only: implementation not started
 - `8F` planned only: closure criteria defined, implementation not started
@@ -99,7 +100,8 @@ Not complete:
 Status:
 
 - `8C2` complete: pure payoff math helper and tests implemented
-- `8C3+` not started
+- `8C3` complete: read-only, non-persisted replay preview contract
+- `8C4+` not started
 
 Detailed design:
 

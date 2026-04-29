@@ -336,6 +336,77 @@ class ExpectedRange(BaseModel):
     reason: str | None = None
 
 
+class OptionReplayPreviewLegRequest(BaseModel):
+    action: str | None = None
+    right: str | None = None
+    strike: object | None = None
+    premium: object | None = None
+    quantity: object | None = 1
+    multiplier: object | None = 100
+    label: str | None = None
+
+
+class OptionReplayPreviewRequest(BaseModel):
+    structure_type: str | None = None
+    legs: list[OptionReplayPreviewLegRequest] = Field(default_factory=list)
+    underlying_prices: list[object] | None = None
+    underlying_symbol: str | None = None
+    expiration: date | None = None
+    notes: list[str] = Field(default_factory=list)
+    source: str | None = None
+    workflow_source: str | None = None
+
+
+class OptionReplayPreviewLeg(BaseModel):
+    action: str | None = None
+    right: str | None = None
+    strike: float | None = None
+    premium: float | None = None
+    quantity: int | None = None
+    multiplier: int | None = None
+    label: str | None = None
+
+
+class OptionReplayPreviewLegPayoff(BaseModel):
+    label: str
+    payoff: float
+
+
+class OptionReplayPreviewPoint(BaseModel):
+    underlying_price: float
+    total_payoff: float
+    leg_payoffs: list[OptionReplayPreviewLegPayoff] = Field(default_factory=list)
+
+
+class OptionReplayPreviewResponse(BaseModel):
+    execution_enabled: bool = False
+    persistence_enabled: bool = False
+    market_mode: MarketMode = MarketMode.OPTIONS
+    preview_type: Literal["expiration_payoff"] = "expiration_payoff"
+    status: Literal["ready", "blocked", "unsupported"] = "ready"
+    structure_type: str | None = None
+    underlying_symbol: str | None = None
+    expiration: date | None = None
+    replay_run_id: int | None = None
+    recommendation_id: str | None = None
+    order_id: str | None = None
+    is_defined_risk: bool = False
+    net_debit: float | None = None
+    net_credit: float | None = None
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float] = Field(default_factory=list)
+    payoff_points: list[OptionReplayPreviewPoint] = Field(default_factory=list)
+    legs: list[OptionReplayPreviewLeg] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    blocked_reason: str | None = None
+    operator_disclaimer: str = "Options research only. Paper-only preview. Not execution support."
+    notes: list[str] = Field(default_factory=list)
+    source: str | None = None
+    workflow_source: str | None = None
+
+
 class CryptoMarketContext(BaseModel):
     venue: str
     quote_currency: str = "USD"
