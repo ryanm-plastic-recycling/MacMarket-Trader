@@ -9,7 +9,7 @@ const BUCKETS: Array<{
   categories: IndicatorCategory[];
 }> = [
   { key: "price", label: "Price overlays", hint: "Overlays that share the main price pane.", categories: ["trend", "volatility", "structure"] },
-  { key: "lower", label: "Lower-panel studies", hint: "Separate scales for momentum and volume studies.", categories: ["momentum", "volume"] },
+  { key: "lower", label: "Lower-panel studies", hint: "Separate scales for volume and momentum studies such as RSI 14.", categories: ["momentum", "volume"] },
   { key: "context", label: "HACO context", hint: "Dedicated HACO/HACOLT context strips.", categories: ["haco"] },
 ];
 

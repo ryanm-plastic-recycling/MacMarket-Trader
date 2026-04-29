@@ -1,16 +1,34 @@
 "use client";
 
-import { createChart, CrosshairMode, LineStyle, type CandlestickData, type Time } from "lightweight-charts";
+import {
+  createChart,
+  CrosshairMode,
+  LineStyle,
+  type CandlestickData,
+  type IChartApi,
+  type Time,
+} from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyState, StatusBadge } from "@/components/operator-ui";
 import { IndicatorSelector } from "@/components/charts/indicator-selector";
-import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS, type IndicatorLegendEntry } from "@/lib/chart-indicators";
+import {
+  buildWorkflowIndicatorModel,
+  FIRST_CLASS_WORKFLOW_INDICATORS,
+  type IndicatorGuideDescriptor,
+  type IndicatorHistogramDescriptor,
+  type IndicatorLegendEntry,
+  type IndicatorLineDescriptor,
+  type IndicatorPanelDescriptor,
+  type IndicatorPane,
+} from "@/lib/chart-indicators";
 import type { HacoChartPayload } from "@/lib/haco-api";
 import type { IndicatorId } from "@/lib/indicator-framework";
 import {
   WORKFLOW_INDICATOR_PRESETS,
   detectWorkflowIndicatorPreset,
+  extractWorkflowHoverLegendValues,
+  getWorkflowPanelState,
   getWorkflowPresetIndicators,
   sanitizeWorkflowIndicatorSelection,
 } from "@/lib/workflow-chart";
@@ -22,6 +40,8 @@ type WorkflowChartOverlay = {
   lineStyle?: LineStyle;
   lineWidth?: number;
 };
+
+type VisibleTimeRange = { from: Time; to: Time };
 
 function timeKey(time: Time): string {
   if (typeof time === "number" || typeof time === "string") return String(time);
@@ -52,10 +72,79 @@ function formatNumber(value: number | null | undefined, kind: "price" | "volume"
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function legendValueKind(entry: IndicatorLegendEntry): "price" | "volume" | "momentum" {
-  if (entry.pane === "volume") return "volume";
-  if (entry.pane === "momentum") return "momentum";
+function legendValueKind(pane: IndicatorPane): "price" | "volume" | "momentum" {
+  if (pane === "volume") return "volume";
+  if (pane === "momentum") return "momentum";
   return "price";
+}
+
+function createBaseChart(container: HTMLDivElement, height: number): IChartApi {
+  return createChart(container, {
+    autoSize: true,
+    height,
+    crosshair: { mode: CrosshairMode.Normal },
+    layout: {
+      background: { color: "#0b1219" },
+      textColor: "#d9e2ef",
+    },
+    grid: {
+      vertLines: { color: "rgba(115, 138, 163, 0.14)" },
+      horzLines: { color: "rgba(115, 138, 163, 0.14)" },
+    },
+    rightPriceScale: {
+      borderColor: "rgba(115, 138, 163, 0.24)",
+    },
+    timeScale: {
+      borderColor: "rgba(115, 138, 163, 0.24)",
+      timeVisible: true,
+      secondsVisible: false,
+    },
+  });
+}
+
+function renderLineSeries(chart: IChartApi, line: IndicatorLineDescriptor) {
+  chart
+    .addLineSeries({
+      color: line.color,
+      lineWidth: (line.lineWidth ?? 2) as 1 | 2 | 3 | 4,
+      lineStyle: line.lineStyle,
+      priceScaleId: line.priceScaleId,
+      lastValueVisible: line.lastValueVisible,
+      priceLineVisible: line.priceLineVisible,
+      autoscaleInfoProvider: line.fixedRange
+        ? () => ({ priceRange: line.fixedRange })
+        : undefined,
+    })
+    .setData(line.points);
+}
+
+function renderGuides(chart: IChartApi, candles: CandlestickData<Time>[], scaleId: string, guides: IndicatorGuideDescriptor[] = []) {
+  for (const guide of guides) {
+    chart
+      .addLineSeries({
+        color: guide.color,
+        lineWidth: 1,
+        lineStyle: guide.lineStyle,
+        priceScaleId: scaleId,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      })
+      .setData(candles.map((candle) => ({ time: candle.time, value: guide.value })));
+  }
+}
+
+function renderVolumePanel(chart: IChartApi, descriptor: IndicatorHistogramDescriptor) {
+  chart.priceScale("volume").applyOptions({
+    scaleMargins: { top: 0.12, bottom: 0.08 },
+    borderVisible: false,
+  });
+  chart.addHistogramSeries({
+    priceScaleId: "volume",
+    priceFormat: { type: "volume" },
+    color: descriptor.color,
+    lastValueVisible: false,
+    priceLineVisible: false,
+  }).setData(descriptor.data);
 }
 
 export function WorkflowChart({
@@ -75,7 +164,11 @@ export function WorkflowChart({
   emptyHint: string;
   sourceLabel?: string;
 }) {
-  const chartRef = useRef<HTMLDivElement | null>(null);
+  const priceChartRef = useRef<HTMLDivElement | null>(null);
+  const volumeChartRef = useRef<HTMLDivElement | null>(null);
+  const momentumChartRef = useRef<HTMLDivElement | null>(null);
+  const syncGuardRef = useRef(false);
+
   const [legendEntries, setLegendEntries] = useState<IndicatorLegendEntry[]>([]);
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorId[]>([]);
   const [unsupportedIndicators, setUnsupportedIndicators] = useState<IndicatorId[]>([]);
@@ -103,6 +196,11 @@ export function WorkflowChart({
     () => detectWorkflowIndicatorPreset(selectedIndicators, supportedIndicators),
     [selectedIndicators, supportedIndicators],
   );
+  const indicatorModel = useMemo(
+    () => buildWorkflowIndicatorModel(candles, selectedIndicators),
+    [candles, selectedIndicators],
+  );
+  const panelState = useMemo(() => getWorkflowPanelState(selectedIndicators), [selectedIndicators]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -125,31 +223,17 @@ export function WorkflowChart({
   }, [selectedIndicators, storageKey]);
 
   useEffect(() => {
-    if (!chartRef.current || candles.length === 0) {
-      setLegendEntries([]);
+    setLegendEntries(indicatorModel.legendEntries);
+  }, [indicatorModel.legendEntries]);
+
+  useEffect(() => {
+    if (!priceChartRef.current || candles.length === 0) {
       setHoveredTimeKey(null);
       return;
     }
-    const chart = createChart(chartRef.current, {
-      autoSize: true,
-      height: 380,
-      crosshair: { mode: CrosshairMode.Normal },
-      layout: {
-        background: { color: "#0b1219" },
-        textColor: "#d9e2ef",
-      },
-      grid: {
-        vertLines: { color: "rgba(115, 138, 163, 0.14)" },
-        horzLines: { color: "rgba(115, 138, 163, 0.14)" },
-      },
-      rightPriceScale: {
-        borderColor: "rgba(115, 138, 163, 0.24)",
-      },
-      timeScale: {
-        borderColor: "rgba(115, 138, 163, 0.24)",
-      },
-    });
-    const priceSeries = chart.addCandlestickSeries({
+
+    const priceChart = createBaseChart(priceChartRef.current, 300);
+    const priceSeries = priceChart.addCandlestickSeries({
       upColor: "#2c9f5d",
       downColor: "#b24f4f",
       borderVisible: false,
@@ -157,11 +241,9 @@ export function WorkflowChart({
       wickDownColor: "#d66d6d",
     });
     priceSeries.setData(candles);
-
-    const renderResult = applyIndicatorsToChart(chart, candles, selectedIndicators);
-    setLegendEntries(renderResult.legendEntries);
-    setHoveredTimeKey(timeKey(candles[candles.length - 1].time));
-
+    for (const overlay of indicatorModel.priceOverlays) {
+      renderLineSeries(priceChart, overlay);
+    }
     for (const overlay of overlayLevels) {
       if (overlay.value == null || Number.isNaN(overlay.value)) continue;
       priceSeries.createPriceLine({
@@ -174,7 +256,46 @@ export function WorkflowChart({
       });
     }
 
-    const handleCrosshairMove = (param: { time?: Time }) => {
+    const linkedCharts: Array<IChartApi | null> = [priceChart];
+    let volumeChart: IChartApi | null = null;
+    let momentumChart: IChartApi | null = null;
+
+    if (indicatorModel.volumePanel && volumeChartRef.current) {
+      volumeChart = createBaseChart(volumeChartRef.current, 90);
+      renderVolumePanel(volumeChart, indicatorModel.volumePanel);
+      linkedCharts.push(volumeChart);
+    }
+
+    const rsiPanel = indicatorModel.momentumPanels[0] ?? null;
+    if (rsiPanel && momentumChartRef.current) {
+      momentumChart = createBaseChart(momentumChartRef.current, 90);
+      momentumChart.priceScale(rsiPanel.scaleId).applyOptions({
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+        autoScale: true,
+        borderVisible: false,
+        mode: 0,
+      });
+      for (const line of rsiPanel.lines) {
+        renderLineSeries(momentumChart, line);
+      }
+      renderGuides(momentumChart, candles, rsiPanel.scaleId, rsiPanel.guides);
+      linkedCharts.push(momentumChart);
+    }
+
+    const syncVisibleRange = (source: IChartApi, targets: IChartApi[]) => {
+      const handler = (range: VisibleTimeRange | null) => {
+        if (!range || syncGuardRef.current) return;
+        syncGuardRef.current = true;
+        for (const target of targets) {
+          target.timeScale().setVisibleRange(range);
+        }
+        syncGuardRef.current = false;
+      };
+      source.timeScale().subscribeVisibleTimeRangeChange(handler);
+      return () => source.timeScale().unsubscribeVisibleTimeRangeChange(handler);
+    };
+
+    const hoverHandler = (param: { time?: Time }) => {
       if (!param.time) {
         setHoveredTimeKey(timeKey(candles[candles.length - 1].time));
         return;
@@ -182,24 +303,41 @@ export function WorkflowChart({
       setHoveredTimeKey(timeKey(param.time));
     };
 
-    chart.subscribeCrosshairMove(handleCrosshairMove);
-    chart.timeScale().fitContent();
+    const cleanups: Array<() => void> = [];
+    for (const chart of linkedCharts) {
+      if (!chart) continue;
+      chart.subscribeCrosshairMove(hoverHandler);
+      cleanups.push(() => chart.unsubscribeCrosshairMove(hoverHandler));
+    }
+    if (volumeChart) cleanups.push(syncVisibleRange(priceChart, [volumeChart]));
+    if (momentumChart) cleanups.push(syncVisibleRange(priceChart, [momentumChart]));
+    if (volumeChart && momentumChart) cleanups.push(syncVisibleRange(volumeChart, [priceChart, momentumChart]));
+    if (momentumChart && volumeChart) cleanups.push(syncVisibleRange(momentumChart, [priceChart, volumeChart]));
+    if (momentumChart && !volumeChart) cleanups.push(syncVisibleRange(momentumChart, [priceChart]));
+    if (volumeChart && !momentumChart) cleanups.push(syncVisibleRange(volumeChart, [priceChart]));
+
+    setHoveredTimeKey(timeKey(candles[candles.length - 1].time));
+    priceChart.timeScale().fitContent();
+    const initialRange = priceChart.timeScale().getVisibleRange();
+    if (initialRange) {
+      volumeChart?.timeScale().setVisibleRange(initialRange);
+      momentumChart?.timeScale().setVisibleRange(initialRange);
+    }
 
     return () => {
-      chart.unsubscribeCrosshairMove(handleCrosshairMove);
-      chart.remove();
+      for (const cleanup of cleanups) cleanup();
+      priceChart.remove();
+      volumeChart?.remove();
+      momentumChart?.remove();
     };
-  }, [candles, overlayLevels, selectedIndicators]);
+  }, [candles, indicatorModel, overlayLevels]);
 
   const hoverLegendEntries = useMemo(
-    () =>
-      legendEntries.map((entry) => ({
-        ...entry,
-        activeValue: activeTimeKey ? entry.valuesByTime.get(activeTimeKey) ?? null : null,
-      })),
+    () => extractWorkflowHoverLegendValues(legendEntries, activeTimeKey),
     [activeTimeKey, legendEntries],
   );
-
+  const priceLegendEntries = hoverLegendEntries.filter((entry) => entry.pane === "price");
+  const lowerLegendEntries = hoverLegendEntries.filter((entry) => entry.pane !== "price");
   const latestBarTime = candles.length > 0 ? String(candles[candles.length - 1].time) : null;
 
   if (!chartPayload || candles.length === 0) {
@@ -251,11 +389,11 @@ export function WorkflowChart({
 
       <div className="op-grid-2" style={{ gap: 12 }}>
         <div style={{ border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 10, padding: 12, background: "rgba(10, 18, 25, 0.72)" }}>
-          <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 8 }}>Hover snapshot</div>
+          <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 8 }}>Synchronized hover snapshot</div>
           <div style={{ display: "grid", gap: 4 }}>
             <div><strong>Time:</strong> {formatTimestamp(activeCandle ? String(activeCandle.time) : null)}</div>
             <div><strong>Close:</strong> {formatNumber(activeCandle?.close ?? null)}</div>
-            <div><strong>Volume:</strong> {formatNumber(activeCandle?.volume ?? null, "volume")}</div>
+            {panelState.showVolume ? <div><strong>Volume:</strong> {formatNumber(activeCandle?.volume ?? null, "volume")}</div> : null}
           </div>
         </div>
         <div style={{ border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 10, padding: 12, background: "rgba(10, 18, 25, 0.72)" }}>
@@ -265,42 +403,97 @@ export function WorkflowChart({
               No indicators enabled. Use a preset or custom toggles to add chart context.
             </div>
           ) : (
-            <div style={{ display: "grid", gap: 6 }}>
-              {hoverLegendEntries.map((entry) => (
-                <button
-                  key={`${entry.id}-${entry.label}`}
-                  type="button"
-                  onClick={() => setSelectedIndicators((prev) => prev.filter((item) => item !== entry.id))}
-                  title={`Hide ${entry.label}`}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    padding: "6px 8px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(115, 138, 163, 0.24)",
-                    background: "rgba(15, 24, 34, 0.72)",
-                    color: "inherit",
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
-                >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 999, background: entry.color, display: "inline-block" }} />
-                    <span>{entry.label}</span>
-                  </span>
-                  <span>{formatNumber(entry.activeValue, legendValueKind(entry))}</span>
-                </button>
-              ))}
+            <div className="op-stack" style={{ gap: 8 }}>
+              {priceLegendEntries.length > 0 ? (
+                <div className="op-stack" style={{ gap: 6 }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--op-muted, #7a8999)" }}>Price overlays</div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {priceLegendEntries.map((entry) => (
+                      <button
+                        key={`${entry.label}-${entry.color}`}
+                        type="button"
+                        onClick={() => setSelectedIndicators((prev) => prev.filter((item) => item !== legendEntries.find((source) => source.label === entry.label)?.id))}
+                        title={`Hide ${entry.label}`}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          padding: "6px 8px",
+                          borderRadius: 8,
+                          border: "1px solid rgba(115, 138, 163, 0.24)",
+                          background: "rgba(15, 24, 34, 0.72)",
+                          color: "inherit",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 999, background: entry.color, display: "inline-block" }} />
+                          <span>{entry.label}</span>
+                        </span>
+                        <span>{formatNumber(entry.value, legendValueKind(entry.pane))}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {lowerLegendEntries.length > 0 ? (
+                <div className="op-stack" style={{ gap: 6 }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--op-muted, #7a8999)" }}>Lower panels</div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {lowerLegendEntries.map((entry) => (
+                      <div
+                        key={`${entry.label}-${entry.color}`}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          padding: "6px 8px",
+                          borderRadius: 8,
+                          border: "1px solid rgba(115, 138, 163, 0.24)",
+                          background: "rgba(15, 24, 34, 0.72)",
+                        }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 999, background: entry.color, display: "inline-block" }} />
+                          <span>{entry.label}</span>
+                        </span>
+                        <span>{formatNumber(entry.value, legendValueKind(entry.pane))}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
       </div>
 
-      <div ref={chartRef} />
+      <div className="op-stack" style={{ gap: 8 }}>
+        <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Price panel</div>
+        <div ref={priceChartRef} />
+        {indicatorModel.volumePanel ? (
+          <>
+            <div className="op-row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
+              <div style={{ fontSize: "0.78rem", fontWeight: 600 }}>Volume</div>
+              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>Separate scale</div>
+            </div>
+            <div ref={volumeChartRef} />
+          </>
+        ) : null}
+        {indicatorModel.momentumPanels[0] ? (
+          <>
+            <div className="op-row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
+              <div style={{ fontSize: "0.78rem", fontWeight: 600 }}>{indicatorModel.momentumPanels[0].label}</div>
+              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>0–100 scale</div>
+            </div>
+            <div ref={momentumChartRef} />
+          </>
+        ) : null}
+      </div>
 
       <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.8rem", lineHeight: 1.5 }}>
-        Hover the crosshair to inspect the displayed bar and currently visible indicators only. Values without enough chart history render as Unavailable.
+        Hover any panel to inspect one synchronized bar context across price, volume, and momentum. MACD, ATR, HACO parity, and richer interactive coverage remain deferred for a later chart pass.
       </div>
     </div>
   );

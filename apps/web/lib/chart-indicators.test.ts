@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyIndicatorsToChart, FIRST_CLASS_WORKFLOW_INDICATORS, HACO_CONTEXT_SUPPORTED_INDICATORS } from "@/lib/chart-indicators";
+import { applyIndicatorsToChart, buildWorkflowIndicatorModel, FIRST_CLASS_WORKFLOW_INDICATORS, HACO_CONTEXT_SUPPORTED_INDICATORS } from "@/lib/chart-indicators";
 import type { IndicatorId } from "@/lib/indicator-framework";
 
 type SeriesRecorder = { kind: string; options?: Record<string, unknown>; data: unknown[] };
@@ -56,5 +56,13 @@ describe("applyIndicatorsToChart", () => {
     expect(scaleCalls.some((call) => call.id === "rsi")).toBe(true);
     expect(result.legendEntries.some((entry) => entry.label === "SMA 20" && entry.latestValue != null)).toBe(true);
     expect(result.legendEntries.some((entry) => entry.label === "RSI 14" && entry.pane === "momentum")).toBe(true);
+  });
+
+  it("builds separate panel descriptors for price, volume, and momentum studies", () => {
+    const model = buildWorkflowIndicatorModel(candles as never, ["volume", "sma20", "bollinger", "rsi"]);
+    expect(model.priceOverlays.some((entry) => entry.label === "SMA 20")).toBe(true);
+    expect(model.volumePanel?.label).toBe("Volume");
+    expect(model.momentumPanels[0]?.label).toBe("RSI 14");
+    expect(model.momentumPanels[0]?.guides?.map((entry) => entry.value)).toEqual([70, 30]);
   });
 });

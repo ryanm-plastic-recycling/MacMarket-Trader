@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 103, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 106, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
@@ -217,6 +217,9 @@ deferred to later phases and do not block Phase 8 planning.
   to a real inbox (logo URL configurable via `BRAND_LOGO_URL`, From display
   name via `BRAND_FROM_NAME`)
 - HACO workspace: deeper indicator controls and signal visibility
+- Analysis / Recommendations chart UX follow-up:
+  HACO parity, Playwright hover/legend coverage, and advanced indicator
+  settings remain deferred beyond the coordinated lower-panel pass
 - Sticky table headers + richer active-context toggles on Replay / Orders
   history tables (beyond current contained-scroll + lineage-first selection)
 - Options/crypto live execution semantics — currently blocked at research
@@ -236,7 +239,7 @@ deferred to later phases and do not block Phase 8 planning.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 103
+- vitest: 106
 - Playwright: 31
 
 ## Core product pillars
@@ -285,6 +288,12 @@ diffs. Notable recent inflection points:
   show a value-rich legend with quick hide toggles. This stayed frontend-only;
   scoring, replay, orders, schemas, and provider execution behavior were not
   changed.
+- 2026-04-29 — Analysis / Recommendations chart UX pass 2: workflow charts now
+  render coordinated lower panels for volume and RSI with synchronized
+  inspection context across panels, while keeping MACD, ATR, HACO parity,
+  advanced indicator settings, and Playwright interaction coverage deferred.
+  This remained frontend-only; options stayed research-only and no
+  recommendation, replay, order, or provider behavior changed.
 - 2026-04-29 — Phase 8A planning started: `docs/options-architecture.md`
   added with safe follow-on slices for read-only option contracts, replay,
   paper lifecycle, and operator risk UX. This was a docs-only pass; no

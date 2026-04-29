@@ -1,6 +1,17 @@
+import type { IndicatorLegendEntry, IndicatorPane } from "@/lib/chart-indicators";
 import { INDICATOR_REGISTRY, type IndicatorId } from "@/lib/indicator-framework";
 
 export type WorkflowIndicatorPresetId = "clean" | "trend" | "momentum" | "volatility" | "all" | "custom";
+export type WorkflowPanelState = {
+  showVolume: boolean;
+  showMomentum: boolean;
+};
+export type WorkflowHoverLegendValue = {
+  label: string;
+  pane: IndicatorPane;
+  color: string;
+  value: number | null;
+};
 
 export type WorkflowIndicatorPreset = {
   id: Exclude<WorkflowIndicatorPresetId, "custom">;
@@ -65,4 +76,23 @@ export function detectWorkflowIndicatorPreset(
     }
   }
   return "custom";
+}
+
+export function getWorkflowPanelState(selectedIndicators: IndicatorId[]): WorkflowPanelState {
+  return {
+    showVolume: selectedIndicators.includes("volume"),
+    showMomentum: selectedIndicators.includes("rsi"),
+  };
+}
+
+export function extractWorkflowHoverLegendValues(
+  legendEntries: IndicatorLegendEntry[],
+  activeTimeKey: string | null,
+): WorkflowHoverLegendValue[] {
+  return legendEntries.map((entry) => ({
+    label: entry.label,
+    pane: entry.pane,
+    color: entry.color,
+    value: activeTimeKey ? entry.valuesByTime.get(activeTimeKey) ?? null : null,
+  }));
 }
