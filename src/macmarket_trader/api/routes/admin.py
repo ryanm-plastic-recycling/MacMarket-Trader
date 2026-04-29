@@ -21,6 +21,8 @@ from macmarket_trader.domain.schemas import (
     Bar,
     ExpectedRange,
     InviteCreateRequest,
+    OptionPaperCloseStructureRequest,
+    OptionPaperCloseStructureResponse,
     OptionPaperOpenStructureResponse,
     OptionPaperStructureInput,
     OptionReplayPreviewRequest,
@@ -30,6 +32,7 @@ from macmarket_trader.domain.schemas import (
     TradeRecommendation,
 )
 from macmarket_trader.execution.paper_broker import PaperBroker
+from macmarket_trader.options.paper_close import OptionPaperCloseError, close_paper_option_structure
 from macmarket_trader.options.paper_contracts import OptionPaperContractError
 from macmarket_trader.options.paper_open import open_paper_option_structure
 from macmarket_trader.options.replay_preview import build_options_replay_preview
@@ -864,6 +867,26 @@ def open_user_option_paper_structure(
         )
     except OptionPaperContractError as exc:
         raise HTTPException(status_code=409, detail=exc.reason) from exc
+
+
+@user_router.post(
+    "/options/paper-structures/{position_id}/close",
+    response_model=OptionPaperCloseStructureResponse,
+)
+def close_user_option_paper_structure(
+    position_id: int,
+    req: OptionPaperCloseStructureRequest,
+    user=Depends(require_approved_user),
+) -> OptionPaperCloseStructureResponse:
+    try:
+        return close_paper_option_structure(
+            app_user_id=user.id,
+            position_id=position_id,
+            req=req,
+            repository=option_paper_repo,
+        )
+    except OptionPaperCloseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.reason) from exc
 
 
 @user_router.post("/replay-runs")

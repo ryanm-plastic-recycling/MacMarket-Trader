@@ -16,8 +16,9 @@ Tests: pytest 210, vitest 123, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
-Phase 8D4 open paper option structure behavior is complete; close behavior,
-commission application, and frontend operator UI remain deferred.
+Phase 8D5 manual close paper option structure behavior is complete;
+commission application, expiration settlement, and frontend operator UI
+remain deferred.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -163,12 +164,12 @@ deferred to later phases and do not block Phase 8 planning.
 - Status:
   `8A` complete, `8B` complete for the current non-persisted research-only
   scope, `8C` complete for the current read-only, non-persisted
-  replay-preview scope, `8D1` / `8D2` / `8D3` / `8D4` complete for design,
-  schema, repository/service contracts, and open-only paper lifecycle
-  behavior, and `8D5+` / `8E` / `8F` remain planned. Dedicated options
-  persistence tables, internal repository contracts, and an open-only paper
-  structure path now exist, but close behavior, UI, commission application,
-  and execution-enablement changes remain deferred.
+  replay-preview scope, `8D1` / `8D2` / `8D3` / `8D4` / `8D5` complete for
+  design, schema, repository/service contracts, and open/manual-close paper
+  lifecycle behavior, and `8D6+` / `8E` / `8F` remain planned. Dedicated
+  options persistence tables, internal repository contracts, and open/manual
+  close paper lifecycle paths now exist, but expiration settlement, UI,
+  commission application, and execution-enablement changes remain deferred.
 - Master plan:
   [options-architecture.md](options-architecture.md)
 - Companion docs:
@@ -215,8 +216,9 @@ deferred to later phases and do not block Phase 8 planning.
   visualization beyond the current contextual summary, or live routing
 - 8D status:
   `8D1` design checkpoint, `8D2` schema/migration foundation, `8D3`
-  repository/service contracts, and `8D4` open paper option structure
-  behavior are complete; `8D5+` remain deferred
+  repository/service contracts, `8D4` open paper option structure behavior,
+  and `8D5` manual close paper option structure behavior are complete;
+  `8D6+` remain deferred
 - 8D acceptance target:
   supported defined-risk structures can move through an options-specific paper
   lifecycle with explicit leg summaries, contract-multiplier math,
@@ -234,11 +236,14 @@ deferred to later phases and do not block Phase 8 planning.
   through a dedicated paper-only backend path at
   `POST /user/options/paper-structures/open`, which creates options-specific
   order and position headers plus legs without creating equity orders, replay
-  runs, or recommendation rows; current equity write tables, routes, and
-  replay/order behavior remain untouched
+  runs, or recommendation rows; open positions can now close manually through
+  `POST /user/options/paper-structures/{position_id}/close`, which writes
+  options-specific trade headers plus legs with gross P&L only and keeps
+  commissions null until a later slice; current equity write tables, routes,
+  and replay/order behavior remain untouched
 - 8D still deferred:
-  close paper option structure behavior, `commission_per_contract`
-  application, and frontend operator UI
+  expiration settlement mode, `commission_per_contract` application, and
+  frontend operator UI
 - 8D not included:
   naked short options, early partial fills, assignment/exercise automation, or
   live brokerage execution
@@ -455,6 +460,13 @@ diffs. Notable recent inflection points:
   plus legs without touching equity orders, replay runs, staged orders, or
   live routing. Close behavior, commission application, and frontend operator
   UI remain deferred to later 8D slices.
+- 2026-04-29 — Phase 8D5 complete for the current manual-close scope: open
+  paper option positions can now close through
+  `POST /user/options/paper-structures/{position_id}/close`, which validates
+  full-leg manual close input, blocks double close and cross-user access,
+  persists options-specific trade headers plus legs, and computes gross P&L
+  without applying commissions yet. Expiration settlement, commission
+  application, and frontend operator UI remain deferred.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

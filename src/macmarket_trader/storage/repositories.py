@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+import math
 from uuid import uuid4
 
 from sqlalchemy import func, or_, select
@@ -38,6 +39,8 @@ from macmarket_trader.domain.models import (
 )
 from macmarket_trader.domain.schemas import (
     FillRecord,
+    OptionPaperCloseLegInput,
+    OptionPaperCloseStructureResponse,
     OptionPaperOrderLegRecord,
     OptionPaperOpenStructureResponse,
     OptionPaperOrderRecord,
@@ -50,6 +53,7 @@ from macmarket_trader.domain.schemas import (
     PortfolioSnapshot,
     TradeRecommendation,
 )
+from macmarket_trader.options.paper_close import OptionPaperCloseError
 from macmarket_trader.options.paper_contracts import prepare_option_paper_structure
 
 SessionFactory = Callable[[], Session]
@@ -132,6 +136,38 @@ def commission_paid_for_trade(row: PaperTradeModel) -> float:
     gross = gross_pnl_or_fallback(row)
     net = net_pnl_or_fallback(row)
     return max(0.0, gross - net)
+
+
+def _clean_option_money(value: float, *, digits: int = 10) -> float:
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise OptionPaperCloseError("non_finite_option_close_value")
+    rounded = round(numeric, digits)
+    if abs(rounded) < 10 ** (-digits):
+        return 0.0
+    return rounded
+
+
+def _validate_exit_premium(value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise OptionPaperCloseError("invalid_exit_premium")
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric < 0:
+        raise OptionPaperCloseError("invalid_exit_premium")
+    return _clean_option_money(numeric)
+
+
+def _manual_option_leg_gross_pnl(
+    *,
+    action: str,
+    entry_premium: float,
+    exit_premium: float,
+    quantity: int,
+    multiplier: int,
+) -> float:
+    direction = -1.0 if str(action).strip().lower() == "sell" else 1.0
+    per_share_change = (exit_premium - entry_premium) * direction
+    return _clean_option_money(per_share_change * quantity * multiplier)
 
 
 class RecommendationRepository:
@@ -981,6 +1017,121 @@ class OptionPaperRepository:
                 return None
             return self._serialize_position_record(session, row)
 
+    def close_structure_manual(
+        self,
+        *,
+        app_user_id: int,
+        position_id: int,
+        leg_closes: list[OptionPaperCloseLegInput],
+        notes: str = "",
+    ) -> OptionPaperCloseStructureResponse:
+        if not leg_closes:
+            raise OptionPaperCloseError("close_legs_are_required")
+
+        provided_exit_premiums: dict[int, float] = {}
+        for leg_close in leg_closes:
+            if leg_close.position_leg_id in provided_exit_premiums:
+                raise OptionPaperCloseError("duplicate_position_leg_ids")
+            provided_exit_premiums[leg_close.position_leg_id] = _validate_exit_premium(
+                leg_close.exit_premium
+            )
+
+        with self.session_factory() as session:
+            position_row = session.execute(
+                select(PaperOptionPositionModel).where(
+                    PaperOptionPositionModel.id == position_id,
+                    PaperOptionPositionModel.app_user_id == app_user_id,
+                )
+            ).scalar_one_or_none()
+            if position_row is None:
+                raise OptionPaperCloseError("option_position_not_found", status_code=404)
+            if position_row.status != "open":
+                raise OptionPaperCloseError("option_position_not_open")
+
+            position_legs = list(
+                session.execute(
+                    select(PaperOptionPositionLegModel)
+                    .where(PaperOptionPositionLegModel.position_id == position_row.id)
+                    .order_by(PaperOptionPositionLegModel.id.asc())
+                ).scalars()
+            )
+            if not position_legs:
+                raise OptionPaperCloseError("option_position_legs_not_found")
+            if any(leg.status != "open" for leg in position_legs):
+                raise OptionPaperCloseError("all_position_legs_must_be_open")
+
+            actual_leg_ids = {leg.id for leg in position_legs}
+            unknown_leg_ids = set(provided_exit_premiums) - actual_leg_ids
+            if unknown_leg_ids:
+                raise OptionPaperCloseError("unknown_position_leg_id")
+            missing_leg_ids = actual_leg_ids - set(provided_exit_premiums)
+            if missing_leg_ids:
+                raise OptionPaperCloseError("all_position_legs_must_be_closed_together")
+
+            closed_at = datetime.now(timezone.utc)
+            gross_pnl = 0.0
+            leg_results: list[tuple[PaperOptionPositionLegModel, float, float]] = []
+            for position_leg in position_legs:
+                exit_premium = provided_exit_premiums[position_leg.id]
+                leg_gross_pnl = _manual_option_leg_gross_pnl(
+                    action=position_leg.action,
+                    entry_premium=float(position_leg.entry_premium),
+                    exit_premium=exit_premium,
+                    quantity=int(position_leg.quantity),
+                    multiplier=int(position_leg.multiplier),
+                )
+                gross_pnl = _clean_option_money(gross_pnl + leg_gross_pnl)
+                position_leg.exit_premium = exit_premium
+                position_leg.status = "closed"
+                leg_results.append((position_leg, exit_premium, leg_gross_pnl))
+
+            position_row.status = "closed"
+            position_row.closed_at = closed_at
+
+            trade_row = PaperOptionTradeModel(
+                app_user_id=app_user_id,
+                position_id=position_row.id,
+                structure_type=position_row.structure_type,
+                underlying_symbol=position_row.underlying_symbol,
+                expiration=position_row.expiration,
+                opened_at=position_row.opened_at,
+                closed_at=closed_at,
+                gross_pnl=gross_pnl,
+                total_commissions=None,
+                net_pnl=None,
+                settlement_mode="manual_close",
+                notes=notes,
+            )
+            session.add(trade_row)
+            session.flush()
+            for position_leg, exit_premium, leg_gross_pnl in leg_results:
+                session.add(
+                    PaperOptionTradeLegModel(
+                        trade_id=trade_row.id,
+                        action=position_leg.action,
+                        right=position_leg.right,
+                        strike=position_leg.strike,
+                        expiration=position_leg.expiration,
+                        quantity=position_leg.quantity,
+                        multiplier=position_leg.multiplier,
+                        entry_premium=position_leg.entry_premium,
+                        exit_premium=exit_premium,
+                        leg_gross_pnl=leg_gross_pnl,
+                        leg_commission=None,
+                        leg_net_pnl=None,
+                        label=position_leg.label,
+                    )
+                )
+
+            session.commit()
+            session.refresh(position_row)
+            session.refresh(trade_row)
+            return self._serialize_close_response(
+                session,
+                position_row=position_row,
+                trade_row=trade_row,
+            )
+
     def create_trade(
         self,
         *,
@@ -1227,6 +1378,35 @@ class OptionPaperRepository:
             legs=position_record.legs,
             order_created_at=order_row.created_at,
             position_opened_at=position_row.opened_at,
+        )
+
+    def _serialize_close_response(
+        self,
+        session: Session,
+        *,
+        position_row: PaperOptionPositionModel,
+        trade_row: PaperOptionTradeModel,
+    ) -> OptionPaperCloseStructureResponse:
+        trade_record = self._serialize_trade_record(session, trade_row)
+        return OptionPaperCloseStructureResponse(
+            position_id=position_row.id,
+            trade_id=trade_row.id,
+            structure_type=position_row.structure_type,
+            underlying_symbol=position_row.underlying_symbol,
+            status=position_row.status,
+            position_status=position_row.status,
+            settlement_mode=trade_row.settlement_mode or "manual_close",
+            gross_pnl=trade_row.gross_pnl,
+            net_pnl=trade_row.net_pnl,
+            total_commissions=trade_row.total_commissions,
+            execution_enabled=False,
+            persistence_enabled=True,
+            paper_only=True,
+            operator_disclaimer=(
+                "Paper-only options structure close. Gross P&L only until commission modeling lands. No live routing or broker execution."
+            ),
+            legs=trade_record.legs,
+            closed_at=trade_row.closed_at or position_row.closed_at or position_row.opened_at,
         )
 
 

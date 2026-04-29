@@ -559,6 +559,40 @@ class OptionPaperOpenStructureResponse(BaseModel):
     position_opened_at: datetime
 
 
+class OptionPaperCloseLegInput(BaseModel):
+    position_leg_id: int
+    exit_premium: float
+
+
+class OptionPaperCloseStructureRequest(BaseModel):
+    settlement_mode: str = "manual_close"
+    legs: list[OptionPaperCloseLegInput] = Field(default_factory=list)
+    underlying_settlement_price: float | None = None
+    notes: str | None = None
+
+
+class OptionPaperCloseStructureResponse(BaseModel):
+    position_id: int
+    trade_id: int
+    market_mode: MarketMode = MarketMode.OPTIONS
+    structure_type: str
+    underlying_symbol: str
+    status: str
+    position_status: str
+    settlement_mode: str
+    gross_pnl: float | None = None
+    net_pnl: float | None = None
+    total_commissions: float | None = None
+    execution_enabled: bool = False
+    persistence_enabled: bool = True
+    paper_only: bool = True
+    operator_disclaimer: str = (
+        "Paper-only options structure close. Gross P&L only until commission modeling lands. No live routing or broker execution."
+    )
+    legs: list[OptionPaperTradeLegRecord] = Field(default_factory=list)
+    closed_at: datetime
+
+
 class CryptoMarketContext(BaseModel):
     venue: str
     quote_currency: str = "USD"

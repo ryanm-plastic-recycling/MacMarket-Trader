@@ -94,10 +94,24 @@ Required now for `8D4` open paper option structure behavior:
 - regression proof that no equity orders, positions, trades, recommendations,
   or replay runs are created by the options open path
 
+Required now for `8D5` manual close paper option structure behavior:
+
+- manual close lifecycle tests for supported defined-risk inputs
+- gross P&L tests for both profitable and losing closes
+- trade header and trade-leg persistence tests through the close path
+- position and position-leg closed-state persistence tests
+- blocked double-close tests
+- blocked wrong-user tests
+- blocked negative exit-premium tests
+- blocked partial-leg close tests
+- regression proof that no equity orders, positions, trades, recommendations,
+  or replay runs are created by the options close path
+- regression proof that existing equity close lifecycle tests remain green
+
 Required later for options paper lifecycle:
 
-- structure close lifecycle tests
-- gross versus net realized P&L tests
+- expiration-settlement lifecycle tests
+- gross versus net realized P&L tests once commissions apply
 - `commission_per_contract` application tests
 - debit versus credit handling tests
 - defined-risk validation tests

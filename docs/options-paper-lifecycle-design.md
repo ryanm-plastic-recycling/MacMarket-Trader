@@ -5,17 +5,18 @@ Last updated: 2026-04-29
 ## Purpose
 
 This document defines the `8D` design checkpoint, schema foundation,
-repository/service contracts, and open-only runtime boundary for options paper
+repository/service contracts, and current runtime boundary for options paper
 lifecycle support.
 
 `8D1` design, `8D2` schema foundation, `8D3` repository/service contracts,
-and `8D4` open paper option structure behavior are now implemented. The
-dedicated options persistence branch exists and now authorizes supported
-defined-risk structures to open through an options-specific paper-only backend
-path. It still does not authorize:
+`8D4` open paper option structure behavior, and `8D5` manual close paper
+option structure behavior are now implemented. The dedicated options
+persistence branch exists and now authorizes supported defined-risk
+structures to open and close manually through options-specific paper-only
+backend paths. It still does not authorize:
 
 - options order staging
-- close paper option structure behavior
+- expiration settlement behavior
 - live routing
 - brokerage execution
 - automatic assignment or exercise handling
@@ -138,21 +139,21 @@ Open results should later include:
 
 ### Close lifecycle
 
-Future close requests should require one of these explicit modes:
+Current first-pass close support now includes:
 
 - manual close with per-leg close premiums
+
+Still deferred for later close work:
+
 - deterministic expiration settlement with an underlying settlement price
 
-Close results should later include:
+Current close results include:
 
 - per-leg close snapshot
 - structure gross realized P&L
-- structure net realized P&L
-- open commission, close commission, and total commission
-- terminal status such as:
-  - `closed_manual`
-  - `expired_worthless`
-  - `settled_at_expiration`
+- `total_commissions=null` until `8D6`
+- `net_pnl=null` until `8D6`
+- terminal structure status `closed` with trade `settlement_mode=manual_close`
 
 ## Schema approach comparison
 
@@ -302,7 +303,7 @@ Current validation boundaries:
 - invalid quantity / multiplier / strike / premium blocked through existing
   payoff validation
 
-Still not implemented in `8D3`:
+Still not implemented in `8D3` alone:
 
 - API routes
 - open paper option structure behavior
@@ -350,7 +351,45 @@ Current guardrails:
 - no staged options orders are created
 - naked short single-leg structures remain blocked
 - multi-expiration structures remain blocked
-- no close behavior exists yet
+- no commissions are applied yet
+- no expiration settlement exists yet
+- no frontend operator UI exists yet
+
+## 8D5 manual close paper option structure implemented now
+
+The second runtime lifecycle step now exists without adding any frontend UI.
+
+Implemented now:
+
+- `close_paper_option_structure(...)` in
+  `src/macmarket_trader/options/paper_close.py`
+- `OptionPaperRepository.close_structure_manual(...)` in
+  `src/macmarket_trader/storage/repositories.py`
+- protected route at
+  `POST /user/options/paper-structures/{position_id}/close`
+- typed close-request and close-response contracts in
+  `src/macmarket_trader/domain/schemas.py`
+
+Current runtime behavior:
+
+- validates user-scoped open positions only
+- requires all open position legs to be closed together
+- accepts `manual_close` only in the current slice
+- requires non-negative exit premiums per leg
+- blocks cross-user close attempts, duplicate close attempts, unknown legs,
+  and partial-leg close attempts
+- updates option position and leg rows to closed state
+- creates one options-specific trade header plus trade legs
+- stores gross P&L only; `total_commissions` and `net_pnl` remain null until
+  `8D6`
+
+Current guardrails:
+
+- no equity orders, positions, or trades are created
+- no replay runs are created
+- no recommendation rows are created
+- no staged options orders are created
+- no expiration settlement exists yet
 - no `commission_per_contract` application exists yet
 - no frontend operator UI exists yet
 
@@ -709,8 +748,9 @@ Must not change:
 
 Complete when:
 
-- supported structures can close manually or settle at expiration
+- supported structures can close manually in paper mode
 - gross realized P&L is deterministic
+- blocked wrong-user, double-close, and invalid-leg paths are tested
 
 Must not change:
 
@@ -751,9 +791,10 @@ Complete when:
 - no equity lifecycle breakage
 - no live trading
 - no brokerage routing
-- no options close lifecycle behavior until `8D5+` is explicitly approved
-- the only approved runtime lifecycle behavior in the current branch is the
-  `8D4` open-only paper structure path
+- the currently approved runtime lifecycle behavior in the current branch is:
+  - `8D4` open-only paper structure
+  - `8D5` manual close paper structure
+- no expiration settlement until a later approved slice
 - no automatic assignment or exercise in the early lifecycle pass
 - no naked shorts early
 - no margin assumptions unless explicitly modeled
@@ -761,10 +802,10 @@ Complete when:
 
 ## Recommended implementation prompt after this checkpoint
 
-After the completed `8D4` open-only paper lifecycle slice, the safest next
+After the completed `8D5` manual-close paper lifecycle slice, the safest next
 implementation prompt is:
 
-- `Implement 8D5 only: add close paper option structure behavior on top of the
-  dedicated options persistence branch, with no commission_per_contract
-  application yet, no frontend UI, no live routing, and no changes to the
-  existing equity close lifecycle.`
+- `Implement 8D6 only: apply commission_per_contract to the dedicated options
+  paper lifecycle branch, keeping gross versus net P&L explicit, with no
+  frontend UI yet, no live routing, and no changes to the existing equity fee
+  math.`
