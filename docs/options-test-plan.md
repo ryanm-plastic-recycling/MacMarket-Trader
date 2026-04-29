@@ -108,11 +108,21 @@ Required now for `8D5` manual close paper option structure behavior:
   or replay runs are created by the options close path
 - regression proof that existing equity close lifecycle tests remain green
 
+Required now for `8D6` options contract-commission modeling:
+
+- options close with zero commission proves `net_pnl == gross_pnl`
+- options close with nonzero commission proves
+  `net_pnl = gross_pnl - total_commissions`
+- multi-leg commission math proves commission is per contract per leg, not per
+  share or contract multiplier
+- open-response tests prove `commission_per_contract` and opening commission
+  visibility
+- regression proof that Phase 7 equity `commission_per_trade` behavior remains
+  green
+
 Required later for options paper lifecycle:
 
 - expiration-settlement lifecycle tests
-- gross versus net realized P&L tests once commissions apply
-- `commission_per_contract` application tests
 - debit versus credit handling tests
 - defined-risk validation tests
 - blocked naked-short tests

@@ -9,8 +9,9 @@ repository/service contracts, and current runtime boundary for options paper
 lifecycle support.
 
 `8D1` design, `8D2` schema foundation, `8D3` repository/service contracts,
-`8D4` open paper option structure behavior, and `8D5` manual close paper
-option structure behavior are now implemented. The dedicated options
+`8D4` open paper option structure behavior, `8D5` manual close paper
+option structure behavior, and `8D6` `commission_per_contract` net-P&L
+modeling are now implemented. The dedicated options
 persistence branch exists and now authorizes supported defined-risk
 structures to open and close manually through options-specific paper-only
 backend paths. It still does not authorize:
@@ -151,8 +152,9 @@ Current close results include:
 
 - per-leg close snapshot
 - structure gross realized P&L
-- `total_commissions=null` until `8D6`
-- `net_pnl=null` until `8D6`
+- `opening_commissions` and `closing_commissions`
+- `total_commissions`
+- `net_pnl`
 - terminal structure status `closed` with trade `settlement_mode=manual_close`
 
 ## Schema approach comparison
@@ -339,6 +341,8 @@ Current runtime behavior:
   - position id
   - structure type
   - net debit / credit
+  - `commission_per_contract`
+  - opening commissions
   - max profit / loss
   - breakevens
   - normalized legs
@@ -351,7 +355,6 @@ Current guardrails:
 - no staged options orders are created
 - naked short single-leg structures remain blocked
 - multi-expiration structures remain blocked
-- no commissions are applied yet
 - no expiration settlement exists yet
 - no frontend operator UI exists yet
 
@@ -380,8 +383,8 @@ Current runtime behavior:
   and partial-leg close attempts
 - updates option position and leg rows to closed state
 - creates one options-specific trade header plus trade legs
-- stores gross P&L only; `total_commissions` and `net_pnl` remain null until
-  `8D6`
+- stores gross P&L plus explicit paper commission totals and net P&L
+- persists leg-level paper commission and net P&L values on trade legs
 
 Current guardrails:
 
@@ -390,8 +393,41 @@ Current guardrails:
 - no recommendation rows are created
 - no staged options orders are created
 - no expiration settlement exists yet
-- no `commission_per_contract` application exists yet
 - no frontend operator UI exists yet
+
+## 8D6 `commission_per_contract` net P&L implemented now
+
+The dedicated options paper lifecycle branch now applies
+`commission_per_contract` deterministically without changing the existing
+equity fee model.
+
+Implemented now:
+
+- user-scoped `commission_per_contract` sourcing through the existing Phase 7
+  settings/default path
+- open-response exposure of:
+  - `commission_per_contract`
+  - `opening_commissions`
+- manual-close computation of:
+  - `gross_pnl`
+  - `opening_commissions`
+  - `closing_commissions`
+  - `total_commissions`
+  - `net_pnl`
+- trade persistence of:
+  - `total_commissions`
+  - `net_pnl`
+- trade-leg persistence of:
+  - `leg_commission`
+  - `leg_net_pnl`
+
+Current fee rules:
+
+- commission is per contract, per leg
+- commission applies on both open and close
+- contract multiplier affects P&L math but does not multiply commissions
+- zero commission keeps `net_pnl == gross_pnl`
+- Phase 7 `commission_per_trade` equity behavior remains unchanged
 
 ## Draft contract and payload direction
 
@@ -559,9 +595,10 @@ These are future payload sketches only. They are not approved for runtime yet.
 
 ## Fee model design
 
-Future `8D` should use `commission_per_contract` only for options.
+The current `8D6` implementation uses `commission_per_contract` only for the
+dedicated options paper lifecycle branch.
 
-Planned rules:
+Current rules:
 
 - per contract
 - per leg
@@ -762,6 +799,8 @@ Complete when:
 
 - contract-level commission is applied deterministically
 - gross and net P&L stay explicit and operator-readable
+- trade rows and trade-leg rows persist fee-aware values for the supported
+  manual-close path
 
 Must not change:
 
@@ -794,6 +833,7 @@ Complete when:
 - the currently approved runtime lifecycle behavior in the current branch is:
   - `8D4` open-only paper structure
   - `8D5` manual close paper structure
+  - `8D6` contract-commission net-P&L modeling
 - no expiration settlement until a later approved slice
 - no automatic assignment or exercise in the early lifecycle pass
 - no naked shorts early
@@ -802,10 +842,11 @@ Complete when:
 
 ## Recommended implementation prompt after this checkpoint
 
-After the completed `8D5` manual-close paper lifecycle slice, the safest next
+After the completed `8D6` contract-commission paper lifecycle slice, the safest next
 implementation prompt is:
 
-- `Implement 8D6 only: apply commission_per_contract to the dedicated options
-  paper lifecycle branch, keeping gross versus net P&L explicit, with no
-  frontend UI yet, no live routing, and no changes to the existing equity fee
-  math.`
+- `Implement 8D7 only: add operator UI for the dedicated paper options
+  lifecycle branch, reading the existing open/manual-close persistence plus
+  gross/net commission fields, with no expiration settlement mode, no live
+  routing, and no changes to existing equity Orders behavior beyond
+  mode-aware coexistence.`

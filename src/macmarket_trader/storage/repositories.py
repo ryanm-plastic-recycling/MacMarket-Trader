@@ -170,6 +170,24 @@ def _manual_option_leg_gross_pnl(
     return _clean_option_money(per_share_change * quantity * multiplier)
 
 
+def _option_leg_commission(*, quantity: int, commission_per_contract: float) -> float:
+    return _clean_option_money(float(quantity) * float(commission_per_contract))
+
+
+def _option_event_commissions(*, legs: list[object], commission_per_contract: float) -> float:
+    total = 0.0
+    for leg in legs:
+        quantity = int(getattr(leg, "quantity", 0) or 0)
+        total = _clean_option_money(
+            total
+            + _option_leg_commission(
+                quantity=quantity,
+                commission_per_contract=commission_per_contract,
+            )
+        )
+    return total
+
+
 class RecommendationRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
@@ -805,6 +823,7 @@ class OptionPaperRepository:
         *,
         app_user_id: int,
         structure: OptionPaperStructureInput,
+        commission_per_contract: float,
     ) -> OptionPaperOpenStructureResponse:
         prepared = prepare_option_paper_structure(structure)
         with self.session_factory() as session:
@@ -873,7 +892,17 @@ class OptionPaperRepository:
             session.commit()
             session.refresh(order_row)
             session.refresh(position_row)
-            return self._serialize_open_response(session, order_row=order_row, position_row=position_row)
+            opening_commissions = _option_event_commissions(
+                legs=prepared.legs,
+                commission_per_contract=commission_per_contract,
+            )
+            return self._serialize_open_response(
+                session,
+                order_row=order_row,
+                position_row=position_row,
+                commission_per_contract=commission_per_contract,
+                opening_commissions=opening_commissions,
+            )
 
     def create_order(
         self,
@@ -1023,6 +1052,7 @@ class OptionPaperRepository:
         app_user_id: int,
         position_id: int,
         leg_closes: list[OptionPaperCloseLegInput],
+        commission_per_contract: float,
         notes: str = "",
     ) -> OptionPaperCloseStructureResponse:
         if not leg_closes:
@@ -1088,6 +1118,17 @@ class OptionPaperRepository:
             position_row.status = "closed"
             position_row.closed_at = closed_at
 
+            opening_commissions = _option_event_commissions(
+                legs=position_legs,
+                commission_per_contract=commission_per_contract,
+            )
+            closing_commissions = _option_event_commissions(
+                legs=position_legs,
+                commission_per_contract=commission_per_contract,
+            )
+            total_commissions = _clean_option_money(opening_commissions + closing_commissions)
+            net_pnl = _clean_option_money(gross_pnl - total_commissions)
+
             trade_row = PaperOptionTradeModel(
                 app_user_id=app_user_id,
                 position_id=position_row.id,
@@ -1097,14 +1138,22 @@ class OptionPaperRepository:
                 opened_at=position_row.opened_at,
                 closed_at=closed_at,
                 gross_pnl=gross_pnl,
-                total_commissions=None,
-                net_pnl=None,
+                total_commissions=total_commissions,
+                net_pnl=net_pnl,
                 settlement_mode="manual_close",
                 notes=notes,
             )
             session.add(trade_row)
             session.flush()
             for position_leg, exit_premium, leg_gross_pnl in leg_results:
+                leg_commission = _clean_option_money(
+                    _option_leg_commission(
+                        quantity=int(position_leg.quantity),
+                        commission_per_contract=commission_per_contract,
+                    )
+                    * 2.0
+                )
+                leg_net_pnl = _clean_option_money(leg_gross_pnl - leg_commission)
                 session.add(
                     PaperOptionTradeLegModel(
                         trade_id=trade_row.id,
@@ -1117,8 +1166,8 @@ class OptionPaperRepository:
                         entry_premium=position_leg.entry_premium,
                         exit_premium=exit_premium,
                         leg_gross_pnl=leg_gross_pnl,
-                        leg_commission=None,
-                        leg_net_pnl=None,
+                        leg_commission=leg_commission,
+                        leg_net_pnl=leg_net_pnl,
                         label=position_leg.label,
                     )
                 )
@@ -1130,6 +1179,9 @@ class OptionPaperRepository:
                 session,
                 position_row=position_row,
                 trade_row=trade_row,
+                commission_per_contract=commission_per_contract,
+                opening_commissions=opening_commissions,
+                closing_commissions=closing_commissions,
             )
 
     def create_trade(
@@ -1354,6 +1406,8 @@ class OptionPaperRepository:
         *,
         order_row: PaperOptionOrderModel,
         position_row: PaperOptionPositionModel,
+        commission_per_contract: float,
+        opening_commissions: float,
     ) -> OptionPaperOpenStructureResponse:
         position_record = self._serialize_position_record(session, position_row)
         return OptionPaperOpenStructureResponse(
@@ -1366,6 +1420,8 @@ class OptionPaperRepository:
             position_status=position_row.status,
             opening_net_debit=position_row.opening_net_debit,
             opening_net_credit=position_row.opening_net_credit,
+            commission_per_contract=commission_per_contract,
+            opening_commissions=opening_commissions,
             max_profit=position_row.max_profit,
             max_loss=position_row.max_loss,
             breakevens=list(position_row.breakevens or []),
@@ -1373,7 +1429,7 @@ class OptionPaperRepository:
             persistence_enabled=True,
             paper_only=True,
             operator_disclaimer=(
-                "Paper-only options structure open. No replay runs, live routing, or broker execution."
+                "Paper-only options structure open with paper fee modeling only. No replay runs, live routing, or broker execution."
             ),
             legs=position_record.legs,
             order_created_at=order_row.created_at,
@@ -1386,6 +1442,9 @@ class OptionPaperRepository:
         *,
         position_row: PaperOptionPositionModel,
         trade_row: PaperOptionTradeModel,
+        commission_per_contract: float,
+        opening_commissions: float,
+        closing_commissions: float,
     ) -> OptionPaperCloseStructureResponse:
         trade_record = self._serialize_trade_record(session, trade_row)
         return OptionPaperCloseStructureResponse(
@@ -1396,6 +1455,9 @@ class OptionPaperRepository:
             status=position_row.status,
             position_status=position_row.status,
             settlement_mode=trade_row.settlement_mode or "manual_close",
+            commission_per_contract=commission_per_contract,
+            opening_commissions=opening_commissions,
+            closing_commissions=closing_commissions,
             gross_pnl=trade_row.gross_pnl,
             net_pnl=trade_row.net_pnl,
             total_commissions=trade_row.total_commissions,
@@ -1403,7 +1465,7 @@ class OptionPaperRepository:
             persistence_enabled=True,
             paper_only=True,
             operator_disclaimer=(
-                "Paper-only options structure close. Gross P&L only until commission modeling lands. No live routing or broker execution."
+                "Paper-only options structure close with paper contract commission modeling only. No live routing or broker execution."
             ),
             legs=trade_record.legs,
             closed_at=trade_row.closed_at or position_row.closed_at or position_row.opened_at,

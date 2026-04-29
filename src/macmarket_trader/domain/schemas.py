@@ -545,6 +545,8 @@ class OptionPaperOpenStructureResponse(BaseModel):
     position_status: str
     opening_net_debit: float | None = None
     opening_net_credit: float | None = None
+    commission_per_contract: float | None = None
+    opening_commissions: float | None = None
     max_profit: float | None = None
     max_loss: float | None = None
     breakevens: list[float] = Field(default_factory=list)
@@ -552,7 +554,7 @@ class OptionPaperOpenStructureResponse(BaseModel):
     persistence_enabled: bool = True
     paper_only: bool = True
     operator_disclaimer: str = (
-        "Paper-only options structure open. No replay runs, live routing, or broker execution."
+        "Paper-only options structure open with paper fee modeling only. No replay runs, live routing, or broker execution."
     )
     legs: list[OptionPaperPositionLegRecord] = Field(default_factory=list)
     order_created_at: datetime
@@ -580,6 +582,9 @@ class OptionPaperCloseStructureResponse(BaseModel):
     status: str
     position_status: str
     settlement_mode: str
+    commission_per_contract: float | None = None
+    opening_commissions: float | None = None
+    closing_commissions: float | None = None
     gross_pnl: float | None = None
     net_pnl: float | None = None
     total_commissions: float | None = None
@@ -587,7 +592,7 @@ class OptionPaperCloseStructureResponse(BaseModel):
     persistence_enabled: bool = True
     paper_only: bool = True
     operator_disclaimer: str = (
-        "Paper-only options structure close. Gross P&L only until commission modeling lands. No live routing or broker execution."
+        "Paper-only options structure close with paper contract commission modeling only. No live routing or broker execution."
     )
     legs: list[OptionPaperTradeLegRecord] = Field(default_factory=list)
     closed_at: datetime

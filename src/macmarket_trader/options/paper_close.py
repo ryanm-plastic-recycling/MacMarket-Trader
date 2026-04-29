@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from macmarket_trader.domain.schemas import (
@@ -27,6 +28,7 @@ def close_paper_option_structure(
     app_user_id: int,
     position_id: int,
     req: OptionPaperCloseStructureRequest,
+    commission_per_contract: float,
     repository: "OptionPaperRepository",
 ) -> OptionPaperCloseStructureResponse:
     """Close a paper-only options structure without touching equity flows."""
@@ -36,10 +38,19 @@ def close_paper_option_structure(
         raise OptionPaperCloseError("invalid_settlement_mode")
     if settlement_mode == "expiration":
         raise OptionPaperCloseError("expiration_settlement_not_yet_supported")
+    if isinstance(commission_per_contract, bool):
+        raise OptionPaperCloseError("invalid_commission_per_contract")
+    try:
+        normalized_commission = float(commission_per_contract)
+    except (TypeError, ValueError) as exc:
+        raise OptionPaperCloseError("invalid_commission_per_contract") from exc
+    if not math.isfinite(normalized_commission) or normalized_commission < 0:
+        raise OptionPaperCloseError("invalid_commission_per_contract")
 
     return repository.close_structure_manual(
         app_user_id=app_user_id,
         position_id=position_id,
         leg_closes=req.legs,
+        commission_per_contract=round(normalized_commission, 10),
         notes=req.notes or "",
     )

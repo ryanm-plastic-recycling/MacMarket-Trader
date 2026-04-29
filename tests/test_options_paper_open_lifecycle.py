@@ -26,7 +26,7 @@ client = TestClient(app)
 _USER_AUTH = {"Authorization": "Bearer user-token"}
 
 
-def _approve_default_user() -> int:
+def _approve_default_user(*, commission_per_contract: float | None = None) -> int:
     response = client.get("/user/me", headers=_USER_AUTH)
     assert response.status_code == 200, response.text
     with SessionLocal() as session:
@@ -34,6 +34,7 @@ def _approve_default_user() -> int:
             select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_user")
         ).scalar_one()
         user.approval_status = "approved"
+        user.commission_per_contract = commission_per_contract
         session.commit()
         return user.id
 
@@ -94,7 +95,7 @@ def _vertical_debit_payload() -> dict[str, object]:
 
 
 def test_open_option_paper_structure_creates_order_and_position_only() -> None:
-    user_id = _approve_default_user()
+    user_id = _approve_default_user(commission_per_contract=0.75)
     before = _counts()
 
     response = client.post(
@@ -113,13 +114,15 @@ def test_open_option_paper_structure_creates_order_and_position_only() -> None:
     assert payload["position_status"] == "open"
     assert payload["opening_net_debit"] == 2.6
     assert payload["opening_net_credit"] is None
+    assert payload["commission_per_contract"] == 0.75
+    assert payload["opening_commissions"] == 1.5
     assert payload["max_profit"] == 740.0
     assert payload["max_loss"] == 260.0
     assert payload["breakevens"] == [207.6]
     assert payload["execution_enabled"] is False
     assert payload["persistence_enabled"] is True
     assert payload["paper_only"] is True
-    assert "No replay runs" in payload["operator_disclaimer"]
+    assert "paper fee modeling only" in payload["operator_disclaimer"]
     assert len(payload["legs"]) == 2
     assert payload["legs"][0]["entry_premium"] == 4.2
     assert payload["legs"][0]["quantity"] == 1

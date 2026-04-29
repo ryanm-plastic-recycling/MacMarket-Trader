@@ -28,7 +28,13 @@ _USER_AUTH = {"Authorization": "Bearer user-token"}
 _ADMIN_AUTH = {"Authorization": "Bearer admin-token"}
 
 
-def _approve_user(*, headers: dict[str, str], external_auth_user_id: str, app_role: str = "user") -> int:
+def _approve_user(
+    *,
+    headers: dict[str, str],
+    external_auth_user_id: str,
+    app_role: str = "user",
+    commission_per_contract: float | None = None,
+) -> int:
     response = client.get("/user/me", headers=headers)
     assert response.status_code == 200, response.text
     with SessionLocal() as session:
@@ -37,6 +43,7 @@ def _approve_user(*, headers: dict[str, str], external_auth_user_id: str, app_ro
         ).scalar_one()
         user.approval_status = "approved"
         user.app_role = app_role
+        user.commission_per_contract = commission_per_contract
         session.commit()
         return user.id
 
@@ -72,7 +79,7 @@ def _counts() -> dict[str, int]:
         }
 
 
-def _vertical_debit_payload() -> dict[str, object]:
+def _vertical_debit_payload(*, quantity: int = 1) -> dict[str, object]:
     return {
         "market_mode": "options",
         "structure_type": "vertical_debit_spread",
@@ -84,6 +91,7 @@ def _vertical_debit_payload() -> dict[str, object]:
                 "strike": 205.0,
                 "expiration": date(2026, 5, 15).isoformat(),
                 "premium": 4.2,
+                "quantity": quantity,
                 "label": "long call",
             },
             {
@@ -92,6 +100,7 @@ def _vertical_debit_payload() -> dict[str, object]:
                 "strike": 215.0,
                 "expiration": date(2026, 5, 15).isoformat(),
                 "premium": 1.6,
+                "quantity": quantity,
                 "label": "short call",
             },
         ],
@@ -99,11 +108,11 @@ def _vertical_debit_payload() -> dict[str, object]:
     }
 
 
-def _open_vertical_position() -> dict[str, object]:
+def _open_vertical_position(*, quantity: int = 1) -> dict[str, object]:
     response = client.post(
         "/user/options/paper-structures/open",
         headers=_USER_AUTH,
-        json=_vertical_debit_payload(),
+        json=_vertical_debit_payload(quantity=quantity),
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -128,7 +137,11 @@ def _close_payload(*, open_payload: dict[str, object], long_exit: float, short_e
 
 
 def test_manual_close_option_structure_creates_trade_and_closes_position() -> None:
-    user_id = _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    user_id = _approve_user(
+        headers=_USER_AUTH,
+        external_auth_user_id="clerk_user",
+        commission_per_contract=0.75,
+    )
     open_payload = _open_vertical_position()
     before_close = _counts()
 
@@ -147,20 +160,27 @@ def test_manual_close_option_structure_creates_trade_and_closes_position() -> No
     assert payload["status"] == "closed"
     assert payload["position_status"] == "closed"
     assert payload["settlement_mode"] == "manual_close"
+    assert payload["commission_per_contract"] == 0.75
+    assert payload["opening_commissions"] == 1.5
+    assert payload["closing_commissions"] == 1.5
     assert payload["gross_pnl"] == 300.0
-    assert payload["net_pnl"] is None
-    assert payload["total_commissions"] is None
+    assert payload["net_pnl"] == 297.0
+    assert payload["total_commissions"] == 3.0
     assert payload["execution_enabled"] is False
     assert payload["persistence_enabled"] is True
     assert payload["paper_only"] is True
-    assert "Gross P&L only" in payload["operator_disclaimer"]
+    assert "paper contract commission modeling only" in payload["operator_disclaimer"]
     assert len(payload["legs"]) == 2
     assert payload["legs"][0]["entry_premium"] == 4.2
     assert payload["legs"][0]["exit_premium"] == 6.3
     assert payload["legs"][0]["leg_gross_pnl"] == 210.0
+    assert payload["legs"][0]["leg_commission"] == 1.5
+    assert payload["legs"][0]["leg_net_pnl"] == 208.5
     assert payload["legs"][1]["entry_premium"] == 1.6
     assert payload["legs"][1]["exit_premium"] == 0.7
     assert payload["legs"][1]["leg_gross_pnl"] == 90.0
+    assert payload["legs"][1]["leg_commission"] == 1.5
+    assert payload["legs"][1]["leg_net_pnl"] == 88.5
 
     after_close = _counts()
     assert after_close["option_orders"] == before_close["option_orders"]
@@ -186,8 +206,8 @@ def test_manual_close_option_structure_creates_trade_and_closes_position() -> No
         assert trade_row.app_user_id == user_id
         assert trade_row.position_id == position_row.id
         assert trade_row.gross_pnl == 300.0
-        assert trade_row.total_commissions is None
-        assert trade_row.net_pnl is None
+        assert trade_row.total_commissions == 3.0
+        assert trade_row.net_pnl == 297.0
         assert trade_row.settlement_mode == "manual_close"
 
         position_legs = list(
@@ -201,8 +221,12 @@ def test_manual_close_option_structure_creates_trade_and_closes_position() -> No
         assert [leg.exit_premium for leg in position_legs] == [6.3, 0.7]
 
 
-def test_manual_close_option_structure_can_realize_loss() -> None:
-    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+def test_manual_close_option_structure_zero_commission_keeps_net_equal_gross() -> None:
+    _approve_user(
+        headers=_USER_AUTH,
+        external_auth_user_id="clerk_user",
+        commission_per_contract=0.0,
+    )
     open_payload = _open_vertical_position()
 
     response = client.post(
@@ -214,9 +238,36 @@ def test_manual_close_option_structure_can_realize_loss() -> None:
     payload = response.json()
 
     assert payload["gross_pnl"] == -450.0
-    assert payload["net_pnl"] is None
-    assert payload["total_commissions"] is None
+    assert payload["net_pnl"] == -450.0
+    assert payload["total_commissions"] == 0.0
     assert [leg["leg_gross_pnl"] for leg in payload["legs"]] == [-300.0, -150.0]
+    assert [leg["leg_commission"] for leg in payload["legs"]] == [0.0, 0.0]
+    assert [leg["leg_net_pnl"] for leg in payload["legs"]] == [-300.0, -150.0]
+
+
+def test_manual_close_option_structure_commission_is_per_contract_not_multiplier() -> None:
+    _approve_user(
+        headers=_USER_AUTH,
+        external_auth_user_id="clerk_user",
+        commission_per_contract=0.5,
+    )
+    open_payload = _open_vertical_position(quantity=3)
+
+    response = client.post(
+        f"/user/options/paper-structures/{open_payload['position_id']}/close",
+        headers=_USER_AUTH,
+        json=_close_payload(open_payload=open_payload, long_exit=6.3, short_exit=0.7),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert payload["gross_pnl"] == 900.0
+    assert payload["opening_commissions"] == 3.0
+    assert payload["closing_commissions"] == 3.0
+    assert payload["total_commissions"] == 6.0
+    assert payload["net_pnl"] == 894.0
+    assert [leg["leg_commission"] for leg in payload["legs"]] == [3.0, 3.0]
+    assert [leg["leg_net_pnl"] for leg in payload["legs"]] == [627.0, 267.0]
 
 
 def test_manual_close_option_structure_blocks_double_close() -> None:

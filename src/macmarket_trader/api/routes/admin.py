@@ -863,6 +863,7 @@ def open_user_option_paper_structure(
         return open_paper_option_structure(
             app_user_id=user.id,
             structure=req,
+            commission_per_contract=_effective_commission_per_contract(user),
             repository=option_paper_repo,
         )
     except OptionPaperContractError as exc:
@@ -883,6 +884,7 @@ def close_user_option_paper_structure(
             app_user_id=user.id,
             position_id=position_id,
             req=req,
+            commission_per_contract=_effective_commission_per_contract(user),
             repository=option_paper_repo,
         )
     except OptionPaperCloseError as exc:

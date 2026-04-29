@@ -25,8 +25,9 @@ Current planning state:
   `8C4` operator UI preview, and `8C5` closure review/tests/docs alignment
   are complete
 - `8D` advanced: `8D1` design checkpoint, `8D2` dedicated schema
-  foundation, and `8D3` repository/service contracts are complete; runtime
-  lifecycle work has not started
+  foundation, `8D3` repository/service contracts, `8D4` open paper option
+  structure behavior, `8D5` manual close behavior, and `8D6`
+  `commission_per_contract` net-P&L modeling are complete
 - `8E` planned only: implementation not started
 - `8F` planned only: closure criteria defined, implementation not started
 
@@ -45,7 +46,8 @@ Phase 8 should extend existing repo anchors rather than replace them:
 - `admin.py` already builds options research setup payloads
 - `market_data.py` already exposes Polygon `options_chain_preview(...)`
 - Analysis / Recommendations already expose read-only options research preview
-- `app_users.commission_per_contract` already exists, but is not yet applied
+- `app_users.commission_per_contract` already exists and is now applied to the
+  dedicated options paper lifecycle branch only
 - current replay, orders, fills, positions, and trades remain equity-centric
 
 ## Phase 8 guardrails
@@ -141,7 +143,9 @@ Status:
 - `8D1` design checkpoint complete
 - `8D2` dedicated schema/migration foundation complete
 - `8D3` repository/service contracts complete
-- runtime lifecycle implementation not started
+- `8D4` open paper option structure complete
+- `8D5` manual close paper option structure complete
+- `8D6` options contract-commission net-P&L modeling complete
 
 Detailed design:
 
@@ -166,11 +170,12 @@ Planned now:
 - dedicated options persistence is recommended over extending the current
   equity write tables
 - dedicated `paper_option_*` tables now exist as the approved schema
-  foundation, without runtime lifecycle behavior
+  foundation
 - dedicated repository/service contracts now exist for typed create/fetch
-  access to the options persistence branch, without route or UI wiring
-- future open/close payload direction is documented
-- future `commission_per_contract` application rules are documented
+  access to the options persistence branch
+- dedicated paper-only open and manual-close lifecycle paths now exist
+- `commission_per_contract` now applies to the dedicated options paper
+  lifecycle branch without changing the equity fee model
 
 Not complete:
 
