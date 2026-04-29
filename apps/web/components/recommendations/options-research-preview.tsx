@@ -1122,7 +1122,6 @@ export function OptionsReplayPreviewPanel({
             </div>
             <div>
               <div><strong>Defined risk:</strong> {preview.is_defined_risk ? "Yes" : "No"}</div>
-              <div><strong>Execution enabled:</strong> {preview.execution_enabled ? "Yes" : "No"}</div>
               <div><strong>Persistence enabled:</strong> {preview.persistence_enabled ? "Yes" : "No"}</div>
               <div><strong>Preview type:</strong> {formatOptionsReplayToken(preview.preview_type)}</div>
               <div><strong>Blocked reason:</strong> {formatOptionsReplayToken(preview.blocked_reason)}</div>

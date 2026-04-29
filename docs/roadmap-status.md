@@ -26,8 +26,11 @@ Phase 8E2 is complete for the current Recommendations options provider/source,
 as-of, and data-quality warning coverage.
 Phase 8E3 is complete for the current guided Recommendations options workflow
 UX.
-Remaining fee-depth, options-fee, and provider-depth items are intentionally
-deferred to later phases and do not block Phase 8 planning.
+Phase 8E is complete for the current Recommendations options risk/operator UX
+surface only.
+Phase 8F remains open for final Phase 8 closure, while broader provider/source
+parity across other options surfaces and advanced Expected Move visualization
+stay deferred.
 
 ## Completed Phases
 
@@ -276,8 +279,9 @@ deferred to later phases and do not block Phase 8 planning.
   `8E1` complete for the current Recommendations risk-summary foundation;
   `8E2` complete for the current Recommendations provider/source/as-of and
   data-quality warning scope; `8E3` complete for the current guided
-  Recommendations workflow-clarity scope. Full `8E` closure remains pending an
-  explicit closure pass
+  Recommendations workflow-clarity scope. `8E` is now closed for the current
+  Recommendations options surface only, while `8F` remains open for broader
+  final closure
 - 8E acceptance target:
   operators can see strategy summary, legs, debit/credit, max profit/loss,
   breakevens, DTE/expiration, payoff context, warnings, provider/source
@@ -327,7 +331,7 @@ deferred to later phases and do not block Phase 8 planning.
   `8D6` contract commissions ->
   `8D7` operator UI ->
   `8D8` lifecycle tests/docs closure ->
-  `8E1` operator risk UX improvements ->
+  `8E` Recommendations options risk/operator UX closure ->
   `8F` closure review
 - Phase 8 guardrails:
   options begin read-only, equity workflows must remain untouched unless
@@ -559,6 +563,12 @@ diffs. Notable recent inflection points:
   a stronger post-close result state, and lighter progressive disclosure for
   detailed caveats without changing backend behavior or widening the feature
   scope.
+- 2026-04-29 — Phase 8E closure review complete for the current
+  Recommendations options surface: replay preview, read-only research context,
+  and persisted paper-only lifecycle wording are now aligned; the replay
+  preview no longer echoes execution-enabled copy; the current operator risk,
+  provider/source, Expected Range, guided workflow, and manual-close clarity
+  gates are documented as satisfied without implying full Phase 8 closure.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

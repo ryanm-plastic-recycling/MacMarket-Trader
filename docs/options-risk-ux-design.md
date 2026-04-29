@@ -4,10 +4,13 @@ Last updated: 2026-04-29
 
 ## Purpose
 
-This document defines the operator-facing risk UX for future options support.
+This document defines the operator-facing risk UX for the current
+Recommendations options surface and its planned follow-on slices.
 
-It is planning only. It does not require a full charting implementation in the
-first slice.
+The current Recommendations options surface now satisfies `8E1` through `8E3`
+plus closure review for the scoped risk/operator UX pass. It does not require
+a full charting implementation in the first slice, and later options surfaces
+may still add more depth.
 
 Current implementation note:
 
@@ -246,6 +249,14 @@ Must not change:
 - the current `Structure risk` layer remains aligned with replay-preview and
   paper-lifecycle boundaries rather than collapsing them into one implied
   execution flow
+
+Current closure status:
+
+- `8E` is complete for the current Recommendations options surface only
+- broader provider/source/as-of parity across other options surfaces remains
+  deferred
+- advanced Expected Move visualization remains deferred
+- `8F` remains the next full Phase 8 closure pass
 
 8E is not complete if:
 

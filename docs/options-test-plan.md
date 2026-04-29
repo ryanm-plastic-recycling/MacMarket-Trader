@@ -276,6 +276,11 @@ Use this short manual pass when closing the current `8D` scope:
   implying broker execution
 - CTA suppression boundaries remain correct
 
+Current status:
+
+- the `8E` gate is satisfied for the current Recommendations options surface
+- `8F` remains open for the broader Phase 8 closure pass
+
 ### 8F gate
 
 - supported defined-risk options flow is testable end to end for the intended

@@ -379,7 +379,8 @@ Current project status, in operator terms:
 - Phase 8B complete
 - Phase 8C complete
 - Phase 8D complete for the current paper-options lifecycle scope
-- Phase 8E is next: richer operator risk UX
+- Phase 8E complete for the current Recommendations options risk/operator UX
+  scope
 - Phase 8F comes later: final options-phase closure review
 
 Current options boundary:

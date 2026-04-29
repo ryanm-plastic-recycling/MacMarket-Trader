@@ -99,6 +99,7 @@ describe("OptionsReplayPreviewPanel", () => {
     expect(html).toContain("Does not save a position");
     expect(html).toContain("$0.00");
     expect(html).not.toContain("Execution disabled");
+    expect(html).not.toContain("Execution enabled:");
     expect(html).not.toContain("Promote selected queue candidate");
     expect(html).not.toContain("Go to Replay step");
     expect(html).not.toContain("Go to Paper Order step");
