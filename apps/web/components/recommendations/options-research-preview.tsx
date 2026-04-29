@@ -5,9 +5,12 @@ import { WorkflowChart } from "@/components/charts/workflow-chart";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
 import type { HacoChartPayload } from "@/lib/haco-api";
 import {
-  formatOptionsLegLabel,
+  canRenderOptionsResearchChart,
   formatResearchCell,
   formatResearchValue,
+  getExpectedRangeReasonText,
+  getOptionsChainUnavailableMessage,
+  getOptionsLegDisplayLines,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
   type OptionsResearchSetup,
@@ -30,11 +33,6 @@ export function OptionsResearchPreview({
   chartSourceLabel: string;
   chartBlockedByFallback: boolean;
 }) {
-  const structure = setup?.option_structure ?? null;
-  const premiumLabel = getOptionsPremiumLabel(structure);
-  const premiumValue = getOptionsPremiumValue(structure);
-  const chainPreview = setup?.options_chain_preview ?? null;
-
   if (loading && !setup) {
     return <Card title="Options research preview"><EmptyState title="Loading options research" hint="Fetching the same protected setup contract used by Analysis." /></Card>;
   }
@@ -53,6 +51,19 @@ export function OptionsResearchPreview({
       </Card>
     );
   }
+
+  const structure = setup.option_structure ?? null;
+  const premiumLabel = getOptionsPremiumLabel(structure);
+  const premiumValue = getOptionsPremiumValue(structure);
+  const chainPreview = setup.options_chain_preview ?? null;
+  const expectedRangeReason = getExpectedRangeReasonText(setup.expected_range);
+  const chainUnavailableMessage = getOptionsChainUnavailableMessage(chainPreview);
+  const chartCanRender = canRenderOptionsResearchChart({
+    marketMode: setup.market_mode,
+    requestedSymbol: setup.symbol,
+    setupSymbol: setup.symbol,
+    workflowSource: chartSourceLabel,
+  }) && !chartBlockedByFallback;
 
   return (
     <>
@@ -85,15 +96,11 @@ export function OptionsResearchPreview({
           <div style={{ marginTop: 8 }}>
             <strong>Legs:</strong>
             <div className="op-stack" style={{ marginTop: 6, gap: 4 }}>
-              {(structure?.legs ?? []).length > 0 ? (
-                (structure?.legs ?? []).map((leg, index) => (
-                  <div key={`${leg.label ?? leg.right ?? "leg"}-${index}`} style={{ color: "var(--op-muted, #7a8999)" }}>
-                    {formatOptionsLegLabel(leg)}
-                  </div>
-                ))
-              ) : (
-                <div style={{ color: "var(--op-muted, #7a8999)" }}>Leg detail Unavailable.</div>
-              )}
+              {getOptionsLegDisplayLines(structure).map((line, index) => (
+                <div key={`${line}-${index}`} style={{ color: "var(--op-muted, #7a8999)" }}>
+                  {line}
+                </div>
+              ))}
             </div>
           </div>
           {structure?.event_blockers && structure.event_blockers.length > 0 ? (
@@ -115,7 +122,7 @@ export function OptionsResearchPreview({
               <div><strong>Method:</strong> {formatResearchValue(setup.expected_range.method)}</div>
               <div><strong>Move:</strong> {formatResearchValue(setup.expected_range.absolute_move)} ({formatResearchValue(setup.expected_range.lower_bound)} to {formatResearchValue(setup.expected_range.upper_bound)})</div>
               <div><strong>Horizon:</strong> {formatResearchValue(setup.expected_range.horizon_value)} {formatResearchValue(setup.expected_range.horizon_unit, "").trim()}</div>
-              {setup.expected_range.reason ? <div><strong>Reason:</strong> {formatResearchValue(setup.expected_range.reason)}</div> : null}
+              {expectedRangeReason ? <div><strong>Reason:</strong> {formatResearchValue(expectedRangeReason)}</div> : null}
               <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
                 {formatExpectedMoveSummary(setup.expected_range)}
               </div>
@@ -129,7 +136,7 @@ export function OptionsResearchPreview({
       <Card title="Options chain preview">
         {chainPreview === null || chainPreview.reason ? (
           <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.88rem", lineHeight: 1.5 }}>
-            {chainPreview?.reason ?? "Options chain preview unavailable. This phase exposes config-backed research visibility only."}
+            {chainUnavailableMessage}
           </div>
         ) : (
           <>
@@ -187,10 +194,10 @@ export function OptionsResearchPreview({
 
       <Card title="Underlying chart context">
         <div className="op-row" style={{ marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-          <StatusBadge tone={chartBlockedByFallback ? "warn" : "neutral"}>{chartSourceLabel}</StatusBadge>
-          {chartBlockedByFallback ? <StatusBadge tone="warn">Chart suppressed to avoid mixed fallback/provider context</StatusBadge> : null}
+          <StatusBadge tone={!chartCanRender ? "warn" : "neutral"}>{chartSourceLabel}</StatusBadge>
+          {!chartCanRender ? <StatusBadge tone="warn">Chart suppressed to avoid mixed fallback/provider context</StatusBadge> : null}
         </div>
-        {chartBlockedByFallback ? (
+        {!chartCanRender ? (
           <EmptyState
             title="Chart preview unavailable"
             hint="This options research contract is labeled as fallback-sourced, so the underlying chart is suppressed rather than risk a mismatched provider context."

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canRenderOptionsResearchChart,
   formatOptionsLegLabel,
+  getExpectedRangeReasonText,
+  getOptionsChainUnavailableMessage,
+  getOptionsLegDisplayLines,
   formatResearchCell,
   formatResearchValue,
   getOptionsPremiumLabel,
@@ -12,6 +16,7 @@ import {
   isOptionsResearchMode,
   isReadOnlyResearchMode,
   parseRecommendationSearchParams,
+  shouldShowRecommendationExecutionCtas,
 } from "@/lib/recommendations";
 
 describe("parseRecommendationSearchParams", () => {
@@ -174,6 +179,9 @@ describe("research preview helpers", () => {
     expect(isReadOnlyResearchMode("options")).toBe(true);
     expect(isReadOnlyResearchMode("crypto")).toBe(true);
     expect(isReadOnlyResearchMode("equities")).toBe(false);
+    expect(shouldShowRecommendationExecutionCtas("options")).toBe(false);
+    expect(shouldShowRecommendationExecutionCtas("crypto")).toBe(false);
+    expect(shouldShowRecommendationExecutionCtas("equities")).toBe(true);
   });
 
   it("formats missing research values safely", () => {
@@ -190,6 +198,11 @@ describe("research preview helpers", () => {
     ).toBe("sell CALL 205 — short call");
   });
 
+  it("renders partial or missing leg detail safely", () => {
+    expect(formatOptionsLegLabel({ label: "protective wing" })).toBe("protective wing");
+    expect(getOptionsLegDisplayLines({ legs: [] })).toEqual(["Leg detail Unavailable."]);
+  });
+
   it("returns the correct premium label and value for credit and debit structures", () => {
     expect(getOptionsPremiumLabel({ net_credit: 1.25 })).toBe("Net credit");
     expect(getOptionsPremiumValue({ net_credit: 1.25 })).toBe(1.25);
@@ -197,5 +210,43 @@ describe("research preview helpers", () => {
     expect(getOptionsPremiumValue({ net_debit: 2.4 })).toBe(2.4);
     expect(getOptionsPremiumLabel(null)).toBe("Net premium");
     expect(getOptionsPremiumValue(null)).toBeNull();
+  });
+
+  it("surfaces blocked and omitted expected-range reasons safely", () => {
+    expect(getExpectedRangeReasonText({ status: "blocked", reason: "missing_iv_snapshot" })).toBe("missing_iv_snapshot");
+    expect(getExpectedRangeReasonText({ status: "omitted", reason: "" })).toBe("Unavailable");
+    expect(getExpectedRangeReasonText({ status: "computed", method: "iv_1sigma" })).toBeNull();
+  });
+
+  it("returns muted safe copy for missing chain preview states", () => {
+    expect(getOptionsChainUnavailableMessage({ reason: "plan_not_configured" })).toBe("plan_not_configured");
+    expect(getOptionsChainUnavailableMessage(null)).toBe("Options chain preview unavailable. This phase exposes config-backed research visibility only.");
+  });
+
+  it("only allows options research charts when source and symbol matching are safe", () => {
+    expect(
+      canRenderOptionsResearchChart({
+        marketMode: "options",
+        requestedSymbol: "AAPL",
+        setupSymbol: "AAPL",
+        workflowSource: "polygon",
+      }),
+    ).toBe(true);
+    expect(
+      canRenderOptionsResearchChart({
+        marketMode: "options",
+        requestedSymbol: "MSFT",
+        setupSymbol: "AAPL",
+        workflowSource: "polygon",
+      }),
+    ).toBe(false);
+    expect(
+      canRenderOptionsResearchChart({
+        marketMode: "options",
+        requestedSymbol: "AAPL",
+        setupSymbol: "AAPL",
+        workflowSource: "fallback (demo)",
+      }),
+    ).toBe(false);
   });
 });

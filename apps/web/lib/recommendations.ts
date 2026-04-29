@@ -155,6 +155,15 @@ export function isReadOnlyResearchMode(mode: string | null | undefined): boolean
   return normalized === "options" || normalized === "crypto";
 }
 
+export function shouldShowRecommendationExecutionCtas(mode: string | null | undefined): boolean {
+  return !isReadOnlyResearchMode(mode);
+}
+
+function normalizeResearchSymbol(symbol: string | null | undefined): string | null {
+  const normalized = String(symbol ?? "").trim().toUpperCase();
+  return normalized ? normalized : null;
+}
+
 export function formatResearchValue(value: unknown, fallback = "Unavailable"): string {
   if (value == null) return fallback;
   if (typeof value === "number") {
@@ -195,6 +204,53 @@ export function getOptionsPremiumValue(structure: OptionsResearchStructure | nul
   if (structure?.net_credit != null && Number.isFinite(structure.net_credit)) return structure.net_credit;
   if (structure?.net_debit != null && Number.isFinite(structure.net_debit)) return structure.net_debit;
   return null;
+}
+
+export function getOptionsLegDisplayLines(structure: OptionsResearchStructure | null | undefined): string[] {
+  const legs = structure?.legs ?? [];
+  if (legs.length === 0) return ["Leg detail Unavailable."];
+  return legs.map((leg) => formatOptionsLegLabel(leg));
+}
+
+export function getExpectedRangeReasonText(range: OptionsExpectedRange | null | undefined): string | null {
+  if (!range || range.status === "computed") return null;
+  if (typeof range.reason === "string" && range.reason.trim()) return range.reason.trim();
+  return "Unavailable";
+}
+
+export function getOptionsChainUnavailableMessage(preview: OptionsChainPreview | null | undefined): string {
+  const reason = preview?.reason;
+  if (typeof reason === "string" && reason.trim()) return reason.trim();
+  return "Options chain preview unavailable. This phase exposes config-backed research visibility only.";
+}
+
+export function canRenderOptionsResearchChart({
+  marketMode,
+  requestedSymbol,
+  setupSymbol,
+  workflowSource,
+  chartPayloadSymbol,
+  chartFallbackMode,
+}: {
+  marketMode: string | null | undefined;
+  requestedSymbol: string | null | undefined;
+  setupSymbol: string | null | undefined;
+  workflowSource: string | null | undefined;
+  chartPayloadSymbol?: string | null | undefined;
+  chartFallbackMode?: boolean;
+}): boolean {
+  if (!isOptionsResearchMode(marketMode)) return false;
+  const normalizedSetup = normalizeResearchSymbol(setupSymbol);
+  if (!normalizedSetup) return false;
+  const normalizedRequested = normalizeResearchSymbol(requestedSymbol);
+  if (normalizedRequested && normalizedRequested !== normalizedSetup) return false;
+  if (String(workflowSource ?? "").toLowerCase().includes("fallback")) return false;
+  if (chartFallbackMode) return false;
+  if (chartPayloadSymbol !== undefined) {
+    const normalizedChart = normalizeResearchSymbol(chartPayloadSymbol);
+    if (!normalizedChart || normalizedChart !== normalizedSetup) return false;
+  }
+  return true;
 }
 
 /**

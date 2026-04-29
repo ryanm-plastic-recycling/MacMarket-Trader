@@ -16,7 +16,14 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, GUIDED_FLOW_LABEL, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
 import { WorkflowBanner } from "@/components/workflow-banner";
-import { isReadOnlyResearchMode } from "@/lib/recommendations";
+import {
+  formatResearchValue,
+  getOptionsLegDisplayLines,
+  getOptionsPremiumLabel,
+  getOptionsPremiumValue,
+  isReadOnlyResearchMode,
+  type OptionsResearchStructure,
+} from "@/lib/recommendations";
 
 const SUPPORTED_TIMEFRAMES = ["1D", "4H", "1H"] as const;
 
@@ -40,17 +47,7 @@ type SetupPayload = {
   confidence: number;
   filters: string[];
   timeframe?: string;
-  option_structure?: {
-    type: string;
-    legs: Array<{ action: string; right: string; strike: number; label: string }>;
-    net_credit: number;
-    max_profit: number;
-    max_loss: number;
-    breakeven_low: number;
-    breakeven_high: number;
-    dte: number;
-    iv_snapshot: number;
-  };
+  option_structure?: OptionsResearchStructure;
   expected_range?: {
     method?: string | null;
     absolute_move?: number | null;
@@ -271,6 +268,9 @@ export default function Page() {
     [setup],
   );
   const createRecommendationDisabled = isReadOnlyResearchMode(appliedMarketMode);
+  const optionStructure = setup?.option_structure ?? null;
+  const optionPremiumLabel = getOptionsPremiumLabel(optionStructure);
+  const optionPremiumValue = getOptionsPremiumValue(optionStructure);
   const researchPreviewQuery = buildGuidedQuery({
     guided: guidedMode,
     symbol: appliedSymbol,
@@ -357,14 +357,15 @@ export default function Page() {
         <div><strong>Workflow source:</strong> {setup?.workflow_source ?? source}</div>
         {setup?.operator_guidance ? <div><strong>Mode guidance:</strong> {setup.operator_guidance}</div> : null}
         <div><strong>Summary:</strong> {setupSummary ?? "loading"}</div>
-        {appliedMarketMode === "options" && setup?.option_structure ? (
+        {appliedMarketMode === "options" && optionStructure ? (
           <div>
-            <div><strong>Structure:</strong> {setup.option_structure.type}</div>
-            <div><strong>Legs:</strong> {setup.option_structure.legs.map((leg) => `${leg.action} ${leg.right} ${leg.strike}`).join(" | ")}</div>
-            <div><strong>Net credit:</strong> {setup.option_structure.net_credit}</div>
-            <div><strong>Max P/L:</strong> {setup.option_structure.max_profit} / {setup.option_structure.max_loss}</div>
-            <div><strong>Breakevens:</strong> {setup.option_structure.breakeven_low} - {setup.option_structure.breakeven_high}</div>
-            <div><strong>DTE / IV snapshot:</strong> {setup.option_structure.dte} / {setup.option_structure.iv_snapshot}</div>
+            <div><strong>Structure:</strong> {formatResearchValue(optionStructure.type)}</div>
+            <div><strong>Legs:</strong> {getOptionsLegDisplayLines(optionStructure).join(" | ")}</div>
+            <div><strong>{optionPremiumLabel}:</strong> {formatResearchValue(optionPremiumValue)}</div>
+            <div><strong>Max P/L:</strong> {formatResearchValue(optionStructure.max_profit)} / {formatResearchValue(optionStructure.max_loss)}</div>
+            <div><strong>Breakevens:</strong> {formatResearchValue(optionStructure.breakeven_low)} - {formatResearchValue(optionStructure.breakeven_high)}</div>
+            <div><strong>Expiration / DTE:</strong> {formatResearchValue(optionStructure.expiration)} / {formatResearchValue(optionStructure.dte)}</div>
+            <div><strong>IV snapshot:</strong> {formatResearchValue(optionStructure.iv_snapshot)}</div>
           </div>
         ) : (
           <>

@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 106, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 114, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
@@ -165,16 +165,30 @@ deferred to later phases and do not block Phase 8 planning.
 - 8A:
   architecture and contract planning only
 - 8B:
-  started: Recommendations now reuses the protected Analysis setup contract
-  for read-only options research preview, while Analysis suppresses persisted
+  complete for the current non-persisted research-visibility scope:
+  Recommendations reuses the protected Analysis setup contract for read-only
+  options research preview, while Analysis suppresses persisted
   recommendation creation for non-equities to avoid equity-shaped options
-  lineage. Queue/promote/replay/order CTAs remain unavailable in options mode.
+  lineage
+- 8B:
+  complete for the current non-persisted research-visibility scope:
+  expected-range computed / blocked / omitted states render explicitly, chain
+  preview unavailable states render muted explanatory copy, partial leg data
+  renders safely, and missing values render as `Unavailable` or `—`
+- 8B:
+  complete for the current non-persisted research-visibility scope:
+  queue/promote/replay/order/staging CTAs remain suppressed in options mode,
+  and options chart context renders only when symbol/source matching is safe
+- 8B note:
+  persisted options recommendations are intentionally out of scope for 8B and
+  are not required to consider the read-only research slice complete
 - 8C:
-  options replay for defined-risk structures, kept mode-separate from current
-  equity replay
+  options replay for defined-risk structures, including any future replay CTA
+  enablement, kept mode-separate from current equity replay
 - 8D:
   options paper order / fill / position / trade lifecycle with
-  `commission_per_contract` application
+  `commission_per_contract` application, plus any future stage/order CTA
+  enablement
 - 8E:
   operator risk UX for legs, credits/debits, max profit/loss, breakevens, and
   expiration caveats
@@ -300,11 +314,13 @@ diffs. Notable recent inflection points:
   added with safe follow-on slices for read-only option contracts, replay,
   paper lifecycle, and operator risk UX. This was a docs-only pass; no
   schema, migration, or application-code changes landed.
-- 2026-04-29 — Phase 8B started: Recommendations now exposes a read-only
-  options research preview sourced from the protected Analysis setup
-  contract, and Analysis suppresses persisted recommendation creation for
-  non-equities. This stayed frontend-only; no schema, migration, replay,
-  order-lifecycle, or execution behavior changed.
+- 2026-04-29 — Phase 8B complete for the current non-persisted
+  research-visibility scope: Recommendations now exposes a read-only options
+  research preview sourced from the protected Analysis setup contract,
+  Analysis suppresses persisted recommendation creation for non-equities, and
+  options-mode execution CTAs remain intentionally unavailable. This stayed
+  frontend-only; no schema, migration, replay, order-lifecycle, or execution
+  behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

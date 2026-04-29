@@ -23,6 +23,7 @@ import {
   isOptionsResearchMode,
   isReadOnlyResearchMode,
   parseRecommendationSearchParams,
+  shouldShowRecommendationExecutionCtas,
   type OptionsResearchSetup,
   type QueueCandidate,
   type StoredRecommendation,
@@ -326,6 +327,7 @@ export default function RecommendationsPage() {
   const previewStrategy = guidedState.strategy ?? null;
   const previewSource = optionsPreview?.workflow_source ?? guidedState.source ?? "research preview";
   const previewFallback = isOptionsPreviewMode && previewSource.toLowerCase().includes("fallback");
+  const showExecutionCtas = shouldShowRecommendationExecutionCtas(previewMarketMode);
 
   useEffect(() => {
     if (!authReady || isPreviewMode) return;
@@ -562,7 +564,7 @@ export default function RecommendationsPage() {
         </Card>
       ) : null}
 
-      {!isPreviewMode ? <Card>
+      {showExecutionCtas ? <Card>
         <div className="op-row">
           <input value={symbols} onChange={(e) => setSymbols(e.target.value.toUpperCase())} style={{ minWidth: 320 }} placeholder="AAPL,MSFT,NVDA" />
           <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
@@ -575,9 +577,9 @@ export default function RecommendationsPage() {
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadQueue()} />
       </Card> : null}
 
-      {!isPreviewMode && error ? <ErrorState title="Recommendations workflow unavailable" hint={error} /> : null}
+      {showExecutionCtas && error ? <ErrorState title="Recommendations workflow unavailable" hint={error} /> : null}
 
-      {!isPreviewMode ? <div className="op-grid-2">
+      {showExecutionCtas ? <div className="op-grid-2">
         <Card title="Ranked queue candidates">
           {guidedState.guided ? (
             <div style={{ marginBottom: 8 }}>
@@ -664,7 +666,7 @@ export default function RecommendationsPage() {
         </Card>
       </div> : null}
 
-      {!isPreviewMode ? <div className="op-grid-2">
+      {showExecutionCtas ? <div className="op-grid-2">
         <Card title="Queue candidate detail">
           {guidedState.guided ? <div className="op-row" style={{ marginBottom: 8 }}><button onClick={() => setShowOperatorDetail((prev) => !prev)}>{showOperatorDetail ? "Hide operator detail" : "Show operator detail"}</button></div> : null}
           {!selectedQueue ? <EmptyState title="No queue selection" hint="Select a queue row to review deterministic ranking detail." /> : (
@@ -821,7 +823,7 @@ export default function RecommendationsPage() {
         </Card>
       </div> : null}
 
-      {!isPreviewMode ? <Card title="Chart context (source-matched)">
+      {showExecutionCtas ? <Card title="Chart context (source-matched)">
         <div className="op-row" style={{ marginBottom: 8 }}>
           <StatusBadge tone={fallbackDerived ? "warn" : "good"}>workflow source: {selectedSource}</StatusBadge>
           {fallbackDerived ? <StatusBadge tone="warn">Chart overlays disabled to avoid mixed provider/fallback context.</StatusBadge> : null}
