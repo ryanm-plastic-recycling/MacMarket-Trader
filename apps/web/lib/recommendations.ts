@@ -41,6 +41,68 @@ export type RecommendationSearchPrefill = {
   recommendationId: string | null;
 };
 
+export type OptionsResearchLeg = {
+  action?: string | null;
+  right?: string | null;
+  strike?: number | null;
+  label?: string | null;
+};
+
+export type OptionsResearchStructure = {
+  type?: string | null;
+  expiration?: string | null;
+  legs?: OptionsResearchLeg[] | null;
+  net_credit?: number | null;
+  net_debit?: number | null;
+  max_profit?: number | null;
+  max_loss?: number | null;
+  breakeven_low?: number | null;
+  breakeven_high?: number | null;
+  dte?: number | null;
+  iv_snapshot?: number | null;
+  event_blockers?: string[] | null;
+};
+
+export type OptionsExpectedRange = {
+  status: "computed" | "blocked" | "omitted";
+  method?: string | null;
+  absolute_move?: number | null;
+  lower_bound?: number | null;
+  upper_bound?: number | null;
+  horizon_value?: number | null;
+  horizon_unit?: string | null;
+  reason?: string | null;
+};
+
+export type OptionsChainPreviewRow = {
+  strike?: number | null;
+  expiry?: string | null;
+  last_price?: number | null;
+  volume?: number | null;
+};
+
+export type OptionsChainPreview = {
+  underlying?: string | null;
+  expiry?: string | null;
+  calls?: OptionsChainPreviewRow[] | null;
+  puts?: OptionsChainPreviewRow[] | null;
+  data_as_of?: string | null;
+  source?: string | null;
+  reason?: string | null;
+};
+
+export type OptionsResearchSetup = {
+  symbol: string;
+  market_mode: string;
+  timeframe?: string | null;
+  workflow_source: string;
+  strategy: string;
+  operator_disclaimer?: string | null;
+  option_structure?: OptionsResearchStructure | null;
+  expected_range?: OptionsExpectedRange | null;
+  options_chain_preview?: OptionsChainPreview | null;
+};
+
 export function parseRecommendationSearchParams(params: URLSearchParams): RecommendationSearchPrefill {
   const rawSymbols = [params.get("symbols") ?? "", params.get("symbol") ?? ""]
     .join(",")
@@ -82,6 +144,57 @@ export function isFallbackWorkflow(candidate: QueueCandidate | null, recommendat
     return false;
   }
   return candidate.workflow_source.toLowerCase().includes("fallback") || candidate.source?.toLowerCase().includes("fallback") === true;
+}
+
+export function isOptionsResearchMode(mode: string | null | undefined): boolean {
+  return String(mode ?? "").trim().toLowerCase() === "options";
+}
+
+export function isReadOnlyResearchMode(mode: string | null | undefined): boolean {
+  const normalized = String(mode ?? "").trim().toLowerCase();
+  return normalized === "options" || normalized === "crypto";
+}
+
+export function formatResearchValue(value: unknown, fallback = "Unavailable"): string {
+  if (value == null) return fallback;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return fallback;
+    return value.toLocaleString("en-US", {
+      minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : fallback;
+  }
+  return String(value);
+}
+
+export function formatResearchCell(value: unknown): string {
+  return formatResearchValue(value, "—");
+}
+
+export function formatOptionsLegLabel(leg: OptionsResearchLeg): string {
+  const action = typeof leg.action === "string" && leg.action.trim() ? leg.action.trim() : null;
+  const right = typeof leg.right === "string" && leg.right.trim() ? leg.right.trim().toUpperCase() : null;
+  const strike = typeof leg.strike === "number" && Number.isFinite(leg.strike) ? formatResearchValue(leg.strike) : null;
+  const label = typeof leg.label === "string" && leg.label.trim() ? leg.label.trim() : null;
+  const summary = [action, right, strike].filter(Boolean).join(" ");
+  if (summary && label) return `${summary} — ${label}`;
+  return summary || label || "Unavailable";
+}
+
+export function getOptionsPremiumLabel(structure: OptionsResearchStructure | null | undefined): "Net credit" | "Net debit" | "Net premium" {
+  if (structure?.net_credit != null) return "Net credit";
+  if (structure?.net_debit != null) return "Net debit";
+  return "Net premium";
+}
+
+export function getOptionsPremiumValue(structure: OptionsResearchStructure | null | undefined): number | null {
+  if (structure?.net_credit != null && Number.isFinite(structure.net_credit)) return structure.net_credit;
+  if (structure?.net_debit != null && Number.isFinite(structure.net_debit)) return structure.net_debit;
+  return null;
 }
 
 /**

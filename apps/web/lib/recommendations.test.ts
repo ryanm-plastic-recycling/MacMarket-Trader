@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { getPromotedQueueKeys, getRankingProvenance, isFallbackWorkflow, parseRecommendationSearchParams } from "@/lib/recommendations";
+import {
+  formatOptionsLegLabel,
+  formatResearchCell,
+  formatResearchValue,
+  getOptionsPremiumLabel,
+  getOptionsPremiumValue,
+  getPromotedQueueKeys,
+  getRankingProvenance,
+  isFallbackWorkflow,
+  isOptionsResearchMode,
+  isReadOnlyResearchMode,
+  parseRecommendationSearchParams,
+} from "@/lib/recommendations";
 
 describe("parseRecommendationSearchParams", () => {
   it("parses symbol and symbols query params into unique uppercase values", () => {
@@ -152,5 +164,38 @@ describe("isFallbackWorkflow", () => {
         null,
       ),
     ).toBe(true);
+  });
+});
+
+describe("research preview helpers", () => {
+  it("detects options and read-only research modes explicitly", () => {
+    expect(isOptionsResearchMode("options")).toBe(true);
+    expect(isOptionsResearchMode("equities")).toBe(false);
+    expect(isReadOnlyResearchMode("options")).toBe(true);
+    expect(isReadOnlyResearchMode("crypto")).toBe(true);
+    expect(isReadOnlyResearchMode("equities")).toBe(false);
+  });
+
+  it("formats missing research values safely", () => {
+    expect(formatResearchValue(null)).toBe("Unavailable");
+    expect(formatResearchValue(Number.NaN)).toBe("Unavailable");
+    expect(formatResearchValue("")).toBe("Unavailable");
+    expect(formatResearchValue(0)).toBe("0");
+    expect(formatResearchCell(undefined)).toBe("—");
+  });
+
+  it("formats option-leg labels with explicit action, right, strike, and label", () => {
+    expect(
+      formatOptionsLegLabel({ action: "sell", right: "call", strike: 205, label: "short call" }),
+    ).toBe("sell CALL 205 — short call");
+  });
+
+  it("returns the correct premium label and value for credit and debit structures", () => {
+    expect(getOptionsPremiumLabel({ net_credit: 1.25 })).toBe("Net credit");
+    expect(getOptionsPremiumValue({ net_credit: 1.25 })).toBe(1.25);
+    expect(getOptionsPremiumLabel({ net_debit: 2.4 })).toBe("Net debit");
+    expect(getOptionsPremiumValue({ net_debit: 2.4 })).toBe(2.4);
+    expect(getOptionsPremiumLabel(null)).toBe("Net premium");
+    expect(getOptionsPremiumValue(null)).toBeNull();
   });
 });

@@ -16,6 +16,7 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, GUIDED_FLOW_LABEL, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
 import { WorkflowBanner } from "@/components/workflow-banner";
+import { isReadOnlyResearchMode } from "@/lib/recommendations";
 
 const SUPPORTED_TIMEFRAMES = ["1D", "4H", "1H"] as const;
 
@@ -206,6 +207,13 @@ export default function Page() {
   }
 
   async function createRecommendation() {
+    if (isReadOnlyResearchMode(appliedMarketMode)) {
+      setFeedback({
+        state: "error",
+        message: "Options and crypto remain read-only in this phase. Open Recommendations for research preview instead of creating a persisted recommendation.",
+      });
+      return;
+    }
     setFeedback({ state: "loading", message: "Creating recommendation from workbench setup…" });
     const result = await fetchWorkflowApi<{ recommendation_id?: string; data?: { recommendation_id?: string } }>(
       "/api/user/recommendations/generate",
@@ -262,6 +270,15 @@ export default function Page() {
     ],
     [setup],
   );
+  const createRecommendationDisabled = isReadOnlyResearchMode(appliedMarketMode);
+  const researchPreviewQuery = buildGuidedQuery({
+    guided: guidedMode,
+    symbol: appliedSymbol,
+    strategy: appliedStrategy,
+    marketMode: appliedMarketMode,
+    source: setup?.workflow_source ?? source,
+  });
+  const researchPreviewHref = researchPreviewQuery ? `/recommendations?${researchPreviewQuery}` : "/recommendations";
 
   return <section className="op-stack">
     <PageHeader title="Trade Setup" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
@@ -275,7 +292,7 @@ export default function Page() {
         source: setup?.workflow_source ?? source,
       }}
       nextHref="/recommendations"
-      nextLabel="Go to Recommendation"
+      nextLabel={createRecommendationDisabled ? "Open research preview" : "Go to Recommendation"}
       compact={!guidedMode}
     />
     {guidedMode ? <Card title={GUIDED_FLOW_LABEL}><GuidedStepRail current="Analyze" /></Card> : null}
@@ -357,11 +374,16 @@ export default function Page() {
         )}
         <div style={{ marginTop: 8 }}>
           <div className="op-row">
-            <button data-testid="analysis-create-recommendation-button" onClick={() => void createRecommendation()} disabled={guidedMode && draftMarketMode !== "equities"}>Create recommendation from setup</button>
+            <button data-testid="analysis-create-recommendation-button" onClick={() => void createRecommendation()} disabled={createRecommendationDisabled}>Create recommendation from setup</button>
+            {createRecommendationDisabled ? (
+              <Link href={researchPreviewHref}><button type="button">Open read-only research preview</button></Link>
+            ) : null}
           </div>
-          {guidedMode && draftMarketMode !== "equities" ? (
+          {createRecommendationDisabled ? (
             <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
-              Guided workflow requires equities mode. Switch to equities to generate a recommendation.
+              {appliedMarketMode === "options"
+                ? "Options research stays read-only in Phase 8B. Use Recommendations to review the contract preview; queue, replay, and paper orders remain unavailable."
+                : "This market mode stays read-only in the current build. Persisted recommendations remain equities-only."}
             </div>
           ) : null}
         </div>

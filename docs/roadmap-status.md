@@ -157,16 +157,18 @@ deferred to later phases and do not block Phase 8 planning.
 
 ### Phase 8 — Options research → paper parity
 - Status:
-  architecture planning started; no schema, migration, or application-code
-  changes landed in this pass
+  8A architecture planning complete; 8B started with read-only options
+  research preview on Analysis / Recommendations. No schema, migration,
+  replay, order-lifecycle, or execution-enablement changes have landed.
 - Detailed plan:
   see [options-architecture.md](options-architecture.md)
 - 8A:
   architecture and contract planning only
 - 8B:
-  safest first implementation slice after approval — read-only options
-  research contracts in Analysis / Recommendations using existing chain
-  preview and expected-range scaffolding where practical
+  started: Recommendations now reuses the protected Analysis setup contract
+  for read-only options research preview, while Analysis suppresses persisted
+  recommendation creation for non-equities to avoid equity-shaped options
+  lineage. Queue/promote/replay/order CTAs remain unavailable in options mode.
 - 8C:
   options replay for defined-risk structures, kept mode-separate from current
   equity replay
@@ -298,6 +300,11 @@ diffs. Notable recent inflection points:
   added with safe follow-on slices for read-only option contracts, replay,
   paper lifecycle, and operator risk UX. This was a docs-only pass; no
   schema, migration, or application-code changes landed.
+- 2026-04-29 — Phase 8B started: Recommendations now exposes a read-only
+  options research preview sourced from the protected Analysis setup
+  contract, and Analysis suppresses persisted recommendation creation for
+  non-equities. This stayed frontend-only; no schema, migration, replay,
+  order-lifecycle, or execution behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

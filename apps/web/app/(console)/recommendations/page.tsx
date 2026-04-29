@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { WorkflowChart } from "@/components/charts/workflow-chart";
+import { OptionsResearchPreview } from "@/components/recommendations/options-research-preview";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
@@ -15,10 +16,14 @@ import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import {
+  formatResearchValue,
   getPromotedQueueKeys,
   getRankingProvenance,
   isFallbackWorkflow,
+  isOptionsResearchMode,
+  isReadOnlyResearchMode,
   parseRecommendationSearchParams,
+  type OptionsResearchSetup,
   type QueueCandidate,
   type StoredRecommendation,
 } from "@/lib/recommendations";
@@ -98,6 +103,9 @@ export default function RecommendationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, saveAlt: false, approve: false });
   const [chartPayload, setChartPayload] = useState<HacoChartPayload | null>(null);
+  const [optionsPreview, setOptionsPreview] = useState<OptionsResearchSetup | null>(null);
+  const [optionsPreviewLoading, setOptionsPreviewLoading] = useState(false);
+  const [optionsPreviewError, setOptionsPreviewError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const [tableSymbolFilter, setTableSymbolFilter] = useState("");
@@ -307,13 +315,25 @@ export default function RecommendationsPage() {
     await loadRecommendations({ selectRecommendationUid: selectedRecommendation.recommendation_id });
   }
 
-  useEffect(() => {
-    if (!authReady) return;
-    void loadRecommendations();
-  }, [authReady]);
+  const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
+  const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
+  const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
+  const previewMarketMode = guidedState.marketMode ?? null;
+  const isOptionsPreviewMode = isOptionsResearchMode(previewMarketMode);
+  const isPreviewMode = isReadOnlyResearchMode(previewMarketMode);
+  const isCryptoPreviewMode = previewMarketMode === "crypto";
+  const previewSymbol = guidedState.symbol ?? prefill.symbols[0] ?? null;
+  const previewStrategy = guidedState.strategy ?? null;
+  const previewSource = optionsPreview?.workflow_source ?? guidedState.source ?? "research preview";
+  const previewFallback = isOptionsPreviewMode && previewSource.toLowerCase().includes("fallback");
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || isPreviewMode) return;
+    void loadRecommendations();
+  }, [authReady, isPreviewMode]);
+
+  useEffect(() => {
+    if (!authReady || isPreviewMode) return;
     const symbolsFromParams = prefill.symbols;
     if (!symbolsFromParams.length) {
       void loadQueue();
@@ -322,7 +342,40 @@ export default function RecommendationsPage() {
     const joined = symbolsFromParams.join(",");
     setSymbols(joined);
     void loadQueue(symbolsFromParams);
-  }, [authReady, prefill.symbols.join(",")]);
+  }, [authReady, isPreviewMode, prefill.symbols.join(",")]);
+
+  useEffect(() => {
+    if (!authReady || !isOptionsPreviewMode) return;
+    if (!previewSymbol || !previewStrategy) {
+      setOptionsPreview(null);
+      setOptionsPreviewError(null);
+      setOptionsPreviewLoading(false);
+      return;
+    }
+    const nextSymbol: string = previewSymbol;
+    const nextStrategy: string = previewStrategy;
+    let cancelled = false;
+    async function loadOptionsPreview() {
+      setOptionsPreviewLoading(true);
+      setOptionsPreviewError(null);
+      const result = await fetchWorkflowApi<OptionsResearchSetup>(
+        `/api/user/analysis/setup?req_symbol=${encodeURIComponent(nextSymbol)}&strategy=${encodeURIComponent(nextStrategy)}&timeframe=1D&market_mode=options`,
+      );
+      if (cancelled) return;
+      setOptionsPreviewLoading(false);
+      if (!result.ok || !result.data) {
+        setOptionsPreview(null);
+        setOptionsPreviewError(result.error ?? "Unable to load read-only options research preview.");
+        return;
+      }
+      setOptionsPreview(result.data);
+      setOptionsPreviewError(null);
+    }
+    void loadOptionsPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, isOptionsPreviewMode, previewSymbol, previewStrategy]);
 
   useEffect(() => {
     if (!rows.length || !prefill.recommendationId) return;
@@ -336,26 +389,27 @@ export default function RecommendationsPage() {
   useEffect(() => {
     let cancelled = false;
     async function renderChart() {
-      const chartSymbol = selectedRecommendation?.symbol ?? selectedQueue?.symbol;
-      const timeframe = selectedQueue?.timeframe ?? "1D";
-      if (!chartSymbol || fallbackDerived) {
+      const chartSymbol = isOptionsPreviewMode ? (optionsPreview?.symbol ?? previewSymbol) : (selectedRecommendation?.symbol ?? selectedQueue?.symbol);
+      const timeframe = isOptionsPreviewMode ? (optionsPreview?.timeframe ?? "1D") : (selectedQueue?.timeframe ?? "1D");
+      const blockChart = isOptionsPreviewMode ? previewFallback : fallbackDerived;
+      if (!chartSymbol || blockChart) {
         setChartPayload(null);
         return;
       }
       const payload = await fetchHacoChart({ symbol: chartSymbol, timeframe, include_heikin_ashi: false });
       if (cancelled) return;
+      if (isOptionsPreviewMode && payload.fallback_mode) {
+        setChartPayload(null);
+        return;
+      }
       setChartPayload(payload);
     }
     void renderChart();
     return () => {
       cancelled = true;
     };
-  }, [selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, selectedRecommendation?.id, selectedQueueKey, fallbackDerived]);
+  }, [isOptionsPreviewMode, optionsPreview?.symbol, optionsPreview?.timeframe, previewSymbol, previewFallback, selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, selectedRecommendation?.id, selectedQueueKey, fallbackDerived]);
 
-  const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
-  const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
-  const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
-  const isPreviewMode = guidedState.marketMode === "options" || guidedState.marketMode === "crypto";
   const activeRecommendation = useMemo(() => {
     if (selectedRecommendation) return selectedRecommendation;
     if (guidedState.guided) {
@@ -397,31 +451,60 @@ export default function RecommendationsPage() {
     <section className="op-stack">
       <PageHeader
         title="Recommendations"
-        subtitle="Step 2 of the guided paper-trade flow: review and promote Analysis setups (equities live-prep only)."
-        actions={<StatusBadge tone={fallbackDerived ? "warn" : "neutral"}>{fallbackDerived ? "Fallback workflow context" : "Provider workflow context"}</StatusBadge>}
+        subtitle={
+          isOptionsPreviewMode
+            ? "Read-only options research preview sourced from the Analysis setup contract. No execution support."
+            : "Step 2 of the guided paper-trade flow: review and promote Analysis setups (equities live-prep only)."
+        }
+        actions={
+          <StatusBadge tone={isOptionsPreviewMode ? "warn" : fallbackDerived ? "warn" : "neutral"}>
+            {isOptionsPreviewMode
+              ? formatResearchValue(previewSource)
+              : fallbackDerived
+                ? "Fallback workflow context"
+                : "Provider workflow context"}
+          </StatusBadge>
+        }
       />
       <WorkflowBanner
         current="Recommendation"
         state={{
           ...guidedState,
-          symbol: selectedRecommendation?.symbol ?? selectedQueue?.symbol ?? guidedState.symbol,
-          strategy: selectedQueue?.strategy ?? guidedState.strategy,
+          symbol: isOptionsPreviewMode ? (optionsPreview?.symbol ?? previewSymbol ?? guidedState.symbol) : (selectedRecommendation?.symbol ?? selectedQueue?.symbol ?? guidedState.symbol),
+          strategy: isOptionsPreviewMode ? (optionsPreview?.strategy ?? previewStrategy ?? guidedState.strategy) : (selectedQueue?.strategy ?? guidedState.strategy),
           marketMode: guidedState.marketMode ?? selectedQueue?.market_mode ?? "equities",
-          source: selectedSource,
+          source: isOptionsPreviewMode ? previewSource : selectedSource,
           recommendationId: selectedRecommendation?.recommendation_id ?? guidedState.recommendationId,
         }}
         backHref="/analysis"
         backLabel="Back to Analyze"
         nextHref="/replay-runs"
         nextLabel="Go to Replay step"
-        nextDisabled={guidedState.guided && !selectedRecommendation?.recommendation_id}
-        nextDisabledReason="Guided replay requires a persisted recommendation. Promote the selected queue candidate first."
+        nextDisabled={isPreviewMode || (guidedState.guided && !selectedRecommendation?.recommendation_id)}
+        nextDisabledReason={
+          isOptionsPreviewMode
+            ? "Options research stops here in Phase 8B. Replay and paper orders remain equities-only."
+            : isCryptoPreviewMode
+              ? "Crypto remains research preview only. Replay and paper orders remain unavailable."
+              : "Guided replay requires a persisted recommendation. Promote the selected queue candidate first."
+        }
         compact={!guidedState.guided}
       />
-      {isPreviewMode ? (
-        <Card title="Options & crypto — research preview only">
+      {isOptionsPreviewMode ? (
+        <OptionsResearchPreview
+          setup={optionsPreview}
+          loading={optionsPreviewLoading}
+          error={optionsPreviewError}
+          chartPayload={chartPayload}
+          chartStorageKey={STORAGE_KEY}
+          chartSourceLabel={previewSource}
+          chartBlockedByFallback={previewFallback}
+        />
+      ) : null}
+      {isCryptoPreviewMode ? (
+        <Card title="Crypto — research preview only">
           <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.6 }}>
-            Options and crypto recommendations are research preview only. The full recommendation → replay → paper order workflow is available for equities only.
+            Crypto recommendations remain research preview only. Replay, paper orders, and execution-prep workflow continue to be equities-only in the current build.
           </div>
           <div style={{ marginTop: 10 }}>
             <Link href="/analysis?guided=1"><button>← Restart in equities mode</button></Link>
