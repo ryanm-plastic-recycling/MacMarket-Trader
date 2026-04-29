@@ -20,6 +20,88 @@ function toRelativeTime(dateStr: string | undefined | null): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+// Browser timezone (e.g. "America/Indiana/Indianapolis"). Computed once.
+const BROWSER_TIMEZONE = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+})();
+
+// Convert a wall-clock (HH:MM) in `tz` on `date` (year/month/day) into the UTC
+// instant that produces that wall clock in `tz`. Used so we can re-format the
+// same instant in the browser-local zone for the "your time" suffix.
+function zonedWallClockToUtc(date: Date, runTime: string, tz: string): Date {
+  const [hhRaw, mmRaw] = (runTime ?? "00:00").split(":");
+  const hh = Number.isFinite(Number(hhRaw)) ? Number(hhRaw) : 0;
+  const mm = Number.isFinite(Number(mmRaw)) ? Number(mmRaw) : 0;
+  const candidate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), hh, mm));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(candidate);
+  const map: Record<string, string> = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+  const tzClockMs = Date.UTC(
+    Number(map.year), Number(map.month) - 1, Number(map.day),
+    Number(map.hour) % 24, Number(map.minute), Number(map.second ?? 0),
+  );
+  const offsetMs = tzClockMs - candidate.getTime();
+  return new Date(candidate.getTime() - offsetMs);
+}
+
+// "08:30 CT · 9:30 AM your time". When the stored timezone matches the browser
+// timezone, the redundant "your time" suffix is omitted.
+function formatScheduleTime(runTime: string | undefined | null, tz: string | undefined | null): string {
+  if (!runTime || !tz) return "—";
+  let instant: Date;
+  try {
+    instant = zonedWallClockToUtc(new Date(), runTime, tz);
+  } catch {
+    return `${runTime} ${tz}`;
+  }
+  const stored = (() => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short",
+      }).format(instant);
+    } catch {
+      return `${runTime} ${tz}`;
+    }
+  })();
+  if (tz === BROWSER_TIMEZONE) return stored;
+  const local = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true }).format(instant);
+  return `${stored} · ${local} your time`;
+}
+
+// Format an ISO timestamp (e.g. next_run_at from the backend) in the schedule's
+// stored timezone alongside the browser-local rendering.
+//   "Tue 8:30 AM CT · 9:30 AM your time"
+function formatNextRunAt(iso: string | undefined | null, tz: string | undefined | null): string {
+  if (!iso) return "—";
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return iso;
+  const tzZone = tz || BROWSER_TIMEZONE;
+  let stored: string;
+  try {
+    stored = new Intl.DateTimeFormat("en-US", {
+      timeZone: tzZone,
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZoneName: "short",
+    }).format(instant);
+  } catch {
+    return instant.toLocaleString();
+  }
+  if (!tz || tz === BROWSER_TIMEZONE) return stored;
+  const local = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true }).format(instant);
+  return `${stored} · ${local} your time`;
+}
+
 type Schedule = {
   id: number;
   name: string;
@@ -65,12 +147,28 @@ type RunDetail = {
 
 type Watchlist = { id: number; name: string; symbols: string[]; created_at: string };
 
-const TIMEZONES = [
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "UTC",
+const TIMEZONES: { value: string; label: string }[] = [
+  // US Eastern
+  { value: "America/New_York",             label: "Eastern (ET) — New York" },
+  { value: "America/Indiana/Indianapolis", label: "Eastern (ET) — Indianapolis" },
+  { value: "America/Detroit",              label: "Eastern (ET) — Detroit" },
+  // US Central
+  { value: "America/Chicago",              label: "Central (CT) — Chicago" },
+  { value: "America/Menominee",            label: "Central (CT) — Menominee" },
+  // US Mountain
+  { value: "America/Denver",               label: "Mountain (MT) — Denver" },
+  { value: "America/Phoenix",              label: "Mountain (no DST) — Phoenix" },
+  // US Pacific
+  { value: "America/Los_Angeles",          label: "Pacific (PT) — Los Angeles" },
+  // US Other
+  { value: "America/Anchorage",            label: "Alaska (AKT)" },
+  { value: "America/Honolulu",             label: "Hawaii (HT)" },
+  // International
+  { value: "Europe/London",                label: "London (GMT/BST)" },
+  { value: "Europe/Paris",                 label: "Paris/Berlin (CET)" },
+  { value: "Asia/Tokyo",                   label: "Tokyo (JST)" },
+  { value: "Asia/Hong_Kong",               label: "Hong Kong (HKT)" },
+  { value: "UTC",                          label: "UTC" },
 ];
 
 export default function SchedulesPage() {
@@ -92,7 +190,7 @@ export default function SchedulesPage() {
   const [marketMode, setMarketMode] = useState<MarketMode>("equities");
   const [frequency, setFrequency] = useState("weekdays");
   const [runTime, setRunTime] = useState("08:30");
-  const [timezone, setTimezone] = useState("America/New_York");
+  const [timezone, setTimezone] = useState("America/Indiana/Indianapolis");
   const [emailTarget, setEmailTarget] = useState("");
   const [topN, setTopN] = useState(5);
 
@@ -312,7 +410,7 @@ export default function SchedulesPage() {
           <label>
             Timezone&nbsp;
             <select value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-              {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+              {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
             </select>
           </label>
         </div>
@@ -341,6 +439,10 @@ export default function SchedulesPage() {
         </div>
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} />
       </Card></div>
+
+      <div style={{ fontSize: 12, color: "var(--op-muted, #8b9cb3)" }}>
+        Schedule times are stored in the selected timezone. The &ldquo;your time&rdquo; column shows conversion to your browser&rsquo;s local time.
+      </div>
 
       <Card title={editingWlId ? `Edit watchlist: ${wlName}` : "Watchlists"}>
         <div className="op-row">
@@ -412,12 +514,12 @@ export default function SchedulesPage() {
                       <StatusBadge tone={row.enabled ? "good" : "warn"}>{row.latest_status}</StatusBadge>
                     </td>
                     <td>
-                      {row.frequency} @ {row.run_time} {row.timezone}<br />
+                      {row.frequency} @ {formatScheduleTime(row.run_time, row.timezone)}<br />
                       {row.config_summary?.market_mode ?? row.payload?.market_mode} · {(row.payload?.symbols ?? []).join(", ")}
                     </td>
                     <td>
                       {toRelativeTime(row.latest_run_at ?? row.history?.[0]?.created_at)}<br />
-                      <span style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>next: {row.next_run_at ? new Date(row.next_run_at).toLocaleString() : "—"}</span>
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>next: {formatNextRunAt(row.next_run_at, row.timezone)}</span>
                     </td>
                     <td>
                       {(row.latest_run_at ?? row.history?.[0]?.created_at)

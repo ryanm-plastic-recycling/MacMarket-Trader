@@ -33,6 +33,10 @@ const navSections = [
     links: [["/schedules", "Scheduled Reports"]],
   },
   {
+    title: "Help",
+    links: [["/welcome", "Welcome guide"]],
+  },
+  {
     title: "Admin",
     links: [
       ["/admin/pending-users", "Admin / Invites"],

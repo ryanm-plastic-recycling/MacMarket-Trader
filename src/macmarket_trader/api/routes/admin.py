@@ -1728,16 +1728,21 @@ def create_invite(req: InviteCreateRequest, admin=Depends(require_admin)):
         f"{settings.app_base_url.rstrip('/')}/sign-up"
         f"?invite_token={invite.invite_token}&email={req.email.strip().lower()}"
     )
+    welcome_url = f"{settings.console_url.rstrip('/')}/welcome"
     invite_html = render_invite_html(
         to_email=req.email.strip().lower(),
         invite_url=invite_url,
         display_name=req.display_name or "",
         invited_by=admin.email,
+        welcome_url=welcome_url,
     )
     plain_body = (
-        f"You have been invited to MacMarket-Trader private alpha.\n"
-        f"Use this invite link to sign in/up via Clerk: {invite_url}\n"
-        "After sign-in your local app account remains pending until admin approval."
+        "You've been invited to MacMarket-Trader's private alpha.\n\n"
+        "This is paper-only operator-grade trading workflow software. It is invite-only and unstable by design.\n\n"
+        f"Before you sign in, please read the alpha welcome guide (5 min):\n{welcome_url}\n\n"
+        f"When you're ready to sign in:\n{invite_url}\n\n"
+        "Two auth gates: Cloudflare Access PIN, then Clerk sign-in. Use the email this invitation was sent to.\n\n"
+        "Questions: reply to this email."
     )
     message = EmailMessage(
         to_email=req.email.strip().lower(),
@@ -1774,16 +1779,21 @@ def resend_invite(invite_id: int, admin=Depends(require_admin)):
         f"{settings.app_base_url.rstrip('/')}/sign-up"
         f"?invite_token={invite.invite_token}&email={invite.email.strip().lower()}"
     )
+    welcome_url = f"{settings.console_url.rstrip('/')}/welcome"
     invite_html = render_invite_html(
         to_email=invite.email.strip().lower(),
         invite_url=invite_url,
         display_name=invite.display_name or "",
         invited_by=admin.email,
+        welcome_url=welcome_url,
     )
     plain_body = (
-        f"You have been invited to MacMarket-Trader private alpha.\n"
-        f"Use this invite link to sign in/up: {invite_url}\n"
-        "After sign-in your local app account remains pending until admin approval."
+        "You've been invited to MacMarket-Trader's private alpha.\n\n"
+        "This is paper-only operator-grade trading workflow software. It is invite-only and unstable by design.\n\n"
+        f"Before you sign in, please read the alpha welcome guide (5 min):\n{welcome_url}\n\n"
+        f"When you're ready to sign in:\n{invite_url}\n\n"
+        "Two auth gates: Cloudflare Access PIN, then Clerk sign-in. Use the email this invitation was sent to.\n\n"
+        "Questions: reply to this email."
     )
     message = EmailMessage(
         to_email=invite.email.strip().lower(),

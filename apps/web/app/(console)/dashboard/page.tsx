@@ -79,6 +79,30 @@ export default function Page() {
         </>}
       />
       <WorkflowBanner current="Analyze" state={{ guided: false }} nextHref="/analysis" nextLabel="Start from Analyze" compact />
+      {onboarding && (onboarding.completed ?? 0) === 0 ? (
+        <div
+          className="op-card"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "10px 14px",
+            borderColor: "#21c06e",
+            background: "rgba(33, 192, 110, 0.06)",
+          }}
+        >
+          <span style={{ fontSize: 18 }}>👋</span>
+          <div style={{ flex: 1, fontSize: "0.92rem", lineHeight: 1.5 }}>
+            <strong>New here?</strong>{" "}
+            <span style={{ color: "var(--op-muted, #7a8999)" }}>
+              Read the welcome guide for a five-minute orientation before your first workflow.
+            </span>
+          </div>
+          <Link href="/welcome" style={{ flexShrink: 0 }}>
+            <button className="op-btn op-btn-secondary">Open welcome guide</button>
+          </Link>
+        </div>
+      ) : null}
       {showModeNotice ? (
         <div className="op-card" style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 14px" }}>
           <div style={{ flex: 1, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem", lineHeight: 1.5 }}>

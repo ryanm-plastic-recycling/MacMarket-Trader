@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     # production tunnel. The base64 embed in email_templates.py is the deeper
     # fallback so emails render even if this URL fails to load.
     brand_logo_url: str = "https://macmarket.io/brand/square_console_ticks_lockup_light.png"
-    console_url: str = "http://localhost:9500"
+    # console_url is no longer a separately-configurable field. It always
+    # mirrors app_base_url — outbound emails (invite welcome CTA, approval CTA)
+    # build their links off the same base URL the operator already configures
+    # via APP_BASE_URL. Eliminating the localhost fallback prevents production
+    # invites from emitting localhost URLs when CONSOLE_URL was not also set.
 
     # market data provider config
     market_data_provider: str = "fallback"
@@ -76,6 +80,10 @@ class Settings(BaseSettings):
     min_catalyst_source_quality_score: float = 0.0
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+
+    @property
+    def console_url(self) -> str:
+        return self.app_base_url
 
 
 settings = Settings()

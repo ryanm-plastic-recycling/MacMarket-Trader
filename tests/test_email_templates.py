@@ -99,3 +99,31 @@ def test_render_rejection_html_inlines_logo() -> None:
         display_name="Operator",
     )
     assert _DATA_URI_RE.search(html), "rejection email must inline the logo as base64"
+
+
+def test_render_invite_html_links_welcome_and_signin() -> None:
+    """Pass 5 — Track B: the invite email must surface both the welcome guide
+    URL and the sign-in URL, each as its own primary CTA. The HTML body is
+    asserted directly so any future template refactor that drops one of the
+    two links will fail this gate."""
+    welcome_url = "https://macmarket.io/welcome"
+    invite_url = "https://macmarket.io/sign-up?invite_token=abc&email=op@example.com"
+    html = render_invite_html(
+        to_email="op@example.com",
+        invite_url=invite_url,
+        display_name="Operator",
+        invited_by="admin@example.com",
+        welcome_url=welcome_url,
+    )
+    # Both URLs appear as href targets (HTML entity-escaped form for the
+    # ampersand-bearing invite URL — _e() escapes & into &amp;).
+    escaped_invite_url = "https://macmarket.io/sign-up?invite_token=abc&amp;email=op@example.com"
+    assert f'href="{welcome_url}"' in html, "invite must link to the welcome guide"
+    assert f'href="{escaped_invite_url}"' in html, "invite must link to the sign-in URL"
+    # Welcome CTA copy is present
+    assert "Read the welcome guide" in html
+    # Sign-in CTA copy is present
+    assert "Sign in" in html
+    # Auth-gate orientation paragraph is preserved
+    assert "Cloudflare Access PIN" in html
+    assert "Clerk sign-in" in html

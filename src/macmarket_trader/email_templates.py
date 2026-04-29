@@ -696,8 +696,15 @@ def render_invite_html(
     invite_url: str,
     display_name: str = "",
     invited_by: str = "",
+    welcome_url: str = "",
 ) -> str:
-    """Return a branded dark-theme HTML invite email."""
+    """Return a branded dark-theme HTML invite email.
+
+    Pass 5 update: terse copy + two CTAs. The welcome-guide CTA is shown above
+    the sign-in CTA so operators read the orientation doc before clicking
+    through. `welcome_url` is optional to keep prior callers working without a
+    breaking-change rollout — when empty, only the sign-in CTA renders.
+    """
     greeting = f"Hi {_e(display_name)}," if display_name else "Hi,"
     sender_line = (
         f'<p style="margin:12px 0 0 0;font-family:Arial,sans-serif;font-size:13px;'
@@ -705,6 +712,21 @@ def render_invite_html(
         if invited_by
         else ""
     )
+    welcome_block = ""
+    if welcome_url:
+        welcome_block = (
+            f'<p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};">'
+            f'Before you sign in, please read the alpha welcome guide:'
+            f'</p>'
+            f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px 0;">'
+            f'<tr><td style="background-color:{_GREEN};border-radius:4px;text-align:center;">'
+            f'<a href="{_e(welcome_url)}" '
+            f'style="display:inline-block;font-family:Arial,sans-serif;font-size:14px;font-weight:700;'
+            f'color:#000000;text-decoration:none;padding:12px 28px;border-radius:4px;">'
+            f'Read the welcome guide &rarr; (5 min)</a>'
+            f'</td></tr></table>'
+        )
+
     body_rows = (
         # header
         f'<tr><td style="background-color:{_BG_CARD};padding:28px 28px 22px 28px;">'
@@ -712,30 +734,46 @@ def render_invite_html(
         f'<h1 style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:22px;'
         f'font-weight:700;color:{_TEXT_PRIMARY};line-height:1.2;">You&rsquo;re invited to the private alpha</h1>'
         f'<p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:{_TEXT_SECONDARY};">'
-        f'Invite-only · Early access · Operator console'
+        f'Invite-only &middot; Paper-only &middot; Unstable by design'
         f'</p>'
         f'</td></tr>'
         # accent line
         f'<tr><td style="background-color:{_GREEN};height:2px;font-size:0;line-height:0;">&nbsp;</td></tr>'
-        # body
+        # body — terse copy per Pass 5 spec
         f'<tr><td style="background-color:{_BG_CARD};padding:28px;">'
-        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};">{greeting}</p>'
-        f'<p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_SECONDARY};line-height:1.6;">'
-        f'You have been personally invited to <strong style="color:{_TEXT_PRIMARY};">MacMarket Trader</strong>, '
-        f'an invite-only private alpha for professional operators. '
-        f'Click the button below to accept your invite and complete sign-up via Clerk.'
+        f'<p style="margin:0 0 14px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};">{greeting}</p>'
+        f'<p style="margin:0 0 14px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};line-height:1.6;">'
+        f"You've been invited to <strong>MacMarket-Trader's</strong> private alpha."
         f'</p>'
-        # CTA button
-        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">'
+        f'<p style="margin:0 0 18px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_SECONDARY};line-height:1.6;">'
+        f'This is paper-only operator-grade trading workflow software. It is invite-only and unstable by design.'
+        f'</p>'
+        + welcome_block +
+        # Sign-in CTA — preserves the existing invite_url with token
+        f'<p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:14px;color:{_TEXT_PRIMARY};">'
+        f"When you're ready to sign in:"
+        f'</p>'
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px 0;">'
         f'<tr><td style="background-color:{_GREEN};border-radius:4px;text-align:center;">'
         f'<a href="{_e(invite_url)}" '
         f'style="display:inline-block;font-family:Arial,sans-serif;font-size:14px;font-weight:700;'
         f'color:#000000;text-decoration:none;padding:12px 28px;border-radius:4px;">'
-        f'Accept Invite &amp; Sign Up</a>'
+        f'Sign in &rarr;</a>'
         f'</td></tr></table>'
-        f'<p style="margin:16px 0 0 0;font-family:Arial,sans-serif;font-size:11px;color:{_TEXT_MUTED};line-height:1.5;">'
-        f'If the button does not work, copy and paste this link into your browser:<br>'
-        f'<span style="color:{_TEXT_SECONDARY};word-break:break-all;">{_e(invite_url)}</span>'
+        f'<p style="margin:0 0 14px 0;font-family:Arial,sans-serif;font-size:13px;color:{_TEXT_SECONDARY};line-height:1.6;">'
+        f'Two auth gates: Cloudflare Access PIN, then Clerk sign-in. Use the email this invitation was sent to.'
+        f'</p>'
+        f'<p style="margin:0 0 0 0;font-family:Arial,sans-serif;font-size:13px;color:{_TEXT_SECONDARY};line-height:1.6;">'
+        f'Questions: reply to this email.'
+        f'</p>'
+        f'<p style="margin:18px 0 0 0;font-family:Arial,sans-serif;font-size:11px;color:{_TEXT_MUTED};line-height:1.5;">'
+        f'If the buttons do not work, copy and paste these links into your browser:<br>'
+        + (
+            f'Welcome guide: <span style="color:{_TEXT_SECONDARY};word-break:break-all;">{_e(welcome_url)}</span><br>'
+            if welcome_url
+            else ""
+        )
+        + f'Sign in: <span style="color:{_TEXT_SECONDARY};word-break:break-all;">{_e(invite_url)}</span>'
         f'</p>'
         f'{sender_line}'
         f'</td></tr>'

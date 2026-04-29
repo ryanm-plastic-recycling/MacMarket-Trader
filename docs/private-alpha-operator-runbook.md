@@ -713,6 +713,72 @@ the env flags until every pre-flight item is complete and verified.**
   Clerk dashboard via the `cloudflareaccess.com` bypass even if the application
   itself becomes unreachable.
 
+### User MFA enrollment
+
+How users enroll MFA. **Admins must enroll BEFORE the `REQUIRE_MFA_FOR_ADMIN` flag is
+flipped**, because once the flag is on, an admin without MFA cannot sign in to the
+app — the only escape is the Clerk dashboard (which is reachable via the
+Cloudflare Access bypass; see Recovery above).
+
+**For admins (enroll BEFORE flag flip; also the emergency path if locked out):**
+
+1. Go to <https://dashboard.clerk.com> (separate from the app sign-in page).
+2. Sign in with your Clerk credentials.
+3. Select the **production** instance (not Development).
+4. **Users** → find yourself → **Multi-factor** → **Add factor** → **Authenticator app**.
+5. Scan the QR code with Google Authenticator / Authy / 1Password / similar TOTP app.
+6. Enter the 6-digit code Clerk shows to confirm enrollment.
+7. **Save the backup codes Clerk issues at this step offline** (password manager or
+   printed copy stored off the deployment host). Without them, a lost authenticator
+   device strands the account.
+
+**If the Clerk dashboard does not show "Authenticator app" as an enrollment option**,
+TOTP is not yet enabled at the instance level. Enable it once:
+
+1. **Configure** → **Multi-factor** in the Clerk dashboard sidebar.
+2. Enable **Authenticator application (TOTP)** as a factor.
+3. **Save**, then retry the enrollment flow above.
+
+**For regular (non-admin) users (post-`ENFORCE_GLOBAL_MFA` flip):**
+
+The app needs to expose Clerk's `<UserProfile>` component on the `/account` page so
+non-admin users can self-enroll without needing Clerk dashboard access. **As of this
+runbook revision the `/account` page does not currently render `<UserProfile>`** —
+identity, role, approval, and MFA status are surfaced read-only, but there is no
+in-app affordance for a user to start TOTP enrollment.
+
+**Workaround until the gap is closed:** when `ENFORCE_GLOBAL_MFA` is flipped, every
+non-admin user must enroll via the Clerk dashboard using the admin steps above. The
+admin should walk them through it, or enroll on their behalf (which still requires
+the user's authenticator device for QR scan).
+
+This gap is captured in the Pass 5 entry of `docs/roadmap-status.md` "Still open"
+list and is intended for a follow-up pass.
+
+### Lockout recovery — admin locked out due to MFA flag flipped before enrollment
+
+If an admin gets locked out because `REQUIRE_MFA_FOR_ADMIN=true` was set before they
+enrolled MFA:
+
+1. **Disable MFA on the locked-out admin account via the Clerk dashboard** —
+   another admin (or the same admin via the Clerk dashboard itself, which does not
+   gate behind the same MFA flag for dashboard sign-in) can do this:
+   **Users** → the affected account → **Multi-factor** → remove all factors.
+2. **Sign in to the app** as the affected admin. The app no longer prompts for MFA
+   on this account.
+3. **Verify admin pages load** (`/admin/users`, `/admin/pending-users`,
+   `/admin/provider-health`) — confirms approval status, role, and Clerk linkage
+   are still intact.
+4. **Re-enroll MFA via the Clerk dashboard** following the "For admins" steps above.
+5. **Sign in again** and verify the MFA prompt now appears and admin pages still
+   load — closes the loop and confirms `REQUIRE_MFA_FOR_ADMIN` enforcement is back
+   in effect for this account.
+
+If **no other admin is available** to perform step 1, sign in to the Clerk dashboard
+directly. The Clerk dashboard at `dashboard.clerk.com` is gated behind your Clerk
+admin credentials only, not behind `REQUIRE_MFA_FOR_ADMIN` — that flag controls the
+**MacMarket-Trader app's** session validation, not the Clerk dashboard itself.
+
 ### Documentation-only rollout note
 
 This section is **documentation only**. The flags above remain `false` in

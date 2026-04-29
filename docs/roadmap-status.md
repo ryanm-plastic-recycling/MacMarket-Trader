@@ -19,6 +19,175 @@ The defensible edge is:
 MacMarket-Trader has completed **Phases 1–6** and post-launch polish. **Phase 5 is fully closed** (last gaps — strategy regime hints + role-conditional sidebar — landed this pass). **Phase 6 close-trade lifecycle is e2e-gated** end-to-end (open-positions list, inline close ticket, closed-trades blotter, lineage extension).
 The system is verified: 173 backend tests passing, TypeScript clean, 74 vitest unit tests, **26 Playwright e2e** (all passing, no skips).
 
+### 2026-04-29 Invite reconciliation hardening + brand-header confirmation
+
+Two-track polish pass. Backend pytest **190 → 193** (+3 reconciliation gates). Frontend vitest **97** unchanged. Frontend tsc clean.
+
+**Track A — Invite reconciliation on first Clerk sign-in**
+
+Code audit: the reconciliation chain in `UserRepository.upsert_from_auth` (`src/macmarket_trader/storage/repositories.py`) **already** does what the spec describes. The lookup OR-clause matches three rows:
+1. `external_auth_user_id == real_clerk_sub`
+2. `email == jwt_email`
+3. `external_auth_user_id == invited::{normalized_email}`
+
+When candidates are found, `_merge_users` selects the canonical row (preferring email match), then sets `canonical.external_auth_user_id = real_clerk_sub` (overwriting the `invited::…` placeholder), preserves the highest `approval_status` among candidates (so an admin-pre-approved invite stays approved), and retires duplicates. The route-level entry point is `current_user` in `api/deps/auth.py`, which calls `upsert_from_auth` after JWT verification + Clerk identity hydration.
+
+**No code change was required** — the existing logic correctly handles all three spec cases. To lock this behavior against regressions, three new route-level pytest gates were added to `tests/test_user_identity_reconciliation.py`:
+
+1. `test_invited_user_reconciles_on_first_clerk_signin` — seed `invited::user@example.com` (pending), call `GET /user/me` with `Bearer user-token` (mock auth returns sub=`clerk_user`, email=`user@example.com`), assert 200 (not 401), assert exactly one row in DB with `external_auth_user_id="clerk_user"` and `approval_status="pending"`.
+2. `test_invited_and_approved_user_keeps_approval_after_signin` — same seed flow but `approval_status="approved"`. Asserts the response and DB row both still report `approved` after sign-in (the merge does not regress to pending).
+3. `test_unknown_clerk_user_creates_new_pending_row` — no seed at all. Asserts `GET /user/me` creates a fresh `clerk_user` row with `approval_status="pending"` (no false-positive merge against unrelated rows).
+
+These tests use the `TestClient(app)` pattern + the conftest's in-memory StaticPool engine for full route coverage, mirroring how `test_close_trade_lifecycle.py` exercises authenticated paths.
+
+**Track B — Brand header on pre-auth pages**
+
+Already landed in the earlier 2026-04-29 entry below. Confirmed in this pass:
+- `apps/web/components/brand-header.tsx` exists.
+- All four pages (`pending-approval`, `access-denied`, `sign-in`, `sign-up`) import and render `<BrandHeader>` with the spec'd taglines.
+- Logo file `apps/web/public/brand/square_console_ticks_lockup_dark.png` is the asset served at `/brand/square_console_ticks_lockup_dark.png`.
+
+No additional changes required for Track B.
+
+**Verification**
+- `pytest -q` — **193 passed** (was 190; +3 reconciliation gates).
+- `npx tsc --noEmit` clean.
+- `npm test` — **97 passed** (unchanged).
+
+Nothing removed from "Still open" — the prior list did not contain an "invite-based reconciliation gap" item; this pass simply added formal pytest coverage to gate the existing behavior.
+
+### 2026-04-29 Brand polish — logo on pending-approval, access-denied, sign-in, sign-up
+
+Frontend-only polish pass. Test counts unchanged: pytest **190**, vitest **97**, Playwright **31**. tsc clean.
+
+**New shared component (`apps/web/components/brand-header.tsx`)**
+- Server component (no `"use client"`). Renders `<img src="/brand/square_console_ticks_lockup_dark.png" alt="MacMarket Trader" height={36}>` plus an optional uppercase muted-grey tagline below.
+- Wrapping `<div>` uses `padding: 24px 28px`, `background: var(--op-surface, var(--card-bg, #0f1722))`, `borderBottom: 1px solid var(--op-border, var(--border, #2b3642))` — CSS-variable-driven so it inherits whatever the deployment theme defines, with sensible fallbacks for environments missing the newer variable names.
+- Single `BrandHeaderProps = { tagline?: string }` interface — no other knobs, kept minimal per spec.
+
+**Applied above the existing content on each pre-auth / holding page:**
+- `apps/web/app/pending-approval/page.tsx` — `<BrandHeader tagline="Private Alpha" />`. The page previously had zero brand presence; new operators land here from the layout's `redirect("/pending-approval")` path and now see the logo immediately.
+- `apps/web/app/access-denied/page.tsx` — `<BrandHeader />` (no tagline per spec).
+- `apps/web/app/sign-in/[[...sign-in]]/page.tsx` — `<BrandHeader tagline="Operator sign-in" />` above the existing centered `auth-shell` containing `<BrandLockup />` + `<SignIn />`. Existing layout/centering preserved.
+- `apps/web/app/sign-up/[[...sign-up]]/page.tsx` — `<BrandHeader tagline="Request access" />` above the existing `auth-shell` with `<BrandLockup />` + `<SignUp />`.
+
+The pre-existing `<BrandLockup />` component on the sign-in / sign-up pages was deliberately not removed — the spec rule was "Keep all existing layout/centering unchanged". The new `BrandHeader` lives at top-of-page (full-width strip with bottom border); `BrandLockup` lives inside the centered `auth-shell` next to the Clerk widget. They serve different roles (page chrome vs. card branding) and the spec author can decide later whether to consolidate.
+
+**Verification**
+- `npx tsc --noEmit` — clean.
+- `npm test` — **97 passed** (unchanged; no behavior change to existing components).
+- `pytest -q` — backend untouched, **190 passed**.
+- Image path `/brand/square_console_ticks_lockup_dark.png` confirmed present in `apps/web/public/brand/` (33 KB PNG, served as a static Next.js asset).
+
+### 2026-04-29 Hotfix #2 — console_url derives from app_base_url + dashboard 500 on 401 profile fetch
+
+Two related fixes from the operator's first real invite-and-sign-in dry run.
+
+**Fix 1 — `console_url` no longer has its own field/default (`src/macmarket_trader/config.py`)**
+- The earlier same-day fix used `AliasChoices("CONSOLE_URL", "APP_BASE_URL")` with a `localhost:9500` default. That still left a code path where a misconfigured deploy (neither variable set) emits localhost in invite emails.
+- `console_url` is now a `@property` on `Settings` that returns `self.app_base_url`. There is no separate field, no separate default, and no `CONSOLE_URL` env var to forget. Outbound emails (invite welcome CTA, approval CTA) build their links off the same `APP_BASE_URL` the operator already configures for everything else.
+- `pytest -q` → **190 passed** (unchanged; no test churn since `settings.console_url` still resolves correctly via the property).
+
+**Fix 2 — Console layout no longer 500s when the backend `/user/me` returns 401 (`apps/web/app/(console)/layout.tsx`)**
+- `loadProfile()` previously did `if (!response.ok) throw new Error(\`Failed to load profile: ${response.status}\`)`. A new operator who has signed in via Clerk but whose backend `app_users` row has not been provisioned yet (or whose token has not propagated) hits a 401 from the backend, the Server Component throws, and Next.js renders an unhandled-error page with digest 3582682868 — which retried into an infinite loop on the dashboard route.
+- `loadProfile()` now returns `UserProfile | null` and swallows non-OK / network / parse failures. The layout treats `null` the same way it treats `approval_status === "pending"`: `redirect("/pending-approval")`. New users land on the correct provisional-state page instead of a 500.
+- The three admin Server Component pages (`admin/users`, `admin/pending-users`, `admin/provider-health`) already redirect to `/access-denied` on `!response.ok` — they were not part of the bug. The four guided workflow pages (analysis, recommendations, replay-runs, orders) are client components and never had the throw-on-render pattern. Only the console layout needed the change.
+- `npx tsc --noEmit` clean.
+- `npm test` → **97 passed** (unchanged).
+- `pytest -q` → **190 passed** (unchanged; backend untouched).
+
+**Operator action required**: none. Next backend restart picks up the config property change; next frontend deploy picks up the layout fix.
+
+#### "Still open" added by this pass
+
+- **Options/crypto replay and paper orders** — currently blocked at research-preview only on `/recommendations`. Full execution-parity with equities (replay engine semantics + paper-order ticket support for option contracts and crypto venues) is a future phase item, not a near-term polish task. Operator-requested 2026-04-29 to track explicitly so it doesn't get lost in the equities-only "Phase 1 scope" framing.
+
+### 2026-04-29 Hotfix — invite email welcome URL falls back to APP_BASE_URL
+
+Backend-only fix on `src/macmarket_trader/config.py`. Test count unchanged at **190 passing**.
+
+**Bug**: invite emails delivered to operators had the welcome-guide CTA pointing at `http://localhost:9500/welcome` even though the production deployment's `.env` set `APP_BASE_URL=https://macmarket.io`. Pass 5 introduced the welcome CTA but built the URL from `settings.console_url`, which reads `CONSOLE_URL`. Production `.env` only sets `APP_BASE_URL`, so `console_url` fell through to its default `http://localhost:9500`.
+
+**Fix**: `Settings.console_url` now uses `Field(default="http://localhost:9500", validation_alias=AliasChoices("CONSOLE_URL", "APP_BASE_URL"))` — Pydantic reads `CONSOLE_URL` first, then `APP_BASE_URL`, then falls back to localhost only when neither is set. Production deployments that set only `APP_BASE_URL=https://macmarket.io` now resolve `console_url` to that value, so the invite welcome CTA links correctly. An explicit `CONSOLE_URL` still wins when both are present.
+
+**Verification**
+- `pytest -q` — **190 passed** (unchanged).
+- Manual: with `APP_BASE_URL=https://macmarket.io` and no `CONSOLE_URL`, `Settings().console_url` resolves to `https://macmarket.io` (verified locally during development; not committed as a test to honor the "must remain at 190 passing" spec rule).
+- No frontend changes per spec.
+
+**Operator action required**: none. The next backend restart on the production host picks up the new aliasing behavior automatically — no `.env` edit needed since `APP_BASE_URL` is already set correctly.
+
+### 2026-04-29 Schedules page timezone display fixes
+
+Frontend-only pass on `apps/web/app/(console)/schedules/page.tsx`. Test counts unchanged: pytest **190**, vitest **97**, Playwright **31**. tsc clean.
+
+**Section 1 — Expanded timezone selector**
+- `TIMEZONES` constant rewritten as a flat array of `{ value, label }` objects covering all US zones (Eastern with NY/Indianapolis/Detroit, Central with Chicago/Menominee, Mountain with Denver and no-DST Phoenix, Pacific with LA, plus Alaska and Hawaii) and four international zones (London, Paris/Berlin, Tokyo, Hong Kong) plus UTC. Display labels now read like "Eastern (ET) — Indianapolis" while the IANA value (e.g. `America/Indiana/Indianapolis`) remains the stored DB value — existing rows load unchanged.
+- Default `useState` for the form is now `America/Indiana/Indianapolis` (the operator's actual local zone).
+- `<select>` now maps `value/label` pairs.
+
+**Section 2 — Browser-local time conversion in schedule list**
+- New `formatScheduleTime(runTime, timezone)` helper renders `"08:30 AM CT · 9:30 AM your time"`. It builds a UTC instant from today's date + the wall-clock + target IANA via `Intl.DateTimeFormat.formatToParts` (the standard "find the offset, shift" trick), formats it once in the schedule's timezone with `timeZoneName: "short"`, then once with the browser default for the "your time" suffix. When the target timezone equals the browser timezone, the redundant suffix is omitted.
+- New `formatNextRunAt(iso, timezone)` helper formats the backend's `next_run_at` ISO timestamp similarly: `"Tue 8:30 AM CT · 9:30 AM your time"`. Falls through to `toLocaleString()` on parse failure.
+- Browser timezone is detected once via `Intl.DateTimeFormat().resolvedOptions().timeZone`, with a `try/catch` fallback to UTC for any environment where `Intl` is incomplete.
+- Today's date is used as the representative date so DST is honoured automatically — no hardcoded date.
+- Applied in the active-schedules table: the "Config" cell now reads `weekdays @ 08:30 AM ET — Indianapolis · 9:30 AM your time`, and the "Last / Next" cell renders `next_run_at` with the same paired format.
+
+**Section 3 — Context note**
+- A small one-line muted note added directly below the create-form Card (before the Watchlists Card) using existing CSS variables: "Schedule times are stored in the selected timezone. The 'your time' column shows conversion to your browser's local time." Plain `<div>`, no card chrome — same styling pattern as other inline helper text on the page.
+
+**Verification**
+- `npx tsc --noEmit` — clean.
+- `npm test` — **97 passed** (unchanged; no new helper tests added since formatters are display-only and the file is purely page-scoped).
+- No Playwright changes per spec. No backend changes.
+
+**"Still open" items closed by this pass**
+- *Timezone display confusion on schedules page* — closed. Display labels are now human-readable, all common US zones are in the dropdown, the operator's actual zone (Indianapolis) is the default, and every stored time is paired with its browser-local equivalent so cross-timezone confusion is eliminated.
+
+### 2026-04-28 Pass 5 — in-browser welcome page + invite-email welcome CTA + MFA enrollment runbook
+
+Three tracks. Test counts: backend **189 → 190** (+1 invite email assertion). Frontend vitest **97** (unchanged). Playwright **31** (unchanged — no e2e for /welcome this pass per spec).
+
+#### Track A — In-browser welcome page
+
+- Installed `react-markdown@^10.1.0` (`apps/web/package.json`) — React-component renderer for markdown content.
+- New server component at `apps/web/app/(console)/welcome/page.tsx` reads `docs/alpha-user-welcome.md` synchronously via `fs.readFileSync` (server-only, evaluated at request time so doc edits show up without a rebuild). Resolves the path with two candidates (`../../docs/...` from `apps/web/`, then `docs/...` from cwd) so it works under both `next dev` and `next build`. If the file is missing, a `Card` with a clear error message renders instead of throwing.
+- New client component `apps/web/components/welcome-client.tsx` does the actual rendering. Custom `components` prop on `<ReactMarkdown>` styles every element — h1 (page title weight), h2 (green accent + bottom border to separate sections), h3 (subtle), paragraphs / lists / blockquotes / inline code / fenced code / hr / strong — all using existing console CSS variables so the page inherits the dark/light theme without a new stylesheet.
+- **Print this page** button in the same client component triggers `window.print()`. Page-scoped `<style>{@media print}` rules hide the sidebar, topbar, banners, and the print button itself; flip the markdown card to white background with black text so paper output is legible. Operators get a clean printable orientation with no chrome.
+- Sidebar nav (`apps/web/components/console-shell.tsx`) gained a new **Help** section with one link — **Welcome guide** → `/welcome`. Visible to all approved users (no admin gating).
+- Dashboard banner: `dashboard/page.tsx` renders a green-accent banner immediately under the WorkflowBanner when the operator's `onboarding_status.completed === 0`. Copy: "👋 **New here?** Read the welcome guide for a five-minute orientation before your first workflow." with an "Open welcome guide" CTA. Dismisses naturally as soon as the operator completes any onboarding step (no localStorage flag needed — the API already tracks completion).
+
+#### Track B — Invite email links to welcome page
+
+- `render_invite_html(...)` in `src/macmarket_trader/email_templates.py` gained an optional `welcome_url=""` parameter and was restructured per the spec body. Old callers without the new parameter still render correctly (only the sign-in CTA shows when `welcome_url` is empty).
+- New layout: terse copy ("You've been invited…", "paper-only operator-grade…", "invite-only and unstable by design"), then a **Read the welcome guide → (5 min)** primary CTA (brand green button matching the strategy report email style), then **Sign in →** primary CTA, then the Cloudflare-Access-PIN-then-Clerk auth-gate orientation paragraph, then the "Questions: reply to this email" line. The plain-text fallback body in both routes now carries the same structure.
+- Both invite emit sites (`POST /admin/invites` and `POST /admin/invites/{id}/resend` in `api/routes/admin.py`) now pass `welcome_url=f"{settings.console_url.rstrip('/')}/welcome"`. Production deployments with `CONSOLE_URL=https://macmarket.io` get `https://macmarket.io/welcome`; local dev gets `http://localhost:9500/welcome` automatically.
+- New backend test `tests/test_email_templates.py::test_render_invite_html_links_welcome_and_signin` asserts the rendered HTML contains both the welcome-guide and sign-in URLs as `href=` targets, the visible CTA copy ("Read the welcome guide", "Sign in"), and the auth-gate paragraph ("Cloudflare Access PIN", "Clerk sign-in"). The sign-in URL is asserted in its HTML-entity-escaped form (`&` → `&amp;`) since the template's `_e()` helper escapes user-supplied URLs.
+
+#### Track C — MFA enrollment documentation
+
+- Runbook §13 ("MFA rollout sequence") gained two new subsections: **User MFA enrollment** and **Lockout recovery — admin locked out due to MFA flag flipped before enrollment**.
+- The "User MFA enrollment" subsection covers the admin enrollment path (Clerk dashboard, Multi-factor → Add factor → Authenticator app, scan QR, save backup codes offline) plus the dashboard-level toggle path if "Authenticator application (TOTP)" is not yet enabled on the Clerk instance (Configure → Multi-factor → enable → save → retry).
+- It explicitly documents the **gap for non-admin self-enrollment**: the `/account` page does not currently render Clerk's `<UserProfile>` component. Until that gap is closed, every non-admin must enroll through the Clerk dashboard (admin-walked or admin-on-behalf). This matches the spec rule "If /account does not currently render UserProfile with security tab, that is a known gap to be added in a follow-up pass" — gap is documented in "Still open" below.
+- The "Lockout recovery" subsection walks through the five-step recovery: Clerk-dashboard MFA disable → app sign-in → admin pages load check → re-enroll → re-sign-in to confirm enforcement is back. Calls out that the Clerk dashboard itself is **not** gated by `REQUIRE_MFA_FOR_ADMIN` (that flag governs the MacMarket-Trader app's session validation, not Clerk's own admin UI), so the dashboard remains reachable for self-recovery as long as the admin still has Clerk credentials.
+
+#### Verification
+
+- `pytest -q` — **190 passed** (was 189, +1 invite email link assertion).
+- `npx tsc --noEmit` clean.
+- `npm test` — **97 passed** (unchanged; no new vitest helpers this pass).
+- `npx playwright test --reporter=list` — **31 passed**, 0 skipped (unchanged; no e2e for /welcome per spec rule).
+
+#### "Still open" items added by this pass
+
+- **`/account` page does not render Clerk `<UserProfile>`** — non-admin self-service MFA enrollment is currently impossible from inside the app. Admin enrollment via the Clerk dashboard works, and the runbook documents the dashboard-walk workaround, but a follow-up pass should mount `<UserProfile>` (Clerk's pre-built React component including the Security tab with TOTP enrollment) on `/account` so users can self-enroll without admin handholding.
+
+#### "Still open" items unchanged from prior passes
+
+- **Display-friendly recommendation ID** — alongside canonical `rec_<hex>`, surface a human-meaningful slug like `AAPL-EVCONT-20260428-1430`. Schema migration required; deferred.
+- **Per-user `risk_dollars_per_trade` configuration** — currently env-only. Schema column on `app_users` + admin/account UI required; deferred.
+- **Operator-action item — Audit `MacMarket-Strategy-Reports` task** — verify what command it actually runs from the Task Scheduler GUI; if it duplicates `MacMarket-StrategyScheduler`, disable the older task. Claude has no Task Scheduler visibility.
+
 ### 2026-04-28 Pass 4 — email logo real fix + cancel staged + reopen closed trade + scheduler audit
 
 Three tracks. Test counts: backend **173 → 189** (+16: 7 email + 9 cancel/reopen). Frontend vitest **88 → 97** (+9 reopen helper tests). Playwright **27 → 31** (+4 cancel/reopen).
