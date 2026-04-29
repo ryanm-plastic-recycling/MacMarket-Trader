@@ -30,6 +30,7 @@ import {
   OptionsPaperLifecyclePanel,
   OptionsReplayPreviewPanel,
   OptionsResearchPreview,
+  OptionsStructureRiskSummary,
 } from "@/components/recommendations/options-research-preview";
 import type {
   OptionsReplayPreviewAvailability,
@@ -235,6 +236,8 @@ describe("OptionsResearchPreview", () => {
 
     expect(html).toContain("Replay payoff preview");
     expect(html).toContain("Paper option lifecycle");
+    expect(html).toContain("Structure risk");
+    expect(html).toContain("Warnings and caveats");
     expect(html).toContain("Open paper option structure");
     expect(html).toContain("Paper-only options lifecycle");
     expect(html).toContain("Persisted paper position");
@@ -244,6 +247,218 @@ describe("OptionsResearchPreview", () => {
     expect(html).not.toContain("broker orders");
     expect(html).not.toContain("Go to Replay step");
     expect(html).not.toContain("Go to Paper Order step");
+  });
+});
+
+describe("OptionsStructureRiskSummary", () => {
+  it("renders compact structure risk details from research, replay preview, and paper lifecycle state", () => {
+    const html = renderToStaticMarkup(
+      <OptionsStructureRiskSummary
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "2026-05-15",
+            dte: 16,
+            net_credit: 2.5,
+            max_profit: 250,
+            max_loss: 250,
+            breakeven_low: 92.5,
+            breakeven_high: 107.5,
+            legs: [
+              { action: "buy", right: "put", strike: 90, multiplier: 100, label: "Long put wing" },
+              { action: "sell", right: "put", strike: 95, multiplier: 100, label: "Short put body" },
+              { action: "sell", right: "call", strike: 105, multiplier: 100, label: "Short call body" },
+              { action: "buy", right: "call", strike: 110, multiplier: 100, label: "Long call wing" },
+            ],
+          },
+          expected_range: {
+            status: "blocked",
+            method: null,
+            absolute_move: null,
+            lower_bound: null,
+            upper_bound: null,
+            horizon_value: null,
+            horizon_unit: null,
+            reason: "missing_iv_snapshot",
+          },
+          options_chain_preview: null,
+        }}
+        replayPreview={{
+          execution_enabled: false,
+          persistence_enabled: false,
+          market_mode: "options",
+          preview_type: "expiration_payoff",
+          status: "ready",
+          structure_type: "iron_condor",
+          is_defined_risk: true,
+          net_credit: 2.6,
+          max_profit: 260,
+          max_loss: 240,
+          breakevens: [93, 107],
+          payoff_points: [],
+          warnings: [],
+          caveats: [],
+          blocked_reason: null,
+          operator_disclaimer: "Options research only. Paper-only preview. Not execution support.",
+        }}
+        paperOpenResult={{
+          order_id: 31,
+          position_id: 41,
+          market_mode: "options",
+          structure_type: "iron_condor",
+          underlying_symbol: "SPY",
+          status: "open",
+          order_status: "opened",
+          position_status: "open",
+          opening_net_debit: null,
+          opening_net_credit: 2.6,
+          commission_per_contract: 0.65,
+          opening_commissions: 2.6,
+          max_profit: 260,
+          max_loss: 240,
+          breakevens: [93, 107],
+          execution_enabled: false,
+          persistence_enabled: true,
+          paper_only: true,
+          order_created_at: "2026-04-29T13:00:00Z",
+          position_opened_at: "2026-04-29T13:00:00Z",
+          legs: [
+            {
+              id: 401,
+              position_id: 41,
+              action: "buy",
+              right: "put",
+              strike: 90,
+              expiration: "2026-05-15",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 0.3,
+              status: "open",
+              label: "Long put wing",
+            },
+            {
+              id: 402,
+              position_id: 41,
+              action: "sell",
+              right: "put",
+              strike: 95,
+              expiration: "2026-05-15",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 1.6,
+              status: "open",
+              label: "Short put body",
+            },
+            {
+              id: 403,
+              position_id: 41,
+              action: "sell",
+              right: "call",
+              strike: 105,
+              expiration: "2026-05-15",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 1.6,
+              status: "open",
+              label: "Short call body",
+            },
+            {
+              id: 404,
+              position_id: 41,
+              action: "buy",
+              right: "call",
+              strike: 110,
+              expiration: "2026-05-15",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 0.3,
+              status: "open",
+              label: "Long call wing",
+            },
+          ],
+        }}
+        paperCloseResult={{
+          position_id: 41,
+          trade_id: 77,
+          market_mode: "options",
+          structure_type: "iron_condor",
+          underlying_symbol: "SPY",
+          status: "closed",
+          position_status: "closed",
+          settlement_mode: "manual_close",
+          commission_per_contract: 0.65,
+          opening_commissions: 2.6,
+          closing_commissions: 2.6,
+          gross_pnl: 180,
+          net_pnl: 174.8,
+          total_commissions: 5.2,
+          execution_enabled: false,
+          persistence_enabled: true,
+          paper_only: true,
+          closed_at: "2026-04-29T15:00:00Z",
+          legs: [],
+        }}
+      />,
+    );
+
+    expect(html).toContain("Research preview — read-only");
+    expect(html).toContain("Replay payoff preview — non-persisted");
+    expect(html).toContain("Paper lifecycle — persisted paper only");
+    expect(html).toContain("Iron Condor");
+    expect(html).toContain("$260.00");
+    expect(html).toContain("$240.00");
+    expect(html).toContain("$93.00 / $107.00");
+    expect(html).toContain("Manually closed");
+    expect(html).toContain("$180.00");
+    expect(html).toContain("$174.80");
+    expect(html).toContain("Expected Range is research context only. It does not modify expiration payoff math.");
+    expect(html).toContain("Commission is per contract per leg, not multiplied by 100.");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("Infinity");
+    expect(html).not.toContain("Live trading");
+    expect(html).not.toContain("Broker execution");
+  });
+
+  it("renders missing risk values safely when replay preview and paper lifecycle have not started", () => {
+    const html = renderToStaticMarkup(
+      <OptionsStructureRiskSummary
+        setup={{
+          symbol: "QQQ",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Long Call",
+          option_structure: {
+            type: "long_call",
+            expiration: null,
+            dte: null,
+            legs: [{ action: "buy", right: "call", strike: null, multiplier: null, label: "Call leg" }],
+            net_debit: null,
+            max_profit: null,
+            max_loss: null,
+          },
+          expected_range: null,
+          options_chain_preview: null,
+        }}
+        replayPreview={null}
+        paperOpenResult={null}
+        paperCloseResult={null}
+      />,
+    );
+
+    expect(html).toContain("Unavailable");
+    expect(html).toContain("Not run yet");
+    expect(html).toContain("Not opened");
+    expect(html).toContain("Expected range context unavailable for this setup.");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("Infinity");
   });
 });
 

@@ -113,18 +113,295 @@ function parseManualCloseLegs(
   return { legs, reason: null };
 }
 
+function toFiniteRiskNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getStructureBreakevenValues(
+  structure: OptionsResearchSetup["option_structure"] | null | undefined,
+): number[] {
+  return [structure?.breakeven_low, structure?.breakeven_high].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+}
+
+function formatBreakevenSummary(values: number[] | null | undefined): string {
+  const breakevens = (values ?? []).filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return breakevens.length > 0
+    ? breakevens.map((value) => formatResearchCurrency(value)).join(" / ")
+    : "Unavailable";
+}
+
+function getLegCount(
+  structure: OptionsResearchSetup["option_structure"] | null | undefined,
+  openResult: OptionsPaperOpenResponse | null,
+): number | null {
+  const structureCount = structure?.legs?.length ?? 0;
+  if (structureCount > 0) return structureCount;
+  return openResult?.legs.length ?? null;
+}
+
+function getMultiplierSummary(
+  structure: OptionsResearchSetup["option_structure"] | null | undefined,
+  openResult: OptionsPaperOpenResponse | null,
+): string {
+  const rawMultipliers = [
+    ...(structure?.legs ?? []).map((leg) => leg.multiplier),
+    ...(openResult?.legs ?? []).map((leg) => leg.multiplier),
+  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  if (rawMultipliers.length === 0) return "Unavailable";
+  const unique = [...new Set(rawMultipliers)];
+  return unique.length === 1 ? `${formatResearchValue(unique[0])}x contract multiplier` : "Mixed contract multipliers";
+}
+
+function getPaperLifecycleTone(
+  openResult: OptionsPaperOpenResponse | null,
+  closeResult: OptionsPaperCloseResponse | null,
+): "good" | "warn" | "neutral" {
+  if (closeResult) return "neutral";
+  if (openResult) return "good";
+  return "warn";
+}
+
+function getExpectedRangeTone(
+  status: string | null | undefined,
+): "good" | "warn" | "neutral" {
+  if (status === "computed") return "good";
+  if (status === "blocked" || status === "omitted") return "warn";
+  return "neutral";
+}
+
+function getPaperLifecycleLabel(
+  openResult: OptionsPaperOpenResponse | null,
+  closeResult: OptionsPaperCloseResponse | null,
+): string {
+  if (closeResult) return "Manually closed";
+  if (openResult) return "Opened paper position";
+  return "Not opened";
+}
+
+function RiskMetricCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail?: string | null;
+}) {
+  return (
+    <div
+      style={{
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid var(--op-border, #1e2d3d)",
+        background: "rgba(18, 28, 40, 0.28)",
+      }}
+    >
+      <div style={{ fontSize: "0.76rem", fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>{value}</div>
+      {detail ? (
+        <div style={{ marginTop: 4, color: "var(--op-muted, #7a8999)", lineHeight: 1.45, fontSize: "0.82rem" }}>
+          {detail}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function OptionsStructureRiskSummary({
+  setup,
+  replayPreview,
+  paperOpenResult,
+  paperCloseResult,
+}: {
+  setup: OptionsResearchSetup;
+  replayPreview: OptionsReplayPreviewResponse | null;
+  paperOpenResult: OptionsPaperOpenResponse | null;
+  paperCloseResult: OptionsPaperCloseResponse | null;
+}) {
+  const structure = setup.option_structure ?? null;
+  const structureBreakevens = getStructureBreakevenValues(structure);
+  const replayBreakevens = getOptionsReplayPreviewBreakevens(replayPreview);
+  const breakevens = replayBreakevens.length > 0 ? replayBreakevens : structureBreakevens;
+  const replayNetCredit = toFiniteRiskNumber(replayPreview?.net_credit);
+  const replayNetDebit = toFiniteRiskNumber(replayPreview?.net_debit);
+  const premiumLabel = replayNetCredit != null
+    ? "Net credit"
+    : replayNetDebit != null
+      ? "Net debit"
+      : getOptionsPremiumLabel(structure);
+  const premiumValue = replayNetCredit ?? replayNetDebit ?? getOptionsPremiumValue(structure);
+  const maxProfit = toFiniteRiskNumber(replayPreview?.max_profit) ?? toFiniteRiskNumber(structure?.max_profit);
+  const maxLoss = toFiniteRiskNumber(replayPreview?.max_loss) ?? toFiniteRiskNumber(structure?.max_loss);
+  const replayStatus = replayPreview ? formatOptionsReplayToken(replayPreview.status) : "Not run yet";
+  const replayStatusDetail = replayPreview
+    ? replayPreview.status === "ready"
+      ? "Expiration payoff only. Read-only and non-persisted."
+      : formatOptionsReplayToken(replayPreview.blocked_reason)
+    : "Read-only and non-persisted until you run the preview.";
+  const expectedRangeStatus = setup.expected_range
+    ? formatOptionsReplayToken(setup.expected_range.status)
+    : "Unavailable";
+  const expectedRangeReason = getExpectedRangeReasonText(setup.expected_range);
+  const expectedRangeDetail = setup.expected_range
+    ? expectedRangeReason
+      ? `Reason: ${expectedRangeReason}`
+      : formatExpectedMoveSummary(setup.expected_range)
+    : "Expected range context unavailable for this setup.";
+  const legCount = getLegCount(structure, paperOpenResult);
+  const multiplierSummary = getMultiplierSummary(structure, paperOpenResult);
+  const paperLifecycleLabel = getPaperLifecycleLabel(paperOpenResult, paperCloseResult);
+  const paperLifecycleDetail = paperCloseResult
+    ? `Trade #${paperCloseResult.trade_id}. Paper-only close result.`
+    : paperOpenResult
+      ? `Position #${paperOpenResult.position_id}. Manual close uses entered exit premiums.`
+      : "Persisted paper lifecycle has not been started from this page.";
+  const warningItems = [
+    "Research only / paper only. Real-money routing stays unavailable.",
+    "Expected Range is research context only. It does not modify expiration payoff math.",
+    "Expiration payoff preview is not a broker mark-to-market simulation.",
+    "Manual close uses the exit premiums entered for each leg.",
+    "Assignment/exercise automation is deferred.",
+    "Expiration settlement is deferred.",
+    "Naked shorts are blocked.",
+    "Liquidity, spread, IV, and open interest may be missing depending on provider plan coverage.",
+    "SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.",
+  ];
+
+  return (
+    <Card title="Structure risk">
+      <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+        <StatusBadge tone="neutral">Research preview — read-only</StatusBadge>
+        <StatusBadge tone={replayPreview ? getReplayStatusTone(replayPreview.status) : "neutral"}>
+          Replay payoff preview — non-persisted
+        </StatusBadge>
+        <StatusBadge tone={getPaperLifecycleTone(paperOpenResult, paperCloseResult)}>
+          Paper lifecycle — persisted paper only
+        </StatusBadge>
+        <StatusBadge tone={getExpectedRangeTone(setup.expected_range?.status ?? null)}>
+          Expected range {expectedRangeStatus}
+        </StatusBadge>
+      </div>
+
+      <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
+        This compact view keeps research context, replay payoff preview, and the paper lifecycle in separate lanes.
+        Replay payoff preview stays read-only and non-persisted. The paper lifecycle only reflects the current in-memory
+        position opened from this page.
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+          gap: 10,
+          marginBottom: 12,
+        }}
+      >
+        <RiskMetricCard
+          label="Structure"
+          value={formatOptionsReplayToken(structure?.type)}
+          detail={formatResearchValue(setup.strategy)}
+        />
+        <RiskMetricCard
+          label={premiumLabel}
+          value={formatResearchCurrency(premiumValue)}
+          detail={replayPreview ? "Replay values take precedence once a preview has run." : "Read-only research contract."}
+        />
+        <RiskMetricCard
+          label="Max profit"
+          value={formatResearchCurrency(maxProfit)}
+          detail={replayPreview ? "Read-only expiration payoff preview loaded." : "Research contract estimate."}
+        />
+        <RiskMetricCard
+          label="Max loss"
+          value={formatResearchCurrency(maxLoss)}
+          detail={replayPreview ? "Read-only expiration payoff preview loaded." : "Research contract estimate."}
+        />
+        <RiskMetricCard
+          label="Breakevens"
+          value={formatBreakevenSummary(breakevens)}
+          detail={replayBreakevens.length > 0 ? "Replay payoff preview values." : "Research contract values."}
+        />
+        <RiskMetricCard
+          label="Expiration / DTE"
+          value={formatResearchValue(structure?.expiration)}
+          detail={`DTE ${formatResearchValue(structure?.dte, "—")}`}
+        />
+        <RiskMetricCard
+          label="Legs / multiplier"
+          value={legCount != null ? `${formatResearchValue(legCount)} legs` : "Unavailable"}
+          detail={multiplierSummary}
+        />
+        <RiskMetricCard
+          label="Replay payoff preview"
+          value={replayStatus}
+          detail={replayStatusDetail}
+        />
+        <RiskMetricCard
+          label="Expected Range"
+          value={expectedRangeStatus}
+          detail={expectedRangeDetail}
+        />
+        <RiskMetricCard
+          label="Paper lifecycle"
+          value={paperLifecycleLabel}
+          detail={paperLifecycleDetail}
+        />
+      </div>
+
+      {paperCloseResult ? (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 6 }}>Current paper lifecycle outcome</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 10,
+            }}
+          >
+            <RiskMetricCard label="Gross P&amp;L" value={formatResearchCurrency(paperCloseResult.gross_pnl)} />
+            <RiskMetricCard label="Opening commissions" value={formatResearchCurrency(paperCloseResult.opening_commissions)} />
+            <RiskMetricCard label="Closing commissions" value={formatResearchCurrency(paperCloseResult.closing_commissions)} />
+            <RiskMetricCard label="Total commissions" value={formatResearchCurrency(paperCloseResult.total_commissions)} />
+            <RiskMetricCard label="Net P&amp;L" value={formatResearchCurrency(paperCloseResult.net_pnl)} />
+          </div>
+          <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+            Commission is per contract per leg, not multiplied by 100.
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ marginBottom: 6, fontSize: "0.82rem", fontWeight: 600 }}>Warnings and caveats</div>
+      <div className="op-stack" style={{ gap: 4 }}>
+        {warningItems.map((item) => (
+          <div key={item} style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+            {item}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export function OptionsPaperLifecyclePanel({
   setup,
   initialCommissionPerContract = null,
   initialOpenResult = null,
   initialCloseResult = null,
   loadCommissionOnMount = true,
+  onOpenResultChange,
+  onCloseResultChange,
 }: {
   setup: OptionsResearchSetup;
   initialCommissionPerContract?: number | null;
   initialOpenResult?: OptionsPaperOpenResponse | null;
   initialCloseResult?: OptionsPaperCloseResponse | null;
   loadCommissionOnMount?: boolean;
+  onOpenResultChange?: (value: OptionsPaperOpenResponse | null) => void;
+  onCloseResultChange?: (value: OptionsPaperCloseResponse | null) => void;
 }) {
   const [commissionPerContract, setCommissionPerContract] = useState<number | null>(initialCommissionPerContract);
   const [commissionError, setCommissionError] = useState<string | null>(null);
@@ -165,6 +442,14 @@ export function OptionsPaperLifecyclePanel({
       cancelled = true;
     };
   }, [loadCommissionOnMount]);
+
+  useEffect(() => {
+    onOpenResultChange?.(openResult);
+  }, [openResult, onOpenResultChange]);
+
+  useEffect(() => {
+    onCloseResultChange?.(closeResult);
+  }, [closeResult, onCloseResultChange]);
 
   const openAvailability = getOptionsPaperOpenAvailability(setup);
   const hasActiveInMemoryPosition = openResult !== null && closeResult === null;
@@ -639,11 +924,15 @@ export function OptionsResearchPreview({
   const [replayPreview, setReplayPreview] = useState<OptionsReplayPreviewResponse | null>(null);
   const [replayPreviewLoading, setReplayPreviewLoading] = useState(false);
   const [replayPreviewError, setReplayPreviewError] = useState<string | null>(null);
+  const [paperOpenResult, setPaperOpenResult] = useState<OptionsPaperOpenResponse | null>(null);
+  const [paperCloseResult, setPaperCloseResult] = useState<OptionsPaperCloseResponse | null>(null);
 
   useEffect(() => {
     setReplayPreview(null);
     setReplayPreviewError(null);
     setReplayPreviewLoading(false);
+    setPaperOpenResult(null);
+    setPaperCloseResult(null);
   }, [setup]);
 
   if (loading && !setup) {
@@ -708,6 +997,13 @@ export function OptionsResearchPreview({
           {setup.operator_disclaimer ?? "Options research — paper only. Not execution support."} Recommendation queue and persisted equity replay flows remain intentionally unavailable in options mode. Replay payoff preview below stays read-only, while the paper option lifecycle panel records a separate paper-only position.
         </div>
       </Card>
+
+      <OptionsStructureRiskSummary
+        setup={setup}
+        replayPreview={replayPreview}
+        paperOpenResult={paperOpenResult}
+        paperCloseResult={paperCloseResult}
+      />
 
       <div className="op-grid-2">
         <Card title="Research contract">
@@ -775,7 +1071,13 @@ export function OptionsResearchPreview({
         onRunPreview={() => void runReplayPreview()}
       />
 
-      <OptionsPaperLifecyclePanel setup={setup} />
+      <OptionsPaperLifecyclePanel
+        setup={setup}
+        initialOpenResult={paperOpenResult}
+        initialCloseResult={paperCloseResult}
+        onOpenResultChange={setPaperOpenResult}
+        onCloseResultChange={setPaperCloseResult}
+      />
 
       <Card title="Options chain preview">
         {chainPreview === null || chainPreview.reason ? (

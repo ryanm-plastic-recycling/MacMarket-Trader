@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 135, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 137, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -20,6 +20,8 @@ Phase 8D is complete for the current paper-only manual-close options paper
 lifecycle scope, including dedicated persistence, repository/service
 contracts, open/manual-close behavior, contract-commission net P&L, frontend
 operator UI, and closure audit/docs alignment.
+Phase 8E1 is complete for the current operator risk-summary foundation on the
+Recommendations options research surface.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -267,15 +269,26 @@ deferred to later phases and do not block Phase 8 planning.
   option structure, manually close with per-leg exit premiums, verify
   gross/commission/net math, and confirm no live-trading language appears
 - 8E status:
-  planning complete; implementation not started
+  `8E1` complete for the current Recommendations risk-summary foundation;
+  `8E2` and `8E3` remain planned
 - 8E acceptance target:
   operators can see strategy summary, legs, debit/credit, max profit/loss,
   breakevens, DTE/expiration, payoff context, warnings, provider/source
   labels, and Expected Move / Expected Range context without implying
   execution support
+- 8E implemented now:
+  Recommendations options research preview now includes a compact `Structure
+  risk` surface that keeps research context, replay payoff preview, and the
+  persisted paper lifecycle visually distinct while surfacing structure type,
+  debit/credit, max profit/loss, breakevens, expiration / DTE, leg count,
+  contract multiplier, Expected Range status/context, replay-preview status,
+  paper lifecycle state, manual-close gross/net/commission outcome, and a
+  compact caveat list that explicitly says Expected Range does not modify
+  payoff math
 - 8E not included:
   full chart-heavy payoff tooling, advanced Expected Move visualization in the
-  first risk-UX slice, or live-liquidity realism
+  first risk-UX slice, richer provider/source/as-of parity across additional
+  options surfaces, or live-liquidity realism
 - 8F status:
   planned only; closure criteria defined
 - 8F acceptance target:
@@ -369,7 +382,7 @@ deferred to later phases and do not block Phase 8 planning.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 123
+- vitest: 137
 - Playwright: 31
 
 ## Core product pillars
@@ -509,6 +522,12 @@ diffs. Notable recent inflection points:
   success plus failure pass-through behavior, and the manual smoke checklist
   is documented. Expiration settlement, broader Orders parity, and `8E` risk
   UX remain deferred.
+- 2026-04-29 — Phase 8E1 complete for the current Recommendations options
+  research surface: a compact `Structure risk` layer now summarizes structure
+  type, debit/credit, max profit/loss, breakevens, expiration / DTE, Expected
+  Range status/context, replay-preview status, paper lifecycle state, and
+  manual-close gross/commission/net outcome while keeping research preview,
+  replay payoff preview, and persisted paper lifecycle visually distinct.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

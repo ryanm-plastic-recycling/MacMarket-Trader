@@ -87,6 +87,9 @@ Two workflow styles also matter:
    - expected range status
    - chain preview when available
 3. In **Recommendations**, use:
+   - **Structure risk** for a compact view of max profit/loss, breakevens,
+     Expected Range status, replay-preview status, and current paper
+     lifecycle state
    - **Replay payoff preview** for read-only expiration payoff inspection
    - **Paper option lifecycle** for paper-only open/manual-close actions
 4. Open the paper option structure only if the structure is complete and
@@ -250,6 +253,8 @@ Operator rule:
 - blocked or omitted states should show a reason
 - missing expected range should be read as `Unavailable` or muted context, not
   as a hidden zero
+- the `Structure risk` card may repeat Expected Range status and reason, but
+  it still remains research context only
 - advanced expected-move visualization is still future work
 
 ## 9. Safety guardrails

@@ -18,6 +18,11 @@ Current implementation note:
 - commission-per-contract guardrails now appear in both Settings and the
   paper lifecycle panel, explicitly stating that commission is not multiplied
   by 100
+- `8E1` now adds a compact `Structure risk` card inside Recommendations that
+  surfaces structure type, debit/credit, max profit/loss, breakevens,
+  expiration / DTE, Expected Range status, replay-preview status, paper
+  lifecycle state, and compact warnings without collapsing research, replay,
+  and paper lifecycle into one surface
 - broader Orders dashboard parity remains deferred
 
 ## UX goals
@@ -152,10 +157,19 @@ Later paper-lifecycle UX should add:
 
 ### 8E1 - Core risk summary
 
-Complete when:
+Status:
 
-- legs, debit/credit, max profit/loss, breakevens, and DTE are visible on
-  supported options surfaces
+- complete for the current Recommendations options research surface
+
+Implemented now:
+
+- compact risk-summary cards for structure type, net debit/credit, max
+  profit/loss, breakevens, expiration / DTE, legs / multiplier, Expected
+  Range status, replay-preview status, and paper lifecycle state
+- compact lifecycle outcome visibility for gross P&L, opening commissions,
+  closing commissions, total commissions, and net P&L after manual close
+- warning/caveat copy that keeps Expected Range, replay payoff preview, and
+  paper lifecycle in clearly separated roles
 
 Must not change:
 
@@ -165,7 +179,8 @@ Must not change:
 
 Complete when:
 
-- options surfaces show paper-only, data-quality, and assignment caveats
+- options surfaces show broader paper-only, data-quality, source/as-of, and
+  assignment caveats consistently across later options surfaces
 
 Must not change:
 
@@ -190,6 +205,9 @@ Must not change:
 - paper-only and non-execution caveats are visible
 - missing data is safe and explicit
 - provider/source/as-of context is present where available
+- the current `Structure risk` layer remains aligned with replay-preview and
+  paper-lifecycle boundaries rather than collapsing them into one implied
+  execution flow
 
 8E is not complete if:
 
