@@ -2,733 +2,266 @@
 
 Last updated: 2026-04-29
 
-## Purpose
+## Planning posture
 
-This document defines the Phase 8 options architecture for MacMarket-Trader.
-It is a planning artifact only. It does not authorize live trading, brokerage
-routing, schema changes, or execution implementation.
+This document is the Phase 8 master plan for options support in
+MacMarket-Trader. It is a planning artifact only.
 
-Phase 8 must preserve the current product center and paper-only posture:
+It does not authorize:
 
-- Analysis / Strategy Workbench remains the primary setup surface
-- Recommendations remains the flagship review surface
-- Replay validates before paper execution
-- Orders remains paper-only and auditable
+- application-code changes
+- schema changes
+- migrations
+- live trading
+- brokerage routing
+- staged options orders
+- secrets or provider credential work
+
+Current planning state:
+
+- `8A` complete: architecture and contract planning foundations
+- `8B` complete: read-only, non-persisted options research visibility in
+  Analysis / Recommendations
+- `8C` planning complete in blueprint form: implementation not started
+- `8D` planned only: implementation not started
+- `8E` planned only: implementation not started
+- `8F` planned only: closure criteria defined, implementation not started
 
 ## Current repo anchors
 
-The current repository already provides a few useful foundations:
+Phase 8 should extend existing repo anchors rather than replace them:
 
-- `README.md` defines options as planned research-preview / paper-first later
+- `README.md` defines the product center and paper-only posture
 - `TradeRecommendation.market_mode` already exists and defaults to `equities`
-- `domain/schemas.py` already includes:
+- `domain/schemas.py` already contains:
   - `InstrumentIdentity`
   - `OptionContractContext`
   - `OptionStructureLeg`
   - `OptionStructureContext`
   - `ExpectedRange`
-- `admin.py` already contains `_build_options_expected_range(...)`
-- `market_data.py` already contains Polygon `options_chain_preview(...)`
+- `admin.py` already builds options research setup payloads
+- `market_data.py` already exposes Polygon `options_chain_preview(...)`
+- Analysis / Recommendations already expose read-only options research preview
 - `app_users.commission_per_contract` already exists, but is not yet applied
+- current replay, orders, fills, positions, and trades remain equity-centric
 
-Those anchors should be extended deliberately rather than replaced.
-
-## Design goals
+## Phase 8 guardrails
 
 - Keep options mode explicitly separate from equity execution-prep logic
-- Preserve deterministic, auditable, paper-first behavior
-- Prefer defined-risk structures first
-- Keep provider readiness separate from execution enablement
-- Ship in small slices that can be tested without destabilizing current equity
-  workflows
+- Keep the platform paper-only
+- Do not route options through equity `RecommendationService.generate()`
+- Do not stretch current equity replay persistence into pseudo-options support
+- Do not stage options orders before the correct lifecycle phase
+- Do not imply live provider readiness equals execution enablement
+- Do not support naked short options in early phases
+- Do not automate assignment or exercise in early phases
+- Do not introduce margin assumptions unless they are explicitly modeled later
 
-## Non-goals for initial Phase 8 implementation
+## Phase 8 execution map
 
-- live brokerage routing
-- options live execution
+### 8A - Architecture and contract planning
+
+Status:
+
+- complete
+
+Complete means:
+
+- Phase 8 boundaries and guardrails are documented
+- repo anchors and likely implementation touchpoints are identified
+- research-only versus replay versus paper-lifecycle scopes are separated
+
+Not complete:
+
+- any runtime behavior
+
+### 8B - Read-only options research visibility
+
+Status:
+
+- complete for the current non-persisted research-only scope
+
+Complete means:
+
+- Analysis / Recommendations can show options research safely
+- options mode stays read-only and paper-only
+- queue/promote/replay/order/staging CTAs stay suppressed
+- missing values and blocked states render safely
+
+Not complete:
+
+- persisted options recommendations
+- options replay
+- options orders, fills, positions, or trades
+
+### 8C - Read-only options replay preview
+
+Status:
+
+- planning complete
+- implementation not started
+
+Detailed design:
+
+- [options-replay-design.md](options-replay-design.md)
+
+Scope:
+
+- read-only, non-persisted replay preview for defined-risk structures
+- separate request/response branch from current equity replay
+- no schema changes in the safest first slice
+- no staged orders, fills, positions, or trades
+
+Complete means:
+
+- an operator can review a deterministic replay preview for supported
+  structures without changing equity replay behavior
+- vertical debit spreads work first
+- iron condor is supported shortly after on the same payoff helper foundation
+- blocked reasons and missing-data states are explicit
+
+Not complete:
+
+- options replay persistence
+- options order enablement
+- mark-to-market parity
+- assignment / exercise automation
+
+### 8D - Options paper lifecycle
+
+Status:
+
+- planning complete
+- implementation not started
+
+Detailed design:
+
+- [options-paper-lifecycle-design.md](options-paper-lifecycle-design.md)
+
+Scope:
+
+- option contract identity
+- leg-aware paper order contract
+- structure open / close lifecycle
+- realized gross / net P&L
+- `commission_per_contract` application
+
+Complete means:
+
+- supported defined-risk structures can be opened and closed in paper mode
+- structure-level and leg-level summaries remain auditable
+- current equity paper lifecycle remains intact
+
+Not complete:
+
 - naked short options
-- automated assignment / exercise handling
-- margin modeling beyond explicitly modeled defined-risk structures
-- cross-contaminating current equity scoring or paper-position logic
+- assignment / exercise automation
+- partial fills in the earliest lifecycle slice
+- live brokerage execution
 
-## 1. Option instrument model
+### 8E - Operator risk UX
 
-Phase 8 should treat an option contract as a first-class instrument, not as an
-equity symbol with extra text fields.
+Status:
 
-Recommended normalized contract identity:
+- planning complete
+- implementation not started
 
-- `market_mode`: `options`
-- `instrument_type`: future explicit option-contract type
-- `underlying_symbol`
-- `expiration_date`
-- `days_to_expiration`
-- `strike`
-- `option_right`: `call` or `put`
-- `contract_multiplier`: default `100`
-- `provider_symbol`: provider-native contract symbol when available
-- `occ_symbol`: OCC-style symbol when available
+Detailed design:
 
-Recommended optional market fields for later provider-backed use:
+- [options-risk-ux-design.md](options-risk-ux-design.md)
 
-- `bid`
-- `ask`
-- `mark`
-- `last`
-- `implied_volatility`
-- `delta`
-- `gamma`
-- `theta`
-- `vega`
-- `open_interest`
-- `volume`
+Scope:
 
-Recommended planning rule:
-
-- `OptionContractContext` should remain the starting point, but later Phase 8
-  implementation will likely need one normalized contract payload that can be
-  used consistently by recommendations, replay, and paper orders.
-
-## 2. Options paper order lifecycle
-
-The current paper order lifecycle is equity-centric:
-
-- one symbol
-- one side
-- one share quantity
-- one average entry
-- one close price
-
-Options paper lifecycle must become leg-aware.
-
-### Open lifecycle requirements
-
-For each leg:
-
-- open action: `buy` or `sell`
-- contracts quantity
-- premium paid or received
-- contract multiplier
-- opening commission based on `commission_per_contract`
-
-For the overall structure:
-
-- net opening debit or credit
-- opening timestamp
-- source recommendation / replay lineage
-- paper-only fill assumption source
-
-### Close lifecycle requirements
-
-For each leg:
-
-- close action is the inverse of open action
-- close premium
-- closing commission based on `commission_per_contract`
-
-For the overall structure:
-
-- net closing debit or credit
-- gross realized P&L
-- net realized P&L after commissions
-- close reason
-- expiry-aware terminal status
-
-### P&L modeling
-
-Recommended contract-level math:
-
-- long leg gross P&L:
-  `(close_premium - open_premium) * contracts * multiplier`
-- short leg gross P&L:
-  `(open_premium - close_premium) * contracts * multiplier`
-- per-leg net P&L:
-  `gross_leg_pnl - ((open_contracts + close_contracts) * commission_per_contract)`
-- structure gross P&L:
-  sum of leg gross P&L
-- structure net P&L:
-  structure gross P&L minus total commission
-
-Recommended early execution assumption:
-
-- paper-only fills use explicit modeled premiums from a safe source
-- no claim of live fill realism until provider-backed options quotes and replay
-  parity exist
-
-### Paper-only assignment / exercise caveat
-
-Early options paper trading should not automate assignment or exercise.
-Instead:
-
-- long options may be modeled as closed before expiry or settled by modeled
-  expiration payoff
-- short defined-risk spreads may be modeled to expiration payoff only
-- naked assignment risk is out of scope until explicitly designed later
-
-## 3. Multi-leg strategy representation
-
-Phase 8 should support multi-leg structures explicitly, especially Iron
-Condor.
-
-Recommended structure payload:
-
-- `strategy_id`
-- `structure_type`
-- `underlying_symbol`
-- `expiration_date`
-- `days_to_expiration`
-- `legs[]`
-- `net_open_debit_credit`
-- `net_close_debit_credit`
-- `max_profit`
-- `max_loss`
-- `breakeven_low`
-- `breakeven_high`
-- `defined_risk`
-- `assignment_caveat`
-- `paper_execution_notes`
-
-Recommended leg payload:
-
-- `leg_index`
-- `action`: `buy` or `sell`
-- `option_right`: `call` or `put`
-- `strike`
-- `contracts`
-- `multiplier`
-- `provider_symbol` or normalized contract id
-- `open_premium`
-- `close_premium`
-
-### Iron Condor representation
-
-Iron Condor should be represented as four explicit legs:
-
-- short put
-- long put wing
-- short call
-- long call wing
-
-Required deterministic structure outputs:
-
-- net credit received
-- wing width
-- max profit
-- max loss
-- lower breakeven
-- upper breakeven
-- expiration date
-- expected-range context when available
-
-Recommended early scope rule:
-
-- defined-risk structures only
-- no naked short calls
-- no naked short puts
-
-## 4. Replay and recommendation integration
-
-Options implementation must not contaminate current equity scoring or paper
-workflow semantics.
-
-### Separation rule
-
-- keep `market_mode=equities` and `market_mode=options` explicitly separate
-- do not reuse equity share-sizing and stop-distance logic for options
-- keep current equity recommendation scoring unchanged unless an equity defect
-  requires separate work
-
-### Recommendation integration plan
-
-Options recommendations should later carry option-aware payloads in addition to
-the existing recommendation lineage fields.
-
-Later option-aware recommendation payloads will need:
-
-- normalized option contract or structure identity
-- premium / credit / debit context
+- strategy summary
+- legs table
+- debit / credit
 - max profit / max loss
 - breakevens
-- expiration / DTE
-- expected range method and status
-- liquidity-quality notes
-- provider source and fallback labeling
+- DTE / expiration context
+- payoff preview surfaces
+- warning and caveat system
 
-### Replay integration plan
+Complete means:
 
-Options replay should later operate as a separate mode:
+- operators can understand structure risk and data quality before using later
+  paper-lifecycle features
+- paper-only and non-execution caveats are visible everywhere they matter
 
-- replay request carries `market_mode=options`
-- replay summary remains mode-aware and paper-only
-- stageable candidate logic becomes option-aware instead of assuming one equity
-  order intent
-- replay steps should carry structure-level state, not just equity-style order
-  count and open notional
+Not complete:
 
-### Expected range usage
+- full chart-heavy payoff tooling in the first UX slice
+- live-liquidity or routing realism
 
-Expected range is useful in options mode, but should remain contextual:
+### 8F - Closure criteria
 
-- support structure selection or strike placement
-- support Iron Condor wing / short-strike checks
-- remain separate from breakeven and payoff math
-- remain provenance-tagged via `ExpectedRange`
+Status:
 
-### Recommendation surfaces that will later need option-aware payloads
+- planned only
 
-- Analysis setup response
-- recommendations queue
-- recommendation promote response
-- recommendation detail payload
-- replay run create/list/detail/steps
-- staged order response
-- orders blotter
-- paper positions / trades history
+Complete means:
 
-## 5. UI / UX plan
+- supported options flows are coherent from research to replay to paper
+- tests cover supported defined-risk options flows and equity regression gates
+- provider/source labeling remains truthful across the workflow
+- deferred items are explicitly documented instead of implied complete
 
-Options operator UX should stay compact and desk-like, not retail-broker-like.
+Detailed test and closure matrix:
 
-### Recommendations
+- [options-test-plan.md](options-test-plan.md)
 
-Options candidates should later show:
+## Provider and data assumptions
 
-- underlying
-- structure type
-- expiration / DTE
-- leg summary
-- credit or debit
-- max profit
-- max loss
-- breakevens
-- expected range method / status
-- provider source / fallback status
+- Provider readiness remains separate from execution enablement
+- Polygon chain preview is suitable for early read-only research anchors, not
+  for full execution parity
+- underlying bars remain the primary replay path anchor
+- expected range remains contextual, not a substitute for payoff math
+- premium assumptions must be explicit before replay or lifecycle math is
+  trusted
+- Alpaca paper readiness remains a provider-readiness concept until a later,
+  explicit execution phase
+- FRED and news remain supporting workflow context, not options execution
+  dependencies
 
-### Replay
+## Conservative implementation sequence
 
-Replay should later show:
+The safest future implementation order is:
 
-- structure under test
-- per-step approval / rejection context
-- projected payoff or realized modeled outcome
-- estimated contract commissions
-- explicit paper-only assumptions
+1. `8C2.1` pure option payoff math module and tests
+2. `8C2.2` vertical debit spread payoff tests and helpers
+3. `8C2.3` iron condor payoff tests and helpers
+4. `8C3.1` read-only replay preview contract
+5. `8C4.1` replay preview UI
+6. `8C5` replay tests and docs closure
+7. `8D1` schema/lifecycle design checkpoint before any migration work
+8. `8D2` paper option order contract
+9. `8D3` structure open/close lifecycle foundation
+10. `8D4` `commission_per_contract` application
+11. `8E1` operator risk UX improvements
+12. `8F` full closure review
 
-### Orders
+Why this order:
 
-Paper order tickets should later show:
+- it proves deterministic payoff math before route/UI complexity
+- it keeps equity replay and paper-order logic isolated
+- it delays schema pressure until there is a validated replay contract
+- it keeps options execution semantics out of the product until the right phase
 
-- legs table
-- buy/sell per leg
-- contracts per leg
-- premium per leg
-- net credit or debit
-- estimated opening commission
-- estimated closing commission
-- max profit
-- max loss
-- breakevens
-- expiration risk
-- paper-only assignment / exercise caveat
+## Deferred items that do not block 8C planning
 
-### Rendering rules for unavailable data
-
-Unavailable option data must render safely as `Unavailable`, not:
-
-- `0`
-- `NaN`
-- `undefined`
-- `null`
-
-Examples:
-
-- missing mark
-- missing IV
-- missing OI
-- missing projected net
-- unavailable expected range
-
-## 6. Provider and data assumptions
-
-### What already exists
-
-- Polygon options chain preview already exists in `market_data.py`
-- current Polygon preview returns nearest-expiry contract reference rows only
-- current preview does not provide execution parity, greeks, or mark modeling
-- Alpaca paper broker scaffold exists separately
-- provider-health wording already distinguishes readiness from live health
-
-### Current limitations
-
-- current Polygon chain preview is suitable for early read-only research
-  scaffolding, not full replay/order parity
-- current Alpaca market-data scaffold is equities-oriented
-- current Alpaca paper broker scaffold should not be used as a dependency for
-  initial Phase 8 implementation
-
-### Data likely needed later for options parity
-
-- provider contract identifiers
-- bid / ask / mark or safe modeled mid
-- volume and open interest
-- implied volatility
-- Greeks when available
-- expiration calendar handling
-- contract-level quote timestamps
-
-### Provider-readiness policy
-
-- provider readiness stays separate from execution enablement
-- Alpaca readiness remains paper/provider-readiness only until a later explicit
-  execution phase
-- FRED and news readiness remain supporting workflow context only and do not
-  imply options execution support
-
-## 7. Safety and guardrails
-
-- paper-only
-- no live routing
-- no brokerage credential entry screens
-- no naked short options in early implementation
-- defined-risk structures first
-- no assignment / exercise automation
-- no margin assumptions unless explicitly modeled later
-- no hidden fallback data mixing across recommendation / replay / orders
-- no options implementation that silently reuses equity sizing or close math
-
-## 8. Proposed implementation slices
-
-### Phase 8A — Architecture and contract planning
-
-Status in this pass:
-
-- docs-only architecture plan
-- no schema changes
-- no migrations
-- no application code changes
-
-### Phase 8B — Read-only options research contracts
-
-Safest first implementation slice after approval.
-
-Scope:
-
-- introduce explicit option/structure payload contracts in the API layer
-- wire `market_mode=options` through Analysis and Recommendations research
-  surfaces only
-- use existing options chain preview and expected-range scaffolding where
-  available
-- do not stage orders
-- do not persist options positions or trades yet
-
-Why first:
-
-- smallest behavior surface
-- no order lifecycle risk
-- no fill simulation changes
-- no schema/migration pressure on the first code slice
-- protects current equity workflow credibility
-
-### Phase 8C — Options replay for defined-risk structures
-
-Scope:
-
-- add option-aware replay requests and summaries
-- keep replay mode-separate from equity replay
-- support defined-risk structures first
-- include contract commission estimates
-- no live execution
-
-Recommended initial boundary:
-
-- replay one structure at a time
-- iron condor and simple verticals before broader strategy coverage
-
-#### What "options replay" means in 8C
-
-For Phase 8C, options replay should mean a **read-only replay preview** for a
-single defined-risk structure using historical underlying bars plus explicit
-structure assumptions already surfaced in Analysis / Recommendations.
-
-Initial 8C replay should answer:
-
-- would this structure have been allowed through the replay gate?
-- what structure was evaluated?
-- what premium / commission assumptions were used?
-- what max profit / max loss / breakevens applied?
-- what would payoff look like at expiration under the replayed underlying path?
-- what blockers prevented a trustworthy replay preview?
-
-Phase 8C should **not** yet mean:
-
+- persisted options recommendations
+- options replay persistence in existing replay tables
 - staged options orders
-- options fill simulation parity with a broker
-- open options positions or closed options trades
+- options fills, positions, and trades
 - assignment / exercise automation
-- intraday mark-to-market or Greek-driven valuation parity
-- using options replay results to unlock paper-order execution
-
-Recommended posture:
-
-- 8C starts as recommendation/history simulation plus deterministic
-  payoff-at-expiration preview
-- mark-to-market approximation is explicitly deferred until later provider-depth
-  work provides safer quote assumptions
-- replay remains paper-only and research-oriented until 8D introduces an actual
-  options paper lifecycle
-
-#### Initial supported structures
-
-Target structures for 8C:
-
-- bull call debit spread
-- bear put debit spread
-- iron condor
-
-Recommended implementation order:
-
-1. vertical debit spreads first
-2. iron condor second, using the same leg/payoff helper foundation
-
-Reasoning:
-
-- verticals are the smallest defined-risk structure with reusable debit / width /
-  max-profit / max-loss math
-- iron condor is still a required early target, but it should build on the same
-  per-leg payoff helper rather than being the first structure implemented
-- long single-leg calls/puts may be added later, but they should not displace
-  the defined-risk path as the primary 8C target
-
-Blocked early structures:
-
-- naked short call
-- naked short put
-- covered call replay that depends on inventory / assignment modeling
-
-#### Data required and assumption hierarchy
-
-Required for a valid 8C replay preview:
-
-- underlying price history from the same workflow source used to generate the
-  research setup
-- `market_mode=options`
-- explicit structure definition from Analysis / Recommendations
-- expiration / DTE
-- strike / right / action for each leg
-- premium assumption at the structure level at minimum
-
-Preferred but not required in the first slice:
-
-- chain preview reference rows
-- IV snapshot
-- expected range
-- contract-level provider symbols
-
-Assumption hierarchy for 8C:
-
-1. use the existing `option_structure` payload as the source of leg identity,
-   debit/credit, max profit/loss, and breakevens
-2. use historical underlying bars for expiration payoff checks
-3. use expected range only as contextual/operator guidance, not as payoff math
-4. use `commission_per_contract` for estimated fees only when contract counts
-   are explicit enough to do so deterministically
-
-Missing-data behavior:
-
-- if structure legs are incomplete, block replay preview with explicit reason
-- if premium / debit / credit is missing, block replay preview rather than
-  inventing price assumptions
-- if chain preview is unavailable, replay may still proceed if structure math is
-  already explicit in the setup payload
-- if expected range is blocked or omitted, replay still proceeds and shows the
-  reason as contextual research metadata
-
-#### Persistence posture
-
-Phase 8C can and should remain **non-persisted** in its safest first slice.
-
-Recommended first implementation:
-
-- API returns a read-only options replay preview response
-- frontend renders the preview without creating replay DB rows
-- no options recommendation persistence is required
-
-If lightweight persistence becomes desirable before schema work, the smallest
-schema-safe option is:
-
-- continue using the existing `replay_runs` / `replay_steps` tables only after a
-  mode-aware payload field exists in the persisted row contract, or
-- write preview-only trace details into existing JSON audit payloads rather than
-  creating new options tables
-
-However, 8C should not require that on day one. The existing replay tables are
-currently equity-shaped (`recommendation_count`, `fill_count`,
-`stageable_recommendation_id`, portfolio snapshots) and should not be stretched
-into pseudo-options persistence until the non-persisted replay preview has
-proven useful.
-
-#### Equity replay isolation
-
-Hard separation rules:
-
-- keep current `ReplayEngine` behavior unchanged for `market_mode=equities`
-- do not route options replay through `RecommendationService.generate()`
-- do not fabricate equity-style `TradeRecommendation`, `OrderIntent`,
-  `OrderRecord`, or `FillRecord` for options replay
-- use a separate request/response branch keyed by `market_mode=options`
-
-Recommended contract direction:
-
-- retain current equity `ReplayRunRequest` / `ReplayRunResponse`
-- add mode-aware option replay request/response contracts later rather than
-  overloading the equity ones
-- keep replay UI and route handlers explicitly mode-branching
-
-#### Replay UI contract
-
-The 8C replay UI should show:
-
-- underlying symbol
-- structure type
-- expiration / DTE
-- explicit legs
-- entry debit / credit assumption
-- estimated contract commissions
-- max profit
-- max loss
-- breakeven low / high where applicable
-- expiration payoff summary under the replayed underlying path
-- blocked / rejected reasons
-- paper-only / research-only disclaimer
-
-It should not show:
-
-- stage order now
-- promote to execution
-- simulated fill timeline pretending to be broker-realistic
-
-Safe rendering rules:
-
-- unavailable values render as `Unavailable` or `—`
-- blocked replay states show a deterministic reason
-- contextual expected-range data remains visibly separate from payoff outputs
-
-#### Test plan
-
-Backend tests required later:
-
-- pure payoff-math unit tests for vertical spreads and iron condor
-- commission estimate tests using `commission_per_contract`
-- blocked replay tests for missing legs / missing premium / unsupported
-  structure
-- equity replay regression tests proving `ReplayEngine` behavior is unchanged
-
-Frontend tests required later:
-
-- options replay preview renders structure, payoff summary, and blockers
-- options replay mode suppresses order/staging CTAs
-- missing values render safely
-- expected range stays contextual and does not masquerade as payoff math
-
-Recommended regression anchors:
-
-- `tests/test_replay_engine.py`
-- `tests/test_phase1_workflow_hardening.py`
-- `tests/test_recommendations_api.py`
-- existing frontend recommendations/options preview tests
-
-#### Safest implementation slices
-
-##### Phase 8C1 — Planning and contracts
-
-- define mode-specific request/response shapes for options replay preview
-- keep them separate from current equity replay contracts where practical
-- no persistence, no schema, no migration
-
-##### Phase 8C2 — Pure payoff math helper
-
-- add a deterministic helper for per-leg and structure-level expiration payoff
-- support vertical debit spreads first
-- add iron condor using the same helper
-- add `commission_per_contract` estimation only, not live execution logic
-
-##### Phase 8C3 — API response / read-only replay preview
-
-- add an options replay preview endpoint or mode branch
-- validate structure completeness
-- return payoff summary, max profit/loss, breakevens, commission estimates, and
-  blocked reasons
-- do not create replay DB rows in the first slice
-
-##### Phase 8C4 — UI surface
-
-- add a read-only options replay preview to the Replay workspace
-- keep equity replay UI unchanged
-- suppress stage/order CTAs for options mode
-
-##### Phase 8C5 — Tests and docs closure
-
-- add payoff-math unit tests
-- add frontend rendering tests
-- add explicit equity replay regression coverage
-- update roadmap/docs once the non-persisted options replay preview is working
-
-#### Recommended first implementation slice after this planning pass
-
-Proceed with **8C2 first** after contract confirmation:
-
-- implement the pure payoff math helper for vertical debit spreads
-- extend it to iron condor in the same helper module or adjacent options replay
-  utility
-- keep it frontend-invisible at first if needed
-
-That is the safest slice because it is deterministic, testable, schema-free,
-and it proves the core replay math before any route or UI work tries to present
-it to the operator.
-
-### Phase 8D — Options paper order and position lifecycle
-
-Scope:
-
-- persist option structure orders, fills, open positions, and closed trades
-- apply `commission_per_contract`
-- store gross and net realized P&L at structure and leg summary level
-- keep assignment / exercise modeled, not automated
-
-Recommended early boundary:
-
-- defined-risk structures only
-- one position per structure lineage
-- no naked short exposure
-
-### Phase 8E — Operator risk and lifecycle UX hardening
-
-Scope:
-
-- options-aware Orders and Replay surfaces
-- max profit / loss and breakeven display
-- expiration risk warnings
-- explicit unavailable-state handling
-- paper-only caveat copy
-
-### Phase 8F — Phase 8 closure criteria
-
-Scope:
-
-- options fee parity confirmed for supported structures
-- replay and paper-order parity confirmed within options mode
-- provider-source labeling confirmed across recommendations, replay, and orders
-- tests cover supported options flows end to end
-
-## Safest first implementation slice after approval
-
-Proceed with Phase 8B first:
-
-- read-only options research contracts in Analysis and Recommendations
-- use current chain preview plus explicit expected-range metadata where
-  available
-- keep Orders, replay persistence, and schema changes out of the first code
-  slice
-
-That sequence keeps the first approved implementation small, reviewable, and
-unlikely to destabilize the current equity paper-trading workflow.
+- naked short support
+- covered calls that require inventory/assignment modeling
+- mark-to-market parity and Greek-driven valuation
+- live routing or brokerage execution
+
+## Companion documents
+
+- [options-replay-design.md](options-replay-design.md)
+- [options-paper-lifecycle-design.md](options-paper-lifecycle-design.md)
+- [options-risk-ux-design.md](options-risk-ux-design.md)
+- [options-test-plan.md](options-test-plan.md)

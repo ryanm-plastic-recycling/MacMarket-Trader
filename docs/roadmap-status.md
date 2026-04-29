@@ -157,50 +157,92 @@ deferred to later phases and do not block Phase 8 planning.
 
 ### Phase 8 — Options research → paper parity
 - Status:
-  8A architecture planning complete; 8B complete for the current non-persisted
-  research-visibility scope; 8C planning started for read-only options replay
-  on defined-risk structures. No schema, migration, order-lifecycle, or
-  execution-enablement changes have landed.
-- Detailed plan:
-  see [options-architecture.md](options-architecture.md)
-- 8A:
-  architecture and contract planning only
-- 8B:
-  complete for the current non-persisted research-visibility scope:
-  Recommendations reuses the protected Analysis setup contract for read-only
-  options research preview, while Analysis suppresses persisted
-  recommendation creation for non-equities to avoid equity-shaped options
-  lineage
-- 8B:
-  complete for the current non-persisted research-visibility scope:
-  expected-range computed / blocked / omitted states render explicitly, chain
-  preview unavailable states render muted explanatory copy, partial leg data
-  renders safely, and missing values render as `Unavailable` or `—`
-- 8B:
-  complete for the current non-persisted research-visibility scope:
-  queue/promote/replay/order/staging CTAs remain suppressed in options mode,
-  and options chart context renders only when symbol/source matching is safe
-- 8B note:
-  persisted options recommendations are intentionally out of scope for 8B and
-  are not required to consider the read-only research slice complete
-- 8C:
-  options replay for defined-risk structures, including any future replay CTA
-  enablement, kept mode-separate from current equity replay; initial planning
-  keeps 8C read-only / non-persisted until the replay math and payload
-  contracts are proven
-- 8D:
-  options paper order / fill / position / trade lifecycle with
-  `commission_per_contract` application, plus any future stage/order CTA
-  enablement
-- 8E:
-  operator risk UX for legs, credits/debits, max profit/loss, breakevens, and
-  expiration caveats
-- 8F:
-  closure criteria for supported options paper-parity flows
+  `8A` complete, `8B` complete for the current non-persisted research-only
+  scope, and `8C` / `8D` / `8E` / `8F` now have detailed blueprint docs.
+  Implementation has not started beyond 8B. No schema, migration,
+  order-lifecycle, or execution-enablement changes have landed for options.
+- Master plan:
+  [options-architecture.md](options-architecture.md)
+- Companion docs:
+  [options-replay-design.md](options-replay-design.md),
+  [options-paper-lifecycle-design.md](options-paper-lifecycle-design.md),
+  [options-risk-ux-design.md](options-risk-ux-design.md),
+  [options-test-plan.md](options-test-plan.md)
+- 8A status:
+  complete
+- 8A acceptance:
+  options scope, guardrails, repo anchors, and implementation sequence are
+  documented without changing runtime behavior
+- 8B status:
+  complete for the current non-persisted research-visibility scope
+- 8B acceptance:
+  Analysis / Recommendations expose read-only options research safely, keep
+  queue/promote/replay/order/staging CTAs suppressed, and render expected
+  range, chain-preview, and missing-data states safely
+- 8B not included:
+  persisted options recommendations, options replay, options orders, options
+  fills, options positions, and options trades
+- 8C status:
+  planning complete; implementation not started
+- 8C acceptance target:
+  read-only, non-persisted replay preview for supported defined-risk
+  structures, starting with vertical debit spreads and quickly extending to
+  iron condor, while keeping current equity replay untouched
+- 8C must not change:
+  current equity `ReplayEngine`, equity replay persistence semantics, equity
+  `RecommendationService.generate()` behavior, or equity order/fill semantics
+- 8C not included:
+  staged options orders, options positions/trades, mark-to-market parity,
+  assignment/exercise automation, or live routing
+- 8D status:
+  planning complete; implementation not started
+- 8D acceptance target:
+  supported defined-risk structures can move through an options-specific paper
+  lifecycle with explicit leg summaries, contract-multiplier math,
+  `commission_per_contract`, and gross/net realized P&L, without contaminating
+  current equity paper lifecycle
+- 8D not included:
+  naked short options, early partial fills, assignment/exercise automation, or
+  live brokerage execution
+- 8E status:
+  planning complete; implementation not started
+- 8E acceptance target:
+  operators can see strategy summary, legs, debit/credit, max profit/loss,
+  breakevens, DTE/expiration, payoff context, warnings, and provider/source
+  labels without implying execution support
+- 8E not included:
+  full chart-heavy payoff tooling in the first risk-UX slice or live-liquidity
+  realism
+- 8F status:
+  planned only; closure criteria defined
+- 8F acceptance target:
+  supported options flows are coherent from research to replay to paper for the
+  intended paper-only scope, tests are in place, deferred items remain
+  explicit, and equity regressions stay green
+- Phase 8 conservative sequence:
+  `8C2.1` pure payoff math module and tests ->
+  `8C2.2` vertical debit spread helpers/tests ->
+  `8C2.3` iron condor helpers/tests ->
+  `8C3.1` read-only replay preview contract ->
+  `8C4.1` replay preview UI ->
+  `8C5` replay tests/docs closure ->
+  `8D1` schema/lifecycle design checkpoint ->
+  `8D2` paper option order contract ->
+  `8D3` structure open/close lifecycle foundation ->
+  `8D4` `commission_per_contract` application ->
+  `8E1` operator risk UX improvements ->
+  `8F` closure review
 - Phase 8 guardrails:
-  paper-only, no live routing, no naked short options in early
-  implementation, no assignment/exercise automation, and no margin assumptions
-  unless explicitly modeled later
+  options begin read-only, equity workflows must remain untouched unless
+  explicitly tested, no live trading, no staged options orders until the
+  correct phase, no schema until approved, no hidden execution semantics, no
+  RecommendationService equity contamination, and no naked short support in
+  early phases
+- Phase 8 deferred items:
+  persisted options recommendations, options replay persistence, staged options
+  orders before 8D, assignment/exercise automation, covered calls that depend
+  on inventory modeling, mark-to-market / Greeks-driven valuation parity, and
+  live routing remain outside the current implementation scope
 
 ### Phase 9 — Alpaca paper integration
 - Wire `BROKER_PROVIDER=alpaca` for real paper fills
@@ -301,6 +343,11 @@ preserved in git history. Run `git log --oneline -- docs/roadmap-status.md`
 for the chronological list, or `git log -p docs/roadmap-status.md` for full
 diffs. Notable recent inflection points:
 
+- 2026-04-29 — Phase 8 master blueprint expanded: `docs/options-architecture.md`
+  was tightened into a master plan and new companion docs now define the
+  replay preview design, paper lifecycle design, operator risk UX design, and
+  Phase 8 test matrix. This stayed docs-only; no schema, migration, replay,
+  order-lifecycle, or execution behavior changed.
 - 2026-04-29 — Analysis / Recommendations chart UX pass: workflow charts now
   default to compact presets instead of crowded overlays, surface hover
   snapshot values for time / close / volume plus visible indicators only, and
