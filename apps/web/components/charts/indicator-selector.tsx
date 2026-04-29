@@ -9,7 +9,7 @@ const BUCKETS: Array<{
   categories: IndicatorCategory[];
 }> = [
   { key: "price", label: "Price overlays", hint: "Overlays that share the main price pane.", categories: ["trend", "volatility", "structure"] },
-  { key: "lower", label: "Lower-panel studies", hint: "Separate scales for volume and momentum studies such as RSI 14.", categories: ["momentum", "volume"] },
+  { key: "lower", label: "Lower panels", hint: "Separate scales for compact volume and RSI context.", categories: ["momentum", "volume"] },
   { key: "context", label: "HACO context", hint: "Dedicated HACO/HACOLT context strips.", categories: ["haco"] },
 ];
 
@@ -37,7 +37,7 @@ export function IndicatorSelector({
               <div style={{ fontSize: "0.86rem", fontWeight: 600 }}>{bucket.label}</div>
               <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>{bucket.hint}</div>
             </div>
-            <div className="op-row">
+            <div className="op-row" style={{ rowGap: 6 }}>
               {bucketIndicators.map((indicator) => (
                 <label
                   key={indicator.id}

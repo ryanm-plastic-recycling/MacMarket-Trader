@@ -315,6 +315,7 @@ export function buildWorkflowIndicatorModel(
       ],
       guides: [
         { label: "RSI 70", value: 70, color: "#6b7080", lineStyle: LineStyle.Dotted },
+        { label: "RSI 50", value: 50, color: "#5d6574", lineStyle: LineStyle.Dashed },
         { label: "RSI 30", value: 30, color: "#6b7080", lineStyle: LineStyle.Dotted },
       ],
     });

@@ -63,6 +63,6 @@ describe("applyIndicatorsToChart", () => {
     expect(model.priceOverlays.some((entry) => entry.label === "SMA 20")).toBe(true);
     expect(model.volumePanel?.label).toBe("Volume");
     expect(model.momentumPanels[0]?.label).toBe("RSI 14");
-    expect(model.momentumPanels[0]?.guides?.map((entry) => entry.value)).toEqual([70, 30]);
+    expect(model.momentumPanels[0]?.guides?.map((entry) => entry.value)).toEqual([70, 50, 30]);
   });
 });

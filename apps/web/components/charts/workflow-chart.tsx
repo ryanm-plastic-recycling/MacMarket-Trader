@@ -78,6 +78,9 @@ function legendValueKind(pane: IndicatorPane): "price" | "volume" | "momentum" {
   return "price";
 }
 
+const PRICE_PANEL_HEIGHT = 288;
+const LOWER_PANEL_HEIGHT = 74;
+
 function createBaseChart(container: HTMLDivElement, height: number): IChartApi {
   return createChart(container, {
     autoSize: true,
@@ -88,8 +91,8 @@ function createBaseChart(container: HTMLDivElement, height: number): IChartApi {
       textColor: "#d9e2ef",
     },
     grid: {
-      vertLines: { color: "rgba(115, 138, 163, 0.14)" },
-      horzLines: { color: "rgba(115, 138, 163, 0.14)" },
+      vertLines: { color: "rgba(115, 138, 163, 0.12)" },
+      horzLines: { color: "rgba(115, 138, 163, 0.12)" },
     },
     rightPriceScale: {
       borderColor: "rgba(115, 138, 163, 0.24)",
@@ -232,7 +235,7 @@ export function WorkflowChart({
       return;
     }
 
-    const priceChart = createBaseChart(priceChartRef.current, 300);
+    const priceChart = createBaseChart(priceChartRef.current, PRICE_PANEL_HEIGHT);
     const priceSeries = priceChart.addCandlestickSeries({
       upColor: "#2c9f5d",
       downColor: "#b24f4f",
@@ -261,14 +264,14 @@ export function WorkflowChart({
     let momentumChart: IChartApi | null = null;
 
     if (indicatorModel.volumePanel && volumeChartRef.current) {
-      volumeChart = createBaseChart(volumeChartRef.current, 90);
+      volumeChart = createBaseChart(volumeChartRef.current, LOWER_PANEL_HEIGHT);
       renderVolumePanel(volumeChart, indicatorModel.volumePanel);
       linkedCharts.push(volumeChart);
     }
 
     const rsiPanel = indicatorModel.momentumPanels[0] ?? null;
     if (rsiPanel && momentumChartRef.current) {
-      momentumChart = createBaseChart(momentumChartRef.current, 90);
+      momentumChart = createBaseChart(momentumChartRef.current, LOWER_PANEL_HEIGHT);
       momentumChart.priceScale(rsiPanel.scaleId).applyOptions({
         scaleMargins: { top: 0.08, bottom: 0.08 },
         autoScale: true,
@@ -345,7 +348,7 @@ export function WorkflowChart({
   }
 
   return (
-    <div className="op-stack" style={{ gap: 12 }}>
+    <div className="op-stack" style={{ gap: 10 }}>
       <div className="op-row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div className="op-row" style={{ flexWrap: "wrap", gap: 8 }}>
           {WORKFLOW_INDICATOR_PRESETS.map((preset) => {
@@ -387,23 +390,23 @@ export function WorkflowChart({
 
       {showControls ? <IndicatorSelector selected={selectedIndicators} onChange={setSelectedIndicators} enabledIds={supportedIndicators} /> : null}
 
-      <div className="op-grid-2" style={{ gap: 12 }}>
-        <div style={{ border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 10, padding: 12, background: "rgba(10, 18, 25, 0.72)" }}>
-          <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 8 }}>Synchronized hover snapshot</div>
-          <div style={{ display: "grid", gap: 4 }}>
+      <div className="op-grid-2" style={{ gap: 10, alignItems: "start" }}>
+        <div style={{ minWidth: 0, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 10, padding: "10px 12px", background: "rgba(10, 18, 25, 0.72)" }}>
+          <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 6 }}>Hover snapshot</div>
+          <div style={{ display: "grid", gap: 4, fontSize: "0.86rem" }}>
             <div><strong>Time:</strong> {formatTimestamp(activeCandle ? String(activeCandle.time) : null)}</div>
             <div><strong>Close:</strong> {formatNumber(activeCandle?.close ?? null)}</div>
             {panelState.showVolume ? <div><strong>Volume:</strong> {formatNumber(activeCandle?.volume ?? null, "volume")}</div> : null}
           </div>
         </div>
-        <div style={{ border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 10, padding: 12, background: "rgba(10, 18, 25, 0.72)" }}>
-          <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 8 }}>Visible indicator values</div>
+        <div style={{ minWidth: 0, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 10, padding: "10px 12px", background: "rgba(10, 18, 25, 0.72)" }}>
+          <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 6 }}>Visible indicators</div>
           {hoverLegendEntries.length === 0 ? (
             <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
               No indicators enabled. Use a preset or custom toggles to add chart context.
             </div>
           ) : (
-            <div className="op-stack" style={{ gap: 8 }}>
+            <div className="op-stack" style={{ gap: 8, maxHeight: 220, overflowY: "auto", paddingRight: 2 }}>
               {priceLegendEntries.length > 0 ? (
                 <div className="op-stack" style={{ gap: 6 }}>
                   <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--op-muted, #7a8999)" }}>Price overlays</div>
@@ -427,11 +430,11 @@ export function WorkflowChart({
                           textAlign: "left",
                         }}
                       >
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                           <span style={{ width: 10, height: 10, borderRadius: 999, background: entry.color, display: "inline-block" }} />
-                          <span>{entry.label}</span>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.label}</span>
                         </span>
-                        <span>{formatNumber(entry.value, legendValueKind(entry.pane))}</span>
+                        <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatNumber(entry.value, legendValueKind(entry.pane))}</span>
                       </button>
                     ))}
                   </div>
@@ -454,11 +457,11 @@ export function WorkflowChart({
                           background: "rgba(15, 24, 34, 0.72)",
                         }}
                       >
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                           <span style={{ width: 10, height: 10, borderRadius: 999, background: entry.color, display: "inline-block" }} />
-                          <span>{entry.label}</span>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.label}</span>
                         </span>
-                        <span>{formatNumber(entry.value, legendValueKind(entry.pane))}</span>
+                        <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatNumber(entry.value, legendValueKind(entry.pane))}</span>
                       </div>
                     ))}
                   </div>
@@ -469,14 +472,17 @@ export function WorkflowChart({
         </div>
       </div>
 
-      <div className="op-stack" style={{ gap: 8 }}>
-        <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Price panel</div>
+      <div className="op-stack" style={{ gap: 6 }}>
+        <div className="op-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>Price</div>
+          <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>Primary panel</div>
+        </div>
         <div ref={priceChartRef} />
         {indicatorModel.volumePanel ? (
           <>
             <div className="op-row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
               <div style={{ fontSize: "0.78rem", fontWeight: 600 }}>Volume</div>
-              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>Separate scale</div>
+              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>Compact bars</div>
             </div>
             <div ref={volumeChartRef} />
           </>
@@ -485,7 +491,7 @@ export function WorkflowChart({
           <>
             <div className="op-row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
               <div style={{ fontSize: "0.78rem", fontWeight: 600 }}>{indicatorModel.momentumPanels[0].label}</div>
-              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>0–100 scale</div>
+              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>0 / 30 / 50 / 70 / 100</div>
             </div>
             <div ref={momentumChartRef} />
           </>
@@ -493,7 +499,7 @@ export function WorkflowChart({
       </div>
 
       <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.8rem", lineHeight: 1.5 }}>
-        Hover any panel to inspect one synchronized bar context across price, volume, and momentum. MACD, ATR, HACO parity, and richer interactive coverage remain deferred for a later chart pass.
+        Hover any panel to inspect one synchronized bar context across price, volume, and momentum. Values without enough history remain Unavailable. MACD, ATR, HACO parity, and richer interactive coverage remain deferred for a later chart pass.
       </div>
     </div>
   );
