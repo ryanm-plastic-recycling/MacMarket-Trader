@@ -64,6 +64,13 @@ Required for replay preview UI:
 
 ## 8D backend tests
 
+Required now for `8D2` schema foundation:
+
+- dedicated schema/migration tests for `paper_option_*` tables
+- model default tests for `execution_enabled=false`, `quantity=1`, and
+  `multiplier=100`
+- focused upgrade/downgrade coverage for the dedicated options schema revision
+
 Required later for options paper lifecycle:
 
 - structure open lifecycle tests
@@ -146,6 +153,7 @@ Backend:
 
 - `tests/test_options_payoff_math.py`
 - `tests/test_options_replay_preview.py`
+- `tests/test_options_paper_schema.py`
 - `tests/test_options_paper_lifecycle.py`
 
 Frontend:

@@ -16,8 +16,8 @@ Tests: pytest 210, vitest 123, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
-Phase 8D1 design checkpoint is complete; schema and lifecycle implementation
-remain deferred.
+Phase 8D2 schema foundation is complete; repository/service and lifecycle
+implementation remain deferred.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -163,8 +163,10 @@ deferred to later phases and do not block Phase 8 planning.
 - Status:
   `8A` complete, `8B` complete for the current non-persisted research-only
   scope, `8C` complete for the current read-only, non-persisted
-  replay-preview scope, and `8D` / `8E` / `8F` remain planned. No schema,
-  migration, order-lifecycle, or execution-enablement changes have landed for
+  replay-preview scope, `8D1` and `8D2` complete for design plus dedicated
+  schema foundation, and `8D3+` / `8E` / `8F` remain planned. Dedicated
+  options persistence tables now exist, but no repository/service wiring,
+  lifecycle behavior, UI, or execution-enablement changes have landed for
   options.
 - Master plan:
   [options-architecture.md](options-architecture.md)
@@ -211,17 +213,25 @@ deferred to later phases and do not block Phase 8 planning.
   assignment/exercise automation, advanced Expected Move / Expected Range
   visualization beyond the current contextual summary, or live routing
 - 8D status:
-  `8D1` design checkpoint complete; implementation not started
+  `8D1` design checkpoint complete and `8D2` schema/migration foundation
+  complete; `8D3+` remain deferred
 - 8D acceptance target:
   supported defined-risk structures can move through an options-specific paper
   lifecycle with explicit leg summaries, contract-multiplier math,
   `commission_per_contract`, and gross/net realized P&L, without contaminating
   current equity paper lifecycle
-- 8D planned now:
-  the lifecycle checkpoint recommends a separate options-specific persistence
-  branch over extending current equity write tables, documents future open /
-  close payload direction, keeps `commission_per_contract` separate from the
-  Phase 7 equity fee model, and preserves paper-only / no-routing guardrails
+- 8D implemented now:
+  dedicated `paper_option_orders`, `paper_option_order_legs`,
+  `paper_option_positions`, `paper_option_position_legs`,
+  `paper_option_trades`, and `paper_option_trade_legs` tables now exist in ORM
+  metadata and Alembic, with separate header/leg persistence, JSON
+  breakevens, `execution_enabled=false` defaults on option paper orders, and
+  focused schema/migration tests; current equity write tables and routes remain
+  untouched
+- 8D still deferred:
+  repository/service contracts, open paper option structure behavior, close
+  paper option structure behavior, `commission_per_contract` application, and
+  frontend operator UI
 - 8D not included:
   naked short options, early partial fills, assignment/exercise automation, or
   live brokerage execution
@@ -249,9 +259,13 @@ deferred to later phases and do not block Phase 8 planning.
   `8C4.1` replay preview UI ->
   `8C5` replay tests/docs closure ->
   `8D1` schema/lifecycle design checkpoint ->
-  `8D2` paper option order contract ->
-  `8D3` structure open/close lifecycle foundation ->
-  `8D4` `commission_per_contract` application ->
+  `8D2` dedicated schema/migration foundation ->
+  `8D3` repository/service contracts ->
+  `8D4` open paper option structure ->
+  `8D5` close paper option structure ->
+  `8D6` `commission_per_contract` application ->
+  `8D7` operator UI ->
+  `8D8` lifecycle tests/docs closure ->
   `8E1` operator risk UX improvements ->
   `8F` closure review
 - Phase 8 guardrails:
@@ -262,10 +276,11 @@ deferred to later phases and do not block Phase 8 planning.
   early phases
 - Phase 8 deferred items:
   persisted options recommendations, options replay persistence, staged options
-  orders before 8D, assignment/exercise automation, covered calls that depend
-  on inventory modeling, mark-to-market / Greeks-driven valuation parity,
-  advanced Expected Move visualization beyond the current contextual summary,
-  and live routing remain outside the current implementation scope
+  orders before runtime lifecycle slices, assignment/exercise automation,
+  covered calls that depend on inventory modeling, mark-to-market /
+  Greeks-driven valuation parity, advanced Expected Move visualization beyond
+  the current contextual summary, and live routing remain outside the current
+  implementation scope
 
 ### Phase 9 — Alpaca paper integration
 - Wire `BROKER_PROVIDER=alpaca` for real paper fills

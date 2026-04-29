@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from macmarket_trader.domain.time import utc_now
@@ -337,3 +337,115 @@ class PaperTradeModel(Base):
     replay_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     close_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class PaperOptionOrderModel(Base):
+    __tablename__ = "paper_option_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), index=True)
+    underlying_symbol: Mapped[str] = mapped_column(String(16), index=True)
+    structure_type: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="created", index=True)
+    expiration: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    net_debit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    net_credit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    breakevens: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    execution_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class PaperOptionOrderLegModel(Base):
+    __tablename__ = "paper_option_order_legs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    option_order_id: Mapped[int] = mapped_column(ForeignKey("paper_option_orders.id"), index=True)
+    action: Mapped[str] = mapped_column(String(8))
+    right: Mapped[str] = mapped_column(String(8))
+    strike: Mapped[float] = mapped_column(Float)
+    expiration: Mapped[date] = mapped_column(Date, index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    multiplier: Mapped[int] = mapped_column(Integer, default=100)
+    premium: Mapped[float] = mapped_column(Float)
+    leg_status: Mapped[str] = mapped_column(String(24), default="created", index=True)
+    label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class PaperOptionPositionModel(Base):
+    __tablename__ = "paper_option_positions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), index=True)
+    underlying_symbol: Mapped[str] = mapped_column(String(16), index=True)
+    structure_type: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="open", index=True)
+    expiration: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    opening_net_debit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    opening_net_credit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    breakevens: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    source_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("paper_option_orders.id"), nullable=True, index=True
+    )
+
+
+class PaperOptionPositionLegModel(Base):
+    __tablename__ = "paper_option_position_legs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    position_id: Mapped[int] = mapped_column(ForeignKey("paper_option_positions.id"), index=True)
+    action: Mapped[str] = mapped_column(String(8))
+    right: Mapped[str] = mapped_column(String(8))
+    strike: Mapped[float] = mapped_column(Float)
+    expiration: Mapped[date] = mapped_column(Date, index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    multiplier: Mapped[int] = mapped_column(Integer, default=100)
+    entry_premium: Mapped[float] = mapped_column(Float)
+    exit_premium: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="open", index=True)
+    label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class PaperOptionTradeModel(Base):
+    __tablename__ = "paper_option_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), index=True)
+    position_id: Mapped[int | None] = mapped_column(
+        ForeignKey("paper_option_positions.id"), nullable=True, index=True
+    )
+    structure_type: Mapped[str] = mapped_column(String(32), index=True)
+    underlying_symbol: Mapped[str] = mapped_column(String(16), index=True)
+    expiration: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    gross_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_commissions: Mapped[float | None] = mapped_column(Float, nullable=True)
+    net_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    settlement_mode: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class PaperOptionTradeLegModel(Base):
+    __tablename__ = "paper_option_trade_legs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("paper_option_trades.id"), index=True)
+    action: Mapped[str] = mapped_column(String(8))
+    right: Mapped[str] = mapped_column(String(8))
+    strike: Mapped[float] = mapped_column(Float)
+    expiration: Mapped[date] = mapped_column(Date, index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    multiplier: Mapped[int] = mapped_column(Integer, default=100)
+    entry_premium: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_premium: Mapped[float | None] = mapped_column(Float, nullable=True)
+    leg_gross_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    leg_commission: Mapped[float | None] = mapped_column(Float, nullable=True)
+    leg_net_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(64), nullable=True)

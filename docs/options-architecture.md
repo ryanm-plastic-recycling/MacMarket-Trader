@@ -5,13 +5,11 @@ Last updated: 2026-04-29
 ## Planning posture
 
 This document is the Phase 8 master plan for options support in
-MacMarket-Trader. It is a planning artifact only.
+MacMarket-Trader. It tracks completed checkpoints plus the remaining
+implementation plan.
 
-It does not authorize:
+It still does not authorize:
 
-- application-code changes
-- schema changes
-- migrations
 - live trading
 - brokerage routing
 - staged options orders
@@ -26,8 +24,8 @@ Current planning state:
   scope: `8C2` pure payoff math, `8C3` read-only replay preview contract,
   `8C4` operator UI preview, and `8C5` closure review/tests/docs alignment
   are complete
-- `8D` design checkpoint complete: `8D1` is documented, implementation not
-  started
+- `8D` advanced: `8D1` design checkpoint and `8D2` dedicated schema
+  foundation are complete; runtime lifecycle work has not started
 - `8E` planned only: implementation not started
 - `8F` planned only: closure criteria defined, implementation not started
 
@@ -140,7 +138,8 @@ Not complete:
 Status:
 
 - `8D1` design checkpoint complete
-- implementation not started
+- `8D2` dedicated schema/migration foundation complete
+- runtime lifecycle implementation not started
 
 Detailed design:
 
@@ -164,6 +163,8 @@ Planned now:
 
 - dedicated options persistence is recommended over extending the current
   equity write tables
+- dedicated `paper_option_*` tables now exist as the approved schema
+  foundation, without repository/service wiring or runtime lifecycle behavior
 - future open/close payload direction is documented
 - future `commission_per_contract` application rules are documented
 
@@ -249,11 +250,15 @@ The safest future implementation order is:
 5. `8C4.1` replay preview UI
 6. `8C5` replay tests and docs closure
 7. `8D1` schema/lifecycle design checkpoint before any migration work
-8. `8D2` paper option order contract
-9. `8D3` structure open/close lifecycle foundation
-10. `8D4` `commission_per_contract` application
-11. `8E1` operator risk UX improvements
-12. `8F` full closure review
+8. `8D2` dedicated schema/migration foundation
+9. `8D3` repository and service contracts
+10. `8D4` open paper option structure
+11. `8D5` close paper option structure
+12. `8D6` `commission_per_contract` application
+13. `8D7` operator UI
+14. `8D8` lifecycle tests/docs closure
+15. `8E1` operator risk UX improvements
+16. `8F` full closure review
 
 Why this order:
 

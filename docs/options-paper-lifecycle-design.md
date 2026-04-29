@@ -4,13 +4,13 @@ Last updated: 2026-04-29
 
 ## Purpose
 
-This document defines the `8D` design checkpoint for future options paper
-lifecycle support.
+This document defines the `8D` design checkpoint and schema foundation for
+future options paper lifecycle support.
 
-It is planning only. It does not authorize:
+`8D1` design is complete and `8D2` schema/migration foundation is now
+implemented. The dedicated options persistence branch exists, but it does not
+yet authorize:
 
-- schema changes
-- migrations
 - options order staging
 - options positions or trades
 - live routing
@@ -185,7 +185,7 @@ Main problem:
 Shape:
 
 - keep equity tables unchanged
-- add dedicated options structure and leg tables later in `8D2`
+- add dedicated options structure and leg tables in `8D2`
 - use structure-header plus leg-detail tables instead of trying to coerce
   legs into the current equity row shape
 
@@ -226,6 +226,41 @@ Design bias:
 - do not unify equities and options at the DB write-path level yet
 - if consolidated reporting is later needed, build a shared read model rather
   than a shared persistence contract
+
+## 8D2 schema foundation implemented now
+
+The dedicated options persistence branch now exists in ORM metadata and Alembic
+revision `20260429_0007`.
+
+Implemented table family:
+
+- `paper_option_orders`
+- `paper_option_order_legs`
+- `paper_option_positions`
+- `paper_option_position_legs`
+- `paper_option_trades`
+- `paper_option_trade_legs`
+
+Implemented schema traits:
+
+- separate header/leg tables for orders, positions, and trades
+- user scoping via `app_user_id`
+- structure identity via `underlying_symbol`, `structure_type`, and
+  `expiration`
+- JSON `breakevens` storage on header rows
+- `execution_enabled=false` default on option paper orders
+- leg defaults for `quantity=1` and `multiplier=100`
+- dedicated parent-FK, user, symbol, status, and expiration indexes
+
+Still not implemented in `8D2`:
+
+- repositories or services
+- API routes
+- open/close lifecycle behavior
+- staged options orders
+- options positions/trades runtime behavior
+- `commission_per_contract` application
+- frontend UI
 
 ## Draft contract and payload direction
 
@@ -547,6 +582,7 @@ Must not change:
 Complete when:
 
 - approved options persistence tables exist
+- focused schema and migration tests pass
 - no routes or UI depend on them yet
 
 Must not change:
@@ -622,7 +658,7 @@ Complete when:
 - no equity lifecycle breakage
 - no live trading
 - no brokerage routing
-- no options persistence until schema is explicitly approved
+- no options lifecycle behavior until `8D3+` is explicitly approved
 - no automatic assignment or exercise in the early lifecycle pass
 - no naked shorts early
 - no margin assumptions unless explicitly modeled
@@ -630,8 +666,9 @@ Complete when:
 
 ## Recommended implementation prompt after this checkpoint
 
-After this design checkpoint, the safest next implementation prompt is:
+After the completed `8D2` schema foundation, the safest next implementation
+prompt is:
 
-- `Implement 8D2 only: add approved options persistence tables and focused
-  migration/model tests, with no route, UI, lifecycle, or commission
-  behavior changes.`
+- `Implement 8D3 only: add options-specific repository/service contracts for
+  the dedicated paper_option_* tables, with no routes, no frontend UI, no
+  open/close lifecycle behavior, and no commission application yet.`
