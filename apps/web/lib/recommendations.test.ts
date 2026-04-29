@@ -22,6 +22,7 @@ import {
   formatOptionsReplayToken,
   getExpectedRangeReasonText,
   getOptionsChainUnavailableMessage,
+  getOptionsResearchDataQualityWarnings,
   getOptionsLegDisplayLines,
   getOptionsPaperOpenAvailability,
   getOptionsReplayPreviewAvailability,
@@ -29,6 +30,7 @@ import {
   getOptionsReplayPreviewPayoffRows,
   formatResearchCell,
   formatResearchCurrency,
+  formatResearchTimestamp,
   formatResearchValue,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
@@ -244,7 +246,55 @@ describe("research preview helpers", () => {
 
   it("returns muted safe copy for missing chain preview states", () => {
     expect(getOptionsChainUnavailableMessage({ reason: "plan_not_configured" })).toBe("plan_not_configured");
-    expect(getOptionsChainUnavailableMessage(null)).toBe("Options chain preview unavailable. This phase exposes config-backed research visibility only.");
+    expect(getOptionsChainUnavailableMessage(null)).toBe("Chain preview unavailable on current provider plan or payload.");
+  });
+
+  it("formats as-of timestamps deterministically and renders unavailable safely", () => {
+    expect(formatResearchTimestamp("2026-04-29T13:01:00Z")).toBe("2026-04-29 13:01 UTC");
+    expect(formatResearchTimestamp("")).toBe("As-of unavailable");
+  });
+
+  it("builds data-quality warnings from existing source, chain, and expected-range payload gaps", () => {
+    const warnings = getOptionsResearchDataQualityWarnings({
+      symbol: "SPX",
+      market_mode: "options",
+      workflow_source: "",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "",
+        dte: null,
+        legs: [{ action: "buy", right: "put", strike: 90, label: "lower long put" }],
+        net_credit: 2.5,
+        iv_snapshot: null,
+        theta_context: null,
+        vega_context: null,
+      },
+      expected_range: {
+        status: "blocked",
+        method: null,
+        reference_price_type: null,
+        absolute_move: null,
+        lower_bound: null,
+        upper_bound: null,
+        horizon_value: null,
+        horizon_unit: null,
+        snapshot_timestamp: null,
+        provenance_notes: null,
+        reason: "missing_iv_snapshot",
+      },
+      options_chain_preview: null,
+    });
+
+    expect(warnings).toContain("Underlying source unavailable.");
+    expect(warnings).toContain("Expiration unavailable in the current research payload.");
+    expect(warnings).toContain("DTE unavailable in the current research payload.");
+    expect(warnings).toContain("IV snapshot unavailable in the current provider plan or payload.");
+    expect(warnings).toContain("Greeks context unavailable in the current provider plan or payload.");
+    expect(warnings).toContain("Open interest unavailable on the current Recommendations payload.");
+    expect(warnings).toContain("Expected Range blocked: Missing IV Snapshot.");
+    expect(warnings).toContain("Chain preview unavailable on current provider plan or payload.");
+    expect(warnings).toContain("SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.");
   });
 
   it("builds a replay preview request from a supported vertical debit research structure", () => {

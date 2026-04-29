@@ -23,6 +23,11 @@ Current implementation note:
   expiration / DTE, Expected Range status, replay-preview status, paper
   lifecycle state, and compact warnings without collapsing research, replay,
   and paper lifecycle into one surface
+- `8E2` now extends that same Recommendations surface with compact provider
+  and data-quality context: underlying workflow source, chain source/as-of,
+  Expected Range provenance/as-of, safe `Source unavailable` / `As-of
+  unavailable` rendering, and provider-plan/payload warnings for missing
+  chain, IV, Greeks, open interest, and index-data caveats
 - broader Orders dashboard parity remains deferred
 
 ## UX goals
@@ -177,10 +182,23 @@ Must not change:
 
 ### 8E2 - Warning and data-quality system
 
-Complete when:
+Status:
 
-- options surfaces show broader paper-only, data-quality, source/as-of, and
-  assignment caveats consistently across later options surfaces
+- complete for the current Recommendations options research surface
+
+Implemented now:
+
+- the existing `Structure risk` surface now repeats compact source/as-of
+  context for underlying research, chain preview, and Expected Range
+  provenance without merging replay preview and paper lifecycle into one lane
+- missing source/as-of values render as `Source unavailable` /
+  `As-of unavailable`
+- data-quality warnings now call out missing chain preview, missing IV /
+  Greeks / open interest context, blocked/omitted Expected Range reasons,
+  unsupported or incomplete structures, missing expiration/DTE, and SPX/NDX
+  provider-plan caveats
+- Expected Range remains first-class research context while staying explicit
+  that it does not modify payoff math or imply execution approval
 
 Must not change:
 

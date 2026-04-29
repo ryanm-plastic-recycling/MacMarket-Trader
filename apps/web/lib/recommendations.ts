@@ -65,17 +65,22 @@ export type OptionsResearchStructure = {
   breakeven_high?: number | null;
   dte?: number | null;
   iv_snapshot?: number | null;
+  theta_context?: number | null;
+  vega_context?: number | null;
   event_blockers?: string[] | null;
 };
 
 export type OptionsExpectedRange = {
   status: "computed" | "blocked" | "omitted";
   method?: string | null;
+  reference_price_type?: string | null;
   absolute_move?: number | null;
   lower_bound?: number | null;
   upper_bound?: number | null;
   horizon_value?: number | null;
   horizon_unit?: string | null;
+  snapshot_timestamp?: string | null;
+  provenance_notes?: string | null;
   reason?: string | null;
 };
 
@@ -795,6 +800,21 @@ export function formatResearchCurrency(value: unknown, fallback = "Unavailable")
   }).format(numeric);
 }
 
+export function formatResearchTimestamp(value: unknown, fallback = "As-of unavailable"): string {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return fallback;
+    return value.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return trimmed;
+    return parsed.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  }
+  return fallback;
+}
+
 export function formatOptionsReplayToken(value: unknown, fallback = "Unavailable"): string {
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
@@ -850,7 +870,106 @@ export function getExpectedRangeReasonText(range: OptionsExpectedRange | null | 
 export function getOptionsChainUnavailableMessage(preview: OptionsChainPreview | null | undefined): string {
   const reason = preview?.reason;
   if (typeof reason === "string" && reason.trim()) return reason.trim();
-  return "Options chain preview unavailable. This phase exposes config-backed research visibility only.";
+  return "Chain preview unavailable on current provider plan or payload.";
+}
+
+function isLikelyIndexOptionsSymbol(symbol: string | null | undefined): boolean {
+  const normalized = normalizeResearchSymbol(symbol);
+  if (!normalized) return false;
+  return normalized === "SPX" || normalized.startsWith("SPXW") || normalized === "NDX";
+}
+
+function hasIncompleteResearchLeg(leg: OptionsResearchLeg | null | undefined): boolean {
+  const action = typeof leg?.action === "string" && leg.action.trim();
+  const right = typeof leg?.right === "string" && leg.right.trim();
+  const strike = toFiniteNumber(leg?.strike);
+  return !action || !right || strike == null;
+}
+
+export function getOptionsResearchDataQualityWarnings(
+  setup: OptionsResearchSetup | null | undefined,
+): string[] {
+  if (!setup || !isOptionsResearchMode(setup.market_mode)) return [];
+
+  const warnings = new Set<string>();
+  const workflowSource = String(setup.workflow_source ?? "").trim();
+  const structure = setup.option_structure ?? null;
+  const chainPreview = setup.options_chain_preview ?? null;
+  const expectedRange = setup.expected_range ?? null;
+  const replayAvailability = getOptionsReplayPreviewAvailability(setup);
+  const paperOpenAvailability = getOptionsPaperOpenAvailability(setup);
+
+  if (!workflowSource) {
+    warnings.add("Underlying source unavailable.");
+  } else if (workflowSource.toLowerCase().includes("fallback")) {
+    warnings.add("Underlying research is fallback-sourced. Treat provider-backed chart or chain context as unavailable until provider coverage recovers.");
+  }
+
+  if (!structure) {
+    warnings.add("Options structure unavailable in the current research payload.");
+  } else {
+    const legs = structure.legs ?? [];
+    if (legs.length === 0) {
+      warnings.add("Structure legs unavailable in the current research payload.");
+    } else if (legs.some((leg) => hasIncompleteResearchLeg(leg))) {
+      warnings.add("Structure legs are incomplete. Replay payoff preview and paper lifecycle stay blocked until every leg has action, right, and strike.");
+    }
+    if (!(typeof structure.expiration === "string" && structure.expiration.trim())) {
+      warnings.add("Expiration unavailable in the current research payload.");
+    }
+    if (toFiniteNumber(structure.dte) == null) {
+      warnings.add("DTE unavailable in the current research payload.");
+    }
+    if (toFiniteNumber(structure.iv_snapshot) == null) {
+      warnings.add("IV snapshot unavailable in the current provider plan or payload.");
+    }
+    if (toFiniteNumber(structure.theta_context) == null && toFiniteNumber(structure.vega_context) == null) {
+      warnings.add("Greeks context unavailable in the current provider plan or payload.");
+    }
+    warnings.add("Open interest unavailable on the current Recommendations payload.");
+  }
+
+  if (!expectedRange) {
+    warnings.add("Expected Range unavailable for this setup.");
+  } else {
+    const expectedRangeReason = getExpectedRangeReasonText(expectedRange);
+    if (expectedRange.status === "blocked" || expectedRange.status === "omitted") {
+      warnings.add(
+        expectedRangeReason
+          ? `Expected Range ${formatOptionsReplayToken(expectedRange.status).toLowerCase()}: ${formatOptionsReplayToken(expectedRangeReason)}.`
+          : `Expected Range ${formatOptionsReplayToken(expectedRange.status).toLowerCase()}.`,
+      );
+    }
+  }
+
+  if (chainPreview === null || chainPreview.reason) {
+    warnings.add(getOptionsChainUnavailableMessage(chainPreview));
+  } else {
+    if (!chainPreview.source) {
+      warnings.add("Chain preview source unavailable.");
+    }
+    if (!chainPreview.data_as_of) {
+      warnings.add("Chain preview as-of unavailable.");
+    }
+    const hasCallRows = Array.isArray(chainPreview.calls) && chainPreview.calls.length > 0;
+    const hasPutRows = Array.isArray(chainPreview.puts) && chainPreview.puts.length > 0;
+    if (!hasCallRows && !hasPutRows) {
+      warnings.add("Chain preview returned no call or put rows.");
+    }
+  }
+
+  if (replayAvailability.reason) {
+    warnings.add(replayAvailability.reason);
+  }
+  if (paperOpenAvailability.reason && paperOpenAvailability.reason !== replayAvailability.reason) {
+    warnings.add(paperOpenAvailability.reason);
+  }
+
+  if (isLikelyIndexOptionsSymbol(setup.symbol)) {
+    warnings.add("SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.");
+  }
+
+  return [...warnings];
 }
 
 export function getOptionsReplayPreviewPayoffRows(

@@ -187,6 +187,10 @@ Practical operator notes:
   coverage
 - missing options data is often a provider/plan limitation unless the app
   explicitly shows a different error
+- the Recommendations options risk surface now repeats workflow source, chain
+  source/as-of, and Expected Range provenance when available; missing values
+  should render as `Source unavailable` or `As-of unavailable`, not as a
+  hidden zero or silent success
 
 Interpretation rule:
 

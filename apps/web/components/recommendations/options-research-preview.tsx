@@ -18,10 +18,12 @@ import {
   formatOptionsReplayToken,
   formatResearchCell,
   formatResearchCurrency,
+  formatResearchTimestamp,
   formatResearchValue,
   getEffectiveOptionsCommissionPerContract,
   getExpectedRangeReasonText,
   getOptionsChainUnavailableMessage,
+  getOptionsResearchDataQualityWarnings,
   getOptionsLegDisplayLines,
   getOptionsPaperOpenAvailability,
   getOptionsPremiumLabel,
@@ -223,6 +225,7 @@ export function OptionsStructureRiskSummary({
   paperCloseResult: OptionsPaperCloseResponse | null;
 }) {
   const structure = setup.option_structure ?? null;
+  const chainPreview = setup.options_chain_preview ?? null;
   const structureBreakevens = getStructureBreakevenValues(structure);
   const replayBreakevens = getOptionsReplayPreviewBreakevens(replayPreview);
   const breakevens = replayBreakevens.length > 0 ? replayBreakevens : structureBreakevens;
@@ -259,6 +262,20 @@ export function OptionsStructureRiskSummary({
     : paperOpenResult
       ? `Position #${paperOpenResult.position_id}. Manual close uses entered exit premiums.`
       : "Persisted paper lifecycle has not been started from this page.";
+  const chainUnavailableMessage = getOptionsChainUnavailableMessage(chainPreview);
+  const dataQualityWarnings = getOptionsResearchDataQualityWarnings(setup);
+  const underlyingSource = formatResearchValue(setup.workflow_source, "Source unavailable");
+  const chainSource = chainPreview?.reason ? "Source unavailable" : formatResearchValue(chainPreview?.source, "Source unavailable");
+  const expectedRangeSource = setup.expected_range
+    ? formatResearchValue(setup.expected_range.method, "Source unavailable")
+    : "Source unavailable";
+  const expectedRangeProvenance = [
+    formatResearchValue(setup.expected_range?.reference_price_type, "Reference unavailable"),
+    formatResearchTimestamp(setup.expected_range?.snapshot_timestamp),
+  ].join(" · ");
+  const expectedRangeNotes = typeof setup.expected_range?.provenance_notes === "string" && setup.expected_range.provenance_notes.trim()
+    ? setup.expected_range.provenance_notes.trim()
+    : null;
   const warningItems = [
     "Research only / paper only. Real-money routing stays unavailable.",
     "Expected Range is research context only. It does not modify expiration payoff math.",
@@ -267,8 +284,6 @@ export function OptionsStructureRiskSummary({
     "Assignment/exercise automation is deferred.",
     "Expiration settlement is deferred.",
     "Naked shorts are blocked.",
-    "Liquidity, spread, IV, and open interest may be missing depending on provider plan coverage.",
-    "SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.",
   ];
 
   return (
@@ -352,6 +367,49 @@ export function OptionsStructureRiskSummary({
         />
       </div>
 
+      <div
+        style={{
+          marginBottom: 12,
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: "1px solid var(--op-border, #1e2d3d)",
+          background: "rgba(18, 28, 40, 0.35)",
+        }}
+      >
+        <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 8 }}>Provider and data quality</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+            gap: 10,
+            marginBottom: 8,
+          }}
+        >
+          <RiskMetricCard
+            label="Underlying source"
+            value={underlyingSource}
+            detail="As-of unavailable on the current research payload."
+          />
+          <RiskMetricCard
+            label="Chain preview source"
+            value={chainSource}
+            detail={
+              chainPreview === null || chainPreview.reason
+                ? chainUnavailableMessage
+                : `${formatResearchTimestamp(chainPreview.data_as_of)}`
+            }
+          />
+          <RiskMetricCard
+            label="Expected Range provenance"
+            value={expectedRangeSource}
+            detail={expectedRangeNotes ? `${expectedRangeProvenance} · ${expectedRangeNotes}` : expectedRangeProvenance}
+          />
+        </div>
+        <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+          Source unavailable / As-of unavailable means the current provider plan or payload did not supply that field on this options surface.
+        </div>
+      </div>
+
       {paperCloseResult ? (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 6 }}>Current paper lifecycle outcome</div>
@@ -376,7 +434,7 @@ export function OptionsStructureRiskSummary({
 
       <div style={{ marginBottom: 6, fontSize: "0.82rem", fontWeight: 600 }}>Warnings and caveats</div>
       <div className="op-stack" style={{ gap: 4 }}>
-        {warningItems.map((item) => (
+        {[...warningItems, ...dataQualityWarnings].map((item) => (
           <div key={item} style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
             {item}
           </div>
@@ -991,7 +1049,7 @@ export function OptionsResearchPreview({
         <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
           <StatusBadge tone="warn">Options research — paper only</StatusBadge>
           <StatusBadge tone="neutral">No execution support</StatusBadge>
-          <StatusBadge tone="neutral">{setup.workflow_source}</StatusBadge>
+          <StatusBadge tone="neutral">{formatResearchValue(setup.workflow_source, "Source unavailable")}</StatusBadge>
         </div>
         <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55 }}>
           {setup.operator_disclaimer ?? "Options research — paper only. Not execution support."} Recommendation queue and persisted equity replay flows remain intentionally unavailable in options mode. Replay payoff preview below stays read-only, while the paper option lifecycle panel records a separate paper-only position.
@@ -1047,9 +1105,12 @@ export function OptionsResearchPreview({
             <>
               <div><strong>Status:</strong> {formatResearchValue(setup.expected_range.status)}</div>
               <div><strong>Method:</strong> {formatResearchValue(setup.expected_range.method)}</div>
+              <div><strong>Reference price:</strong> {formatResearchValue(setup.expected_range.reference_price_type, "Source unavailable")}</div>
+              <div><strong>As-of:</strong> {formatResearchTimestamp(setup.expected_range.snapshot_timestamp)}</div>
               <div><strong>Move:</strong> {formatResearchValue(setup.expected_range.absolute_move)} ({formatResearchValue(setup.expected_range.lower_bound)} to {formatResearchValue(setup.expected_range.upper_bound)})</div>
               <div><strong>Horizon:</strong> {formatResearchValue(setup.expected_range.horizon_value)} {formatResearchValue(setup.expected_range.horizon_unit, "").trim()}</div>
               {expectedRangeReason ? <div><strong>Reason:</strong> {formatResearchValue(expectedRangeReason)}</div> : null}
+              <div><strong>Source notes:</strong> {formatResearchValue(setup.expected_range.provenance_notes, "Source unavailable")}</div>
               <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
                 Expected range is research context only. It does not change expiration payoff math or enable execution.
               </div>
@@ -1089,7 +1150,10 @@ export function OptionsResearchPreview({
             <div style={{ fontSize: "0.85rem", marginBottom: 8 }}>
               <strong>Underlying:</strong> {formatResearchValue(chainPreview.underlying ?? setup.symbol)}
               {chainPreview.expiry ? <> &nbsp; <strong>Nearest expiry:</strong> {formatResearchValue(chainPreview.expiry)}</> : null}
-              {chainPreview.source ? <> &nbsp; <span style={{ color: "var(--op-muted, #7a8999)" }}>({formatResearchValue(chainPreview.source)})</span></> : null}
+              {" "}
+              <span style={{ color: "var(--op-muted, #7a8999)" }}>
+                ({formatResearchValue(chainPreview.source, "Source unavailable")})
+              </span>
             </div>
             <div className="op-grid-2" style={{ gap: 12 }}>
               <div>
@@ -1131,8 +1195,8 @@ export function OptionsResearchPreview({
             </div>
             <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
               {chainPreview.data_as_of
-                ? `Reference data as of ${chainPreview.data_as_of}. Research preview only — no execution support.`
-                : "Reference-only options chain preview. Missing values remain Unavailable or — until deeper provider work lands."}
+                ? `Reference data as of ${formatResearchTimestamp(chainPreview.data_as_of)}. Research preview only — no execution support.`
+                : "As-of unavailable. Reference-only options chain preview. Missing values remain Unavailable or — until deeper provider work lands."}
             </div>
           </>
         )}

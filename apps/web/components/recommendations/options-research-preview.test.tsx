@@ -278,11 +278,14 @@ describe("OptionsStructureRiskSummary", () => {
           expected_range: {
             status: "blocked",
             method: null,
+            reference_price_type: null,
             absolute_move: null,
             lower_bound: null,
             upper_bound: null,
             horizon_value: null,
             horizon_unit: null,
+            snapshot_timestamp: null,
+            provenance_notes: null,
             reason: "missing_iv_snapshot",
           },
           options_chain_preview: null,
@@ -412,6 +415,9 @@ describe("OptionsStructureRiskSummary", () => {
     expect(html).toContain("$260.00");
     expect(html).toContain("$240.00");
     expect(html).toContain("$93.00 / $107.00");
+    expect(html).toContain("Provider and data quality");
+    expect(html).toContain("Chain preview unavailable on current provider plan or payload.");
+    expect(html).toContain("Source unavailable / As-of unavailable means the current provider plan or payload did not supply that field on this options surface.");
     expect(html).toContain("Manually closed");
     expect(html).toContain("$180.00");
     expect(html).toContain("$174.80");
@@ -632,5 +638,113 @@ describe("OptionsPaperLifecyclePanel", () => {
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
     expect(html).not.toContain("NaN");
+  });
+
+  it("renders source and as-of context when provider metadata is present", () => {
+    const html = renderToStaticMarkup(
+      <OptionsStructureRiskSummary
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Bull Call Debit Spread",
+          option_structure: {
+            type: "bull_call_debit_spread",
+            expiration: "2026-05-15",
+            dte: 16,
+            net_debit: 2.4,
+            max_profit: 760,
+            max_loss: 240,
+            breakeven_high: 107.4,
+            iv_snapshot: 0.25,
+            legs: [
+              { action: "buy", right: "call", strike: 105, multiplier: 100, label: "long call" },
+              { action: "sell", right: "call", strike: 110, multiplier: 100, label: "short call" },
+            ],
+          },
+          expected_range: {
+            status: "computed",
+            method: "iv_1sigma",
+            reference_price_type: "underlying_last",
+            absolute_move: 4.2,
+            lower_bound: 101.8,
+            upper_bound: 110.2,
+            horizon_value: 16,
+            horizon_unit: "calendar_days",
+            snapshot_timestamp: "2026-04-29T13:00:00Z",
+            provenance_notes: "Derived from the current IV snapshot.",
+            reason: null,
+          },
+          options_chain_preview: {
+            underlying: "SPY",
+            expiry: "2026-05-15",
+            calls: [],
+            puts: [],
+            data_as_of: "2026-04-29T13:01:00Z",
+            source: "polygon",
+            reason: null,
+          },
+        }}
+        replayPreview={null}
+        paperOpenResult={null}
+        paperCloseResult={null}
+      />,
+    );
+
+    expect(html).toContain("Underlying source");
+    expect(html).toContain("Chain preview source");
+    expect(html).toContain("Expected Range provenance");
+    expect(html).toContain("2026-04-29 13:00 UTC");
+    expect(html).toContain("2026-04-29 13:01 UTC");
+    expect(html).toContain("Derived from the current IV snapshot.");
+  });
+
+  it("renders safe muted provider-plan guidance for missing source and chain context", () => {
+    const html = renderToStaticMarkup(
+      <OptionsStructureRiskSummary
+        setup={{
+          symbol: "NDX",
+          market_mode: "options",
+          workflow_source: "",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "",
+            dte: null,
+            net_credit: 2.5,
+            max_profit: 250,
+            max_loss: 250,
+            legs: [{ action: "buy", right: "put", strike: 90, label: "lower long put" }],
+          },
+          expected_range: {
+            status: "omitted",
+            method: null,
+            reference_price_type: null,
+            absolute_move: null,
+            lower_bound: null,
+            upper_bound: null,
+            horizon_value: null,
+            horizon_unit: null,
+            snapshot_timestamp: null,
+            provenance_notes: null,
+            reason: "strategy_not_configured_for_expected_range_preview",
+          },
+          options_chain_preview: null,
+        }}
+        replayPreview={null}
+        paperOpenResult={null}
+        paperCloseResult={null}
+      />,
+    );
+
+    expect(html).toContain("Source unavailable");
+    expect(html).toContain("As-of unavailable");
+    expect(html).toContain("Chain preview unavailable on current provider plan or payload.");
+    expect(html).toContain("SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.");
+    expect(html).toContain("Expected Range is research context only. It does not modify expiration payoff math.");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("Infinity");
   });
 });

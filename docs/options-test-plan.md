@@ -185,12 +185,18 @@ Required now for `8E1` operator risk UX foundation:
   present
 - stale or unavailable data does not look healthy
 
-Required later for broader 8E work:
+Required now for `8E2` broader provider/data-quality coverage:
 
-- provider/source/as-of labels render consistently across additional options
-  surfaces
-- richer stale-data and provider-quality emphasis beyond the current
-  Recommendations surface
+- provider/source/as-of labels render safely when present on the current
+  Recommendations options surface
+- missing source/as-of values render `Source unavailable` / `As-of
+  unavailable` safely
+- chain-preview unavailable warnings render with provider-plan/payload wording
+- blocked or omitted Expected Range reasons stay visible without reading like
+  payoff math
+- SPX/NDX provider-plan caveats appear when index symbols are in play
+- stale/unavailable provider context does not read like live or execution
+  approval
 
 ## Route and CTA safety tests
 
@@ -233,18 +239,23 @@ Use this short manual pass when closing the current `8D` scope:
 4. Confirm the `Structure risk` card shows max profit/loss, breakevens,
    Expected Range status, replay-preview status, and paper lifecycle status
    without mixing the three surfaces together.
-5. Open paper option structure and verify the page shows estimated opening and
+5. Confirm the same `Structure risk` card also shows workflow source, chain
+   source/as-of, and Expected Range provenance when available, and safe
+   `Source unavailable` / `As-of unavailable` copy when those fields are not
+   present on the payload.
+6. Open paper option structure and verify the page shows estimated opening and
    open + close commissions.
-6. Enter exit premium per leg and manually close the paper structure.
-7. Verify gross P&L, opening commissions, closing commissions, total
+7. Enter exit premium per leg and manually close the paper structure.
+8. Verify gross P&L, opening commissions, closing commissions, total
    commissions, and net P&L.
-8. Verify the page stays paper-only and does not present live-trading or
+9. Verify the page stays paper-only and does not present live-trading or
    brokerage-routing language.
 
 ### 8E gate
 
-- `8E1` risk UX tests pass
+- `8E1` and `8E2` risk UX tests pass
 - replay-preview and paper-lifecycle separation remains explicit
+- provider/source/as-of and data-quality warnings remain explicit
 - CTA suppression boundaries remain correct
 
 ### 8F gate
