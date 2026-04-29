@@ -13,9 +13,9 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
 Tests: pytest 210, vitest 99, Playwright 31. tsc clean.
-Active passes: Phase 7A–7C are complete for the current equity/paper-readiness
-scope. Phase 7 remains open until the explicit Phase 7D closure items are
-resolved or formally deferred to later phases.
+Phase 7 is complete for the current equity/paper-readiness foundation.
+Remaining fee-depth, options-fee, and provider-depth items are intentionally
+deferred to later phases and do not block Phase 8 planning.
 
 ## Completed Phases
 
@@ -65,7 +65,7 @@ resolved or formally deferred to later phases.
 - Timezone-aware schedule display ("08:30 AM ET — Indianapolis · 9:30 AM your time")
 - 31 Playwright e2e gates, 99 vitest helper tests, 210 backend pytest gates
 
-## Upcoming Phases
+## Phase 7 Closeout + Upcoming Phases
 
 ### Phase 7A — Commission-aware realized paper P&L
 - Complete for current equity/paper scope:
@@ -78,6 +78,9 @@ resolved or formally deferred to later phases.
 - Complete for current equity/paper scope:
   backend fields on `paper_trades` and per-user `commission_per_trade` /
   `commission_per_contract` on `app_users` with env fallback defaults
+- Complete for current equity/paper scope:
+  `realized_pnl` remains preserved as a back-compat alias to net P&L where
+  legacy rows or older consumers still expect that field
 
 ### Phase 7B — Equity fee previews / projected net paper outcomes
 - Complete for current equity/paper scope:
@@ -86,6 +89,13 @@ resolved or formally deferred to later phases.
 - Complete for current equity/paper scope:
   projected net outcome is shown only when projected gross can be derived
   safely from existing recommendation levels
+- Complete for current equity/paper scope:
+  round-trip preview copy explicitly labels lifecycle estimates as `entry + exit`
+- Complete for current equity/paper scope:
+  close previews explicitly label fee estimates as `close-only`
+- Complete for current equity/paper scope:
+  unavailable projected gross/net values render as `Unavailable` rather than
+  `0`, `NaN`, `undefined`, or `null`
 - Note:
   current fee-preview math lives in `admin.py` for speed and reviewability;
   centralizing fee math into a dedicated module can happen in a later cleanup
@@ -103,6 +113,9 @@ resolved or formally deferred to later phases.
 - Complete for current paper/provider-readiness scope:
   provider-health is framed as a pre-provider-expansion operator-readiness
   gate, not live-trading enablement
+- Complete for current paper/provider-readiness scope:
+  config-only providers clearly distinguish `Configured` from `OK` and show
+  `Probe unavailable` when no dedicated safe live probe exists
 - Note:
   FRED/news readiness is currently configuration-first and marks live probe
   status as unavailable where no dedicated safe lightweight probe exists yet
@@ -112,22 +125,35 @@ resolved or formally deferred to later phases.
   recommendation/replay/orders workflow trust
 
 ### Phase 7D — Closure criteria / remaining cleanup
-- Still open:
-  `commission_per_contract` is stored and exposed, but not yet applied to
-  options replay, options paper lifecycle, or options-fee parity flows
-- Still open:
-  options-fee parity remains deferred to the options phase
-- Still open:
-  FRED/news dedicated safe lightweight live probes remain deferred; current
-  provider-health entries are readiness/configuration-first unless deeper
-  probe infrastructure is added later
-- Still open:
-  broader fee modeling is not yet implemented:
+- Complete for current equity/paper-readiness scope:
+  roadmap/status wording has been cleaned up to match the implemented Phase 7
+  slices without overstating live-provider or options support
+- Complete for current equity/paper-readiness scope:
+  provider-readiness language is clarified so config-only providers do not
+  imply successful live upstream probe health
+- Complete for current equity/paper-readiness scope:
+  duplicate `.gitignore` cleanup is complete
+- Complete for current equity/paper-readiness scope:
+  Phase 7 test files are tracked and named clearly
+
+### Phase 7 Closure Note
+- Phase 7 is complete for the current equity/paper-readiness foundation.
+- Remaining deferred items are intentionally moved to later phases and should
+  not block Phase 8 planning.
+
+## Deferred From Phase 7
+
+- `commission_per_contract` is stored and exposed, but options application is
+  deferred to Phase 8 / options-fee parity work
+- options-fee parity is deferred to Phase 8 / options
+- broader fee modeling is deferred:
   per-share fees, regulatory fees, borrow / locate assumptions, and richer
-  unrealized net P&L assumptions remain out of scope for the current slice
-- Do not mark Phase 7 fully complete until:
-  equity-side fee credibility is stable in operator workflows and the repo has
-  an explicit decision on what stays in Phase 7 versus what defers to Phase 8
+  unrealized net P&L assumptions remain outside the current Phase 7 scope
+- FRED/news dedicated safe live probes are deferred until later
+  provider-depth work; current Phase 7 scope covers configuration/readiness
+  visibility only
+- Alpaca readiness remains paper/provider-readiness only, not live routing or
+  brokerage enablement
 
 ### Phase 8 — Options execution (research → paper parity)
 - 8A: Options replay — historical P&L tracking for multi-leg structures using
