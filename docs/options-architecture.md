@@ -98,8 +98,8 @@ Not complete:
 
 Status:
 
-- planning complete
-- implementation not started
+- `8C2` complete: pure payoff math helper and tests implemented
+- `8C3+` not started
 
 Detailed design:
 
@@ -123,6 +123,8 @@ Complete means:
 Not complete:
 
 - options replay persistence
+- options replay API / payload contract
+- options replay UI
 - options order enablement
 - mark-to-market parity
 - assignment / exercise automation
@@ -246,6 +248,12 @@ Why this order:
 - it keeps equity replay and paper-order logic isolated
 - it delays schema pressure until there is a validated replay contract
 - it keeps options execution semantics out of the product until the right phase
+
+Current implementation note:
+
+- `src/macmarket_trader/options/payoff.py` now provides the isolated Phase 8C2
+  payoff foundation for long-option primitives, vertical debit spreads, and
+  iron condor math with no schema, route, persistence, or UI changes
 
 ## Deferred items that do not block 8C planning
 

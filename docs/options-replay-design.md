@@ -249,6 +249,10 @@ Rollback:
 
 ### 8C2 - Pure payoff math helper
 
+Status:
+
+- complete
+
 Complete when:
 
 - deterministic payoff helpers exist for supported structures
@@ -334,15 +338,37 @@ Frontend:
 - missing values render as `Unavailable` or `-`
 - options mode suppresses staging/order CTAs
 
-## Recommended first implementation slice
+## Current implementation note
 
-Proceed with `8C2.1` first:
+Phase 8C2 is now implemented in:
 
-- pure payoff math helper
-- backend tests only
-- no route work
-- no UI work
-- no persistence
+- `src/macmarket_trader/options/payoff.py`
+- `tests/test_options_payoff.py`
 
-That is the safest step because it proves the core options replay math before
-any workflow surface depends on it.
+Implemented scope:
+
+- long call and long put primitives
+- short-leg payoff primitives for internal math use
+- structure analysis for vertical debit spreads
+- structure analysis for iron condor
+- explicit blocked results for unsupported or invalid inputs, including naked
+  short single-leg structures
+
+Still deferred:
+
+- any replay API contract
+- any replay UI
+- any persistence
+- any commission application
+
+## Recommended next implementation slice
+
+Proceed with `8C3.1` next:
+
+- define the read-only replay preview contract
+- keep it mode-separate from current equity replay
+- keep it non-persisted
+- keep UI work deferred until the contract is stable
+
+That is the safest next step because the core payoff math is now proven and the
+remaining risk is contract design, not structure math.

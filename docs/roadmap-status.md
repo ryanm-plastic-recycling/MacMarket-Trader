@@ -183,17 +183,22 @@ deferred to later phases and do not block Phase 8 planning.
   persisted options recommendations, options replay, options orders, options
   fills, options positions, and options trades
 - 8C status:
-  planning complete; implementation not started
+  `8C2` complete; `8C3+` not started
 - 8C acceptance target:
   read-only, non-persisted replay preview for supported defined-risk
   structures, starting with vertical debit spreads and quickly extending to
   iron condor, while keeping current equity replay untouched
+- 8C implemented now:
+  isolated pure payoff math helpers and tests for long-option primitives,
+  vertical debit spreads, and iron condor in `src/macmarket_trader/options/`
+  with no replay route, persistence, or UI changes
 - 8C must not change:
   current equity `ReplayEngine`, equity replay persistence semantics, equity
   `RecommendationService.generate()` behavior, or equity order/fill semantics
 - 8C not included:
-  staged options orders, options positions/trades, mark-to-market parity,
-  assignment/exercise automation, or live routing
+  replay preview API/contract, replay UI, staged options orders, options
+  positions/trades, mark-to-market parity, assignment/exercise automation, or
+  live routing
 - 8D status:
   planning complete; implementation not started
 - 8D acceptance target:
@@ -376,6 +381,11 @@ diffs. Notable recent inflection points:
   defined-risk structures first, with vertical debit spreads and iron condor as
   the initial targets. Existing equity replay remains isolated, while staging,
   options paper lifecycle, and live routing stay deferred to later slices.
+- 2026-04-29 — Phase 8C2 complete: isolated pure options payoff math landed in
+  `src/macmarket_trader/options/payoff.py` with focused backend tests covering
+  long-option primitives, vertical debit spreads, iron condor, blocked naked
+  shorts, and invalid input handling. This stayed schema-free, route-free,
+  persistence-free, and UI-free; existing equity replay behavior was unchanged.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI
