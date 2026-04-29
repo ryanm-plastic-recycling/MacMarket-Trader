@@ -407,6 +407,133 @@ class OptionReplayPreviewResponse(BaseModel):
     workflow_source: str | None = None
 
 
+class OptionPaperLegInput(BaseModel):
+    action: Literal["buy", "sell"]
+    right: Literal["call", "put"]
+    strike: float
+    expiration: date
+    premium: float
+    quantity: int = 1
+    multiplier: int = 100
+    label: str | None = None
+
+
+class OptionPaperStructureInput(BaseModel):
+    market_mode: MarketMode = MarketMode.OPTIONS
+    structure_type: Literal["long_call", "long_put", "vertical_debit_spread", "iron_condor"]
+    underlying_symbol: str
+    expiration: date | None = None
+    legs: list[OptionPaperLegInput] = Field(default_factory=list)
+    net_debit: float | None = None
+    net_credit: float | None = None
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class OptionPaperOrderLegRecord(BaseModel):
+    id: int
+    option_order_id: int
+    action: str
+    right: str
+    strike: float
+    expiration: date
+    quantity: int
+    multiplier: int
+    premium: float
+    leg_status: str
+    label: str | None = None
+
+
+class OptionPaperOrderRecord(BaseModel):
+    id: int
+    app_user_id: int
+    market_mode: MarketMode = MarketMode.OPTIONS
+    underlying_symbol: str
+    structure_type: str
+    status: str
+    expiration: date | None = None
+    net_debit: float | None = None
+    net_credit: float | None = None
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float] = Field(default_factory=list)
+    execution_enabled: bool = False
+    notes: str = ""
+    created_at: datetime
+    legs: list[OptionPaperOrderLegRecord] = Field(default_factory=list)
+
+
+class OptionPaperPositionLegRecord(BaseModel):
+    id: int
+    position_id: int
+    action: str
+    right: str
+    strike: float
+    expiration: date
+    quantity: int
+    multiplier: int
+    entry_premium: float
+    exit_premium: float | None = None
+    status: str
+    label: str | None = None
+
+
+class OptionPaperPositionRecord(BaseModel):
+    id: int
+    app_user_id: int
+    market_mode: MarketMode = MarketMode.OPTIONS
+    underlying_symbol: str
+    structure_type: str
+    status: str
+    expiration: date | None = None
+    opened_at: datetime
+    closed_at: datetime | None = None
+    opening_net_debit: float | None = None
+    opening_net_credit: float | None = None
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float] = Field(default_factory=list)
+    source_order_id: int | None = None
+    legs: list[OptionPaperPositionLegRecord] = Field(default_factory=list)
+
+
+class OptionPaperTradeLegRecord(BaseModel):
+    id: int
+    trade_id: int
+    action: str
+    right: str
+    strike: float
+    expiration: date
+    quantity: int
+    multiplier: int
+    entry_premium: float | None = None
+    exit_premium: float | None = None
+    leg_gross_pnl: float | None = None
+    leg_commission: float | None = None
+    leg_net_pnl: float | None = None
+    label: str | None = None
+
+
+class OptionPaperTradeRecord(BaseModel):
+    id: int
+    app_user_id: int
+    market_mode: MarketMode = MarketMode.OPTIONS
+    position_id: int | None = None
+    structure_type: str
+    underlying_symbol: str
+    expiration: date | None = None
+    opened_at: datetime
+    closed_at: datetime | None = None
+    gross_pnl: float | None = None
+    total_commissions: float | None = None
+    net_pnl: float | None = None
+    settlement_mode: str | None = None
+    notes: str = ""
+    legs: list[OptionPaperTradeLegRecord] = Field(default_factory=list)
+
+
 class CryptoMarketContext(BaseModel):
     venue: str
     quote_currency: str = "USD"

@@ -71,6 +71,15 @@ Required now for `8D2` schema foundation:
   `multiplier=100`
 - focused upgrade/downgrade coverage for the dedicated options schema revision
 
+Required now for `8D3` repository/service contracts:
+
+- repository create/fetch tests for option paper orders and legs
+- repository create/fetch tests for option paper positions and legs
+- repository create/fetch tests for option paper trades and legs
+- open-position query scoping tests by user and status
+- validation-block tests for naked short and unsupported expiration patterns
+- regression proof that equity paper lifecycle tests remain green
+
 Required later for options paper lifecycle:
 
 - structure open lifecycle tests
@@ -154,6 +163,7 @@ Backend:
 - `tests/test_options_payoff_math.py`
 - `tests/test_options_replay_preview.py`
 - `tests/test_options_paper_schema.py`
+- `tests/test_options_paper_repository.py`
 - `tests/test_options_paper_lifecycle.py`
 
 Frontend:

@@ -7,9 +7,9 @@ Last updated: 2026-04-29
 This document defines the `8D` design checkpoint and schema foundation for
 future options paper lifecycle support.
 
-`8D1` design is complete and `8D2` schema/migration foundation is now
-implemented. The dedicated options persistence branch exists, but it does not
-yet authorize:
+`8D1` design, `8D2` schema foundation, and `8D3` repository/service contracts
+are now implemented. The dedicated options persistence branch exists, but it
+does not yet authorize:
 
 - options order staging
 - options positions or trades
@@ -252,7 +252,7 @@ Implemented schema traits:
 - leg defaults for `quantity=1` and `multiplier=100`
 - dedicated parent-FK, user, symbol, status, and expiration indexes
 
-Still not implemented in `8D2`:
+Still not implemented in `8D2` alone:
 
 - repositories or services
 - API routes
@@ -260,6 +260,52 @@ Still not implemented in `8D2`:
 - staged options orders
 - options positions/trades runtime behavior
 - `commission_per_contract` application
+- frontend UI
+
+## 8D3 repository/service contracts implemented now
+
+The dedicated options persistence branch now has internal repository/service
+contracts without any route or UI wiring.
+
+Implemented now:
+
+- `OptionPaperStructureInput` and typed option paper record contracts in
+  `src/macmarket_trader/domain/schemas.py`
+- `prepare_option_paper_structure(...)` in
+  `src/macmarket_trader/options/paper_contracts.py`
+- `OptionPaperRepository` in `src/macmarket_trader/storage/repositories.py`
+
+Current repository/service contract coverage:
+
+- create option paper order header plus legs
+- create option paper position header plus legs
+- create option paper trade header plus legs
+- fetch option paper orders with legs
+- fetch option paper positions with legs
+- list open option paper positions for one user
+- list option paper trades for one user
+- structure validation through existing payoff helpers before persistence
+
+Current validation boundaries:
+
+- `market_mode=options` required
+- supported structure types limited to:
+  - `long_call`
+  - `long_put`
+  - `vertical_debit_spread`
+  - `iron_condor`
+- naked short single-leg structures blocked
+- multi-expiration structures blocked
+- invalid quantity / multiplier / strike / premium blocked through existing
+  payoff validation
+
+Still not implemented in `8D3`:
+
+- API routes
+- open paper option structure behavior
+- close paper option structure behavior
+- `commission_per_contract` application
+- assignment/exercise handling
 - frontend UI
 
 ## Draft contract and payload direction
@@ -595,6 +641,7 @@ Complete when:
 
 - options-specific repositories or service helpers exist
 - structure and leg persistence is auditable
+- focused repository/service contract tests pass
 - no operator UI is enabled yet
 
 Must not change:
@@ -658,7 +705,7 @@ Complete when:
 - no equity lifecycle breakage
 - no live trading
 - no brokerage routing
-- no options lifecycle behavior until `8D3+` is explicitly approved
+- no options open/close lifecycle behavior until `8D4+` is explicitly approved
 - no automatic assignment or exercise in the early lifecycle pass
 - no naked shorts early
 - no margin assumptions unless explicitly modeled
@@ -666,9 +713,9 @@ Complete when:
 
 ## Recommended implementation prompt after this checkpoint
 
-After the completed `8D2` schema foundation, the safest next implementation
+After the completed `8D3` repository/service layer, the safest next implementation
 prompt is:
 
-- `Implement 8D3 only: add options-specific repository/service contracts for
-  the dedicated paper_option_* tables, with no routes, no frontend UI, no
-  open/close lifecycle behavior, and no commission application yet.`
+- `Implement 8D4 only: add open paper option structure behavior on top of the
+  dedicated repository contracts, with no close behavior, no commission
+  application, no frontend UI, and no live routing.`

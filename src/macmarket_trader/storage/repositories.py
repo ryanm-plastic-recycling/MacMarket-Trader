@@ -18,6 +18,12 @@ from macmarket_trader.domain.models import (
     EmailDeliveryLogModel,
     FillModel,
     OrderModel,
+    PaperOptionOrderLegModel,
+    PaperOptionOrderModel,
+    PaperOptionPositionLegModel,
+    PaperOptionPositionModel,
+    PaperOptionTradeLegModel,
+    PaperOptionTradeModel,
     PaperPositionModel,
     PaperTradeModel,
     ProviderHealthModel,
@@ -30,7 +36,20 @@ from macmarket_trader.domain.models import (
     UserApprovalRequestModel,
     WatchlistModel,
 )
-from macmarket_trader.domain.schemas import FillRecord, OrderRecord, PortfolioSnapshot, TradeRecommendation
+from macmarket_trader.domain.schemas import (
+    FillRecord,
+    OptionPaperOrderLegRecord,
+    OptionPaperOrderRecord,
+    OptionPaperPositionLegRecord,
+    OptionPaperPositionRecord,
+    OptionPaperStructureInput,
+    OptionPaperTradeLegRecord,
+    OptionPaperTradeRecord,
+    OrderRecord,
+    PortfolioSnapshot,
+    TradeRecommendation,
+)
+from macmarket_trader.options.paper_contracts import prepare_option_paper_structure
 
 SessionFactory = Callable[[], Session]
 
@@ -738,6 +757,369 @@ class PaperPortfolioRepository:
             session.commit()
             session.refresh(row)
             return row
+
+
+class OptionPaperRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+
+    def create_order(
+        self,
+        *,
+        app_user_id: int,
+        structure: OptionPaperStructureInput,
+        status: str = "created",
+        notes: str = "",
+    ) -> OptionPaperOrderRecord:
+        prepared = prepare_option_paper_structure(structure)
+        with self.session_factory() as session:
+            row = PaperOptionOrderModel(
+                app_user_id=app_user_id,
+                underlying_symbol=prepared.underlying_symbol,
+                structure_type=prepared.structure_type,
+                status=status,
+                expiration=prepared.expiration,
+                net_debit=prepared.net_debit,
+                net_credit=prepared.net_credit,
+                max_profit=prepared.max_profit,
+                max_loss=prepared.max_loss,
+                breakevens=list(prepared.breakevens),
+                execution_enabled=False,
+                notes=notes or (structure.notes or ""),
+            )
+            session.add(row)
+            session.flush()
+            for leg in prepared.legs:
+                session.add(
+                    PaperOptionOrderLegModel(
+                        option_order_id=row.id,
+                        action=leg.action,
+                        right=leg.right,
+                        strike=leg.strike,
+                        expiration=leg.expiration,
+                        quantity=leg.quantity,
+                        multiplier=leg.multiplier,
+                        premium=leg.premium,
+                        leg_status=status,
+                        label=leg.label,
+                    )
+                )
+            session.commit()
+            session.refresh(row)
+            return self._get_order_record(session, row.id)
+
+    def get_order(
+        self,
+        *,
+        order_id: int,
+        app_user_id: int | None = None,
+    ) -> OptionPaperOrderRecord | None:
+        with self.session_factory() as session:
+            stmt = select(PaperOptionOrderModel).where(PaperOptionOrderModel.id == order_id)
+            if app_user_id is not None:
+                stmt = stmt.where(PaperOptionOrderModel.app_user_id == app_user_id)
+            row = session.execute(stmt).scalar_one_or_none()
+            if row is None:
+                return None
+            return self._serialize_order_record(session, row)
+
+    def create_position(
+        self,
+        *,
+        app_user_id: int,
+        structure: OptionPaperStructureInput,
+        status: str = "open",
+        source_order_id: int | None = None,
+    ) -> OptionPaperPositionRecord:
+        prepared = prepare_option_paper_structure(structure)
+        with self.session_factory() as session:
+            row = PaperOptionPositionModel(
+                app_user_id=app_user_id,
+                underlying_symbol=prepared.underlying_symbol,
+                structure_type=prepared.structure_type,
+                status=status,
+                expiration=prepared.expiration,
+                opening_net_debit=prepared.net_debit,
+                opening_net_credit=prepared.net_credit,
+                max_profit=prepared.max_profit,
+                max_loss=prepared.max_loss,
+                breakevens=list(prepared.breakevens),
+                source_order_id=source_order_id,
+            )
+            session.add(row)
+            session.flush()
+            for leg in prepared.legs:
+                session.add(
+                    PaperOptionPositionLegModel(
+                        position_id=row.id,
+                        action=leg.action,
+                        right=leg.right,
+                        strike=leg.strike,
+                        expiration=leg.expiration,
+                        quantity=leg.quantity,
+                        multiplier=leg.multiplier,
+                        entry_premium=leg.premium,
+                        status=status,
+                        label=leg.label,
+                    )
+                )
+            session.commit()
+            session.refresh(row)
+            return self._get_position_record(session, row.id)
+
+    def list_open_positions(
+        self,
+        *,
+        app_user_id: int,
+        underlying_symbol: str | None = None,
+        limit: int = 50,
+    ) -> list[OptionPaperPositionRecord]:
+        with self.session_factory() as session:
+            stmt = select(PaperOptionPositionModel).where(
+                PaperOptionPositionModel.app_user_id == app_user_id,
+                PaperOptionPositionModel.status == "open",
+            )
+            if underlying_symbol:
+                stmt = stmt.where(
+                    PaperOptionPositionModel.underlying_symbol == underlying_symbol.upper().strip()
+                )
+            rows = list(
+                session.execute(
+                    stmt.order_by(PaperOptionPositionModel.opened_at.desc()).limit(limit)
+                ).scalars()
+            )
+            return [self._serialize_position_record(session, row) for row in rows]
+
+    def get_position(
+        self,
+        *,
+        position_id: int,
+        app_user_id: int | None = None,
+    ) -> OptionPaperPositionRecord | None:
+        with self.session_factory() as session:
+            stmt = select(PaperOptionPositionModel).where(PaperOptionPositionModel.id == position_id)
+            if app_user_id is not None:
+                stmt = stmt.where(PaperOptionPositionModel.app_user_id == app_user_id)
+            row = session.execute(stmt).scalar_one_or_none()
+            if row is None:
+                return None
+            return self._serialize_position_record(session, row)
+
+    def create_trade(
+        self,
+        *,
+        app_user_id: int,
+        structure: OptionPaperStructureInput,
+        position_id: int | None = None,
+        gross_pnl: float | None = None,
+        total_commissions: float | None = None,
+        net_pnl: float | None = None,
+        settlement_mode: str | None = None,
+        notes: str = "",
+    ) -> OptionPaperTradeRecord:
+        prepared = prepare_option_paper_structure(structure)
+        with self.session_factory() as session:
+            row = PaperOptionTradeModel(
+                app_user_id=app_user_id,
+                position_id=position_id,
+                structure_type=prepared.structure_type,
+                underlying_symbol=prepared.underlying_symbol,
+                expiration=prepared.expiration,
+                gross_pnl=gross_pnl,
+                total_commissions=total_commissions,
+                net_pnl=net_pnl,
+                settlement_mode=settlement_mode,
+                notes=notes or (structure.notes or ""),
+            )
+            session.add(row)
+            session.flush()
+            for leg in prepared.legs:
+                session.add(
+                    PaperOptionTradeLegModel(
+                        trade_id=row.id,
+                        action=leg.action,
+                        right=leg.right,
+                        strike=leg.strike,
+                        expiration=leg.expiration,
+                        quantity=leg.quantity,
+                        multiplier=leg.multiplier,
+                        entry_premium=leg.premium,
+                        label=leg.label,
+                    )
+                )
+            session.commit()
+            session.refresh(row)
+            return self._get_trade_record(session, row.id)
+
+    def list_trades(self, *, app_user_id: int, limit: int = 50) -> list[OptionPaperTradeRecord]:
+        with self.session_factory() as session:
+            rows = list(
+                session.execute(
+                    select(PaperOptionTradeModel)
+                    .where(PaperOptionTradeModel.app_user_id == app_user_id)
+                    .order_by(
+                        func.coalesce(
+                            PaperOptionTradeModel.closed_at,
+                            PaperOptionTradeModel.opened_at,
+                        ).desc()
+                    )
+                    .limit(limit)
+                ).scalars()
+            )
+            return [self._serialize_trade_record(session, row) for row in rows]
+
+    def _get_order_record(self, session: Session, order_id: int) -> OptionPaperOrderRecord:
+        row = session.get(PaperOptionOrderModel, order_id)
+        assert row is not None
+        return self._serialize_order_record(session, row)
+
+    def _serialize_order_record(
+        self,
+        session: Session,
+        row: PaperOptionOrderModel,
+    ) -> OptionPaperOrderRecord:
+        legs = list(
+            session.execute(
+                select(PaperOptionOrderLegModel)
+                .where(PaperOptionOrderLegModel.option_order_id == row.id)
+                .order_by(PaperOptionOrderLegModel.id.asc())
+            ).scalars()
+        )
+        return OptionPaperOrderRecord(
+            id=row.id,
+            app_user_id=row.app_user_id,
+            underlying_symbol=row.underlying_symbol,
+            structure_type=row.structure_type,
+            status=row.status,
+            expiration=row.expiration,
+            net_debit=row.net_debit,
+            net_credit=row.net_credit,
+            max_profit=row.max_profit,
+            max_loss=row.max_loss,
+            breakevens=list(row.breakevens or []),
+            execution_enabled=bool(row.execution_enabled),
+            notes=row.notes or "",
+            created_at=row.created_at,
+            legs=[
+                OptionPaperOrderLegRecord(
+                    id=leg.id,
+                    option_order_id=leg.option_order_id,
+                    action=leg.action,
+                    right=leg.right,
+                    strike=leg.strike,
+                    expiration=leg.expiration,
+                    quantity=leg.quantity,
+                    multiplier=leg.multiplier,
+                    premium=leg.premium,
+                    leg_status=leg.leg_status,
+                    label=leg.label,
+                )
+                for leg in legs
+            ],
+        )
+
+    def _get_position_record(self, session: Session, position_id: int) -> OptionPaperPositionRecord:
+        row = session.get(PaperOptionPositionModel, position_id)
+        assert row is not None
+        return self._serialize_position_record(session, row)
+
+    def _serialize_position_record(
+        self,
+        session: Session,
+        row: PaperOptionPositionModel,
+    ) -> OptionPaperPositionRecord:
+        legs = list(
+            session.execute(
+                select(PaperOptionPositionLegModel)
+                .where(PaperOptionPositionLegModel.position_id == row.id)
+                .order_by(PaperOptionPositionLegModel.id.asc())
+            ).scalars()
+        )
+        return OptionPaperPositionRecord(
+            id=row.id,
+            app_user_id=row.app_user_id,
+            underlying_symbol=row.underlying_symbol,
+            structure_type=row.structure_type,
+            status=row.status,
+            expiration=row.expiration,
+            opened_at=row.opened_at,
+            closed_at=row.closed_at,
+            opening_net_debit=row.opening_net_debit,
+            opening_net_credit=row.opening_net_credit,
+            max_profit=row.max_profit,
+            max_loss=row.max_loss,
+            breakevens=list(row.breakevens or []),
+            source_order_id=row.source_order_id,
+            legs=[
+                OptionPaperPositionLegRecord(
+                    id=leg.id,
+                    position_id=leg.position_id,
+                    action=leg.action,
+                    right=leg.right,
+                    strike=leg.strike,
+                    expiration=leg.expiration,
+                    quantity=leg.quantity,
+                    multiplier=leg.multiplier,
+                    entry_premium=leg.entry_premium,
+                    exit_premium=leg.exit_premium,
+                    status=leg.status,
+                    label=leg.label,
+                )
+                for leg in legs
+            ],
+        )
+
+    def _get_trade_record(self, session: Session, trade_id: int) -> OptionPaperTradeRecord:
+        row = session.get(PaperOptionTradeModel, trade_id)
+        assert row is not None
+        return self._serialize_trade_record(session, row)
+
+    def _serialize_trade_record(
+        self,
+        session: Session,
+        row: PaperOptionTradeModel,
+    ) -> OptionPaperTradeRecord:
+        legs = list(
+            session.execute(
+                select(PaperOptionTradeLegModel)
+                .where(PaperOptionTradeLegModel.trade_id == row.id)
+                .order_by(PaperOptionTradeLegModel.id.asc())
+            ).scalars()
+        )
+        return OptionPaperTradeRecord(
+            id=row.id,
+            app_user_id=row.app_user_id,
+            position_id=row.position_id,
+            structure_type=row.structure_type,
+            underlying_symbol=row.underlying_symbol,
+            expiration=row.expiration,
+            opened_at=row.opened_at,
+            closed_at=row.closed_at,
+            gross_pnl=row.gross_pnl,
+            total_commissions=row.total_commissions,
+            net_pnl=row.net_pnl,
+            settlement_mode=row.settlement_mode,
+            notes=row.notes or "",
+            legs=[
+                OptionPaperTradeLegRecord(
+                    id=leg.id,
+                    trade_id=leg.trade_id,
+                    action=leg.action,
+                    right=leg.right,
+                    strike=leg.strike,
+                    expiration=leg.expiration,
+                    quantity=leg.quantity,
+                    multiplier=leg.multiplier,
+                    entry_premium=leg.entry_premium,
+                    exit_premium=leg.exit_premium,
+                    leg_gross_pnl=leg.leg_gross_pnl,
+                    leg_commission=leg.leg_commission,
+                    leg_net_pnl=leg.leg_net_pnl,
+                    label=leg.label,
+                )
+                for leg in legs
+            ],
+        )
 
 
 class UserRepository:

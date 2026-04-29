@@ -1,5 +1,6 @@
 """Options helpers for read-only research and replay math."""
 
+from .paper_contracts import OptionPaperContractError, PreparedOptionPaperStructure, prepare_option_paper_structure
 from .payoff import (
     OptionLegInput,
     OptionLegPayoff,
@@ -12,6 +13,8 @@ from .payoff import (
 )
 
 __all__ = [
+    "OptionPaperContractError",
+    "PreparedOptionPaperStructure",
     "OptionLegInput",
     "OptionLegPayoff",
     "OptionPayoffPoint",
@@ -20,4 +23,5 @@ __all__ = [
     "analyze_option_structure",
     "analyze_vertical_debit_spread",
     "calculate_option_leg_payoff",
+    "prepare_option_paper_structure",
 ]

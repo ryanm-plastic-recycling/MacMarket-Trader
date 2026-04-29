@@ -24,8 +24,9 @@ Current planning state:
   scope: `8C2` pure payoff math, `8C3` read-only replay preview contract,
   `8C4` operator UI preview, and `8C5` closure review/tests/docs alignment
   are complete
-- `8D` advanced: `8D1` design checkpoint and `8D2` dedicated schema
-  foundation are complete; runtime lifecycle work has not started
+- `8D` advanced: `8D1` design checkpoint, `8D2` dedicated schema
+  foundation, and `8D3` repository/service contracts are complete; runtime
+  lifecycle work has not started
 - `8E` planned only: implementation not started
 - `8F` planned only: closure criteria defined, implementation not started
 
@@ -139,6 +140,7 @@ Status:
 
 - `8D1` design checkpoint complete
 - `8D2` dedicated schema/migration foundation complete
+- `8D3` repository/service contracts complete
 - runtime lifecycle implementation not started
 
 Detailed design:
@@ -164,7 +166,9 @@ Planned now:
 - dedicated options persistence is recommended over extending the current
   equity write tables
 - dedicated `paper_option_*` tables now exist as the approved schema
-  foundation, without repository/service wiring or runtime lifecycle behavior
+  foundation, without runtime lifecycle behavior
+- dedicated repository/service contracts now exist for typed create/fetch
+  access to the options persistence branch, without route or UI wiring
 - future open/close payload direction is documented
 - future `commission_per_contract` application rules are documented
 

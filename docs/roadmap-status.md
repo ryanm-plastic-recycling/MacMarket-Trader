@@ -16,8 +16,8 @@ Tests: pytest 210, vitest 123, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
-Phase 8D2 schema foundation is complete; repository/service and lifecycle
-implementation remain deferred.
+Phase 8D3 repository/service contracts are complete; open/close lifecycle,
+commission application, and frontend operator UI remain deferred.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -163,11 +163,11 @@ deferred to later phases and do not block Phase 8 planning.
 - Status:
   `8A` complete, `8B` complete for the current non-persisted research-only
   scope, `8C` complete for the current read-only, non-persisted
-  replay-preview scope, `8D1` and `8D2` complete for design plus dedicated
-  schema foundation, and `8D3+` / `8E` / `8F` remain planned. Dedicated
-  options persistence tables now exist, but no repository/service wiring,
-  lifecycle behavior, UI, or execution-enablement changes have landed for
-  options.
+  replay-preview scope, `8D1` / `8D2` / `8D3` complete for design, schema,
+  and repository/service contracts, and `8D4+` / `8E` / `8F` remain planned.
+  Dedicated options persistence tables and internal repository contracts now
+  exist, but no open/close lifecycle behavior, UI, or execution-enablement
+  changes have landed for options.
 - Master plan:
   [options-architecture.md](options-architecture.md)
 - Companion docs:
@@ -213,8 +213,8 @@ deferred to later phases and do not block Phase 8 planning.
   assignment/exercise automation, advanced Expected Move / Expected Range
   visualization beyond the current contextual summary, or live routing
 - 8D status:
-  `8D1` design checkpoint complete and `8D2` schema/migration foundation
-  complete; `8D3+` remain deferred
+  `8D1` design checkpoint, `8D2` schema/migration foundation, and `8D3`
+  repository/service contracts are complete; `8D4+` remain deferred
 - 8D acceptance target:
   supported defined-risk structures can move through an options-specific paper
   lifecycle with explicit leg summaries, contract-multiplier math,
@@ -225,13 +225,14 @@ deferred to later phases and do not block Phase 8 planning.
   `paper_option_positions`, `paper_option_position_legs`,
   `paper_option_trades`, and `paper_option_trade_legs` tables now exist in ORM
   metadata and Alembic, with separate header/leg persistence, JSON
-  breakevens, `execution_enabled=false` defaults on option paper orders, and
-  focused schema/migration tests; current equity write tables and routes remain
-  untouched
+  breakevens, `execution_enabled=false` defaults on option paper orders, a
+  `prepare_option_paper_structure(...)` validation helper, and an
+  `OptionPaperRepository` for typed create/fetch contracts with focused schema
+  plus repository tests; current equity write tables, routes, and replay/order
+  behavior remain untouched
 - 8D still deferred:
-  repository/service contracts, open paper option structure behavior, close
-  paper option structure behavior, `commission_per_contract` application, and
-  frontend operator UI
+  open paper option structure behavior, close paper option structure behavior,
+  `commission_per_contract` application, and frontend operator UI
 - 8D not included:
   naked short options, early partial fills, assignment/exercise automation, or
   live brokerage execution
