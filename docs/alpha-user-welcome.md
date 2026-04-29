@@ -1,206 +1,393 @@
-# Welcome to MacMarket-Trader (Private Alpha)
+# MacMarket-Trader Operator Welcome Guide
+
+Last updated: 2026-04-29
+
+This is the practical welcome/training guide for MacMarket-Trader operators.
+It is written for:
+
+- the operator using the console day to day
+- the project owner learning or demoing the system
+- future AI/Codex agents that need accurate high-level usage context
+
+MacMarket-Trader is still paper-only. Nothing in this guide authorizes live
+trading, brokerage routing, or real-money execution.
+
+## 1. What MacMarket-Trader is
+
+MacMarket-Trader is a private operator console for research, deterministic
+trade review, replay validation, and paper-only lifecycle tracking.
+
+Current reality:
+
+- it is a paper-first trading intelligence system
+- equities are the current guided paper workflow center
+- options now have:
+  - research preview
+  - replay payoff preview
+  - a separate paper-only open/manual-close lifecycle
+- it is not live trading
+- it is not brokerage execution
+- it does not route real-money orders
 
-You're one of the first people outside the build team to use this. Thanks for being early.
+The product center is:
 
-This doc is the only orientation you need. Read it once, then start clicking. It takes about 5 minutes.
+1. Analysis / Strategy Workbench
+2. Recommendations
+3. Replay
+4. Orders
 
----
+For options, the current operator center is Analysis plus Recommendations.
+Replay payoff preview and paper lifecycle actions live there now; broader
+Orders parity for durable options positions/trades is still deferred.
 
-## What this is
+## 2. Current operating modes
 
-MacMarket-Trader is an **operator-grade trading intelligence console**. It's not a charting tool, not a robo-advisor, not a backtest playground. It's a disciplined workflow for taking one trade idea from analysis to a paper-traded position with full audit lineage.
+| Mode | What it does now | What it does not do |
+| --- | --- | --- |
+| Equities mode | Full operator flow: Analysis -> Recommendations -> Replay -> Orders -> close paper trade | No live routing |
+| Options research preview | Shows structure, legs, expected range status, chain preview when available, and chart/research context | Not execution support |
+| Options replay payoff preview | Read-only, non-persisted expiration payoff preview for supported defined-risk structures | Does not create replay runs, orders, positions, or trades |
+| Paper options lifecycle | Persists a paper-only options position and supports manual close for supported structures | No expiration settlement, no assignment/exercise automation, no live routing |
+| Provider health / operator readiness | Shows provider configuration, fallback/blocking truth, and operator trust state | Does not enable live trading |
 
-**The whole product is one workflow:**
+Two workflow styles also matter:
 
-```
-Analyze → Recommendation → Replay → Paper Order → Position → Close
-```
+- Guided mode: the main equities workflow with context continuity across
+  Analysis -> Recommendations -> Replay -> Orders
+- Explorer mode: browse and review existing workflow records without the
+  guided auto-advance behavior
 
-Every action you take is logged. Every recommendation has explicit entry, stop, and target levels. Every replay run validates the idea against historical data before you stage a paper order. Every position can be closed with a reason; recent closes can be undone within 5 minutes.
+## 3. Basic user flow
 
-**It is paper-only.** No real money moves. No live broker integration. This is for testing the discipline, not the trades.
+### Core workflow
 
----
+1. Open **Analysis**.
+2. Pick a symbol.
+3. Choose the correct market mode.
+4. Review chart context, workflow source, strategy rationale, and levels.
+5. Continue based on mode.
 
-## What it is NOT
+### Equities flow
 
-- It does not pick trades for you. You pick the symbol and strategy; it scores the setup.
-- It does not predict the future. The "scores" are deterministic functions of regime, technicals, and event context — no ML, no opinions.
-- It is not a chat interface. There is no AI assistant inside the app. LLMs only explain context; the engines decide.
-- It is not a brokerage. You cannot place a real order. Ever.
+1. In Analysis, review the setup and chart.
+2. Create the recommendation.
+3. Open **Recommendations** and review the persisted lineage.
+4. Run **Replay** to validate the path.
+5. If the replay is stageable, continue into **Orders**.
+6. Stage the paper order, monitor the paper position, and close it when ready.
+7. Review realized paper results.
 
----
+### Options flow
 
-## Getting in
+1. In Analysis, switch to **options** market mode.
+2. Review the options research preview:
+   - structure type
+   - legs
+   - expiration / DTE
+   - expected range status
+   - chain preview when available
+3. In **Recommendations**, use:
+   - **Replay payoff preview** for read-only expiration payoff inspection
+   - **Paper option lifecycle** for paper-only open/manual-close actions
+4. Open the paper option structure only if the structure is complete and
+   supported.
+5. Close manually by entering one exit premium per leg.
+6. Review gross P&L, commissions, and net P&L.
 
-You should have received an email with a sign-in link to **https://macmarket.io**.
+## 4. Options training
 
-When you visit, you'll hit **two auth gates**:
+Keep these distinctions clear:
 
-1. **Cloudflare Access** — you'll see a screen asking for your email. Enter the email I invited, click send, check inbox for a 6-digit PIN, paste it. This proves you're on the allowlist.
-2. **Clerk sign-in** — after the PIN, you'll see the MacMarket sign-in page. Use the email I invited (same one). If it's your first time, you'll create a password.
+- **Options research preview** is not execution support.
+- **Replay payoff preview** is read-only and non-persisted.
+- **Paper option lifecycle** creates persisted paper-only option positions and
+  trades for the currently supported lifecycle scope.
+- **Manual close** requires one exit premium per leg.
+- **Expiration settlement** is deferred.
+- **Assignment/exercise automation** is deferred.
+- **Naked shorts** are blocked.
+- **Live routing** is not available.
 
-After both, you land on the **Dashboard**. If your account isn't approved yet, you'll see "Pending approval" — message me and I'll approve you in the admin panel.
+Current supported operator expectation:
 
-Sessions last 24 hours. After that you'll re-do the PIN step but Clerk will remember you.
+- use research preview to inspect the setup
+- use replay payoff preview to inspect expiration payoff math
+- use the paper lifecycle panel only when you intentionally want persisted
+  paper-state behavior
 
----
+Do not confuse replay payoff preview with paper lifecycle:
 
-## Your first 5 minutes — do this exact walkthrough
+- replay preview stays read-only and non-persisted
+- paper lifecycle persists a paper position and later a paper trade
 
-This proves the workflow works for you. Do it once, then you'll never need this section again.
+## 5. Commission training
 
-### 1. Click "Start guided paper trade" on the dashboard
+This section matters. Entering the wrong commission value will distort paper
+results badly.
 
-This drops you into **guided mode**. You'll see a green sticky banner at the top showing your active trade context — symbol, strategy, market mode. It updates as you move through the workflow.
+### Equity vs options commission
 
-### 2. On the Analyze page
+- `commission_per_trade` is the equity paper-trade fee setting
+- `commission_per_contract` is the options paper-lifecycle fee setting
+- they are separate and must not be treated as interchangeable
 
-- **Symbol**: type `AAPL` (or anything liquid — MSFT, NVDA, SPY)
-- **Market mode**: equities (options/crypto are research preview only — they will block when you try to advance)
-- **Timeframe**: 1D
-- **Strategy**: pick any. "Event Continuation" is the easiest to interpret.
-- Click **Refresh analysis**
+### Options commission rule
 
-You'll see the chart, the strategy rationale, and the entry/stop/target levels. Read them. The system has just done the work that would normally take you 10 minutes of manual chart inspection.
+Options commission is:
 
-If anything looks off, that's real signal. Tell me.
+`commission_per_contract x contracts x legs x events`
 
-### 3. Click "Create recommendation"
+Where:
 
-This persists the setup as a recommendation with a unique ID. You're auto-advanced to the **Recommendations** page after the create succeeds.
+- `contracts` = option contracts, not shares
+- `legs` = each option leg in the structure
+- `events` = usually open and close
 
-### 4. On Recommendations
+Important:
 
-You'll see your active recommendation in the hero card with the same symbol/strategy you just picked. Click **Make active →** (the big green button in the Next action card).
+- do **not** multiply options commission by `100`
+- the `100` contract multiplier applies to premium and P&L math only
+- it does **not** apply to broker commission modeling
 
-The system auto-advances to **Replay** after ~600ms.
+### Example
 
-### 5. On Replay
+`$0.65 x 1 contract x 4 legs x 2 events = $5.20 total commission`
 
-Click **Run replay now →** (big green button, may pulse).
+### Why this matters
 
-The replay engine walks the recommendation through historical bars and shows you what would have happened. Each step is labeled `✓ Bar #N` or `✗ Bar #N` — green checks are bars where the strategy logic would have triggered, red X's are bars that didn't meet the gate.
+If you enter `$65` instead of `$0.65`, your fee modeling is wrong by `100x`.
 
-If the replay produces no fills (sometimes the case — strategy doesn't trigger in the historical window), you'll see a styled warning block. **That's not a bug**. It means the system is honestly telling you the setup wouldn't have worked. Don't stage a paper order if this happens.
+That means the same 1-contract, 4-leg, open+close example becomes:
 
-If the replay does produce fills, the system auto-advances to **Paper Orders**.
+`$65 x 1 x 4 x 2 = $520`
 
-### 6. On Paper Orders
+That would badly distort net P&L and make paper results look far worse than
+they actually are.
 
-Click **Stage paper order now →**.
+## 6. Provider and data access
 
-The order appears in your order history, and an open paper position appears in the **Open paper positions** card above.
+Provider health is an operator trust screen, not a live-trading enablement
+screen.
 
-### 7. Close the position
+Use it to answer:
 
-Click **Close position** on the open position row. An inline ticket appears below the row:
-- **Mark price** defaults to your average entry price — change it to a higher number to simulate a profitable close, or lower for a loss
-- **Reason** — pick "Target hit" or "Manual exit"
-- Click **Confirm**
+- are providers configured?
+- is the workflow using provider bars or explicit fallback?
+- is a workflow blocked because provider data is unavailable?
 
-The position closes. A row appears in the **Closed trades** card showing your realized P&L (green if positive, red if negative), hold duration, and close reason.
+Practical operator notes:
 
-### 8. (Optional) Undo the close
+- SPX and NDX may require index-data entitlement
+- if index access is unavailable, SPY and QQQ are practical ETF substitutes
+  for research and workflow testing
+- options chain rows, Greeks, IV, and open interest depend on provider plan
+  coverage
+- missing options data is often a provider/plan limitation unless the app
+  explicitly shows a different error
 
-Closed within the last 5 minutes? You'll see a **Reopen position** button on that closed trade row with a countdown. Click it, confirm, and the position is restored as if the close never happened.
+Interpretation rule:
 
-After 5 minutes, the button disappears. Closes become permanent.
+- provider readiness does **not** mean live trading is enabled
+- provider degradation should be treated as a workflow trust issue first
 
----
+## 7. Chart and indicator training
 
-## What the workflow rules actually enforce
+Analysis and Recommendations now use compact workflow chart presets.
 
-These aren't preferences — they're hard gates the backend enforces. Knowing them prevents confusion:
+Presets:
 
-- **Equities only for execution prep.** Options and crypto stop at research preview. You can analyze them, but you can't promote to replay or stage paper orders.
-- **No replay without a recommendation.** You can't run a replay against a symbol; it must be against a persisted recommendation. The "Make active" step is what creates that lineage.
-- **No paper order without a stageable replay.** If the replay produces no fills or no approval, the order staging is blocked.
-- **No silent fallbacks.** If a data provider is down, the system tells you. It doesn't pretend.
-- **Cancel only before fills.** A staged order with no fills can be canceled. Once it fills, it becomes a position; cancel is no longer an option (close is).
+- `Clean`
+- `Trend`
+- `Momentum`
+- `Volatility`
+- `All`
 
----
+How to read them:
 
-## Two modes to know about
+- the main **price panel** carries price and overlays
+- the **volume panel** is separate from price
+- the **RSI panel** is separate from price and stays on a 0-100 scale
+- the hover snapshot synchronizes across the visible panels
 
-**Guided mode** — what you used in the walkthrough. Sticky active-trade banner, big green CTAs, auto-advance between steps, one trade idea at a time. This is the primary way to use the app.
+Operator guidance:
 
-**Explorer mode** — when you visit any workflow page without `guided=1` in the URL. You see the full history tables, no auto-advance, all data exposed. Use this when you want to browse past recommendations, replay runs, or orders without progressing a new trade.
+- use `Clean` for a simple price + volume view
+- use `Trend` when you want moving-average context
+- use `Momentum` when you want RSI context
+- use `Volatility` when you want Bollinger / expected-range context where
+  available
+- use `All` only when you need the denser research view
 
-You can switch any time by adding/removing `?guided=1` from the URL, or by starting from the dashboard's **Start guided paper trade** button (always launches guided).
+Indicators are research context only. They are not automatic trade
+instructions.
 
----
+## 8. Expected Move / Expected Range
 
-## What's intentionally rough in alpha
+Expected Move / Expected Range is a first-class options research concept in
+MacMarket-Trader.
 
-I'd rather you know these are gaps, not bugs:
+What it is:
 
-- **Recommendation IDs look like `rec_a65757eb8d23`** — not human-readable. A schema upgrade to friendly IDs (`AAPL-EVCONT-20260428-1430`) is on the roadmap but not done. For now, copy the hex when you need to reference a specific rec.
-- **Trade dollar size is fixed at $1000.** Per-user configurable risk is on the roadmap. If you have strong opinions about what your risk per trade should default to, tell me — that's useful signal.
-- **Strategy descriptions are sparse.** The selector shows a hint per strategy but it's not a full guide. If you don't recognize a strategy name, ask before using it.
-- **The analysis chart sometimes feels visually busy.** I know. Indicator selection works but the default state has more on it than I'd like.
-- **Email rendering is now base64-inline** — should be reliable, but if you get a strategy report email and the logo is broken, screenshot it and send it to me.
+- contextual research information
+- a framing tool for the current options setup
+- a way to understand whether the structure sits inside or outside the
+  currently estimated move
 
----
+What it is not:
 
-## Scheduled strategy reports
+- it does not change payoff-at-expiration math
+- it does not approve execution
+- it is not a recommendation by itself
 
-If your account has scheduled reports enabled, you'll get an email at the times you set. The email shows ranked candidates with entry/stop/target/score for each. The email subject leads with the top candidate, e.g., `MacMarket · Apr 28 · Top: NVDA (0.93) + 4 more`.
+Expected range states:
 
-To create a schedule: visit **/schedules** in the app. Set the time, timezone, watchlist, and strategy set. The runner checks every 5 minutes for due schedules.
+- `computed`
+- `blocked`
+- `omitted`
 
-If a scheduled time passes and you don't get the email within 10 minutes, tell me.
+Operator rule:
 
----
+- blocked or omitted states should show a reason
+- missing expected range should be read as `Unavailable` or muted context, not
+  as a hidden zero
+- advanced expected-move visualization is still future work
 
-## What I want from you
+## 9. Safety guardrails
 
-This is a private alpha because feedback at this stage is more valuable than scale. Specifically:
+Treat these as hard boundaries:
 
-**Tell me when:**
-- Any step felt confusing or you didn't know what to do next
-- A button label was misleading
-- A page loaded with stale data or a broken state
-- You hit an error and the message wasn't useful
-- A workflow rule blocked you and you couldn't tell why
-- The numbers looked wrong (entry/stop/target make no sense for a setup)
+- paper-only
+- no live routing
+- no staged real brokerage orders
+- no assignment/exercise automation
+- no naked short options in the early options lifecycle
+- options lifecycle remains separate from equity lifecycle
+- expected range or replay payoff preview is not a recommendation by itself
+- provider health is not execution approval
 
-**You don't need to format these as bug reports.** A one-line text or email is fine: "I clicked Make active and nothing happened" is more useful than a 5-paragraph reproduction. I'll dig in.
+Also remember:
 
-**You also don't need to be polite.** "This is dumb" is a useful signal. I'd rather hear it now than after I've shipped this to 100 people.
+- equities and options are intentionally mode-separated
+- options do not reuse equity replay persistence or equity order semantics
+- if a screen says paper-only, believe it
 
----
+## 10. Manual smoke checklist
 
-## What you should NOT do
+Use this checklist when validating the current operator workflow:
 
-- **Don't share the URL.** The Cloudflare Access allowlist only includes specific emails. Sharing the link doesn't help anyone — they'll just be blocked at the PIN screen. If you want to recommend someone, send me their email and I'll evaluate adding them.
-- **Don't expect uptime guarantees.** This runs on hardware that's healthy but not enterprise. If you can't reach it, try again in 5 minutes. If still down, tell me.
-- **Don't trust the numbers as financial advice.** This is a paper trading research tool. The recommendations are deterministic outputs from rules I wrote, not validated alpha signals. Use it to test the workflow, not to inform real money decisions.
+1. Verify **Provider Health** and confirm the workflow source is truthful.
+2. Open **Settings** and set:
+   - equity `commission_per_trade`
+   - options `commission_per_contract`
+3. Run an **equity** setup through Analysis.
+4. Run an **options** setup and review research preview details.
+5. Run **Replay payoff preview** for the options structure.
+6. Open the **paper option structure** from Recommendations.
+7. Manually close it with one exit premium per leg.
+8. Verify:
+   - gross P&L
+   - opening commissions
+   - closing commissions
+   - total commissions
+   - net P&L
+9. Confirm no live-trading or brokerage-routing language appears.
 
----
+## 11. Troubleshooting
 
-## How to reach me
+### "Data not available on current plan"
 
-- Text or email — fastest
-- For bugs: include the URL you were on, what you clicked, what happened
-- For "this is confusing": just say what you expected vs. what you got
+Usually this means provider entitlement, not a trade-logic error.
 
----
+Check:
 
-## What's coming next
+- Provider Health
+- current symbol type
+- current provider plan coverage
 
-Roughly in this order:
+### SPX / NDX not loading cleanly
 
-- Human-readable recommendation IDs
-- Per-user trade dollar size (Settings page)
-- Polish on strategy descriptions and regime hints
-- More robust scheduled report controls
-- Eventually: real broker paper-trading integration (Alpaca paper API)
+Try:
 
-If something on this list matters more or less to you than I'm ranking it, say so.
+- `SPY` instead of `SPX`
+- `QQQ` instead of `NDX`
 
----
+That gives you practical ETF substitutes when index plan access is missing.
 
-Thanks for being early. Let's see what breaks.
+### Missing option chain
 
-— Ryan
+Possible causes:
+
+- provider plan does not expose the needed chain data
+- the symbol/expiration is not currently available
+- the app has enough structure context to show research but not enough chain
+  detail to show preview rows
+
+### Missing expected range
+
+Possible causes:
+
+- IV snapshot unavailable
+- chain data missing
+- method blocked or omitted
+
+This does not automatically mean the rest of the research setup is invalid.
+
+### Preview blocked / unsupported
+
+Likely causes:
+
+- incomplete legs
+- missing premium assumptions
+- unsupported structure type
+- naked short structure
+- multi-expiration structure
+
+Read the blocked reason directly. Do not infer.
+
+### Close blocked because already closed
+
+The current manual-close path blocks double close. If the position is already
+closed, that is expected behavior, not a hidden failure.
+
+### Wrong commission amount entered
+
+If net P&L looks wildly wrong:
+
+1. check `commission_per_contract`
+2. confirm it is something like `0.65`, not `65`
+3. remember options commission is not multiplied by `100`
+
+## 12. Current phase status
+
+Current project status, in operator terms:
+
+- Phase 7 is closed for the equity paper-readiness scope
+- Phase 8A complete
+- Phase 8B complete
+- Phase 8C complete
+- Phase 8D complete for the current paper-options lifecycle scope
+- Phase 8E is next: richer operator risk UX
+- Phase 8F comes later: final options-phase closure review
+
+Current options boundary:
+
+- research preview is live
+- replay payoff preview is live
+- paper open/manual-close lifecycle is live
+- expiration settlement is still deferred
+- broader Orders parity for durable options positions/trades is still deferred
+
+## Final operator reminder
+
+MacMarket-Trader is designed to help you think and verify, not to replace
+judgment.
+
+Use it to:
+
+- inspect the setup
+- validate the workflow source
+- compare gross vs fee-aware net results
+- keep research, replay, and paper lifecycle roles separate
+
+Do not use it as proof that a trade should exist just because a preview or
+paper result looks attractive.
