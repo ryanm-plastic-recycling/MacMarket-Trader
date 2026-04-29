@@ -28,6 +28,11 @@ Current implementation note:
   Expected Range provenance/as-of, safe `Source unavailable` / `As-of
   unavailable` rendering, and provider-plan/payload warnings for missing
   chain, IV, Greeks, open interest, and index-data caveats
+- `8E3` now adds a guided operator workflow layer on top of that same
+  Recommendations surface: a stepper for structure -> payoff preview ->
+  paper save -> manual close -> result, clearer paper-only save wording,
+  explicit exit-premium instructions, a stronger post-close result card, and
+  lighter progressive disclosure for detailed warnings/provider context
 - broader Orders dashboard parity remains deferred
 
 ## UX goals
@@ -204,12 +209,27 @@ Must not change:
 
 - provider-readiness semantics
 
-### 8E3 - Payoff visualization polish
+### 8E3 - Guided workflow clarity
 
-Complete when:
+Status:
 
-- operators can inspect payoff examples safely without implying execution
-  readiness
+- complete for the current Recommendations options research surface
+
+Implemented now:
+
+- a compact stepper now makes the five-stage flow explicit:
+  review structure -> preview payoff -> save paper position -> manually close
+  -> review result
+- replay payoff preview and paper lifecycle now use clearer operator wording:
+  replay preview is read-only/non-persisted, while paper lifecycle creates
+  persisted paper-only records and does not place a broker order
+- manual close inputs now explain what `exit premium` means, include a
+  per-leg example plus long/short direction hint, and restate that premium
+  uses `x100` while commission does not
+- successful manual close results now render through a clearer result card
+  that states no broker order was sent
+- provider/warning detail is now progressively disclosed so the workflow is
+  easier to scan without removing safety copy
 
 Must not change:
 

@@ -213,6 +213,137 @@ function RiskMetricCard({
   );
 }
 
+function getOptionsWorkflowCurrentStep(args: {
+  replayPreview: OptionsReplayPreviewResponse | null;
+  paperOpenResult: OptionsPaperOpenResponse | null;
+  paperCloseResult: OptionsPaperCloseResponse | null;
+  closeDraftActive?: boolean;
+}): number {
+  if (args.paperCloseResult) return 5;
+  if (args.paperOpenResult && args.closeDraftActive) return 4;
+  if (args.paperOpenResult) return 3;
+  if (args.replayPreview) return 2;
+  return 1;
+}
+
+function getStepTone(state: "current" | "complete" | "upcoming"): "good" | "warn" | "neutral" {
+  if (state === "complete") return "good";
+  if (state === "current") return "warn";
+  return "neutral";
+}
+
+export function OptionsWorkflowStepper({
+  replayPreview,
+  paperOpenResult,
+  paperCloseResult,
+  closeDraftActive = false,
+}: {
+  replayPreview: OptionsReplayPreviewResponse | null;
+  paperOpenResult: OptionsPaperOpenResponse | null;
+  paperCloseResult: OptionsPaperCloseResponse | null;
+  closeDraftActive?: boolean;
+}) {
+  const currentStep = getOptionsWorkflowCurrentStep({
+    replayPreview,
+    paperOpenResult,
+    paperCloseResult,
+    closeDraftActive,
+  });
+  const currentStepLabel = [
+    "Review structure",
+    "Preview payoff",
+    "Save paper position",
+    "Manually close",
+    "Review result",
+  ][currentStep - 1] ?? "Review structure";
+  const steps = [
+    {
+      step: 1,
+      label: "Review structure",
+      detail: "Read-only setup context.",
+    },
+    {
+      step: 2,
+      label: "Preview payoff",
+      detail: "Read-only, non-persisted expiration payoff.",
+    },
+    {
+      step: 3,
+      label: "Save paper position",
+      detail: "Creates persisted paper-only position/trade records.",
+    },
+    {
+      step: 4,
+      label: "Manually close",
+      detail: "Enter exit premium per leg.",
+    },
+    {
+      step: 5,
+      label: "Review result",
+      detail: "Gross, commission, and net paper outcome.",
+    },
+  ].map((item) => ({
+    ...item,
+    state:
+      item.step < currentStep
+        ? ("complete" as const)
+        : item.step === currentStep
+          ? ("current" as const)
+          : ("upcoming" as const),
+  }));
+
+  return (
+    <Card title="Guided options workflow">
+      <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+        <StatusBadge tone="warn">{`Current step: Step ${currentStep} — ${currentStepLabel}`}</StatusBadge>
+        <StatusBadge tone="neutral">Replay payoff stays read-only and non-persisted</StatusBadge>
+        <StatusBadge tone="neutral">Paper lifecycle saves paper-only records only</StatusBadge>
+      </div>
+
+      <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
+        Use this sequence to stay oriented on the options surface. Preview payoff is separate from the paper lifecycle,
+        and the paper lifecycle does not place a broker order.
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 10,
+        }}
+      >
+        {steps.map((item) => (
+          <div
+            key={item.step}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid var(--op-border, #1e2d3d)",
+              background:
+                item.state === "current"
+                  ? "rgba(242, 160, 63, 0.12)"
+                  : item.state === "complete"
+                    ? "rgba(66, 184, 131, 0.12)"
+                    : "rgba(18, 28, 40, 0.22)",
+            }}
+          >
+            <div className="op-row" style={{ justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: "0.82rem", fontWeight: 700 }}>{`Step ${item.step}`}</div>
+              <StatusBadge tone={getStepTone(item.state)}>
+                {item.state === "complete" ? "Complete" : item.state === "current" ? "Current" : "Later"}
+              </StatusBadge>
+            </div>
+            <div style={{ fontSize: "0.92rem", fontWeight: 600, marginBottom: 4 }}>{item.label}</div>
+            <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.45, fontSize: "0.82rem" }}>
+              {item.detail}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export function OptionsStructureRiskSummary({
   setup,
   replayPreview,
@@ -276,11 +407,13 @@ export function OptionsStructureRiskSummary({
   const expectedRangeNotes = typeof setup.expected_range?.provenance_notes === "string" && setup.expected_range.provenance_notes.trim()
     ? setup.expected_range.provenance_notes.trim()
     : null;
-  const warningItems = [
+  const criticalWarningItems = [
     "Research only / paper only. Real-money routing stays unavailable.",
     "Expected Range is research context only. It does not modify expiration payoff math.",
     "Expiration payoff preview is not a broker mark-to-market simulation.",
     "Manual close uses the exit premiums entered for each leg.",
+  ];
+  const warningItems = [
     "Assignment/exercise automation is deferred.",
     "Expiration settlement is deferred.",
     "Naked shorts are blocked.",
@@ -301,6 +434,7 @@ export function OptionsStructureRiskSummary({
         </StatusBadge>
       </div>
 
+      <div style={{ marginBottom: 6, fontSize: "0.82rem", fontWeight: 600 }}>What this is</div>
       <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
         This compact view keeps research context, replay payoff preview, and the paper lifecycle in separate lanes.
         Replay payoff preview stays read-only and non-persisted. The paper lifecycle only reflects the current in-memory
@@ -373,46 +507,22 @@ export function OptionsStructureRiskSummary({
           padding: "10px 12px",
           borderRadius: 10,
           border: "1px solid var(--op-border, #1e2d3d)",
-          background: "rgba(18, 28, 40, 0.35)",
+          background: "rgba(18, 28, 40, 0.28)",
         }}
       >
-        <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 8 }}>Provider and data quality</div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-            gap: 10,
-            marginBottom: 8,
-          }}
-        >
-          <RiskMetricCard
-            label="Underlying source"
-            value={underlyingSource}
-            detail="As-of unavailable on the current research payload."
-          />
-          <RiskMetricCard
-            label="Chain preview source"
-            value={chainSource}
-            detail={
-              chainPreview === null || chainPreview.reason
-                ? chainUnavailableMessage
-                : `${formatResearchTimestamp(chainPreview.data_as_of)}`
-            }
-          />
-          <RiskMetricCard
-            label="Expected Range provenance"
-            value={expectedRangeSource}
-            detail={expectedRangeNotes ? `${expectedRangeProvenance} · ${expectedRangeNotes}` : expectedRangeProvenance}
-          />
-        </div>
-        <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
-          Source unavailable / As-of unavailable means the current provider plan or payload did not supply that field on this options surface.
+        <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 6 }}>Warnings</div>
+        <div className="op-stack" style={{ gap: 4 }}>
+          {criticalWarningItems.map((item) => (
+            <div key={item} style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+              {item}
+            </div>
+          ))}
         </div>
       </div>
 
       {paperCloseResult ? (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 6 }}>Current paper lifecycle outcome</div>
+          <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 6 }}>Lifecycle</div>
           <div
             style={{
               display: "grid",
@@ -432,14 +542,66 @@ export function OptionsStructureRiskSummary({
         </div>
       ) : null}
 
-      <div style={{ marginBottom: 6, fontSize: "0.82rem", fontWeight: 600 }}>Warnings and caveats</div>
-      <div className="op-stack" style={{ gap: 4 }}>
-        {[...warningItems, ...dataQualityWarnings].map((item) => (
-          <div key={item} style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
-            {item}
+      <details style={{ marginBottom: 10 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, marginBottom: 8 }}>
+          Details
+        </summary>
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid var(--op-border, #1e2d3d)",
+            background: "rgba(18, 28, 40, 0.35)",
+          }}
+        >
+          <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 8 }}>Provider and data quality</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 10,
+              marginBottom: 8,
+            }}
+          >
+            <RiskMetricCard
+              label="Underlying source"
+              value={underlyingSource}
+              detail="As-of unavailable on the current research payload."
+            />
+            <RiskMetricCard
+              label="Chain preview source"
+              value={chainSource}
+              detail={
+                chainPreview === null || chainPreview.reason
+                  ? chainUnavailableMessage
+                  : `${formatResearchTimestamp(chainPreview.data_as_of)}`
+              }
+            />
+            <RiskMetricCard
+              label="Expected Range provenance"
+              value={expectedRangeSource}
+              detail={expectedRangeNotes ? `${expectedRangeProvenance} · ${expectedRangeNotes}` : expectedRangeProvenance}
+            />
           </div>
-        ))}
-      </div>
+          <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+            Source unavailable / As-of unavailable means the current provider plan or payload did not supply that field on this options surface.
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary style={{ cursor: "pointer", fontWeight: 600, marginBottom: 8 }}>
+          {`Warnings and caveats (${warningItems.length + dataQualityWarnings.length})`}
+        </summary>
+        <div className="op-stack" style={{ gap: 4, marginTop: 10 }}>
+          {[...warningItems, ...dataQualityWarnings].map((item) => (
+            <div key={item} style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+              {item}
+            </div>
+          ))}
+        </div>
+      </details>
     </Card>
   );
 }
@@ -452,6 +614,7 @@ export function OptionsPaperLifecyclePanel({
   loadCommissionOnMount = true,
   onOpenResultChange,
   onCloseResultChange,
+  onCloseDraftActiveChange,
 }: {
   setup: OptionsResearchSetup;
   initialCommissionPerContract?: number | null;
@@ -460,6 +623,7 @@ export function OptionsPaperLifecyclePanel({
   loadCommissionOnMount?: boolean;
   onOpenResultChange?: (value: OptionsPaperOpenResponse | null) => void;
   onCloseResultChange?: (value: OptionsPaperCloseResponse | null) => void;
+  onCloseDraftActiveChange?: (value: boolean) => void;
 }) {
   const [commissionPerContract, setCommissionPerContract] = useState<number | null>(initialCommissionPerContract);
   const [commissionError, setCommissionError] = useState<string | null>(null);
@@ -508,6 +672,12 @@ export function OptionsPaperLifecyclePanel({
   useEffect(() => {
     onCloseResultChange?.(closeResult);
   }, [closeResult, onCloseResultChange]);
+
+  const closeDraftActive = Object.values(closeInputs).some((value) => String(value ?? "").trim().length > 0);
+
+  useEffect(() => {
+    onCloseDraftActiveChange?.(closeDraftActive);
+  }, [closeDraftActive, onCloseDraftActiveChange]);
 
   const openAvailability = getOptionsPaperOpenAvailability(setup);
   const hasActiveInMemoryPosition = openResult !== null && closeResult === null;
@@ -585,14 +755,14 @@ export function OptionsPaperLifecyclePanel({
   return (
     <Card title="Paper option lifecycle">
       <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-        <StatusBadge tone="warn">Paper-only options lifecycle</StatusBadge>
-        <StatusBadge tone="good">Persisted paper position</StatusBadge>
+        <StatusBadge tone="warn">Creates persisted paper-only position/trade records</StatusBadge>
+        <StatusBadge tone="good">No broker order is placed</StatusBadge>
         <StatusBadge tone="neutral">Separate from replay payoff preview</StatusBadge>
       </div>
 
       <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
-        Opening here records a persisted paper position for the current options structure.
-        It stays separate from the read-only replay payoff preview above.
+        Save the current structure as a paper-only position when you want persisted lifecycle tracking.
+        This stays separate from the read-only replay payoff preview above and does not place a broker order.
       </div>
 
       <div className="op-grid-2" style={{ gap: 12, marginBottom: 12 }}>
@@ -654,10 +824,10 @@ export function OptionsPaperLifecyclePanel({
           disabled={!canOpenPaperStructure || openLoading}
           title={!canOpenPaperStructure ? openDisabledReason ?? undefined : undefined}
         >
-          {openLoading ? "Opening paper structure..." : "Open paper option structure"}
+          {openLoading ? "Saving paper position..." : "Save as paper option position"}
         </button>
         <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
-          {openDisabledReason ?? "Creates a persisted paper option position. Replay payoff preview above remains read-only and non-persisted."}
+          {openDisabledReason ?? "Creates a paper-only position record. This does not place a broker order. Replay payoff preview above remains read-only and non-persisted."}
         </div>
       </div>
 
@@ -715,31 +885,56 @@ export function OptionsPaperLifecyclePanel({
                 <StatusBadge tone="neutral">All legs close together</StatusBadge>
               </div>
               <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 10 }}>
-                Enter one exit premium for every open leg to create a persisted paper option trade.
-                Commission is per contract per leg, not multiplied by 100.
+                Enter one exit premium for every open leg to simulate closing the full paper option position.
+                P&amp;L uses premium x 100. Commission is not multiplied by 100.
               </div>
 
               <div className="op-stack" style={{ gap: 10, marginBottom: 10 }}>
                 {openResult.legs.map((leg) => (
-                  <label key={leg.id} style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: "0.85rem" }}>
-                      {summarizePaperLifecycleLeg(leg)} | entry {formatResearchCurrency(leg.entry_premium)}
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={closeInputs[leg.id] ?? ""}
-                      onChange={(event) =>
-                        setCloseInputs((current) => ({
-                          ...current,
-                          [leg.id]: event.target.value,
-                        }))
-                      }
-                      placeholder="Exit premium"
-                      style={{ maxWidth: 220 }}
-                    />
-                  </label>
+                  <div
+                    key={leg.id}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid var(--op-border, #1e2d3d)",
+                      background: "rgba(18, 28, 40, 0.24)",
+                    }}
+                  >
+                    <div className="op-row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                        {summarizePaperLifecycleLeg(leg)}
+                      </span>
+                      <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                        Entry premium {formatResearchCurrency(leg.entry_premium)}
+                      </span>
+                    </div>
+                    <label style={{ display: "grid", gap: 6, marginBottom: 6 }}>
+                      <span style={{ fontSize: "0.82rem", fontWeight: 600 }}>Exit premium</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={closeInputs[leg.id] ?? ""}
+                        onChange={(event) =>
+                          setCloseInputs((current) => ({
+                            ...current,
+                            [leg.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Exit premium"
+                        style={{ maxWidth: 220 }}
+                      />
+                    </label>
+                    <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.45, fontSize: "0.82rem" }}>
+                      Enter the option premium to simulate closing this leg. Example: 1.25 means $1.25 per contract.
+                    </div>
+                    <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.45, fontSize: "0.82rem", marginTop: 4 }}>
+                      {leg.action === "buy"
+                        ? "Long leg hint: higher exit premium generally helps this leg."
+                        : "Short leg hint: lower exit premium generally helps this leg."}{" "}
+                      P&amp;L uses premium x 100. Commission is not multiplied by 100.
+                    </div>
+                  </div>
                 ))}
               </div>
 
@@ -750,7 +945,7 @@ export function OptionsPaperLifecyclePanel({
                   disabled={closeRequest == null || closeLoading}
                   title={closeRequest == null ? closeDraft.reason ?? undefined : undefined}
                 >
-                  {closeLoading ? "Closing paper structure..." : "Close paper option structure"}
+                  {closeLoading ? "Saving manual close..." : "Save manual paper close"}
                 </button>
                 <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
                   {closeDraft.reason ?? "Manual close only in this pass. Expiration settlement stays deferred."}
@@ -766,20 +961,37 @@ export function OptionsPaperLifecyclePanel({
           ) : (
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--op-border, #1e2d3d)" }}>
               <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-                <StatusBadge tone="good">Manual paper close recorded</StatusBadge>
+                <StatusBadge tone="good">Paper option position manually closed</StatusBadge>
                 <StatusBadge tone="neutral">Trade #{closeResult.trade_id}</StatusBadge>
+                <StatusBadge tone="neutral">Position #{closeResult.position_id}</StatusBadge>
               </div>
 
-              <div className="op-grid-2" style={{ gap: 12, marginBottom: 10 }}>
-                <div>
-                  <div><strong>Settlement mode:</strong> {formatResearchValue(closeResult.settlement_mode)}</div>
-                  <div><strong>Gross P&amp;L:</strong> {formatResearchCurrency(closeResult.gross_pnl)}</div>
-                  <div><strong>Net P&amp;L:</strong> {formatResearchCurrency(closeResult.net_pnl)}</div>
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid var(--op-border, #1e2d3d)",
+                  background: "rgba(66, 184, 131, 0.08)",
+                }}
+              >
+                <div style={{ fontSize: "0.92rem", fontWeight: 700, marginBottom: 6 }}>
+                  Paper option position manually closed
                 </div>
-                <div>
-                  <div><strong>Opening commissions:</strong> {formatResearchCurrency(closeResult.opening_commissions)}</div>
-                  <div><strong>Closing commissions:</strong> {formatResearchCurrency(closeResult.closing_commissions)}</div>
-                  <div><strong>Total commissions:</strong> {formatResearchCurrency(closeResult.total_commissions)}</div>
+                <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 10 }}>
+                  This was recorded as a paper options trade. No broker order was sent.
+                </div>
+                <div className="op-grid-2" style={{ gap: 12, marginBottom: 10 }}>
+                  <div>
+                    <div><strong>Settlement mode:</strong> {formatResearchValue(closeResult.settlement_mode)}</div>
+                    <div><strong>Gross P&amp;L:</strong> {formatResearchCurrency(closeResult.gross_pnl)}</div>
+                    <div><strong>Net P&amp;L:</strong> {formatResearchCurrency(closeResult.net_pnl)}</div>
+                  </div>
+                  <div>
+                    <div><strong>Opening commissions:</strong> {formatResearchCurrency(closeResult.opening_commissions)}</div>
+                    <div><strong>Closing commissions:</strong> {formatResearchCurrency(closeResult.closing_commissions)}</div>
+                    <div><strong>Total commissions:</strong> {formatResearchCurrency(closeResult.total_commissions)}</div>
+                  </div>
                 </div>
               </div>
 
@@ -847,9 +1059,9 @@ export function OptionsReplayPreviewPanel({
   return (
     <Card title="Replay payoff preview">
       <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-        <StatusBadge tone="warn">Options replay preview — expiration payoff only</StatusBadge>
-        <StatusBadge tone="neutral">Read-only boundary</StatusBadge>
-        <StatusBadge tone="neutral">Non-persisted</StatusBadge>
+        <StatusBadge tone="warn">Read-only, non-persisted expiration payoff</StatusBadge>
+        <StatusBadge tone="neutral">Preview payoff only</StatusBadge>
+        <StatusBadge tone="neutral">Does not save a position</StatusBadge>
         {preview ? <StatusBadge tone={statusTone}>{formatOptionsReplayToken(preview.status)}</StatusBadge> : null}
       </div>
 
@@ -867,7 +1079,7 @@ export function OptionsReplayPreviewPanel({
           disabled={!canRunPreview || loading}
           title={!canRunPreview ? availability.reason ?? "Replay payoff preview unavailable." : undefined}
         >
-          {loading ? "Previewing…" : "Preview expiration payoff"}
+          {loading ? "Previewing…" : "Preview payoff only"}
         </button>
         {!canRunPreview ? (
           <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
@@ -875,7 +1087,7 @@ export function OptionsReplayPreviewPanel({
           </div>
         ) : (
           <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
-            Read-only operator preview only. Use the separate paper lifecycle panel below for persisted paper-state actions.
+            Preview payoff only — does not save a position. Use the separate paper lifecycle panel below for persisted paper-only records.
           </div>
         )}
       </div>
@@ -984,6 +1196,7 @@ export function OptionsResearchPreview({
   const [replayPreviewError, setReplayPreviewError] = useState<string | null>(null);
   const [paperOpenResult, setPaperOpenResult] = useState<OptionsPaperOpenResponse | null>(null);
   const [paperCloseResult, setPaperCloseResult] = useState<OptionsPaperCloseResponse | null>(null);
+  const [manualCloseDraftActive, setManualCloseDraftActive] = useState(false);
 
   useEffect(() => {
     setReplayPreview(null);
@@ -991,6 +1204,7 @@ export function OptionsResearchPreview({
     setReplayPreviewLoading(false);
     setPaperOpenResult(null);
     setPaperCloseResult(null);
+    setManualCloseDraftActive(false);
   }, [setup]);
 
   if (loading && !setup) {
@@ -1047,14 +1261,21 @@ export function OptionsResearchPreview({
     <>
       <Card title="Options research preview">
         <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-          <StatusBadge tone="warn">Options research — paper only</StatusBadge>
-          <StatusBadge tone="neutral">No execution support</StatusBadge>
-          <StatusBadge tone="neutral">{formatResearchValue(setup.workflow_source, "Source unavailable")}</StatusBadge>
+          <StatusBadge tone="warn">Read-only setup context</StatusBadge>
+          <StatusBadge tone="neutral">Replay payoff is non-persisted</StatusBadge>
+          <StatusBadge tone="neutral">Paper lifecycle saves paper-only records</StatusBadge>
         </div>
         <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55 }}>
           {setup.operator_disclaimer ?? "Options research — paper only. Not execution support."} Recommendation queue and persisted equity replay flows remain intentionally unavailable in options mode. Replay payoff preview below stays read-only, while the paper option lifecycle panel records a separate paper-only position.
         </div>
       </Card>
+
+      <OptionsWorkflowStepper
+        replayPreview={replayPreview}
+        paperOpenResult={paperOpenResult}
+        paperCloseResult={paperCloseResult}
+        closeDraftActive={manualCloseDraftActive}
+      />
 
       <OptionsStructureRiskSummary
         setup={setup}
@@ -1138,6 +1359,7 @@ export function OptionsResearchPreview({
         initialCloseResult={paperCloseResult}
         onOpenResultChange={setPaperOpenResult}
         onCloseResultChange={setPaperCloseResult}
+        onCloseDraftActiveChange={setManualCloseDraftActive}
       />
 
       <Card title="Options chain preview">

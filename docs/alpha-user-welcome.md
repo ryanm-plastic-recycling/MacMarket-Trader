@@ -87,6 +87,8 @@ Two workflow styles also matter:
    - expected range status
    - chain preview when available
 3. In **Recommendations**, use:
+   - **Guided options workflow** to stay oriented through structure review,
+     payoff preview, paper save, manual close, and result review
    - **Structure risk** for a compact view of max profit/loss, breakevens,
      Expected Range status, replay-preview status, and current paper
      lifecycle state
@@ -105,6 +107,8 @@ Keep these distinctions clear:
 - **Replay payoff preview** is read-only and non-persisted.
 - **Paper option lifecycle** creates persisted paper-only option positions and
   trades for the currently supported lifecycle scope.
+- **Save as paper option position** means a paper-only record is created.
+  No broker order is sent.
 - **Manual close** requires one exit premium per leg.
 - **Expiration settlement** is deferred.
 - **Assignment/exercise automation** is deferred.

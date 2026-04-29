@@ -198,6 +198,20 @@ Required now for `8E2` broader provider/data-quality coverage:
 - stale/unavailable provider context does not read like live or execution
   approval
 
+Required now for `8E3` guided workflow clarity:
+
+- guided options stepper renders and reflects preview/open/manual-close/result
+  state correctly
+- replay payoff preview remains labeled read-only/non-persisted
+- paper save wording states that it creates paper-only records and does not
+  place a broker order
+- manual close rows explain exit premium, provide a compact example, and show
+  long/short direction hints
+- post-close result state renders a clear success/result card with
+  gross/opening/closing/total/net values
+- progressive disclosure keeps provider/warning detail available without
+  turning the page back into a wall of text
+
 ## Route and CTA safety tests
 
 Phase 8 should continue to prove:
@@ -250,12 +264,16 @@ Use this short manual pass when closing the current `8D` scope:
    commissions, and net P&L.
 9. Verify the page stays paper-only and does not present live-trading or
    brokerage-routing language.
+10. Verify the guided stepper advances sensibly from structure review to
+    payoff preview, paper save, manual close, and result review.
 
 ### 8E gate
 
-- `8E1` and `8E2` risk UX tests pass
+- `8E1`, `8E2`, and `8E3` risk UX tests pass
 - replay-preview and paper-lifecycle separation remains explicit
 - provider/source/as-of and data-quality warnings remain explicit
+- manual-close inputs and post-close results are operator-readable without
+  implying broker execution
 - CTA suppression boundaries remain correct
 
 ### 8F gate

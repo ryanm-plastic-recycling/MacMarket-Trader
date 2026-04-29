@@ -31,6 +31,7 @@ import {
   OptionsReplayPreviewPanel,
   OptionsResearchPreview,
   OptionsStructureRiskSummary,
+  OptionsWorkflowStepper,
 } from "@/components/recommendations/options-research-preview";
 import type {
   OptionsReplayPreviewAvailability,
@@ -87,13 +88,15 @@ describe("OptionsReplayPreviewPanel", () => {
       />,
     );
 
-    expect(html).toContain("Options replay preview — expiration payoff only");
+    expect(html).toContain("Replay payoff preview");
+    expect(html).toContain("Read-only, non-persisted expiration payoff");
     expect(html).toContain("Vertical Debit Spread");
     expect(html).toContain("$600.00");
     expect(html).toContain("$400.00");
     expect(html).toContain("$104.00");
     expect(html).toContain("Expiration payoff table");
-    expect(html).toContain("Read-only boundary");
+    expect(html).toContain("Preview payoff only");
+    expect(html).toContain("Does not save a position");
     expect(html).toContain("$0.00");
     expect(html).not.toContain("Execution disabled");
     expect(html).not.toContain("Promote selected queue candidate");
@@ -142,6 +145,121 @@ describe("OptionsReplayPreviewPanel", () => {
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
     expect(html).not.toContain("NaN");
+  });
+});
+
+describe("OptionsWorkflowStepper", () => {
+  const openResult = {
+    order_id: 11,
+    position_id: 12,
+    market_mode: "options" as const,
+    structure_type: "vertical_debit_spread",
+    underlying_symbol: "AAPL",
+    status: "open",
+    order_status: "opened",
+    position_status: "open",
+    opening_net_debit: 2.4,
+    opening_net_credit: null,
+    commission_per_contract: 0.65,
+    opening_commissions: 1.3,
+    max_profit: 760,
+    max_loss: 240,
+    breakevens: [207.4],
+    execution_enabled: false,
+    persistence_enabled: true,
+    paper_only: true,
+    order_created_at: "2026-04-29T13:00:00Z",
+    position_opened_at: "2026-04-29T13:00:00Z",
+    legs: [],
+  };
+
+  const closeResult = {
+    position_id: 12,
+    trade_id: 22,
+    market_mode: "options" as const,
+    structure_type: "vertical_debit_spread",
+    underlying_symbol: "AAPL",
+    status: "closed",
+    position_status: "closed",
+    settlement_mode: "manual_close",
+    commission_per_contract: 0.65,
+    opening_commissions: 1.3,
+    closing_commissions: 1.3,
+    gross_pnl: 300,
+    net_pnl: 297.4,
+    total_commissions: 2.6,
+    execution_enabled: false,
+    persistence_enabled: true,
+    paper_only: true,
+    closed_at: "2026-04-29T15:00:00Z",
+    legs: [],
+  };
+
+  it("renders guided workflow states across preview, paper-open, manual-close, and result phases", () => {
+    const baseHtml = renderToStaticMarkup(
+      <OptionsWorkflowStepper
+        replayPreview={null}
+        paperOpenResult={null}
+        paperCloseResult={null}
+      />,
+    );
+    expect(baseHtml).toContain("Guided options workflow");
+    expect(baseHtml).toContain("Current step: Step 1 — Review structure");
+
+    const previewHtml = renderToStaticMarkup(
+      <OptionsWorkflowStepper
+        replayPreview={{
+          execution_enabled: false,
+          persistence_enabled: false,
+          market_mode: "options",
+          preview_type: "expiration_payoff",
+          status: "ready",
+          structure_type: "vertical_debit_spread",
+          is_defined_risk: true,
+          net_debit: 2.4,
+          max_profit: 760,
+          max_loss: 240,
+          breakevens: [207.4],
+          payoff_points: [],
+          warnings: [],
+          caveats: [],
+          blocked_reason: null,
+        }}
+        paperOpenResult={null}
+        paperCloseResult={null}
+      />,
+    );
+    expect(previewHtml).toContain("Current step: Step 2 — Preview payoff");
+
+    const openHtml = renderToStaticMarkup(
+      <OptionsWorkflowStepper
+        replayPreview={null}
+        paperOpenResult={openResult}
+        paperCloseResult={null}
+        closeDraftActive={false}
+      />,
+    );
+    expect(openHtml).toContain("Current step: Step 3 — Save paper position");
+
+    const closeDraftHtml = renderToStaticMarkup(
+      <OptionsWorkflowStepper
+        replayPreview={null}
+        paperOpenResult={openResult}
+        paperCloseResult={null}
+        closeDraftActive
+      />,
+    );
+    expect(closeDraftHtml).toContain("Current step: Step 4 — Manually close");
+
+    const closedHtml = renderToStaticMarkup(
+      <OptionsWorkflowStepper
+        replayPreview={null}
+        paperOpenResult={openResult}
+        paperCloseResult={closeResult}
+        closeDraftActive
+      />,
+    );
+    expect(closedHtml).toContain("Current step: Step 5 — Review result");
   });
 });
 
@@ -236,14 +354,17 @@ describe("OptionsResearchPreview", () => {
 
     expect(html).toContain("Replay payoff preview");
     expect(html).toContain("Paper option lifecycle");
+    expect(html).toContain("Guided options workflow");
+    expect(html).toContain("Current step: Step 1 — Review structure");
     expect(html).toContain("Structure risk");
-    expect(html).toContain("Warnings and caveats");
-    expect(html).toContain("Open paper option structure");
-    expect(html).toContain("Paper-only options lifecycle");
-    expect(html).toContain("Persisted paper position");
+    expect(html).toContain("Warnings");
+    expect(html).toContain("Save as paper option position");
+    expect(html).toContain("Creates persisted paper-only position/trade records");
+    expect(html).toContain("No broker order is placed");
     expect(html).toContain("Not per share. Do not multiply by 100.");
     expect(html).toContain("Total options commission = commission per contract x contracts x legs x open/close events.");
     expect(html).toContain("Example: $0.65 commission, 1 iron condor, 4 legs, open + close = $0.65 x 1 x 4 x 2 = $5.20 total estimated commission.");
+    expect(html).toContain("Preview payoff only — does not save a position.");
     expect(html).not.toContain("broker orders");
     expect(html).not.toContain("Go to Replay step");
     expect(html).not.toContain("Go to Paper Order step");
@@ -511,6 +632,78 @@ describe("OptionsPaperLifecyclePanel", () => {
     expect(html).not.toContain("NaN");
   });
 
+  it("renders manual close inputs with exit-premium explanations and long/short hints", () => {
+    const html = renderToStaticMarkup(
+      <OptionsPaperLifecyclePanel
+        setup={setup}
+        initialCommissionPerContract={0.65}
+        initialOpenResult={{
+          order_id: 11,
+          position_id: 12,
+          market_mode: "options",
+          structure_type: "vertical_debit_spread",
+          underlying_symbol: "AAPL",
+          status: "open",
+          order_status: "opened",
+          position_status: "open",
+          opening_net_debit: 2.4,
+          opening_net_credit: null,
+          commission_per_contract: 0.65,
+          opening_commissions: 1.3,
+          max_profit: 760,
+          max_loss: 240,
+          breakevens: [207.4],
+          execution_enabled: false,
+          persistence_enabled: true,
+          paper_only: true,
+          operator_disclaimer: "paper only",
+          order_created_at: "2026-04-29T13:00:00Z",
+          position_opened_at: "2026-04-29T13:00:00Z",
+          legs: [
+            {
+              id: 101,
+              position_id: 12,
+              action: "buy",
+              right: "call",
+              strike: 205,
+              expiration: "2026-05-16",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 4.2,
+              exit_premium: null,
+              status: "open",
+              label: "Long call",
+            },
+            {
+              id: 102,
+              position_id: 12,
+              action: "sell",
+              right: "call",
+              strike: 215,
+              expiration: "2026-05-16",
+              quantity: 1,
+              multiplier: 100,
+              entry_premium: 1.8,
+              exit_premium: null,
+              status: "open",
+              label: "Short call",
+            },
+          ],
+        }}
+        loadCommissionOnMount={false}
+      />,
+    );
+
+    expect(html).toContain("Save as paper option position");
+    expect(html).toContain("This stays separate from the read-only replay payoff preview above and does not place a broker order.");
+    expect(html).toContain("Exit premium");
+    expect(html).toContain("Enter the option premium to simulate closing this leg.");
+    expect(html).toContain("Example: 1.25 means $1.25 per contract.");
+    expect(html).toContain("Long leg hint: higher exit premium generally helps this leg.");
+    expect(html).toContain("Short leg hint: lower exit premium generally helps this leg.");
+    expect(html).toContain("P&amp;L uses premium x 100. Commission is not multiplied by 100.");
+  });
+
   it("renders manual close results with gross, commissions, and net values", () => {
     const html = renderToStaticMarkup(
       <OptionsPaperLifecyclePanel
@@ -628,11 +821,14 @@ describe("OptionsPaperLifecyclePanel", () => {
       />,
     );
 
-    expect(html).toContain("Manual paper close recorded");
+    expect(html).toContain("Paper option position manually closed");
     expect(html).toContain("Gross P&amp;L:");
     expect(html).toContain("$300.00");
     expect(html).toContain("$297.40");
     expect(html).toContain("$2.60");
+    expect(html).toContain("This was recorded as a paper options trade. No broker order was sent.");
+    expect(html).toContain("Position #12");
+    expect(html).toContain("Trade #22");
     expect(html).toContain("Commission is per contract per leg, not multiplied by 100.");
     expect(html).not.toContain("Order #");
     expect(html).not.toContain("undefined");

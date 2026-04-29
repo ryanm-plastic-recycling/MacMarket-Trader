@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 141, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 143, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -24,6 +24,8 @@ Phase 8E1 is complete for the current operator risk-summary foundation on the
 Recommendations options research surface.
 Phase 8E2 is complete for the current Recommendations options provider/source,
 as-of, and data-quality warning coverage.
+Phase 8E3 is complete for the current guided Recommendations options workflow
+UX.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -273,7 +275,9 @@ deferred to later phases and do not block Phase 8 planning.
 - 8E status:
   `8E1` complete for the current Recommendations risk-summary foundation;
   `8E2` complete for the current Recommendations provider/source/as-of and
-  data-quality warning scope; `8E3` remains planned
+  data-quality warning scope; `8E3` complete for the current guided
+  Recommendations workflow-clarity scope. Full `8E` closure remains pending an
+  explicit closure pass
 - 8E acceptance target:
   operators can see strategy summary, legs, debit/credit, max profit/loss,
   breakevens, DTE/expiration, payoff context, warnings, provider/source
@@ -291,7 +295,13 @@ deferred to later phases and do not block Phase 8 planning.
   source/as-of, Expected Range provenance/as-of, safe `Source unavailable` /
   `As-of unavailable` copy, and provider-plan/payload warnings for missing
   chain, IV, Greeks, open interest, missing expiration/DTE, and SPX/NDX
-  index-data caveats without implying execution approval
+  index-data caveats without implying execution approval; it now also adds a
+  guided stepper for structure -> payoff preview -> paper save -> manual
+  close -> result review, clearer paper-save wording that says no broker
+  order is sent, explicit exit-premium instructions plus long/short hints,
+  a stronger post-close result card, and lighter progressive disclosure so
+  detailed provider/warning context stays available without overwhelming the
+  operator
 - 8E not included:
   full chart-heavy payoff tooling, advanced Expected Move visualization in the
   first risk-UX slice, broader provider/source/as-of parity across additional
@@ -389,7 +399,7 @@ deferred to later phases and do not block Phase 8 planning.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 141
+- vitest: 143
 - Playwright: 31
 
 ## Core product pillars
@@ -543,6 +553,12 @@ diffs. Notable recent inflection points:
   Greeks, open interest, missing expiration/DTE, and SPX/NDX index-data
   caveats without changing backend behavior or widening the page into a new
   dashboard.
+- 2026-04-29 — Phase 8E3 complete for the current guided Recommendations
+  options workflow UX: the same surface now adds a five-step operator guide,
+  clearer paper-save wording, more explicit manual-close exit-premium help,
+  a stronger post-close result state, and lighter progressive disclosure for
+  detailed caveats without changing backend behavior or widening the feature
+  scope.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI
