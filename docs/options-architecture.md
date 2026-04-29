@@ -26,7 +26,8 @@ Current planning state:
   scope: `8C2` pure payoff math, `8C3` read-only replay preview contract,
   `8C4` operator UI preview, and `8C5` closure review/tests/docs alignment
   are complete
-- `8D` planned only: implementation not started
+- `8D` design checkpoint complete: `8D1` is documented, implementation not
+  started
 - `8E` planned only: implementation not started
 - `8F` planned only: closure criteria defined, implementation not started
 
@@ -138,7 +139,7 @@ Not complete:
 
 Status:
 
-- planning complete
+- `8D1` design checkpoint complete
 - implementation not started
 
 Detailed design:
@@ -158,6 +159,13 @@ Complete means:
 - supported defined-risk structures can be opened and closed in paper mode
 - structure-level and leg-level summaries remain auditable
 - current equity paper lifecycle remains intact
+
+Planned now:
+
+- dedicated options persistence is recommended over extending the current
+  equity write tables
+- future open/close payload direction is documented
+- future `commission_per_contract` application rules are documented
 
 Not complete:
 

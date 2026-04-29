@@ -4,266 +4,634 @@ Last updated: 2026-04-29
 
 ## Purpose
 
-This document defines the future `8D` options paper lifecycle.
+This document defines the `8D` design checkpoint for future options paper
+lifecycle support.
 
 It is planning only. It does not authorize:
 
 - schema changes
 - migrations
 - options order staging
+- options positions or trades
 - live routing
-- assignment or exercise automation
+- brokerage execution
+- automatic assignment or exercise handling
 
-## Why 8D must stay separate from equities
+## Current repo anchors
 
-The current paper lifecycle is equity-centric:
+The current paper lifecycle is intentionally equity-centric:
+
+- `OrderIntent` / `OrderRecord` / `FillRecord` in
+  `src/macmarket_trader/domain/schemas.py`
+- `OrderModel`, `FillModel`, `PaperPositionModel`, and `PaperTradeModel` in
+  `src/macmarket_trader/domain/models.py`
+- `PaperPortfolioRepository.upsert_position_on_fill(...)`,
+  `create_trade(...)`, and `close_position(...)` in
+  `src/macmarket_trader/storage/repositories.py`
+- `/user/orders`, `/user/orders/{order_id}/close`,
+  `/user/paper-positions/{position_id}/close`, and
+  `/user/paper-trades/{trade_id}/reopen` in
+  `src/macmarket_trader/api/routes/admin.py`
+
+Those contracts assume:
 
 - one symbol
 - one side
 - one quantity
 - one average entry
-- one close price
+- one close event
+- one realized trade row per close
 
-Options lifecycle needs different semantics:
+That shape is not suitable for multi-leg options structures without forcing
+equity semantics onto options.
 
-- structure-level identity
-- leg-level identity
-- debit or credit handling
-- contract multiplier math
-- multi-leg open / close state
-- per-contract commission
+## 8D boundary
 
-The safest future implementation path is a dedicated options branch, not a
-hidden extension of current equity order models.
+`8D` means future support for paper options structures without changing the
+current equity paper lifecycle.
 
-## Future lifecycle model
+Planned `8D` scope:
+
+- option contract identity
+- option leg identity
+- multi-leg paper order intent
+- paper fill assumptions for supported structures
+- open option structure lifecycle
+- close option structure lifecycle
+- realized gross and net P&L
+- `commission_per_contract` application
+- auditable lineage back to research and replay when available
+
+Still out of scope for the first lifecycle pass:
+
+- live routing
+- real brokerage execution
+- automatic assignment or exercise handling
+- naked short options
+- margin assumptions unless explicitly modeled later
+- partial fills unless explicitly approved in a later slice
+
+## Lifecycle boundaries
 
 ### Option contract identity
 
-Each contract should later carry:
+Each future option contract record should carry:
 
 - underlying symbol
 - expiration date
 - strike
-- call / put
+- right: `call` or `put`
 - contracts quantity
 - multiplier, default `100`
-- provider symbol when available
+- provider symbol or OCC-style symbol when available
 
 ### Option leg identity
 
-Each leg should later carry:
+Each leg should carry:
 
-- leg index
+- structure-local leg index
 - action: `buy` or `sell`
 - right: `call` or `put`
 - strike
 - contracts
 - multiplier
 - open premium
-- close premium
+- close premium when closed
+- optional operator label
 
 ### Structure identity
 
-Each paper structure should later carry:
+Each paper options structure should carry:
 
-- market mode `options`
+- `market_mode=options`
 - structure type
 - underlying symbol
-- expiration date
-- DTE at open
-- legs
+- expiration and DTE at open
+- normalized leg snapshots
 - net opening debit or credit
-- max profit
-- max loss
-- breakevens
-- workflow source / provider source
-- lineage back to setup / recommendation / replay when applicable
+- max profit and max loss when known
+- breakevens when known
+- workflow source and provider source
+- lineage back to analysis / recommendation / replay preview when applicable
 
-## Opening lifecycle
+### Open lifecycle
 
-Opening a supported options paper structure should later require:
+Future open requests should require:
 
-- supported defined-risk structure type
+- supported structure type
 - complete leg definitions
-- explicit premium or net debit / credit assumptions
-- explicit quantity / contracts assumptions
-- operator-visible paper-only execution notes
+- explicit contracts quantity assumptions
+- explicit premium or net debit/credit assumptions
+- defined-risk validation before persistence
+- operator-visible paper-only caveats
 
-Opening outputs should later include:
+Open results should later include:
 
 - structure status `open`
-- per-leg opening summary
-- total opening debit or credit
-- estimated or applied opening commission
+- per-leg opening snapshot
 - gross opening cash impact
+- estimated or applied opening commission
 - net opening cash impact
 
-## Closing lifecycle
+### Close lifecycle
 
-Closing a supported options paper structure should later require:
+Future close requests should require one of these explicit modes:
 
-- inverse action for each leg
-- close premium assumptions
-- close timestamp or expiration-settlement assumption
-- paper-only close notes
+- manual close with per-leg close premiums
+- deterministic expiration settlement with an underlying settlement price
 
-Closing outputs should later include:
+Close results should later include:
 
-- per-leg close summary
+- per-leg close snapshot
 - structure gross realized P&L
 - structure net realized P&L
-- total commission applied
+- open commission, close commission, and total commission
 - terminal status such as:
-  - closed manually
-  - expired worthless
-  - settled at expiration
+  - `closed_manual`
+  - `expired_worthless`
+  - `settled_at_expiration`
 
-## Commission and P&L rules
+## Schema approach comparison
 
-Future 8D should apply `commission_per_contract` explicitly.
+Two realistic persistence approaches exist for `8D`.
 
-Planning math:
+### Approach A — Extend current equity tables
 
-- long leg gross P&L:
+Shape:
+
+- add `market_mode`, `instrument_type`, and options fields to current
+  `orders`, `fills`, `paper_positions`, and `paper_trades`
+- store multi-leg detail either as JSON blobs or bolt-on child tables
+
+Evaluation:
+
+| Topic | Assessment |
+|---|---|
+| Migration complexity | Medium initially, then high as more option-specific exceptions accumulate |
+| Equity contamination risk | High |
+| Query/reporting complexity | High because one-table code paths become heavily branched |
+| Ease of close lifecycle | Poor for multi-leg close, reopen, and per-leg commission accounting |
+| Testability | Weak because every lifecycle test becomes mode-branch-heavy |
+| Rollback risk | High because failed options work would be tangled into equity tables and routes |
+
+Main problem:
+
+- the current equity tables encode one-symbol/one-side/one-quantity semantics,
+  so extending them would either hide leg detail inside JSON or force
+  option-specific nullable columns into every equity flow
+
+### Approach B — Separate options-specific persistence branch
+
+Shape:
+
+- keep equity tables unchanged
+- add dedicated options structure and leg tables later in `8D2`
+- use structure-header plus leg-detail tables instead of trying to coerce
+  legs into the current equity row shape
+
+Recommended future table direction:
+
+- `paper_option_orders`
+- `paper_option_order_legs`
+- `paper_option_positions`
+- `paper_option_position_legs`
+- `paper_option_trades`
+- `paper_option_trade_legs`
+
+Evaluation:
+
+| Topic | Assessment |
+|---|---|
+| Migration complexity | Medium-high, but contained and explicit |
+| Equity contamination risk | Low |
+| Query/reporting complexity | Medium; cross-mode reporting should happen in serializers or read models, not shared write tables |
+| Ease of close lifecycle | Strong because structures and legs remain first-class |
+| Testability | Strong because options lifecycle tests can stay mode-specific |
+| Rollback risk | Low-medium because the options branch can be disabled by market mode |
+
+### Recommendation
+
+Recommend **Approach B: separate options-specific persistence**.
+
+Reason:
+
+- it preserves the current equity lifecycle untouched
+- it keeps leg detail auditable and queryable
+- it makes close math and commission application deterministic
+- it makes rollback safer if an early options lifecycle slice proves too broad
+
+Design bias:
+
+- prefer separate write tables plus shared serializers
+- do not unify equities and options at the DB write-path level yet
+- if consolidated reporting is later needed, build a shared read model rather
+  than a shared persistence contract
+
+## Draft contract and payload direction
+
+These are future payload sketches only. They are not approved for runtime yet.
+
+### Paper option structure open request
+
+```json
+{
+  "market_mode": "options",
+  "lifecycle_mode": "paper_open",
+  "structure_type": "vertical_debit_spread",
+  "underlying_symbol": "AAPL",
+  "expiration": "2026-05-15",
+  "workflow_source": "polygon",
+  "source": "analysis_setup",
+  "recommendation_id": null,
+  "options_replay_preview_id": null,
+  "contracts": 1,
+  "legs": [
+    {
+      "leg_index": 0,
+      "action": "buy",
+      "right": "call",
+      "strike": 205.0,
+      "quantity": 1,
+      "multiplier": 100,
+      "premium": 4.2,
+      "label": "long call"
+    },
+    {
+      "leg_index": 1,
+      "action": "sell",
+      "right": "call",
+      "strike": 215.0,
+      "quantity": 1,
+      "multiplier": 100,
+      "premium": 1.6,
+      "label": "short call"
+    }
+  ],
+  "net_debit": 2.6,
+  "net_credit": null,
+  "max_profit": 740.0,
+  "max_loss": 260.0,
+  "breakevens": [207.6],
+  "operator_note": "Paper-only open from approved options lifecycle path."
+}
+```
+
+### Paper option structure close request
+
+```json
+{
+  "market_mode": "options",
+  "lifecycle_mode": "paper_close",
+  "position_id": 41,
+  "close_mode": "manual",
+  "closed_at": "2026-05-08T14:45:00Z",
+  "underlying_symbol": "AAPL",
+  "underlying_settlement_price": null,
+  "legs": [
+    {
+      "leg_index": 0,
+      "close_premium": 5.8
+    },
+    {
+      "leg_index": 1,
+      "close_premium": 0.5
+    }
+  ],
+  "close_reason": "target_window_hit",
+  "operator_note": "Paper close only. No broker routing."
+}
+```
+
+### Option leg fill snapshot
+
+```json
+{
+  "leg_index": 0,
+  "action": "buy",
+  "right": "call",
+  "strike": 205.0,
+  "quantity": 1,
+  "multiplier": 100,
+  "premium": 4.2,
+  "provider_symbol": "AAPL250515C00205000",
+  "fill_mode": "paper_assumed"
+}
+```
+
+### Option paper position summary
+
+```json
+{
+  "position_id": 41,
+  "market_mode": "options",
+  "status": "open",
+  "structure_type": "vertical_debit_spread",
+  "underlying_symbol": "AAPL",
+  "expiration": "2026-05-15",
+  "days_to_expiration": 16,
+  "contracts": 1,
+  "net_debit": 2.6,
+  "net_credit": null,
+  "max_profit": 740.0,
+  "max_loss": 260.0,
+  "breakevens": [207.6],
+  "commission_per_contract": 0.95,
+  "estimated_open_commission": 1.9,
+  "estimated_close_commission": 1.9,
+  "workflow_source": "polygon",
+  "source": "analysis_setup",
+  "legs": [
+    {
+      "leg_index": 0,
+      "action": "buy",
+      "right": "call",
+      "strike": 205.0,
+      "quantity": 1,
+      "multiplier": 100,
+      "open_premium": 4.2
+    }
+  ]
+}
+```
+
+### Option close result
+
+```json
+{
+  "trade_id": 55,
+  "position_id": 41,
+  "market_mode": "options",
+  "status": "closed_manual",
+  "structure_type": "vertical_debit_spread",
+  "underlying_symbol": "AAPL",
+  "expiration": "2026-05-15",
+  "gross_realized_pnl": 310.0,
+  "net_realized_pnl": 306.2,
+  "open_commission": 1.9,
+  "close_commission": 1.9,
+  "total_commission": 3.8,
+  "commission_per_contract": 0.95,
+  "net_debit": 2.6,
+  "net_credit": null,
+  "max_profit": 740.0,
+  "max_loss": 260.0,
+  "breakevens": [207.6],
+  "legs": [
+    {
+      "leg_index": 0,
+      "gross_pnl": 160.0,
+      "net_pnl": 159.05
+    },
+    {
+      "leg_index": 1,
+      "gross_pnl": 150.0,
+      "net_pnl": 149.05
+    }
+  ]
+}
+```
+
+## Fee model design
+
+Future `8D` should use `commission_per_contract` only for options.
+
+Planned rules:
+
+- per contract
+- per leg
+- on both open and close
+- separate from `commission_per_trade`, which remains the equity fee model
+
+Planned math:
+
+- opening leg commission:
+  `contracts * commission_per_contract`
+- closing leg commission:
+  `contracts * commission_per_contract`
+- total structure commission:
+  sum across all open and close legs
+
+Leg-level gross P&L:
+
+- long leg:
   `(close_premium - open_premium) * contracts * multiplier`
-- short leg gross P&L:
+- short leg:
   `(open_premium - close_premium) * contracts * multiplier`
-- structure gross P&L:
-  sum of leg gross P&L
-- total commission:
-  `(open_contracts + close_contracts) * commission_per_contract`
-- structure net P&L:
-  `gross_pnl - total_commission`
 
-Credit/debit rules:
+Structure-level P&L:
 
-- opening debit structures reduce cash at open
-- opening credit structures increase cash at open
-- gross/net realized P&L must still be computed from leg outcomes, not from
-  a loosely named cash field
+- `gross_realized_pnl = sum(leg gross pnl)`
+- `net_realized_pnl = gross_realized_pnl - total_commission`
 
-## Early-scope constraints
+Backward compatibility:
 
-Supported first:
+- keep `commission_per_trade` untouched for equities
+- reuse the existing per-user settings source of truth:
+  `AppUserModel.commission_per_contract`
+- do not overload Phase 7 equity fee helpers with options semantics
 
-- vertical debit spreads
-- iron condor after replay math is proven
+## Relationship to 8C replay preview
 
-Explicitly deferred:
+`8D` should reuse:
+
+- `src/macmarket_trader/options/payoff.py`
+- `src/macmarket_trader/options/replay_preview.py`
+- the same defined-risk validation rules and blocked reasons where possible
+
+`8D` should not depend on:
+
+- equity replay DB rows
+- `RecommendationService.generate()`
+- equity `OrderIntent` / `OrderRecord` / `FillRecord`
+- equity `ReplayEngine`
+
+Recommended reuse pattern:
+
+- reuse payoff helpers for validation and terminal payoff calculations
+- reuse replay-preview-style structure normalization at the options boundary
+- keep lifecycle persistence separate from preview contracts
+
+## Supported first structures
+
+Safest first lifecycle support:
+
+1. vertical debit spreads
+2. iron condor
+3. optional long call / long put only after the structure-aware open/close
+   contract is proven stable
+
+Blocked or deferred:
 
 - naked short options
-- partial fills in the earliest lifecycle slice
-- assignment / exercise automation
-- covered calls that require inventory awareness
-- margin modeling
+- covered calls until inventory and assignment modeling exists
+- calendars, diagonals, and ratio spreads until dedicated valuation rules
+  exist
 
-## Likely persistence direction
+Why vertical debit spread first:
 
-No schema work is authorized yet. When Phase 8D implementation begins, the
-safest checkpoint is `8D1`: decide whether to use dedicated options tables or a
-generic multi-asset contract that still keeps option legs explicit.
+- two legs
+- one net debit
+- straightforward max loss and close semantics
+- easiest bridge from existing 8C payoff math into real paper lifecycle
 
-Planning bias:
+Why iron condor second:
 
-- prefer an options-specific persistence branch over stretching current equity
-  `OrderModel`, `PaperPositionModel`, and `PaperTradeModel`
-- preserve lineage compatibility with current workflow URLs and audit concepts
-- keep leg detail queryable and auditable
+- already supported in 8C payoff math
+- still defined-risk
+- exercises four-leg debit/credit and wing-risk bookkeeping without requiring
+  naked-short support
 
-## 8D implementation slices
+## Future UI implications
 
-### 8D1 - Schema and lifecycle design checkpoint
+This section is planning only. It does not authorize UI work now.
+
+Future operator surfaces should separate:
+
+- read-only research preview
+- read-only replay preview
+- actual paper options lifecycle
+
+Recommended placement:
+
+- open paper option structures should later appear in Orders as a distinct
+  options section, not mixed into the current equity open-position list
+- close action should later live on the structure row, with leg summaries
+  visible before confirmation
+- closed options structures should later appear in a dedicated closed-trades
+  section with gross/net commission detail
+
+Important UX distinction:
+
+- replay preview must remain visibly non-persisted
+- paper lifecycle must remain visibly paper-only
+- neither surface may imply live routing
+
+## Test plan for implementation
+
+Before any `8D` implementation begins, later slices should add:
+
+- schema and migration tests
+- open structure lifecycle tests
+- close structure lifecycle tests
+- commission-per-contract tests
+- gross vs net realized P&L tests
+- explicit defined-risk validation tests
+- blocked naked-short tests
+- blocked assignment/exercise automation tests
+- no live-routing tests
+
+Equity regression gates required alongside `8D`:
+
+- current paper order lifecycle tests
+- current close/reopen tests
+- current Phase 7 fee-preview tests
+- current replay and recommendations regression anchors
+
+## Future implementation slices
+
+### 8D1 - Design checkpoint
 
 Complete when:
 
-- the persistence direction is chosen and documented
-- migration scope is known but not yet mixed with unrelated feature work
+- schema approach is chosen
+- lifecycle boundaries are documented
+- payload direction is documented
+- fee-model direction is documented
 
 Must not change:
 
-- current equity paper lifecycle
+- any runtime behavior
 
-Rollback:
-
-- revert to docs-only plan; no runtime behavior affected
-
-### 8D2 - Paper option order contract
+### 8D2 - Schema and migration only
 
 Complete when:
 
-- a dedicated options paper-order contract exists
-- structure and leg identity are explicit
-- staging semantics remain paper-only
+- approved options persistence tables exist
+- no routes or UI depend on them yet
+
+Must not change:
+
+- current equity tables or lifecycle semantics beyond necessary coexistence
+
+### 8D3 - Repository and service contracts
+
+Complete when:
+
+- options-specific repositories or service helpers exist
+- structure and leg persistence is auditable
+- no operator UI is enabled yet
+
+Must not change:
+
+- current equity repositories or replay behavior
+
+### 8D4 - Open paper option structure
+
+Complete when:
+
+- supported structures can open in paper mode
+- lineage and paper-only caveats persist correctly
 
 Must not change:
 
 - equity order staging behavior
 
-Rollback:
-
-- disable the options order contract path behind market mode
-
-### 8D3 - Structure open/close lifecycle foundation
+### 8D5 - Close paper option structure
 
 Complete when:
 
-- supported structures can open and close in paper mode
-- lifecycle remains structure-aware and leg-aware
-- partial fills stay deferred unless explicitly approved
+- supported structures can close manually or settle at expiration
+- gross realized P&L is deterministic
 
 Must not change:
 
-- equity fill simulation behavior
+- equity close lifecycle
 
-Rollback:
-
-- remove the options open/close path without touching equities
-
-### 8D4 - `commission_per_contract` application
+### 8D6 - `commission_per_contract` net P&L
 
 Complete when:
 
 - contract-level commission is applied deterministically
-- gross versus net P&L remains explicit
-- UI labels explain paper-only assumptions
+- gross and net P&L stay explicit and operator-readable
 
 Must not change:
 
-- current equity commission logic
+- Phase 7 equity fee math
 
-Rollback:
-
-- feature-flag or disable only the options commission path
-
-### 8D5 - Tests and docs closure
+### 8D7 - Frontend operator UI
 
 Complete when:
 
-- lifecycle math tests pass
-- frontend paper-lifecycle rendering tests pass
-- equity paper workflow regressions pass
-- roadmap/docs reflect actual supported structures only
+- Orders exposes the options paper lifecycle clearly
+- read-only replay preview remains distinct from persisted paper lifecycle
 
-## UI and operator implications
+Must not change:
 
-Later 8D UI should show:
+- current equity Orders behavior beyond mode-aware coexistence
 
-- structure summary
-- legs table
-- debit / credit
-- estimated and applied commissions
-- gross and net realized P&L
-- expiration status
-- paper-only assignment/exercise caveat
+### 8D8 - Tests and docs closure
 
-It should not imply:
+Complete when:
 
-- live routing
-- real broker fill realism
-- hidden margin support
+- lifecycle tests pass
+- equity regressions pass
+- supported structures and deferred items are documented accurately
 
-## Rollback principle
+## Guardrails
 
-Every 8D code slice should be removable by market-mode gating without forcing
-changes into current equity orders, positions, or trades.
+- no equity lifecycle breakage
+- no live trading
+- no brokerage routing
+- no options persistence until schema is explicitly approved
+- no automatic assignment or exercise in the early lifecycle pass
+- no naked shorts early
+- no margin assumptions unless explicitly modeled
+- no hidden reuse of equity `OrderIntent` / fill semantics for options
+
+## Recommended implementation prompt after this checkpoint
+
+After this design checkpoint, the safest next implementation prompt is:
+
+- `Implement 8D2 only: add approved options persistence tables and focused
+  migration/model tests, with no route, UI, lifecycle, or commission
+  behavior changes.`

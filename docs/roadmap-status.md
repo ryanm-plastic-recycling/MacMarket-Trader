@@ -16,6 +16,8 @@ Tests: pytest 210, vitest 123, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
+Phase 8D1 design checkpoint is complete; schema and lifecycle implementation
+remain deferred.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -209,12 +211,17 @@ deferred to later phases and do not block Phase 8 planning.
   assignment/exercise automation, advanced Expected Move / Expected Range
   visualization beyond the current contextual summary, or live routing
 - 8D status:
-  planning complete; implementation not started
+  `8D1` design checkpoint complete; implementation not started
 - 8D acceptance target:
   supported defined-risk structures can move through an options-specific paper
   lifecycle with explicit leg summaries, contract-multiplier math,
   `commission_per_contract`, and gross/net realized P&L, without contaminating
   current equity paper lifecycle
+- 8D planned now:
+  the lifecycle checkpoint recommends a separate options-specific persistence
+  branch over extending current equity write tables, documents future open /
+  close payload direction, keeps `commission_per_contract` separate from the
+  Phase 7 equity fee model, and preserves paper-only / no-routing guardrails
 - 8D not included:
   naked short options, early partial fills, assignment/exercise automation, or
   live brokerage execution
@@ -413,6 +420,12 @@ diffs. Notable recent inflection points:
   contextual research input rather than payoff math, and the operator copy now
   says that expected range does not change expiration payoff math or enable
   execution.
+- 2026-04-29 — Phase 8D1 design checkpoint complete: the options paper
+  lifecycle plan now compares extending current equity tables versus a
+  separate options-specific persistence branch, recommends dedicated
+  structure/leg persistence, defines draft open/close payload shapes, and
+  keeps schema, migration, commission application, and operator UI work
+  deferred to later 8D slices.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI
