@@ -12,8 +12,10 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 122, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 123, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
+Phase 8C is complete for the current read-only, non-persisted options replay
+preview scope.
 Remaining fee-depth, options-fee, and provider-depth items are intentionally
 deferred to later phases and do not block Phase 8 planning.
 
@@ -158,10 +160,10 @@ deferred to later phases and do not block Phase 8 planning.
 ### Phase 8 — Options research → paper parity
 - Status:
   `8A` complete, `8B` complete for the current non-persisted research-only
-  scope, `8C2` / `8C3` / `8C4` are now implemented for the current
-  non-persisted replay-preview scope, and `8D` / `8E` / `8F` remain planned.
-  No schema, migration, order-lifecycle, or execution-enablement changes have
-  landed for options.
+  scope, `8C` complete for the current read-only, non-persisted
+  replay-preview scope, and `8D` / `8E` / `8F` remain planned. No schema,
+  migration, order-lifecycle, or execution-enablement changes have landed for
+  options.
 - Master plan:
   [options-architecture.md](options-architecture.md)
 - Companion docs:
@@ -184,24 +186,28 @@ deferred to later phases and do not block Phase 8 planning.
   persisted options recommendations, options replay, options orders, options
   fills, options positions, and options trades
 - 8C status:
-  `8C2` / `8C3` / `8C4` complete; `8C5` not started
-- 8C acceptance target:
-  read-only, non-persisted replay preview for supported defined-risk
-  structures, starting with vertical debit spreads and quickly extending to
-  iron condor, while keeping current equity replay untouched
+  complete for the current read-only, non-persisted replay-preview scope
+- 8C acceptance:
+  supported defined-risk options structures can be previewed through
+  deterministic expiration-payoff math plus a read-only operator UI, while
+  equity replay behavior remains untouched and Expected Move / Expected Range
+  stays contextual rather than modifying payoff math
 - 8C implemented now:
   isolated pure payoff math helpers plus a dedicated read-only options replay
   preview contract at `POST /user/options/replay-preview`, with focused backend
   tests for long-option primitives, vertical debit spreads, iron condor,
   blocked invalid/naked-short payloads, explicit non-persistence, and a
   Recommendations-side operator payoff preview UI with compact summary and
-  expiration payoff table
+  expiration payoff table; the surrounding options research preview continues
+  to carry Expected Move / Expected Range context with safe blocked/omitted
+  reasons and explicit research-only labeling
 - 8C must not change:
   current equity `ReplayEngine`, equity replay persistence semantics, equity
   `RecommendationService.generate()` behavior, or equity order/fill semantics
 - 8C not included:
   staged options orders, options positions/trades, mark-to-market parity,
-  assignment/exercise automation, or live routing
+  assignment/exercise automation, advanced Expected Move / Expected Range
+  visualization beyond the current contextual summary, or live routing
 - 8D status:
   planning complete; implementation not started
 - 8D acceptance target:
@@ -216,11 +222,12 @@ deferred to later phases and do not block Phase 8 planning.
   planning complete; implementation not started
 - 8E acceptance target:
   operators can see strategy summary, legs, debit/credit, max profit/loss,
-  breakevens, DTE/expiration, payoff context, warnings, and provider/source
-  labels without implying execution support
+  breakevens, DTE/expiration, payoff context, warnings, provider/source
+  labels, and Expected Move / Expected Range context without implying
+  execution support
 - 8E not included:
-  full chart-heavy payoff tooling in the first risk-UX slice or live-liquidity
-  realism
+  full chart-heavy payoff tooling, advanced Expected Move visualization in the
+  first risk-UX slice, or live-liquidity realism
 - 8F status:
   planned only; closure criteria defined
 - 8F acceptance target:
@@ -249,8 +256,9 @@ deferred to later phases and do not block Phase 8 planning.
 - Phase 8 deferred items:
   persisted options recommendations, options replay persistence, staged options
   orders before 8D, assignment/exercise automation, covered calls that depend
-  on inventory modeling, mark-to-market / Greeks-driven valuation parity, and
-  live routing remain outside the current implementation scope
+  on inventory modeling, mark-to-market / Greeks-driven valuation parity,
+  advanced Expected Move visualization beyond the current contextual summary,
+  and live routing remain outside the current implementation scope
 
 ### Phase 9 — Alpaca paper integration
 - Wire `BROKER_PROVIDER=alpaca` for real paper fills
@@ -308,7 +316,7 @@ deferred to later phases and do not block Phase 8 planning.
 
 ## Test Counts (last verified 2026-04-29)
 - pytest: 210
-- vitest: 122
+- vitest: 123
 - Playwright: 31
 
 ## Core product pillars
@@ -399,6 +407,12 @@ diffs. Notable recent inflection points:
   read-only preview contract, renders compact expiration payoff summaries and
   blocked reasons safely, and keeps persisted replay/order/staging CTAs
   suppressed. This remained frontend-focused and non-persisted.
+- 2026-04-29 — Phase 8C5 closure review complete for the current read-only,
+  non-persisted replay-preview scope: roadmap/design docs now align on the
+  shipped 8C boundary, Expected Move / Expected Range remains explicitly
+  contextual research input rather than payoff math, and the operator copy now
+  says that expected range does not change expiration payoff math or enable
+  execution.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

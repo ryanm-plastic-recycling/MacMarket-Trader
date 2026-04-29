@@ -328,6 +328,9 @@ export function OptionsResearchPreview({
               <div><strong>Horizon:</strong> {formatResearchValue(setup.expected_range.horizon_value)} {formatResearchValue(setup.expected_range.horizon_unit, "").trim()}</div>
               {expectedRangeReason ? <div><strong>Reason:</strong> {formatResearchValue(expectedRangeReason)}</div> : null}
               <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+                Expected range is research context only. It does not change expiration payoff math or enable execution.
+              </div>
+              <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
                 {formatExpectedMoveSummary(setup.expected_range)}
               </div>
             </>

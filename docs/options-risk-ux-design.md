@@ -62,6 +62,8 @@ Show:
 - method
 - bounds when available
 - reason when blocked or omitted
+- explicit copy that expected range does not change expiration payoff math or
+  imply execution approval
 
 ### Payoff preview
 

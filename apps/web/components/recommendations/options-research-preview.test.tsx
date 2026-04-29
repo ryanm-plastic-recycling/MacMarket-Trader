@@ -26,7 +26,10 @@ vi.mock("@/components/operator-ui", async () => {
   };
 });
 
-import { OptionsReplayPreviewPanel } from "@/components/recommendations/options-research-preview";
+import {
+  OptionsReplayPreviewPanel,
+  OptionsResearchPreview,
+} from "@/components/recommendations/options-research-preview";
 import type {
   OptionsReplayPreviewAvailability,
   OptionsReplayPreviewResponse,
@@ -132,6 +135,60 @@ describe("OptionsReplayPreviewPanel", () => {
     expect(html).toContain("Replay payoff preview requires visible option legs.");
     expect(html).toContain("Naked Short Option Not Supported");
     expect(html).toContain("Unavailable");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("NaN");
+  });
+});
+
+describe("OptionsResearchPreview", () => {
+  it("renders expected range as contextual research, not payoff math", () => {
+    const html = renderToStaticMarkup(
+      <OptionsResearchPreview
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "2026-05-15",
+            dte: 16,
+            net_credit: 2.5,
+            max_profit: 250,
+            max_loss: 250,
+            breakeven_low: 92.5,
+            breakeven_high: 107.5,
+            legs: [
+              { action: "buy", right: "put", strike: 90, label: "Long put wing" },
+              { action: "sell", right: "put", strike: 95, label: "Short put body" },
+              { action: "sell", right: "call", strike: 105, label: "Short call body" },
+              { action: "buy", right: "call", strike: 110, label: "Long call wing" },
+            ],
+          },
+          expected_range: {
+            status: "blocked",
+            method: null,
+            absolute_move: null,
+            lower_bound: null,
+            upper_bound: null,
+            horizon_value: null,
+            horizon_unit: null,
+            reason: "missing_iv_snapshot",
+          },
+          options_chain_preview: null,
+        }}
+        loading={false}
+        error={null}
+        chartPayload={null}
+        chartStorageKey="test-options-preview"
+        chartSourceLabel="polygon"
+        chartBlockedByFallback={false}
+      />,
+    );
+
+    expect(html).toContain("Expected range is research context only. It does not change expiration payoff math or enable execution.");
+    expect(html).toContain("missing_iv_snapshot");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
     expect(html).not.toContain("NaN");

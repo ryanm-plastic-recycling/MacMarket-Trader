@@ -40,7 +40,6 @@ Required for `8C2` and `8C3`:
 - optional long call / long put primitive tests if helpers use them
 - blocked preview tests:
   - missing premium
-  - missing expiration
   - incomplete legs
   - unsupported structure
 - commission estimate tests if `commission_per_contract` is included in preview
@@ -58,7 +57,8 @@ Required for replay preview UI:
 - options replay preview renders structure summary
 - options replay preview renders max profit/loss and breakevens when available
 - blocked reasons render clearly
-- expected range remains contextual
+- expected range remains contextual and does not read like payoff math
+- blocked or omitted expected-range reasons render clearly
 - missing values render as `Unavailable` or `-`
 - staging/order CTAs remain suppressed
 

@@ -4,10 +4,10 @@ Last updated: 2026-04-29
 
 ## Purpose
 
-This document defines `8C`: read-only, non-persisted options replay preview
-for defined-risk structures.
+This document defines the `8C` boundary: read-only, non-persisted options
+replay preview for defined-risk structures.
 
-It is planning only. It does not authorize:
+It records the current shipped scope and does not authorize:
 
 - schema changes
 - migrations
@@ -66,6 +66,8 @@ Expected range is contextual only:
 
 - useful for research framing
 - not a substitute for payoff math
+- does not modify payoff-at-expiration math
+- does not imply execution approval
 - allowed to be computed, blocked, or omitted
 
 ## Required data for a valid preview
@@ -75,12 +77,12 @@ Required:
 - `market_mode=options`
 - supported structure type
 - underlying price history from the same workflow source as the research setup
-- expiration / DTE
 - leg definitions with strike / right / action
 - premium assumption at the structure or leg level
 
 Preferred but not required in the first slice:
 
+- expiration / DTE
 - chain preview rows
 - provider symbols
 - implied volatility snapshots
@@ -89,9 +91,11 @@ Preferred but not required in the first slice:
 Missing-data behavior:
 
 - missing or partial legs -> block preview with explicit reason
-- missing expiration -> block preview
 - missing premium / net debit / net credit -> block preview
 - missing chain preview -> allow preview if structure math is otherwise valid
+- missing expiration / DTE -> allow preview math to proceed, but keep the
+  surrounding research UI responsible for rendering that context as
+  `Unavailable` or muted explanatory copy
 - blocked or omitted expected range -> preview may still proceed, with reason
 
 ## Replay math scope
@@ -147,6 +151,15 @@ Safest first implementation:
 - keep current replay DB rows and engine behavior untouched
 
 Suggested response shape:
+
+Illustrative future-friendly shape:
+
+- the current shipped `8C3` response remains payoff-focused
+- the current shipped response does not yet embed `expected_range`
+- Expected Move / Expected Range currently stays in the surrounding
+  Analysis/Recommendations research contract and operator UI context
+- any future replay-response `expected_range` field must remain contextual and
+  must not modify expiration payoff math
 
 ```json
 {
@@ -222,6 +235,7 @@ The Replay workspace should later show:
 - breakevens
 - expiration payoff summary
 - blocked or unsupported reasons
+- expected range context with a reason when blocked or omitted
 - paper-only / research-only disclaimer
 
 The Replay workspace should not show in 8C:
@@ -311,12 +325,17 @@ Rollback:
 
 ### 8C5 - Tests and docs closure
 
+Status:
+
+- complete
+
 Complete when:
 
 - backend math tests exist
 - frontend rendering tests exist
 - equity replay regression tests pass
 - roadmap/docs reflect the actual shipped 8C boundary
+- Expected Move / Expected Range remains explicitly contextual in docs and UI
 
 Must not change:
 
@@ -333,7 +352,6 @@ Backend:
 - payoff math for vertical debit spreads
 - payoff math for iron condor
 - blocked replay for missing premium
-- blocked replay for missing expiration
 - blocked replay for incomplete legs
 - unsupported structure rejection
 - equity replay regression anchors
@@ -348,7 +366,8 @@ Frontend:
 
 ## Current implementation note
 
-Phase 8C2 and 8C3 are now implemented in:
+Phase 8C is complete for the current read-only, non-persisted replay-preview
+scope. `8C2`, `8C3`, and `8C4` are implemented in:
 
 - `src/macmarket_trader/options/payoff.py`
 - `src/macmarket_trader/options/replay_preview.py`
@@ -378,6 +397,9 @@ Implemented scope:
   mode
 - compact read-only payoff summary, blocked reasons, warnings/caveats, and
   expiration payoff table
+- Expected Move / Expected Range remains part of the surrounding options
+  research context, with blocked/omitted reasons preserved and no effect on
+  expiration payoff math
 - options-mode execution CTAs remain suppressed while preview stays
   non-persisted and paper/research only
 
@@ -385,16 +407,5 @@ Still deferred:
 
 - any persistence
 - any commission application
-
-## Recommended next implementation slice
-
-Proceed with `8C5` next:
-
-- close out the 8C slice with final docs/test alignment
-- keep replay preview non-persisted and mode-isolated
-- avoid folding 8D lifecycle work into replay preview
-- keep equity replay untouched
-
-That is the safest next step because the payoff math, preview contract, and
-operator UI are now proven, and the remaining work is closure discipline
-rather than new options behavior.
+- advanced Expected Move / Expected Range visualization beyond the current
+  contextual summary

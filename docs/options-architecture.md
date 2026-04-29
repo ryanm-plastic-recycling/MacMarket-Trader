@@ -22,9 +22,10 @@ Current planning state:
 - `8A` complete: architecture and contract planning foundations
 - `8B` complete: read-only, non-persisted options research visibility in
   Analysis / Recommendations
-- `8C` implementation started: `8C2` pure payoff math, `8C3` read-only
-  replay preview contract, and `8C4` operator UI preview complete; `8C5`
-  remains deferred
+- `8C` complete for the current read-only, non-persisted replay-preview
+  scope: `8C2` pure payoff math, `8C3` read-only replay preview contract,
+  `8C4` operator UI preview, and `8C5` closure review/tests/docs alignment
+  are complete
 - `8D` planned only: implementation not started
 - `8E` planned only: implementation not started
 - `8F` planned only: closure criteria defined, implementation not started
@@ -100,10 +101,8 @@ Not complete:
 
 Status:
 
-- `8C2` complete: pure payoff math helper and tests implemented
-- `8C3` complete: read-only, non-persisted replay preview contract
-- `8C4` complete: operator-facing replay payoff preview in Recommendations
-- `8C5` not started
+- complete for the current read-only, non-persisted replay-preview scope:
+  `8C2`, `8C3`, `8C4`, and `8C5`
 
 Detailed design:
 
@@ -123,14 +122,16 @@ Complete means:
 - vertical debit spreads work first
 - iron condor is supported shortly after on the same payoff helper foundation
 - blocked reasons and missing-data states are explicit
+- Expected Move / Expected Range remains visible as contextual research input
+  and does not modify expiration payoff math or imply execution approval
 
 Not complete:
 
 - options replay persistence
-- options replay API / payload contract
-- options replay UI
 - options order enablement
 - mark-to-market parity
+- advanced Expected Move / Expected Range visualization beyond the current
+  contextual summary
 - assignment / exercise automation
 
 ### 8D - Options paper lifecycle
@@ -255,9 +256,12 @@ Why this order:
 
 Current implementation note:
 
-- `src/macmarket_trader/options/payoff.py` now provides the isolated Phase 8C2
-  payoff foundation for long-option primitives, vertical debit spreads, and
-  iron condor math with no schema, route, persistence, or UI changes
+- `src/macmarket_trader/options/payoff.py` provides the isolated 8C2 payoff
+  foundation for long-option primitives, vertical debit spreads, and iron
+  condor math
+- `POST /user/options/replay-preview` plus the Recommendations-side replay
+  preview UI now define the current 8C boundary without adding schema,
+  persistence, staged orders, or execution enablement
 
 ## Deferred items that do not block 8C planning
 
