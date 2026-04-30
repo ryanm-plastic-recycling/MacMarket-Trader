@@ -240,9 +240,9 @@ Design checkpoint status:
 - the recommended future path is a hybrid model: keep current watchlist
   compatibility while designing dedicated user-symbol universe / watchlist
   membership records before any migration
-- the current comma-entry cleanup slice is complete; provider-backed search,
-  schema/read-model work, richer watchlist tables, and recommendation-universe
-  selectors remain future work
+- the current comma-entry cleanup and current watchlist table polish slices are
+  complete; provider-backed search, normalized symbol-universe production UI,
+  bulk import, and recommendation-universe selectors remain future work
 - the schema/read-model checkpoint now recommends a future
   `user_symbol_universe` plus `watchlist_symbols` model while preserving
   current watchlist and schedule symbol snapshots for compatibility
@@ -499,6 +499,10 @@ Current project status, in operator terms:
   planning now covers user-scoped canonical symbol rows, watchlist membership,
   compatibility snapshots, resolver behavior, migration/backfill, and rollback
   without implementing schema or runtime changes
+- Phase 10W6 complete: the current Schedules Watchlists card now supports
+  search/sort, symbol counts, normalized chips, per-list symbol filtering,
+  duplicate feedback, and per-symbol removal using the existing watchlist update
+  route while preserving current JSON storage and schedule payload behavior
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders

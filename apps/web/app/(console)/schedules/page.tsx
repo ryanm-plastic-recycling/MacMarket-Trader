@@ -148,6 +148,18 @@ type RunDetail = {
 };
 
 type Watchlist = { id: number; name: string; symbols: string[]; created_at: string };
+type WatchlistSort = "name" | "symbol_count";
+
+function formatDateOrDash(value: string | undefined | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
 
 const TIMEZONES: { value: string; label: string }[] = [
   // US Eastern
@@ -202,6 +214,9 @@ export default function SchedulesPage() {
   const [wlSymbols, setWlSymbols] = useState("");
   const [editingWlId, setEditingWlId] = useState<number | null>(null);
   const [wlFeedback, setWlFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  const [watchlistQuery, setWatchlistQuery] = useState("");
+  const [watchlistSort, setWatchlistSort] = useState<WatchlistSort>("name");
+  const [watchlistSymbolFilters, setWatchlistSymbolFilters] = useState<Record<number, string>>({});
 
   // Run detail state
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -209,6 +224,27 @@ export default function SchedulesPage() {
   const [runDetailFeedback, setRunDetailFeedback] = useState<{ state: "idle" | "loading" | "error"; message: string }>({ state: "idle", message: "" });
   const parsedScheduleSymbols = useMemo(() => parseManualSymbolEntry(symbols), [symbols]);
   const parsedWatchlistSymbols = useMemo(() => parseManualSymbolEntry(wlSymbols), [wlSymbols]);
+  const visibleWatchlists = useMemo(() => {
+    const query = watchlistQuery.trim().toUpperCase();
+    const rowsWithSymbols = watchlists.map((wl) => {
+      const parsed = parseManualSymbolEntry((wl.symbols ?? []).join(","));
+      return { wl, parsed };
+    });
+    const filtered = query
+      ? rowsWithSymbols.filter(({ wl, parsed }) => {
+          const nameMatch = wl.name.toUpperCase().includes(query);
+          const symbolMatch = parsed.symbols.some((symbol) => symbol.includes(query));
+          return nameMatch || symbolMatch;
+        })
+      : rowsWithSymbols;
+    return [...filtered].sort((a, b) => {
+      if (watchlistSort === "symbol_count") {
+        const countDelta = b.parsed.symbols.length - a.parsed.symbols.length;
+        if (countDelta !== 0) return countDelta;
+      }
+      return a.wl.name.localeCompare(b.wl.name);
+    });
+  }, [watchlistQuery, watchlistSort, watchlists]);
 
   async function load() {
     setFeedback({ state: "loading", message: "Loading schedules..." });
@@ -255,6 +291,30 @@ export default function SchedulesPage() {
     if (!result.ok) { setWlFeedback({ state: "error", message: result.error ?? "Delete failed" }); return; }
     setWlFeedback({ state: "success", message: "Watchlist deleted" });
     await loadWatchlists();
+  }
+
+  async function removeWatchlistSymbol(wl: Watchlist, symbol: string) {
+    const parsed = parseManualSymbolEntry((wl.symbols ?? []).join(","));
+    const nextSymbols = parsed.symbols.filter((item) => item !== symbol);
+    if (nextSymbols.length === parsed.symbols.length) return;
+    if (!nextSymbols.length) {
+      setWlFeedback({ state: "error", message: "Watchlists need at least one symbol. Delete the watchlist instead." });
+      return;
+    }
+    setWlFeedback({ state: "loading", message: `Removing ${symbol}...` });
+    const result = await fetchWorkflowApi<Watchlist>(`/api/user/watchlists/${wl.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: nextSymbols }),
+    });
+    if (!result.ok) {
+      setWlFeedback({ state: "error", message: result.error ?? "Remove failed" });
+      return;
+    }
+    setWatchlists((prev) => prev.map((row) => (
+      row.id === wl.id ? { ...row, symbols: result.data?.symbols ?? nextSymbols } : row
+    )));
+    setWlFeedback({ state: "success", message: `${symbol} removed from ${wl.name}` });
   }
 
   function startEditWatchlist(wl: Watchlist) {
@@ -488,29 +548,102 @@ export default function SchedulesPage() {
         <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
           <div>{SYMBOL_ENTRY_HELP_COPY.separators}</div>
           <div>{SYMBOL_ENTRY_HELP_COPY.example}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.substitutes}</div>
+          <div>Research universe only; watchlists organize symbols for scans and do not send orders.</div>
+          <div>Provider metadata may be unavailable; manual symbols can still be saved.</div>
           <div>{SYMBOL_ENTRY_HELP_COPY.futureWatchlists}</div>
+          <div>Current lists keep existing symbol-array storage until normalized watchlist management is wired in.</div>
         </div>
         <SymbolEntryPreview parsed={parsedWatchlistSymbols} />
         <InlineFeedback state={wlFeedback.state} message={wlFeedback.message} />
         {watchlists.length === 0 ? (
           <EmptyState title="No watchlists" hint="Create a named symbol list to quickly populate schedule forms." />
         ) : (
-          <table className="op-table">
-            <thead><tr><th>Name</th><th>Symbols</th><th>Actions</th></tr></thead>
-            <tbody>
-              {watchlists.map((wl) => (
-                <tr key={wl.id}>
-                  <td>{wl.name}</td>
-                  <td style={{ maxWidth: 400 }}>{wl.symbols.join(", ")}</td>
-                  <td className="op-row">
-                    <button onClick={() => setSymbols(wl.symbols.join(","))}>Apply to form</button>
-                    <button onClick={() => startEditWatchlist(wl)}>Edit</button>
-                    <button onClick={() => void deleteWatchlist(wl.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <div className="op-row" style={{ alignItems: "flex-end", flexWrap: "wrap", margin: "10px 0" }}>
+              <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
+                <span>Search watchlists</span>
+                <input
+                  value={watchlistQuery}
+                  onChange={(e) => setWatchlistQuery(e.target.value)}
+                  placeholder="Filter by name or symbol"
+                />
+              </label>
+              <label>
+                Sort watchlists&nbsp;
+                <select value={watchlistSort} onChange={(e) => setWatchlistSort(e.target.value as WatchlistSort)}>
+                  <option value="name">name</option>
+                  <option value="symbol_count">symbol count</option>
+                </select>
+              </label>
+              <StatusBadge tone="neutral">{watchlists.length} saved list{watchlists.length === 1 ? "" : "s"}</StatusBadge>
+            </div>
+            {visibleWatchlists.length === 0 ? (
+              <EmptyState title="No matching watchlists" hint="Adjust the watchlist search to show saved symbol lists." />
+            ) : (
+              <table className="op-table">
+                <thead><tr><th>Name</th><th>Symbol count</th><th>Symbols</th><th>Created</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {visibleWatchlists.map(({ wl, parsed }) => {
+                    const symbolFilter = (watchlistSymbolFilters[wl.id] ?? "").trim().toUpperCase();
+                    const shownSymbols = symbolFilter
+                      ? parsed.symbols.filter((symbol) => symbol.includes(symbolFilter))
+                      : parsed.symbols;
+                    return (
+                      <tr key={wl.id}>
+                        <td>
+                          <strong>{wl.name}</strong><br />
+                          <span style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Existing watchlist storage</span>
+                        </td>
+                        <td><StatusBadge tone="neutral">{parsed.symbols.length} symbol{parsed.symbols.length === 1 ? "" : "s"}</StatusBadge></td>
+                        <td style={{ maxWidth: 520 }}>
+                          <label style={{ display: "grid", gap: 4, marginBottom: 6 }}>
+                            <span style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Filter symbols in this list</span>
+                            <input
+                              value={watchlistSymbolFilters[wl.id] ?? ""}
+                              onChange={(e) => setWatchlistSymbolFilters((prev) => ({ ...prev, [wl.id]: e.target.value }))}
+                              placeholder="Symbol filter"
+                              style={{ maxWidth: 220 }}
+                            />
+                          </label>
+                          <div className="op-row" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            {shownSymbols.length ? shownSymbols.map((symbol) => (
+                              <span
+                                key={symbol}
+                                className="op-badge op-badge-neutral"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                              >
+                                {symbol}
+                                <button
+                                  aria-label={`Remove ${symbol} from ${wl.name}`}
+                                  onClick={() => void removeWatchlistSymbol(wl, symbol)}
+                                  title={`Remove ${symbol}`}
+                                  style={{ padding: "0 5px", lineHeight: 1.1 }}
+                                >
+                                  x
+                                </button>
+                              </span>
+                            )) : <span style={{ color: "var(--text-muted, #8b9cb3)" }}>—</span>}
+                          </div>
+                          {parsed.duplicateCount ? (
+                            <div style={{ marginTop: 6, fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>
+                              Duplicate ignored in preview: {parsed.duplicates.join(", ")}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>{formatDateOrDash(wl.created_at)}</td>
+                        <td className="op-row">
+                          <button onClick={() => setSymbols(parsed.symbols.join(","))}>Apply to form</button>
+                          <button onClick={() => startEditWatchlist(wl)}>Edit</button>
+                          <button onClick={() => void deleteWatchlist(wl.id)}>Delete</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
       </Card>
 

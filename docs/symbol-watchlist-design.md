@@ -6,8 +6,8 @@ Last updated: 2026-04-30
 
 This document started as a design checkpoint for better user-scoped symbol
 discovery, watchlist management, and recommendation-universe selection. It now
-also tracks the completed additive schema and internal repository/resolver
-foundation slices.
+also tracks the completed additive schema, internal repository/resolver
+foundation, and current watchlist UI polish slices.
 
 It does not implement symbol search, change recommendation generation, add
 provider probes, change current schedule execution, or imply live trading /
@@ -36,8 +36,10 @@ Current symbol entry is intentionally simple:
   `symbols` JSON, and `created_at`. The current repository supports list,
   upsert, update, and delete by current user.
 - Schedules page:
-  shows a basic Watchlists card where users enter a watchlist name plus a
-  manual symbol list, review the same parsed preview, then apply the saved list
+  shows a Watchlists card where users enter a watchlist name plus a manual
+  symbol list, review the same parsed preview, search/sort saved lists, inspect
+  normalized symbol chips/counts, filter symbols inside a list, remove an
+  individual chip through the existing update route, then apply the saved list
   back into the schedule symbol field.
 - Scheduled runs:
   `StrategyReportService.run_schedule()` reads `symbols` from the schedule
@@ -59,8 +61,9 @@ Current scoping:
   `created_at`; they do not expose per-symbol metadata, active state, tags, or
   notes.
 - The current frontend Watchlists card edits one name plus one manual symbol
-  field, then saves the parsed `symbols` array and can apply a saved list back
-  into the schedule form.
+  field, then saves the parsed `symbols` array, can apply a saved list back into
+  the schedule form, and now has a small management table around the same
+  compatibility data.
 - Schedule payload symbols are copied into each schedule payload rather than
   linked to a watchlist row.
 - `strategy_report_schedules.payload.symbols` is the execution-time symbol
@@ -79,7 +82,8 @@ Current limitations:
 - Users must already know symbols.
 - Names, asset types, exchanges, provider support, options eligibility, and
   index/ETF substitution guidance are not first-class watchlist fields.
-- Duplicate handling is mostly whatever the caller provides.
+- Duplicate handling has a parser-preview warning in current manual-entry and
+  watchlist editing flows; richer bulk import and audit remain deferred.
 - There is no active/inactive symbol status.
 - There are no tags/groups, notes, import audit, or per-symbol update
   timestamps.
@@ -177,6 +181,40 @@ Still unchanged by `10W5`:
 - schedule execution behavior
 - frontend UI
 - provider-backed symbol search or metadata enrichment
+- live routing or brokerage execution
+
+## 10W6 Current Watchlist Table UI Polish
+
+Status: complete for the current frontend-only compatibility scope.
+
+Implemented now:
+
+- the Schedules Watchlists card remains on existing user-scoped
+  `watchlists.symbols` JSON/list data and existing watchlist create/update/delete
+  routes
+- saved watchlists can be searched by name or symbol and sorted by name or
+  symbol count
+- rows show clear symbol counts, created date when available, normalized symbol
+  chips, and per-list symbol filtering
+- current manual edit fields reuse the shared parser preview for uppercase
+  normalization, counts, and duplicate feedback
+- individual symbol removal is available from a chip when at least one symbol
+  remains; it uses the existing watchlist `PUT` route with the remaining
+  symbols array
+- operator copy labels current lists as research-universe management, notes that
+  provider metadata may be unavailable, keeps SPX/NDX versus SPY/QQQ guidance
+  visible, and explains that normalized watchlist management remains future work
+
+Still unchanged by `10W6`:
+
+- existing `watchlists.symbols` JSON/list persistence
+- normalized `user_symbol_universe` / `watchlist_symbols` production UI usage
+- existing `strategy_report_schedules.payload.symbols` behavior
+- recommendation queue symbol handling
+- schedule execution behavior
+- provider-backed symbol search or metadata enrichment
+- bulk import / import audit
+- active/inactive symbol state, tags/groups, and notes in production UI
 - live routing or brokerage execution
 
 ## Symbol Discovery Design
@@ -656,8 +694,9 @@ Recommended slices:
   recommendation generation, schedule execution, current watchlist JSON
   behavior, or frontend UI.
 - `10W6` user-scoped watchlist table UI:
-  frontend table around the new read model, starting with manual add, delete,
-  search, sort, active/inactive display, tags, and notes.
+  complete for current compatibility UI; adds search, sort, symbol counts,
+  normalized chips, per-list symbol filtering, duplicate feedback, and
+  per-symbol removal while keeping existing `watchlists.symbols` JSON behavior.
 - `10W7` bulk import and duplicate handling:
   paste/import workflow with deterministic duplicate feedback.
 - `10W8` recommendation/schedule universe selection:
@@ -671,17 +710,18 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W5`: user-scoped watchlist table UI.
+Next after `10W6`: bulk import and duplicate handling, if explicitly
+authorized.
 
 Why:
 
-- the additive schema and internal read-model now exist
-- table UI can remain display/manual-management oriented before
-  recommendation/schedule selector integration
-- it keeps provider-backed search, storage replacement, bulk import, and
-  ranking/schedule behavior changes deferred
+- current manual entry and saved-list management are easier to inspect
+- bulk paste/import can build on the existing parser preview without provider
+  search or recommendation/schedule selector behavior
+- it keeps provider-backed search, storage replacement, normalized table
+  production UI, and ranking/schedule behavior changes deferred
 
 Do not start the next slice with provider-backed symbol search,
-recommendation/schedule selector behavior, storage replacement, or bulk import.
-The next implementation should be a small user-scoped table UI around the
-current read model.
+recommendation/schedule selector behavior, storage replacement, normalized
+symbol-universe production UI, or ranking changes. The next implementation
+should be a small import/dedupe UX slice around the current manual parser.

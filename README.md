@@ -539,7 +539,10 @@ The codebase should define typed contracts for:
   provider search, frontend UI, recommendation generation, or schedule
   execution. `10W5` adds internal backend repository/read-model and resolver
   helpers for the new tables while leaving production recommendation and
-  schedule flows on their current symbol-array inputs.
+  schedule flows on their current symbol-array inputs. `10W6` polishes the
+  current user-scoped Watchlists card on Schedules with search/sort, symbol
+  counts, normalized chips, per-list symbol filtering, and chip removal through
+  the existing watchlist update route while keeping existing JSON persistence.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -647,10 +650,13 @@ current watchlist compatibility while planning dedicated user-symbol universe
 records and watchlist membership records. The additive `10W4` schema
 foundation now exists for those future records, and `10W5` adds internal
 read-model/resolver helpers without changing runtime recommendation or
-schedule behavior, while current manual entry now shows clearer separator
-guidance, parsed uppercase previews, duplicate feedback, and ETF/index
-substitute copy, but remains a temporary manual universe until richer
-watchlist management is implemented. This is
+schedule behavior. `10W6` improves the current Schedules watchlist table using
+existing `watchlists.symbols` JSON rows only: search/sort, symbol counts,
+normalized chips, per-list symbol filtering, duplicate feedback, and
+per-symbol removal through the current update route. Current manual entry now
+shows clearer separator guidance, parsed uppercase previews, duplicate
+feedback, and ETF/index substitute copy, but remains a temporary manual
+universe until richer watchlist management is implemented. This is
 recommendation-universe management only: provider support labels, options
 eligibility, and ETF/index substitution guidance such as `SPX` / `NDX` versus
 `SPY` / `QQQ` must not imply live routing or brokerage execution support.

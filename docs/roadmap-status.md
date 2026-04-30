@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 220, vitest 182, Playwright 31. tsc clean.
+Tests: pytest 220, vitest 186, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -58,10 +58,10 @@ across equity Orders and durable paper-options rows. `10C4` is complete for
 compact Analysis and Replay metric-label help. `10C5` is complete for the
 closure audit, tiny safety-copy polish, and docs/test alignment, so the
 explainable metric glossary/tooltips rollout is closed for the current
-in-context scope. `10W1` through `10W5` are complete for symbol/watchlist
+in-context scope. `10W1` through `10W6` are complete for symbol/watchlist
 design, current comma-entry workflow cleanup, schema/read-model planning, and
 the additive symbol-universe schema/migration plus repository/resolver
-foundation.
+foundation and current watchlist UI polish.
 Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
@@ -73,7 +73,9 @@ only additive nullable tables without changing current watchlist JSON behavior,
 schedule payload symbols, provider behavior, frontend UI, or recommendation
 generation. The `10W5` repository/resolver foundation now reads those additive
 tables internally without wiring production recommendation or schedule flows to
-them. Future operator glossary and explainable metric
+them, while `10W6` improves the current Schedules watchlist table using only
+existing `watchlists.symbols` arrays and existing update/delete routes. Future
+operator glossary and explainable metric
 tooltips are now tracked as workflow comprehension polish, not changes to
 scoring, probability modeling, provider behavior, or execution semantics.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
@@ -518,8 +520,8 @@ recommendation, or brokerage behavior.
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
   planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`
-  through `10W5` complete; broader `10A`, broader `10B`, optional
-  glossary/reference-page work, symbol/watchlist UI, bulk import,
+  through `10W6` complete; broader `10A`, broader `10B`, optional
+  glossary/reference-page work, bulk import,
   recommendation/schedule universe selection, provider search implementation,
   and later subphases remain open
 - Theme:
@@ -571,6 +573,14 @@ Safe near-term:
   legacy watchlist JSON fallback; no frontend UI, provider search,
   recommendation generation, schedule execution, current watchlist JSON
   behavior, or schedule payload symbol behavior changed
+- completed `10W6`: frontend-only current watchlist table/list polish on
+  Schedules using existing `watchlists.symbols` JSON rows and existing
+  watchlist create/update/delete routes; adds search, sort, symbol counts,
+  normalized symbol chips, per-list symbol filtering, duplicate feedback,
+  per-symbol removal through the current update route, ETF/index substitution
+  guidance, and concise normalized-watchlist future copy without wiring
+  provider search, normalized tables, recommendation generation, or schedule
+  execution behavior
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
 - completed `10C1`: central glossary registry and reusable accessible
@@ -820,7 +830,9 @@ First implementation slice:
   schema/migration foundation is complete for additive ORM models, Alembic
   tables, nullable provider metadata fields, indexes, uniqueness constraints,
   and focused backend tests. `10W5` repository/read-model and resolver
-  foundation is complete for internal backend helpers only.
+  foundation is complete for internal backend helpers only. `10W6` current
+  watchlist table/list polish is complete for the existing frontend JSON
+  watchlist workflow.
   Existing Phase 10 numbering is preserved: `10D` remains the
   expiration-settlement design checkpoint, so symbol/watchlist work uses a
   workflow-polish `10W` lane unless the roadmap is explicitly renumbered later.
@@ -833,9 +845,11 @@ First implementation slice:
   Recommendations and Schedules now show clearer manual-entry guidance and a
   parsed uppercase preview for comma/space/new-line input; schedules persist
   copied symbol arrays inside payloads; current watchlists are user-scoped rows
-  with name plus `symbols` JSON and now share the same manual-entry preview;
-  there is no provider-backed symbol search endpoint or persisted
-  symbol-metadata read model yet.
+  with name plus `symbols` JSON and now show a searchable/sortable table,
+  symbol counts, normalized chips, per-list symbol filtering, duplicate
+  feedback, and per-symbol removal through the existing update route; there is
+  no provider-backed symbol search endpoint or production UI dependency on the
+  normalized symbol-universe tables yet.
 - Symbol discovery target:
   operators should eventually be able to search by ticker and company/security
   name; review ticker, name, asset type, exchange, provider/source support
@@ -872,16 +886,17 @@ First implementation slice:
   completed `10W1 design checkpoint` -> completed `10W2 current-state cleanup /
   comma-entry copy` -> completed `10W3 schema/read-model checkpoint` ->
   completed `10W4 schema/migration foundation` -> completed `10W5 repository/read-model
-  and resolver` -> `10W6 user-scoped watchlist table UI` -> `10W7 bulk import/duplicate
+  and resolver` -> completed `10W6 current watchlist table UI polish` -> `10W7 bulk import/duplicate
   handling` -> `10W8 schedule/recommendation universe selection` -> `10W9
   provider-backed discovery only if separately approved` -> `10W10 closure`.
 - Suggested next implementation slice:
-  `10W6` user-scoped watchlist table UI only. Keep provider-backed search,
-  recommendation/schedule selector behavior, bulk import, and ranking changes
-  deferred.
+  `10W7` bulk import / duplicate handling only, if explicitly authorized. Keep
+  provider-backed search, recommendation/schedule selector behavior, normalized
+  table production UI, and ranking changes deferred.
 - Explicitly not complete:
-  frontend UI changes, provider probes, provider search/fetch behavior, live
-  routing, brokerage execution, recommendation generation changes, schedule
+  normalized symbol-universe production UI, provider probes,
+  provider search/fetch behavior, live routing, brokerage execution,
+  recommendation generation changes, schedule
   execution changes, options execution approval, crypto implementation, or
   automatic strategy scoring changes.
 - Must be tested later:
@@ -1391,6 +1406,15 @@ diffs. Notable recent inflection points:
   watchlist JSON behavior, strategy schedule payload symbols, recommendation
   generation, schedule execution, frontend UI, provider search/probes, live
   routing, and brokerage execution remain unchanged.
+- 2026-04-30 - Phase 10W6 complete for frontend-only current watchlist table
+  UI polish: Schedules now shows searchable/sortable saved watchlists with
+  symbol counts, normalized symbol chips, per-list symbol filtering, duplicate
+  feedback, ETF/index substitution guidance, concise future normalized-list
+  copy, and per-symbol removal using the existing watchlist update route.
+  Existing `watchlists.symbols` JSON behavior, strategy schedule payload
+  symbols, recommendation generation, schedule execution, normalized
+  symbol-universe table usage, provider search/probes, live routing, and
+  brokerage execution remain unchanged.
 - 2026-04-30 - Future operator glossary and explainable metric tooltips
   roadmap item added: a docs-only planning note now tracks concise
   hover/click/tap metric help, formulas and examples where useful, a shared
