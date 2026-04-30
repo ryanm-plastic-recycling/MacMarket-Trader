@@ -393,8 +393,9 @@ Current project status, in operator terms:
 - Phase 9B complete: durable paper-options Orders/Positions visibility
 - Phase 9C1 complete: initial provider/source/as-of parity for Analysis,
   Orders durable paper-options rows, and Provider Health copy
-- Remaining Phase 9C planned next: finish parity across any still-uncovered
-  options surfaces
+- Phase 9C complete: current provider/source/as-of parity scope is closed
+  across Analysis, Recommendations, Orders durable paper-options rows,
+  Provider Health, and operator guidance
 
 Current options boundary:
 
@@ -405,8 +406,7 @@ Current options boundary:
   Recommendations
 - current scoped Phase 8 paper-first options capability is complete
 - expiration settlement is still deferred
-- remaining provider/source/as-of parity and richer options dashboard depth are
-  still deferred
+- richer options dashboard depth is still deferred
 
 ## Final operator reminder
 

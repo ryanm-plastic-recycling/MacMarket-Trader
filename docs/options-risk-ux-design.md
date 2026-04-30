@@ -56,6 +56,11 @@ Current implementation note:
   durable paper-options rows disclose that full provider/source metadata remains
   research-preview context; Provider Health carries options/index data caveats
   as readiness context only
+- `9C` is now closed for the current scoped options surfaces after audit:
+  Analysis, Recommendations, Orders durable paper-options rows, Provider
+  Health, and operator guidance present source/as-of/provenance context,
+  provider-plan caveats, and durable metadata limitations where existing
+  payload fields support them
 
 ## UX goals
 
@@ -291,8 +296,9 @@ Current closure status:
 - `8E` is complete for the current Recommendations options surface only
 - `9C1` is complete for Analysis, Orders durable paper-options rows, and
   Provider Health copy using existing payload fields only
-- remaining provider/source/as-of parity across any future or still-uncovered
-  options surfaces remains deferred to the rest of `9C`
+- `9C` is complete for the current provider/source/as-of parity scope
+- future provider-depth, new options surfaces, or live-probe work should reopen
+  parity checks in their own phase
 - advanced Expected Move visualization remains deferred
 - `8F` is now complete for the current scoped paper-first options capability
 - full live-routing, settlement, assignment/exercise, and broader Orders

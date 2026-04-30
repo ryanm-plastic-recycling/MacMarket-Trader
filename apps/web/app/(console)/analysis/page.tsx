@@ -437,6 +437,7 @@ export default function Page() {
         {optionsChainPreview?.reason ? (
           <div style={{ display: "grid", gap: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
             <div>{optionsChainUnavailableMessage}</div>
+            <div>Provider plan or payload may not include this data. SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes.</div>
             <div>Source unavailable. As-of unavailable.</div>
           </div>
         ) : optionsChainPreview === null ? (
@@ -524,7 +525,7 @@ export default function Page() {
             ) : null}
             {optionsChainPreview.data_as_of ? (
               <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
-                Reference data as of {optionsChainPreview.data_as_of}. Research preview — no execution support.
+                Reference data as of {formatResearchTimestamp(optionsChainPreview.data_as_of)}. Research preview only; no execution support.
               </div>
             ) : null}
           </>

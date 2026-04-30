@@ -316,8 +316,9 @@ Planning note:
 - `9B` is now implemented/current
 - `9C1` is now implemented for the updated Analysis, Orders durable
   paper-options, and Provider Health surfaces
-- remaining `9C` parity and `9D` visualization remain future options test
-  areas after the current `9C1` scope
+- `9C` is now closed for the current provider/source/as-of parity scope
+- `9D` visualization remains a future options test area after the current
+  `9C` closure
 
 ### 9B current tests — durable operator visibility
 
@@ -347,6 +348,9 @@ Planning note:
 - reference-only snapshots, missing `last` / `volume`, incomplete call/put
   sides, and stale-data caveats stay explicit across those surfaces
 - missing market fields are never interpreted as `0`
+- closure audit validation confirms the current scoped surfaces do not add
+  provider probes, live routing, expiration settlement, assignment/exercise, or
+  advanced Expected Move visualization
 
 ### 9D future tests — Expected Move visualization
 
