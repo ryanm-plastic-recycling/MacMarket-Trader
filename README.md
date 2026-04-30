@@ -617,6 +617,25 @@ MacMarket-Trader includes a production-minded recurring strategy report foundati
 - latest run status + run history/audit rows
 - explicit CLI runner for due schedules
 
+Current symbol and watchlist management is intentionally basic. A future
+roadmap item tracks searchable ticker/name discovery, user-scoped
+searchable/sortable watchlists, bulk add/import, duplicate handling,
+active/inactive symbols, optional tags/groups, provider/source support labels,
+and eventual recommendation-universe selection from watchlists instead of raw
+comma-separated lists. This is recommendation-universe management only:
+provider support labels, options eligibility, and ETF/index substitution
+guidance such as `SPX` / `NDX` versus `SPY` / `QQQ` must not imply live routing
+or brokerage execution support.
+
+Another future operator-console polish item tracks explainable metric help:
+small accessible info affordances, a shared glossary registry, concise
+definitions, formulas, examples, and caveats for terms such as `RR`, `CONF`,
+`Score`, Expected Range, `DTE`, `IV`, breakevens, gross/net P&L, commissions,
+Provider readiness, Paper lifecycle, and Replay payoff preview. This glossary
+work must not redefine confidence or score as probability of profit, change
+recommendation generation, imply execution approval, or alter payoff,
+lifecycle, provider, or commission behavior.
+
 The scheduler is **not** embedded as an always-on loop in web request flow. Use:
 
 ```bash

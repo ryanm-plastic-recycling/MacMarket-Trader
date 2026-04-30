@@ -77,6 +77,11 @@ Current implementation note:
   Orders polish and replay/payoff visualization polish remain safe only while
   they stay read-only, paper-only, and avoid lifecycle/math/provider behavior
   changes.
+- Future operator glossary and explainable metric tooltips are now tracked as
+  workflow-comprehension polish. They should clarify existing metrics and
+  caveats without changing recommendation scoring, probability modeling,
+  provider behavior, payoff math, lifecycle math, commission math, or
+  execution boundaries.
 
 ## UX goals
 
@@ -85,6 +90,8 @@ Current implementation note:
 - make data-quality gaps obvious
 - preserve paper-only and non-execution labeling
 - avoid hiding risk behind dense terminology
+- make abbreviations and metrics explainable without cluttering dense
+  operator tables and cards
 
 ## Required operator surfaces
 
@@ -120,6 +127,61 @@ Each surface should later show:
 - max loss
 - breakeven low and/or high
 - defined-risk status
+
+### Future explainable metric help
+
+Options and cross-workflow risk surfaces should later use a shared glossary
+registry plus a reusable accessible help affordance for important labels,
+table headers, cards, and form fields.
+
+Initial options-relevant terms:
+
+- `RR` / risk-reward ratio
+- `CONF` / confidence
+- `Score`
+- Expected Range / Expected Move
+- `DTE`
+- `IV`
+- Open Interest
+- Breakeven
+- Max Profit
+- Max Loss
+- Gross P&L
+- Net P&L
+- equity commission per trade
+- options commission per contract
+- Provider readiness
+- Paper lifecycle
+- Replay payoff preview
+
+Tooltip/popover guidance:
+
+- keep the first line plain-English and concise
+- include formulas where applicable, especially commissions and P&L
+- include short examples only when they materially reduce confusion
+- point longer explanations to the welcome/operator docs
+- support hover, click, tap, keyboard focus, and screen-reader labeling
+- avoid repeating large explanations in every table cell
+
+Required caveats:
+
+- `CONF` and `Score` are not probability of profit unless a future real
+  probability model is explicitly designed and tested
+- Expected Range is research context and does not change payoff math
+- Provider readiness does not imply live routing or execution
+- Paper lifecycle does not mean broker orders were sent
+- equity commission per trade and options commission per contract are separate
+  settings, and options commission is not multiplied by 100
+
+Suggested implementation sequence:
+
+1. glossary content/design checkpoint
+2. central glossary registry
+3. reusable accessible metric-help component
+4. low-risk Settings and Provider Health labels
+5. Analysis and Recommendations score/risk labels
+6. Replay and Orders P&L/commission labels
+7. optional glossary/reference page
 
 ### Expected range context
 

@@ -51,7 +51,11 @@ and `10B1` is complete for frontend-only Orders display/readability polish on
 durable paper-options lifecycle rows; remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
-runtime behavior.
+runtime behavior. Future symbol discovery and watchlist management is now
+tracked as a recommendation-universe workflow item, not trade execution or
+broker routing. Future operator glossary and explainable metric tooltips are
+now tracked as workflow comprehension polish, not changes to scoring,
+probability modeling, provider behavior, or execution semantics.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md test context is now aligned to the
 current vitest 160 count,
@@ -518,6 +522,10 @@ Safe near-term:
   already persisted fields only
 - operator docs/training improvements and paper-only safety copy audits
 - provider-health copy/readiness-only clarifications that do not add probes
+- docs/design checkpoint for symbol discovery and watchlist management as
+  recommendation-universe workflow polish, before any schema or runtime changes
+- docs/design checkpoint for operator glossary and explainable metric tooltips
+  before any shared component or registry work
 
 Medium-risk:
 
@@ -532,6 +540,12 @@ Medium-risk:
 - persisted options recommendations design, before implementation, because it
   must avoid `RecommendationService.generate()` drift and equity behavior
   changes
+- symbol discovery and user-scoped watchlist implementation if it requires new
+  symbol metadata tables, provider search calls, schedule/recommendation
+  universe wiring, or import flows
+- shared glossary registry and tooltip/popover implementation across Analysis,
+  Recommendations, Replay, Orders, Settings, and Provider Health because it
+  touches common UI primitives and app-wide wording consistency
 
 High-risk:
 
@@ -552,6 +566,11 @@ Explicitly later / not now:
 - assignment/exercise automation
 - probability-of-profit as an execution or recommendation signal
 - broad options order staging or brokerage order tickets
+- treating discovered symbols, provider support labels, or options eligibility
+  as execution approval
+- describing `CONF`, `Score`, Expected Range, or replay/payoff outputs as
+  probability of profit or execution approval without a separately designed
+  and tested probability model
 
 #### 10A - Options polish and operator workflow cleanup
 
@@ -685,6 +704,118 @@ First implementation slice:
 - Rollback/risk notes:
   planning-only; no runtime rollback
 
+#### Future workflow polish - Symbol discovery and watchlist management
+
+- Type:
+  docs/design first; later frontend/user-workflow work only after explicit
+  approval
+- Purpose:
+  replace comma-only symbol entry and ad hoc operator memory with a user-scoped
+  recommendation-universe workflow. This is symbol discovery and research
+  universe management only, not trade execution, routing, or broker support.
+- Symbol discovery target:
+  operators should eventually be able to search by ticker and company/security
+  name; review ticker, name, asset type, exchange, provider/source support
+  where available; distinguish equities, ETFs, indexes, options-eligible
+  underlyings, and future crypto candidates where practical; and see ETF/index
+  substitution guidance such as `SPX` / `NDX` versus `SPY` / `QQQ` without
+  implying execution support.
+- Watchlist target:
+  replace raw comma-separated lists with searchable/sortable user-scoped
+  watchlists that support add/delete of individual symbols, bulk add/import,
+  duplicate handling, active/inactive status, optional tags/groups such as
+  `Core`, `ETFs`, `Tech`, `Options Candidates`, and `Watch Only`, plus notes or
+  source fields if useful.
+- Recommendation-universe target:
+  recommendation and scheduled-report workflows should eventually select from
+  watchlists or groups rather than raw comma lists, while still allowing manual
+  symbol entry when metadata is missing or provider lookup is unavailable.
+- Guardrails:
+  provider support labels must not imply live routing; missing metadata should
+  not block manual symbol entry; options eligibility/provider coverage is
+  research context, not execution approval; future crypto labels remain
+  planning context until crypto is explicitly implemented; secrets and API keys
+  stay out of docs and UI.
+- Suggested implementation order:
+  `design checkpoint` -> `read-only symbol search/source-label UX using
+  existing provider capabilities only if already available` ->
+  `user-scoped watchlist table UX` -> `bulk import/duplicate handling` ->
+  `schedule/recommendation universe selection from groups` ->
+  `provider-depth enrichment only if separately approved`.
+- Explicitly not complete:
+  schema changes, provider probes, provider search/fetch behavior, live
+  routing, brokerage execution, recommendation generation changes, options
+  execution approval, crypto implementation, or automatic strategy scoring
+  changes.
+- Must be tested later:
+  search and fallback states, safe missing metadata rendering, duplicate
+  handling, active/inactive filters, group/tag selection, manual-entry fallback,
+  no provider/live-routing implication, and no change to
+  `RecommendationService.generate()` behavior.
+- Rollback/risk notes:
+  design-only now; later implementation should be split so watchlist UI can be
+  disabled without affecting existing scheduled reports or recommendation
+  generation.
+
+#### Future workflow polish - Operator glossary and explainable metric tooltips
+
+- Type:
+  docs/design first; later frontend/shared-component work only after explicit
+  approval
+- Purpose:
+  make MacMarket's operator terms, abbreviations, formulas, and caveats
+  understandable in context without changing recommendation generation,
+  scoring, provider behavior, lifecycle math, commission math, or execution
+  boundaries.
+- Target surfaces:
+  Analysis, Recommendations, Replay, Orders, Settings, Provider Health, and
+  future symbol/watchlist workflows should eventually use the same definitions
+  for labels, table headers, cards, and form fields.
+- Tooltip/popover target:
+  small info icons beside important labels should open concise
+  hover/click/tap popovers with plain-English definitions, formulas where
+  applicable, short examples when useful, and caveats such as `not execution
+  approval`, `not probability of profit`, or `not live broker data`.
+- Shared glossary target:
+  implement a central glossary registry when this becomes code, so terms stay
+  consistent across the app and can optionally power a future glossary or
+  reference page.
+- Initial term set:
+  `RR` / risk-reward ratio, `CONF` / confidence, `Score`, Expected Range /
+  Expected Move, `DTE`, `IV`, Open Interest, Breakeven, Max Profit, Max Loss,
+  Gross P&L, Net P&L, equity commission per trade, options commission per
+  contract, Provider readiness, Paper lifecycle, and Replay payoff preview.
+- Design guidance:
+  keep tooltips concise; send longer explanations to welcome/operator docs;
+  avoid huge explanations in every table cell; support desktop hover plus
+  keyboard, click, and touch behavior; keep visual weight low so the operator
+  console stays dense and readable.
+- Guardrails:
+  `CONF` and `Score` must not be described as probability of profit unless a
+  real probability model exists; Expected Range remains research context and
+  does not change payoff math; Provider readiness does not imply live routing
+  or execution; Paper lifecycle does not imply broker orders; commission copy
+  must distinguish equity per-trade commissions from options per-contract
+  commissions; secrets, API keys, and brokerage credentials stay out of docs
+  and UI.
+- Suggested implementation order:
+  `glossary content/design checkpoint` -> `central glossary registry` ->
+  `accessible InfoTooltip/MetricHelp component` -> `Settings and Provider
+  Health low-risk labels` -> `Analysis and Recommendations score/risk labels`
+  -> `Replay and Orders P&L/commission labels` -> `optional glossary page`.
+- Explicitly not complete:
+  probability modeling, recommendation scoring changes, provider probes, live
+  routing, broker execution, commission math changes, payoff math changes,
+  lifecycle behavior changes, schema changes, or broad UI redesign.
+- Must be tested later:
+  consistent definitions from the registry, keyboard/touch accessibility,
+  concise rendering in dense tables/cards, no probability-of-profit wording for
+  `CONF` or `Score`, Expected Range research-only copy, provider-readiness
+  non-execution copy, and commission distinction between equity and options.
+- Rollback/risk notes:
+  design-only now; later UI work should be removable by hiding the help icons
+  without changing underlying workflow data or behavior.
+
 #### 10G - Phase 10 closure
 
 - Type:
@@ -739,6 +870,20 @@ First implementation slice:
   crypto implementation, and live execution remain deferred. Phase 10 now
   organizes these items into planning/polish/design slices before any runtime
   expansion.
+- Symbol discovery and watchlist management — current symbol entry and
+  scheduled-report watchlists remain too manual. A future workflow-polish item
+  now covers searchable ticker/name discovery, user-scoped watchlists,
+  sortable/filterable symbol tables, bulk import, duplicate handling,
+  active/inactive symbols, optional groups/tags, provider/source support
+  labels, ETF/index substitution guidance, and eventual recommendation-universe
+  selection from watchlists without implying execution support.
+- Operator glossary and explainable metric tooltips — many current surfaces
+  expose abbreviations and metrics such as `RR`, `CONF`, `Score`, `DTE`,
+  Expected Range, `IV`, open interest, breakevens, gross/net P&L, commissions,
+  provider readiness, paper lifecycle, and replay payoff preview. A future
+  workflow-polish item now covers a shared glossary registry plus accessible
+  in-context help, while keeping confidence/score separate from probability of
+  profit and preserving paper-only/non-execution guardrails.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -1017,6 +1162,26 @@ diffs. Notable recent inflection points:
   schema, provider, lifecycle, commission, equity, replay, recommendation,
   routing, settlement, assignment/exercise, naked-short, probability, or crypto
   behavior changed.
+- 2026-04-30 - Future symbol discovery and watchlist management roadmap item
+  added: a docs-only planning note now tracks searchable ticker/name discovery,
+  user-scoped searchable/sortable watchlists, bulk import, duplicate handling,
+  active/inactive symbols, optional tags/groups, provider/source support
+  labels, SPX/NDX versus SPY/QQQ substitution guidance, and eventual
+  recommendation-universe selection from watchlists. This remains
+  recommendation-universe management only, with no application code, schema,
+  provider probes, live routing, brokerage execution, or recommendation
+  generation behavior changed.
+- 2026-04-30 - Future operator glossary and explainable metric tooltips
+  roadmap item added: a docs-only planning note now tracks concise
+  hover/click/tap metric help, formulas and examples where useful, a shared
+  glossary registry, optional future glossary/reference page, accessibility
+  expectations, and initial terms including `RR`, `CONF`, `Score`, Expected
+  Range, `DTE`, `IV`, open interest, breakevens, max profit/loss, gross/net
+  P&L, equity and options commissions, provider readiness, paper lifecycle,
+  and replay payoff preview. This does not change application code, schema,
+  provider probes, live routing, brokerage execution, recommendation
+  generation, probability modeling, payoff math, lifecycle math, or commission
+  math.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

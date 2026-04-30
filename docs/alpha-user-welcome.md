@@ -206,7 +206,52 @@ Interpretation rule:
 - provider readiness does **not** mean live trading is enabled
 - provider degradation should be treated as a workflow trust issue first
 
-## 7. Chart and indicator training
+## 7. Symbol discovery and watchlists
+
+Current symbol and watchlist management is still intentionally simple. You may
+need to know the symbols you want to inspect and, in scheduled-report contexts,
+manage symbol lists manually.
+
+Future roadmap work is planned for better recommendation-universe management:
+
+- search by ticker and company/security name
+- user-scoped watchlists with searchable/sortable tables
+- add/delete individual symbols and bulk add/import
+- duplicate handling and active/inactive symbols
+- optional groups such as `Core`, `ETFs`, `Tech`, `Options Candidates`, and
+  `Watch Only`
+- provider/source support labels when available
+- ETF/index substitution guidance such as `SPX` / `NDX` versus `SPY` / `QQQ`
+
+This future work is not trade execution. Provider support labels and options
+eligibility are research context only, and missing metadata should not block
+manual symbol entry.
+
+## 8. Metric glossary and tooltips
+
+The console currently exposes operator abbreviations and risk terms such as
+`RR`, `CONF`, `Score`, `DTE`, Expected Range, `IV`, open interest, breakevens,
+gross/net P&L, commissions, Provider readiness, Paper lifecycle, and Replay
+payoff preview.
+
+Future roadmap work is planned for small in-context help icons and accessible
+hover/click/tap explanations. The goal is to explain what a value means, how
+it is calculated when a formula exists, and what it should not be interpreted
+as.
+
+Important interpretation rules:
+
+- `CONF` and `Score` are not probability of profit.
+- Expected Range is research context and does not change payoff math.
+- Provider readiness does not mean live routing or execution.
+- Paper lifecycle means persisted paper records, not broker orders.
+- Equity commission per trade and options commission per contract are
+  different settings.
+
+Longer explanations should continue to live in operator docs so dense tables
+and cards stay readable.
+
+## 9. Chart and indicator training
 
 Analysis and Recommendations now use compact workflow chart presets.
 
@@ -237,7 +282,7 @@ Operator guidance:
 Indicators are research context only. They are not automatic trade
 instructions.
 
-## 8. Expected Move / Expected Range
+## 10. Expected Move / Expected Range
 
 Expected Move / Expected Range is a first-class options research concept in
 MacMarket-Trader.
@@ -273,7 +318,7 @@ Operator rule:
 - missing or blocked Expected Range visualization should still read as
   `Unavailable` or muted context, not as a hidden zero
 
-## 9. Safety guardrails
+## 11. Safety guardrails
 
 Treat these as hard boundaries:
 
@@ -292,7 +337,7 @@ Also remember:
 - options do not reuse equity replay persistence or equity order semantics
 - if a screen says paper-only, believe it
 
-## 10. Manual smoke checklist
+## 12. Manual smoke checklist
 
 Use this checklist when validating the current operator workflow:
 
@@ -313,7 +358,7 @@ Use this checklist when validating the current operator workflow:
    - net P&L
 9. Confirm no live-trading or brokerage-routing language appears.
 
-## 11. Troubleshooting
+## 13. Troubleshooting
 
 ### "Data not available on current plan"
 
@@ -378,7 +423,7 @@ If net P&L looks wildly wrong:
 2. confirm it is something like `0.65`, not `65`
 3. remember options commission is not multiplied by `100`
 
-## 12. Current phase status
+## 14. Current phase status
 
 Current project status, in operator terms:
 
@@ -414,6 +459,12 @@ Current project status, in operator terms:
   visualization for options research setups using existing setup fields only
 - Phase 10B1 complete: Orders durable paper-options rows are easier to scan as
   display-only paper lifecycle records using existing persisted fields only
+- Future workflow polish added: symbol discovery and user-scoped watchlist
+  management is planned for recommendation-universe management, not execution
+- Future workflow polish added: operator glossary and explainable metric
+  tooltips are planned for in-context definitions, formulas, examples, and
+  caveats without changing scoring, probability, provider, execution, payoff,
+  lifecycle, or commission behavior
 
 Current options boundary:
 
