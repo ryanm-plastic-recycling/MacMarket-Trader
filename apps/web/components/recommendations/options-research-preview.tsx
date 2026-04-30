@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 
 import { Card, EmptyState, ErrorState, StatusBadge } from "@/components/operator-ui";
 import { WorkflowChart } from "@/components/charts/workflow-chart";
+import { ExpectedRangeVisualization } from "@/components/options/expected-range-visualization";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
 import type { HacoChartPayload } from "@/lib/haco-api";
 import {
@@ -502,6 +503,16 @@ export function OptionsStructureRiskSummary({
           detail={paperLifecycleDetail}
         />
       </div>
+
+      <ExpectedRangeVisualization
+        expectedRange={setup.expected_range}
+        breakevens={breakevens}
+        expiration={structure?.expiration}
+        dte={structure?.dte}
+        maxProfit={maxProfit}
+        maxLoss={maxLoss}
+        workflowSource={setup.workflow_source}
+      />
 
       <div
         style={{

@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 ## Positioning
 MacMarket-Trader is positioned as an invite-only, operator-grade trading
@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 146, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 159, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -39,7 +39,10 @@ hardening. Phase 9B is complete for durable paper-options Orders/Positions
 visibility. Phase 9C is complete for the current provider/source/as-of parity
 scope across Analysis, Recommendations, Orders durable paper-options rows,
 Provider Health, and operator guidance using existing payload fields only.
-Phase 9D remains planned.
+Phase 9D1 design checkpoint is complete for advanced Expected Move /
+Expected Range visualization. Phase 9D2 is complete for the reusable
+Expected Range visualization component and first Recommendations integration;
+remaining 9D polish remains planned.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md now carries the vitest 146 count,
 API-level iron condor open/close lifecycle coverage was added, expiration
@@ -383,7 +386,10 @@ recommendation, or brokerage behavior.
 ### Phase 9 — Options operator parity and data-quality hardening
 - Status:
   `9A` complete for planning; `9B` complete for the current durable paper
-  options Orders/Positions visibility scope; `9C` and `9D` remain planned
+  options Orders/Positions visibility scope; `9C` complete for the current
+  provider/source/as-of parity scope; `9D1` design checkpoint complete; `9D2`
+  reusable Expected Range visualization component plus first Recommendations
+  integration complete; `9D3+` polish remains planned
 - Theme:
   durable operator visibility for current paper-first options plus consistent
   provider/data-quality framing, without adding live execution semantics
@@ -430,10 +436,35 @@ recommendation, or brokerage behavior.
   only after durable operator visibility and provider/data-quality parity are
   stable, and still does not modify payoff math unless a later phase
   explicitly changes that contract
+- 9D1 design checkpoint:
+  complete; recommends a compact reusable horizontal range bar before any
+  chart-heavy work, using existing `expected_range`, structure breakeven,
+  max-profit/max-loss, expiration/DTE, and already-loaded replay payoff fields
+  only. The visualization must show expected lower/upper bounds, optional
+  current/reference price, breakeven markers, and muted unavailable/blocked
+  states while saying Expected Range is research context only, does not change
+  payoff math, and does not approve execution.
+- 9D2 implemented now:
+  a reusable frontend `ExpectedRangeVisualization` component renders a compact
+  horizontal range bar from existing payload fields only and is integrated into
+  the Recommendations `Structure risk` surface. It shows computed lower/upper
+  bounds, reference-price context when derivable from the existing range,
+  breakeven markers, expiration/DTE, max profit/loss labels, method/source/as-of
+  and provenance text, blocked/unavailable states, and explicit research-only
+  safety copy. Missing or invalid values render as `Unavailable` / `-` rather
+  than `null`, `undefined`, `NaN`, or `Infinity`.
+- 9D not included:
+  probability of profit, broker mark-to-market simulation, expiration
+  settlement, assignment/exercise modeling, IV surface modeling, live
+  execution decisions, provider probes, strategy scoring changes, or changes
+  to options lifecycle, commission, equity, or recommendation-generation math
 - Phase 9 implementation order:
   `9A` planning -> `9B` durable options Orders/Positions visibility
   complete -> `9C` provider/source/as-of parity complete for current scope ->
-  `9D` Expected Move visualization
+  `9D1` design checkpoint complete -> `9D2` reusable Expected Range
+  visualization component plus first Recommendations integration complete ->
+  `9D3` additional Recommendations/replay risk-surface polish if needed ->
+  optional `9D4` Analysis integration -> `9D5` closure tests/docs
 - Phase 9 not included:
   expiration settlement, assignment/exercise automation, persisted options
   recommendations, options replay persistence into equity replay flows, live
@@ -495,9 +526,9 @@ recommendation, or brokerage behavior.
 - Alpha users: 3 (admin + 2 approved)
 - Alpaca paper API keys: configured, `BROKER_PROVIDER=mock` (Phase 10 activates)
 
-## Test Counts (last verified 2026-04-29)
+## Test Counts (last verified 2026-04-30)
 - pytest: 210
-- vitest: 146
+- vitest: 159
 - Playwright: 31
 
 ## Core product pillars
@@ -699,7 +730,22 @@ diffs. Notable recent inflection points:
   as-of/provenance, provider-plan limitations, and durable metadata limitations
   consistently where existing payload fields allow. No backend, schema,
   lifecycle, commission, equity, provider-fetch, or execution behavior changed.
-  Phase 9D Expected Move visualization remains planned.
+  Full Phase 9D implementation remained planned.
+- 2026-04-29 - Phase 9D1 design checkpoint complete for advanced Expected
+  Move / Expected Range visualization: docs now recommend a compact reusable
+  horizontal range bar using existing expected-range, breakeven, expiration/DTE,
+  max-profit/max-loss, and already-loaded replay payoff fields only. The
+  implementation remains deferred, and probability of profit, broker
+  mark-to-market, settlement, assignment/exercise, provider probes, scoring
+  changes, live routing, and math changes stay out of scope.
+- 2026-04-30 - Phase 9D2 complete for the first reusable Expected Range
+  visualization slice: a frontend-only component now renders a compact
+  horizontal range bar inside Recommendations `Structure risk` using existing
+  expected-range, breakeven, expiration/DTE, risk, source/as-of, and provenance
+  fields only. Focused frontend tests cover computed, blocked, missing, safe
+  rendering, and safety-copy states. No backend, schema, provider-fetch,
+  lifecycle, commission, equity, recommendation-generation, payoff-math, or
+  execution behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

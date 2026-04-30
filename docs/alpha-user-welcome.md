@@ -1,6 +1,6 @@
 # MacMarket-Trader Operator Welcome Guide
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 This is the practical welcome/training guide for MacMarket-Trader operators.
 It is written for:
@@ -268,7 +268,10 @@ Operator rule:
   as a hidden zero
 - the `Structure risk` card may repeat Expected Range status and reason, but
   it still remains research context only
-- advanced expected-move visualization is still future work
+- the Recommendations `Structure risk` card now includes a compact Expected
+  Range visualization when lower/upper bounds are available
+- missing or blocked Expected Range visualization should still read as
+  `Unavailable` or muted context, not as a hidden zero
 
 ## 9. Safety guardrails
 
@@ -396,6 +399,10 @@ Current project status, in operator terms:
 - Phase 9C complete: current provider/source/as-of parity scope is closed
   across Analysis, Recommendations, Orders durable paper-options rows,
   Provider Health, and operator guidance
+- Phase 9D1 complete: advanced Expected Move / Expected Range visualization
+  design checkpoint
+- Phase 9D2 complete: reusable Expected Range visualization component with
+  first Recommendations integration
 
 Current options boundary:
 

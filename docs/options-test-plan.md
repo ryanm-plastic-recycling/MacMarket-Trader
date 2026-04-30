@@ -1,6 +1,6 @@
 # Phase 8 Options Test Plan
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 ## Purpose
 
@@ -317,8 +317,10 @@ Planning note:
 - `9C1` is now implemented for the updated Analysis, Orders durable
   paper-options, and Provider Health surfaces
 - `9C` is now closed for the current provider/source/as-of parity scope
-- `9D` visualization remains a future options test area after the current
-  `9C` closure
+- `9D1` design is complete
+- `9D2` is now implemented/current for the reusable frontend Expected Range
+  visualization component plus first Recommendations integration
+- remaining `9D` polish remains planned
 
 ### 9B current tests — durable operator visibility
 
@@ -349,8 +351,7 @@ Planning note:
   sides, and stale-data caveats stay explicit across those surfaces
 - missing market fields are never interpreted as `0`
 - closure audit validation confirms the current scoped surfaces do not add
-  provider probes, live routing, expiration settlement, assignment/exercise, or
-  advanced Expected Move visualization
+  provider probes, live routing, expiration settlement, or assignment/exercise
 
 ### 9D future tests — Expected Move visualization
 
@@ -358,6 +359,20 @@ Planning note:
 - visualization uses the current status/method/bounds/reason contract without
   implying execution approval
 - visualization does not alter replay or paper lifecycle math semantics
+- `9D2` current coverage proves computed ranges render lower/upper labels and
+  breakeven markers
+- `9D2` current coverage proves blocked expected ranges render the blocked
+  reason
+- `9D2` current coverage proves missing expected ranges render an unavailable
+  state
+- `9D2` current coverage proves invalid numeric values do not render as
+  `null`, `undefined`, `NaN`, or `Infinity`
+- `9D2` current coverage proves safety copy says Expected Range does not
+  change payoff math or approve execution
+- `9D2` current coverage checks against probability-of-profit, live-trading,
+  routing, and trade-signal claims
+- remaining future coverage should follow any `9D3` Recommendations/replay
+  polish or optional `9D4` Analysis integration
 
 ## Suggested future test file direction
 
