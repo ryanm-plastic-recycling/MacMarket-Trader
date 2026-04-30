@@ -44,7 +44,7 @@ from macmarket_trader.email_templates import render_approval_html, render_invite
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OptionPaperRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository, commission_paid_for_trade, display_id_or_fallback, gross_pnl_or_fallback, net_pnl_or_fallback
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OptionPaperRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, SymbolUniverseRepository, UserRepository, WatchlistRepository, commission_paid_for_trade, display_id_or_fallback, gross_pnl_or_fallback, net_pnl_or_fallback
 from macmarket_trader.domain.models import AuditLogModel
 
 
@@ -203,6 +203,7 @@ order_repo = OrderRepository(SessionLocal)
 option_paper_repo = OptionPaperRepository(SessionLocal)
 paper_portfolio_repo = PaperPortfolioRepository(SessionLocal)
 watchlist_repo = WatchlistRepository(SessionLocal)
+symbol_universe_repo = SymbolUniverseRepository(SessionLocal)
 strategy_report_repo = StrategyReportRepository(SessionLocal)
 email_provider = build_email_provider()
 market_data_service = build_market_data_service()
@@ -1795,6 +1796,160 @@ def analyze_symbol(symbol: str, market_mode: MarketMode = MarketMode.EQUITIES, _
         ],
         "status": "live" if market_mode == MarketMode.EQUITIES else "planned_research_preview",
         "execution_enabled": market_mode == MarketMode.EQUITIES,
+    }
+
+
+def _symbol_preview_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list | tuple | set):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def _normalized_symbols_and_duplicates(values: list[str]) -> tuple[list[str], int]:
+    output: list[str] = []
+    seen: set[str] = set()
+    duplicates = 0
+    for raw in values:
+        for token in str(raw).replace(",", " ").split():
+            normalized = symbol_universe_repo.normalize_symbol(token)
+            if normalized is None:
+                continue
+            if normalized in seen:
+                duplicates += 1
+                continue
+            seen.add(normalized)
+            output.append(normalized)
+    return output, duplicates
+
+
+def _symbol_preview_watchlist_ids(req: dict[str, object]) -> list[int]:
+    values: list[object] = []
+    if req.get("watchlist_id") is not None:
+        values.append(req["watchlist_id"])
+    raw_ids = req.get("watchlist_ids")
+    if isinstance(raw_ids, list | tuple | set):
+        values.extend(raw_ids)
+    elif raw_ids is not None:
+        values.append(raw_ids)
+
+    output: list[int] = []
+    seen: set[int] = set()
+    for value in values:
+        try:
+            watchlist_id = int(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="watchlist_id must be numeric")
+        if watchlist_id <= 0:
+            raise HTTPException(status_code=400, detail="watchlist_id must be positive")
+        if watchlist_id not in seen:
+            seen.add(watchlist_id)
+            output.append(watchlist_id)
+    return output
+
+
+def _symbol_preview_source_label(source_type: str, watchlist_names: list[str]) -> str:
+    if source_type == "manual":
+        return "Manual symbols"
+    if source_type == "watchlist":
+        return f"Watchlist: {watchlist_names[0]}" if watchlist_names else "Watchlist"
+    if source_type == "watchlist_plus_manual":
+        return f"Watchlist plus manual: {', '.join(watchlist_names)}" if watchlist_names else "Watchlist plus manual"
+    if source_type == "all_active":
+        return "All active user symbols"
+    return "Mixed symbol universe"
+
+
+@user_router.post("/symbol-universe/preview")
+def preview_symbol_universe(req: dict[str, object], user=Depends(require_approved_user)):
+    source_type = str(req.get("source_type") or "manual").strip().lower()
+    allowed_source_types = {"manual", "watchlist", "watchlist_plus_manual", "all_active", "mixed"}
+    if source_type not in allowed_source_types:
+        raise HTTPException(status_code=400, detail="unsupported_symbol_universe_source_type")
+    if req.get("tags") or req.get("groups") or source_type == "tags":
+        raise HTTPException(status_code=400, detail="symbol_tags_not_yet_supported")
+
+    manual_values = _symbol_preview_values(req.get("manual_symbols") or req.get("symbols"))
+    pinned_values = _symbol_preview_values(req.get("pinned_symbols"))
+    excluded_values = _symbol_preview_values(req.get("excluded_symbols") or req.get("exclusions"))
+    _, manual_duplicate_count = _normalized_symbols_and_duplicates(manual_values)
+    normalized_pinned, pinned_duplicate_count = _normalized_symbols_and_duplicates(pinned_values)
+    _, excluded_duplicate_count = _normalized_symbols_and_duplicates(excluded_values)
+
+    watchlist_ids = _symbol_preview_watchlist_ids(req)
+    if source_type in {"watchlist", "watchlist_plus_manual"} and not watchlist_ids:
+        raise HTTPException(status_code=400, detail="watchlist_id_required")
+
+    watchlist_names: list[str] = []
+    for watchlist_id in watchlist_ids:
+        watchlist = watchlist_repo.get_for_user(watchlist_id=watchlist_id, app_user_id=user.id)
+        if watchlist is None:
+            raise HTTPException(status_code=404, detail="watchlist not found")
+        watchlist_names.append(watchlist.name)
+
+    active_only = bool(req.get("active_only", True))
+    include_all_active = source_type == "all_active" or bool(req.get("include_all_active", False))
+    if source_type == "manual":
+        watchlist_ids = []
+        include_all_active = False
+    elif source_type == "watchlist":
+        manual_values = []
+        include_all_active = False
+    elif source_type == "watchlist_plus_manual":
+        include_all_active = False
+
+    resolution = symbol_universe_repo.resolve_symbols(
+        app_user_id=user.id,
+        manual_symbols=manual_values,
+        watchlist_ids=watchlist_ids,
+        include_all_active=include_all_active,
+        include_inactive=not active_only,
+        exclusions=excluded_values,
+        pinned_symbols=pinned_values,
+    )
+    provenance = dict(resolution.provenance)
+    duplicates_ignored = (
+        int(provenance.get("duplicate_count") or 0)
+        + manual_duplicate_count
+        + pinned_duplicate_count
+        + excluded_duplicate_count
+    )
+    exclusions_applied = int(provenance.get("excluded_count") or 0)
+    pinned_symbols_applied = [symbol for symbol in normalized_pinned if symbol in resolution.symbols]
+    warnings = ["provider_metadata_not_used"]
+    if not resolution.symbols:
+        warnings.insert(0, "resolved_universe_empty")
+
+    provenance.update(
+        {
+            "requested_source_type": source_type,
+            "watchlist_names": watchlist_names,
+            "active_only": active_only,
+            "preview_only": True,
+            "provider_metadata_available": False,
+        }
+    )
+    return {
+        "resolved_symbols": resolution.symbols,
+        "symbol_count": len(resolution.symbols),
+        "duplicates_ignored": duplicates_ignored,
+        "exclusions_applied": exclusions_applied,
+        "pinned_symbols_applied": pinned_symbols_applied,
+        "source_type": source_type,
+        "resolved_source": resolution.source,
+        "source_label": _symbol_preview_source_label(source_type, watchlist_names),
+        "warnings": warnings,
+        "provider_metadata_available": False,
+        "provider_metadata_note": "Provider metadata is not used by this read-only preview.",
+        "preview_only": True,
+        "execution_enabled": False,
+        "does_not_submit_recommendations": True,
+        "does_not_mutate_schedules": True,
+        "does_not_mutate_watchlists": True,
+        "provenance": provenance,
     }
 
 

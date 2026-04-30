@@ -7,8 +7,9 @@ Last updated: 2026-04-30
 This document started as a design checkpoint for better user-scoped symbol
 discovery, watchlist management, and recommendation-universe selection. It now
 also tracks the completed additive schema, internal repository/resolver
-foundation, current watchlist UI polish, bulk symbol handling, and
-recommendation/schedule universe-selection design slices.
+foundation, current watchlist UI polish, bulk symbol handling,
+recommendation/schedule universe-selection design, and the read-only
+resolved-universe preview API slice.
 
 It does not implement symbol search, change recommendation generation, add
 provider probes, change current schedule execution, or imply live trading /
@@ -53,8 +54,9 @@ Current symbol entry is intentionally simple:
 - SymbolUniverseResolver:
   the internal resolver can already normalize, dedupe, combine manual,
   watchlist, all-active, pinned, and excluded symbols, and fall back to legacy
-  watchlist `symbols` snapshots. It is not wired into production
-  Recommendations or schedule flows yet.
+  watchlist `symbols` snapshots. The `10W8A` preview route can read this
+  resolver output for operator preview, but it is not wired into production
+  Recommendations submit behavior or schedule execution yet.
 
 Current scoping:
 
@@ -463,8 +465,8 @@ Future implementation should test:
 - `10W8` design checkpoint:
   complete with this section; docs-only.
 - `10W8A` resolved-universe preview helper/API:
-  backend read-only preview using existing resolver, no recommendation or
-  schedule execution side effects.
+  complete for the current backend read-only preview route using the existing
+  resolver, no recommendation or schedule execution side effects.
 - `10W8B` Recommendations universe selector UI:
   frontend selector and preview that submits the same resolved `symbols` array
   current queue behavior already accepts.
@@ -485,6 +487,44 @@ Risk notes:
   selector resolution.
 - Recommendation scoring and `RecommendationService.generate()` must not change
   as part of universe selection.
+
+## 10W8A Read-only Resolved-universe Preview API
+
+Status: complete for the current backend preview-only scope.
+
+Implemented now:
+
+- protected `POST /user/symbol-universe/preview`
+- user-scoped watchlist access through the existing local app user identity
+- source modes for `manual`, `watchlist`, `watchlist_plus_manual`,
+  `all_active`, and `mixed`
+- read-only resolver output with deterministic uppercase symbols, dedupe,
+  pinned-first handling, exclusions, active-only filtering, and legacy
+  `watchlists.symbols` fallback
+- response metadata for symbol count, ignored duplicates, applied exclusions,
+  applied pinned symbols, source label, warnings, and provenance
+- explicit flags:
+  `preview_only=true`, `execution_enabled=false`,
+  `does_not_submit_recommendations=true`,
+  `does_not_mutate_schedules=true`, and
+  `does_not_mutate_watchlists=true`
+- provider metadata remains unavailable/not used; the route does not call
+  providers
+- focused backend tests for manual normalization, watchlist fallback,
+  watchlist-plus-manual ordering, all-active filtering, wrong-user watchlist
+  blocking, empty-result warnings, unsupported source rejection, no provider
+  calls, and no recommendation/watchlist/schedule mutation
+
+Still unchanged by `10W8A`:
+
+- Recommendations still submit the current manually resolved `symbols` array
+- schedule create/update/run behavior still uses current payload snapshots
+- current watchlist JSON persistence remains unchanged
+- provider-backed symbol search and metadata enrichment remain deferred
+- normalized symbol-universe production UI remains deferred
+- tags/groups source selection remains deferred
+- live routing, brokerage execution, and recommendation/scoring behavior remain
+  unchanged
 
 ## Symbol Discovery Design
 
@@ -976,6 +1016,12 @@ Recommended slices:
   snapshots, optional dynamic watchlist mode later, resolver provenance, API
   implications, UX, tests, and implementation slices without changing runtime
   behavior.
+- `10W8A` resolved-universe preview helper/API:
+  complete for backend read-only preview; resolves manual, watchlist,
+  watchlist-plus-manual, all-active, and mixed inputs into deterministic symbol
+  arrays with provenance while avoiding provider calls, recommendation submit,
+  schedule mutation, watchlist mutation, schema changes, and production UI
+  wiring.
 - `10W9` provider-backed symbol discovery:
   add provider-backed search only after explicit provider-design approval.
 - `10W10` closure:
@@ -984,19 +1030,21 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W8`: resolved-universe preview helper/API (`10W8A`), if
+Next after `10W8A`: Recommendations universe selector UI (`10W8B`), if
 explicitly authorized.
 
 Why:
 
-- the selector design is now documented
-- a read-only preview API can validate resolver output and provenance before
-  any Recommendations or Schedules UI starts using it
+- the selector design and read-only preview API are now documented and
+  implemented
+- the next useful operator slice is a compact Recommendations selector that
+  uses preview output but still submits the same resolved `symbols` array the
+  current queue already accepts
 - provider-backed search, storage replacement, broad normalized table UI, and
   ranking/schedule behavior changes can remain deferred until explicitly scoped
 
 Do not start the next slice with provider-backed symbol search,
 storage replacement, normalized symbol-universe production UI, or ranking
-changes. The next implementation should be read-only preview plumbing that
-resolves into the current symbol arrays without changing recommendation
-generation or schedule execution.
+changes. The next implementation should be a small Recommendations selector
+that uses the preview route without changing recommendation generation or
+schedule execution.

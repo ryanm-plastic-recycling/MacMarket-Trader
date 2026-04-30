@@ -2126,6 +2126,15 @@ class WatchlistRepository:
             stmt = select(WatchlistModel).where(WatchlistModel.app_user_id == app_user_id).order_by(WatchlistModel.created_at.desc())
             return list(session.execute(stmt).scalars())
 
+    def get_for_user(self, *, watchlist_id: int, app_user_id: int) -> WatchlistModel | None:
+        with self.session_factory() as session:
+            return session.execute(
+                select(WatchlistModel).where(
+                    WatchlistModel.id == watchlist_id,
+                    WatchlistModel.app_user_id == app_user_id,
+                )
+            ).scalar_one_or_none()
+
     def upsert(self, *, app_user_id: int, name: str, symbols: list[str]) -> WatchlistModel:
         with self.session_factory() as session:
             row = session.execute(
