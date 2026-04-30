@@ -67,6 +67,9 @@ Current implementation note:
 - `9D` is now closed for the current Recommendations Expected Range
   visualization scope; optional Analysis integration and deeper provider/visual
   depth remain future work
+- Phase 9 is now closed for the current options operator parity,
+  provider/source/as-of, and Recommendations Expected Range visualization
+  scope
 
 ## UX goals
 
@@ -445,6 +448,9 @@ Current closure status:
 - `9D1` design checkpoint is complete for advanced Expected Move visualization
 - `9D2` reusable component plus first Recommendations integration is complete
 - `9D` is closed for the current Recommendations Expected Range visualization
+  scope
+- Phase 9 is closed for the current options operator parity,
+  provider/source/as-of, and Recommendations Expected Range visualization
   scope
 - optional Analysis integration and deeper replay/provider visualization remain
   deferred

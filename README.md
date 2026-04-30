@@ -513,7 +513,12 @@ The codebase should define typed contracts for:
 ## Current roadmap status and alpha milestone
 
 - Detailed status tracking lives in `docs/roadmap-status.md`.
-- Phases 0–4 are complete. Current active scope is **Phase 5 — Operator console polish**: polished, operator-grade surfaces across all six console pages so the system is credible as a paid tool.
+- Phases 0–9 are complete for the current private-alpha scope. The current
+  options capability remains paper-first: research preview, read-only payoff
+  preview, supported paper open/manual-close lifecycle, durable Orders
+  visibility, provider/source/as-of parity, and a Recommendations Expected
+  Range visualization. Phase 10 Alpaca paper integration remains future work
+  and is not active.
 
 ## Success criteria for v1
 

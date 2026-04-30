@@ -322,6 +322,9 @@ Planning note:
   visualization component plus first Recommendations integration
 - `9D` is now closed for the current Recommendations Expected Range
   visualization scope
+- Phase 9 is now closed for the current options operator parity,
+  provider/source/as-of, and Recommendations Expected Range visualization
+  scope
 - optional Analysis integration, richer replay placement, and provider-depth
   polish remain future work only if explicitly reopened
 

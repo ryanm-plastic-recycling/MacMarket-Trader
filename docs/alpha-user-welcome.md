@@ -405,6 +405,8 @@ Current project status, in operator terms:
   first Recommendations integration
 - Phase 9D complete: current Recommendations Expected Range visualization
   scope is closed
+- Phase 9 complete: current options operator parity, provider/source/as-of,
+  and Recommendations Expected Range visualization scope is closed
 
 Current options boundary:
 
@@ -414,6 +416,8 @@ Current options boundary:
 - Orders now provides durable paper-options position/trade visibility outside
   Recommendations
 - current scoped Phase 8 paper-first options capability is complete
+- current scoped Phase 9 operator parity and Expected Range visualization
+  capability is complete
 - expiration settlement is still deferred
 - Analysis Expected Range visualization integration is still optional/future
 - richer options dashboard depth is still deferred

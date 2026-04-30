@@ -32,8 +32,9 @@ Post-8E smoke-test polish clarified reference-only chain-preview data
 availability and Step 5 paper-close-result wording on Recommendations without
 moving beyond the scoped paper-first options capability.
 Phase 8F is complete, and Phase 8 is now closed for the current scoped
-paper-first options capability only. Broader provider/source parity across
-other options surfaces and advanced Expected Move visualization stay deferred.
+paper-first options capability only. Follow-on provider/source parity and the
+Recommendations Expected Range visualization are now covered by the closed
+Phase 9 current scope.
 Phase 9A planning is complete for options operator parity and data-quality
 hardening. Phase 9B is complete for durable paper-options Orders/Positions
 visibility. Phase 9C is complete for the current provider/source/as-of parity
@@ -42,9 +43,11 @@ Provider Health, and operator guidance using existing payload fields only.
 Phase 9D is complete for the current Recommendations Expected Range
 visualization scope. Analysis integration, future provider-depth, live
 routing, expiration settlement, assignment/exercise, and probability modeling
-remain deferred.
+remain deferred. Phase 9 is closed for the current options operator parity,
+source/as-of, and Expected Range visualization scope.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
-boundary and recorded that CLAUDE.md now carries the vitest 146 count,
+boundary and recorded that CLAUDE.md test context is now aligned to the
+current vitest 160 count,
 API-level iron condor open/close lifecycle coverage was added, expiration
 settlement rejection coverage was added, the `opening_commissions`
 reconstruction limitation was documented, and the dead `opening_commissions`
@@ -97,7 +100,7 @@ recommendation, or brokerage behavior.
 - Per-user `risk_dollars_per_trade` override + Settings page at `/settings`
 - Invite email with welcome-guide CTA + sign-in CTA (terse copy, two buttons)
 - Timezone-aware schedule display ("08:30 AM ET — Indianapolis · 9:30 AM your time")
-- 31 Playwright e2e gates, 99 vitest helper tests, 210 backend pytest gates
+- 31 Playwright e2e gates, 99 frontend helper tests at Phase 6 close, 210 backend pytest gates
 
 ## Phase 7 Closeout + Upcoming Phases
 
@@ -471,6 +474,11 @@ recommendation, or brokerage behavior.
   `9D` closure audit complete for current Recommendations scope. Optional
   Analysis integration, richer replay/visual polish, and provider-depth work
   move to future phases only if explicitly reopened.
+- Phase 9 closure:
+  complete for the current options operator parity, provider/source/as-of, and
+  Recommendations Expected Range visualization scope. No further explicit
+  Phase 9 subphase is open unless future provider-depth or expanded options
+  surfaces are intentionally reopened.
 - Phase 9 not included:
   expiration settlement, assignment/exercise automation, persisted options
   recommendations, options replay persistence into equity replay flows, live
@@ -517,9 +525,9 @@ recommendation, or brokerage behavior.
   history tables (beyond current contained-scroll + lineage-first selection)
 - Options/crypto live execution semantics — current options support is still
   paper-first only (research preview, read-only payoff preview, and
-  paper-only lifecycle plus durable Orders visibility). Broader provider and
-  data-quality parity remains tracked under Phase 9; crypto remains Phase 11;
-  live execution remains deferred.
+  paper-only lifecycle plus durable Orders visibility). Current provider and
+  data-quality parity is closed under Phase 9; deeper provider-depth work,
+  crypto under Phase 11, and live execution remain deferred.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -568,8 +576,9 @@ provenance. Decision logic remains deterministic.
 Equities are first-class today. Options now support a scoped paper-first
 research/replay-preview/manual-close lifecycle centered on
 `/recommendations`, plus durable paper-options visibility on `/orders` from
-Phase 9B. Broader provider/source/as-of parity remains Phase 9 work. Crypto
-remains future work under Phase 11. Cross-mode `expected_range` semantics
+Phase 9B. Current provider/source/as-of parity is closed under Phase 9;
+deeper provider-depth work remains future. Crypto remains future work under
+Phase 11. Cross-mode `expected_range` semantics
 remain spec-defined only until preview payloads, scoring, replay, and later
 mode-native operator surfaces carry method-tagged fields per mode.
 
@@ -761,6 +770,11 @@ diffs. Notable recent inflection points:
   clean TypeScript; no backend, schema, provider, lifecycle, commission,
   equity, payoff, recommendation-generation, routing, settlement, assignment,
   exercise, naked-short, or probability behavior changed.
+- 2026-04-30 - Phase 9 status/closure audit complete: current Phase 9 scope is
+  closed across durable options Orders visibility, provider/source/as-of parity
+  on the practical options surfaces, and the Recommendations Expected Range
+  visualization. Remaining items are explicitly deferred future/provider-depth
+  work rather than blockers for Phase 9 closure.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

@@ -1,6 +1,6 @@
 # Phase 8 Options Architecture Plan
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 ## Planning posture
 
@@ -30,8 +30,14 @@ Current planning state:
   `8D5` manual close behavior, `8D6` `commission_per_contract` net-P&L
   modeling, `8D7` frontend operator UI, and `8D8` closure review/tests/docs
   alignment are complete
-- `8E` planned only: implementation not started
-- `8F` planned only: closure criteria defined, implementation not started
+- `8E` complete for the current Recommendations options risk/operator UX
+  surface
+- `8F` complete: Phase 8 is closed for the current scoped paper-first options
+  capability
+- Phase 9 is also closed for the current options operator parity,
+  provider/source/as-of, and Recommendations Expected Range visualization
+  scope; remaining provider-depth, Analysis visualization, replay placement,
+  settlement, assignment/exercise, and live routing work stays deferred
 
 ## Current repo anchors
 
@@ -199,8 +205,7 @@ Not complete:
 
 Status:
 
-- planning complete
-- implementation not started
+- complete for the current Recommendations options risk/operator UX surface
 
 Detailed design:
 
@@ -227,12 +232,14 @@ Not complete:
 
 - full chart-heavy payoff tooling in the first UX slice
 - live-liquidity or routing realism
+- broader provider/source/as-of parity later landed in Phase 9C
+- the first reusable Expected Range visualization later landed in Phase 9D
 
 ### 8F - Closure criteria
 
 Status:
 
-- planned only
+- complete for the current scoped paper-first options capability
 
 Complete means:
 
@@ -301,8 +308,12 @@ Current implementation note:
   persistence, using dedicated options tables and repository contracts without
   adding staged options orders, expiration settlement, commissions, or live
   routing
+- Recommendations now carries the current 8E/8F risk/operator UX closure, and
+  Phase 9 adds durable Orders visibility, source/as-of parity, and a compact
+  Recommendations Expected Range visualization without changing backend,
+  provider, lifecycle, commission, equity, payoff, or recommendation math
 
-## Deferred items that do not block 8C planning
+## Deferred items that do not block current options closure
 
 - persisted options recommendations
 - options replay persistence in existing replay tables
@@ -313,6 +324,8 @@ Current implementation note:
 - covered calls that require inventory/assignment modeling
 - mark-to-market parity and Greek-driven valuation
 - live routing or brokerage execution
+- optional Analysis Expected Range visualization and richer replay placement
+- future provider-depth or live-probe work
 
 ## Companion documents
 
