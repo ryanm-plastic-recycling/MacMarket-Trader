@@ -9,7 +9,7 @@ discovery, watchlist management, and recommendation-universe selection. It now
 also tracks the completed additive schema, internal repository/resolver
 foundation, current watchlist UI polish, bulk symbol handling,
 recommendation/schedule universe-selection design, and the read-only
-resolved-universe preview API slice.
+resolved-universe preview API plus selector closure slice.
 
 It does not implement symbol search, change recommendation generation, add
 provider probes, change current schedule execution, or imply live trading /
@@ -28,11 +28,18 @@ Current symbol entry is intentionally simple:
   space, or new-line separated symbols, shows a normalized uppercase parsed
   preview plus duplicate feedback, and posts those symbols to
   `/user/recommendations/queue`.
+  A preview-only universe selector can resolve manual/watchlist/all-active
+  sources and explicitly copy the resolved list into that same manual input;
+  queue submit behavior still uses the existing symbol-array path.
 - Scheduled Strategy Reports:
   the schedule form stores a manual text field in the frontend, accepts comma,
   space, or new-line separated symbols, shows a normalized uppercase parsed
   preview plus duplicate feedback, and persists those symbols inside the
   schedule payload.
+  A preview-only universe selector can resolve manual/watchlist/all-active
+  sources and explicitly copy the resolved list into that same schedule input;
+  schedules still save static `payload.symbols` snapshots only when the
+  existing create/update action is used.
 - Watchlists:
   the backend has a user-scoped `watchlists` table with `app_user_id`, `name`,
   `symbols` JSON, and `created_at`. The current repository supports list,
@@ -483,8 +490,9 @@ Future implementation should test:
   complete for frontend static-snapshot preview/apply behavior while preserving
   `payload.symbols` as the run snapshot.
 - `10W8D` tests/docs closure:
-  prove resolver provenance, user scoping, snapshot semantics, fallback copy,
-  and no recommendation/scoring/schedule-execution drift.
+  complete for the current selector scope; audit and tests cover resolver
+  provenance, user scoping, snapshot semantics, fallback copy, preview-only
+  flags, and no recommendation/scoring/schedule-execution drift.
 
 Risk notes:
 
@@ -607,6 +615,50 @@ Still unchanged by `10W8C`:
 - dynamic watchlist refresh remains deferred and not enabled
 - live routing, brokerage execution, schema, migrations, provider probes,
   lifecycle math, commission math, and equity/options behavior remain unchanged
+
+## 10W8D Recommendation / Schedule Universe Selection Closure
+
+Status: complete for the current closure, docs, and test scope.
+
+Audit result:
+
+- the backend preview API remains protected, user-scoped, read-only, and
+  provider-free
+- the preview API returns explicit preview-only/no-execution/no-recommendation
+  flags plus no-schedule-mutation and no-watchlist-mutation flags
+- backend tests cover manual normalization/dedupe, watchlist fallback,
+  watchlist-plus-manual ordering, all-active filtering, wrong-user watchlist
+  blocking, empty-result warnings, unsupported source rejection, no provider
+  calls, and no recommendation/watchlist/schedule mutation
+- Recommendations selector behavior remains preview/apply only; `Use resolved
+  symbols` copies into the existing manual input and the existing queue submit
+  path remains explicit
+- Schedules selector behavior remains preview/apply only; `Use resolved symbols
+  in this schedule` copies into the existing schedule symbol field, while
+  existing Create/Update actions remain the only save path
+- schedule copy clearly states static snapshot semantics and keeps dynamic
+  watchlist refresh deferred and not enabled
+- manual symbol entry remains compatible with comma, space, tab, and new-line
+  separators, duplicate feedback, uppercase normalization, and SPX/NDX versus
+  SPY/QQQ guidance
+
+Closed for current `10W8` scope:
+
+- read-only resolved-universe preview API
+- Recommendations universe selector preview/apply flow
+- Schedule universe selector static-snapshot preview/apply flow
+- tests/docs alignment for the current selector scope
+
+Still deferred after `10W8D`:
+
+- provider-backed symbol discovery/search
+- normalized symbol-universe production UI
+- tags/groups selector behavior
+- richer import audit
+- dynamic watchlist refresh for schedules
+- recommendation generation or scoring changes
+- schedule execution changes
+- live routing or brokerage execution
 
 ## Symbol Discovery Design
 
@@ -1114,6 +1166,11 @@ Recommended slices:
   existing schedule symbols field only when explicitly requested. Create/update
   remains the explicit save step and scheduled runs keep using static
   `payload.symbols` snapshots.
+- `10W8D` selector closure:
+  complete for the current recommendation/schedule universe-selection scope;
+  audit and tests confirm preview-only behavior, no provider calls, user
+  scoping, no recommendation/watchlist/schedule mutation, static schedule
+  snapshots, and unchanged queue submit / schedule save paths.
 - `10W9` provider-backed symbol discovery:
   add provider-backed search only after explicit provider-design approval.
 - `10W10` closure:
@@ -1122,19 +1179,21 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W8C`: tests/docs closure (`10W8D`), if explicitly authorized.
+Next after `10W8D`: provider-backed discovery design/implementation (`10W9`)
+only if explicitly authorized.
 
 Why:
 
 - the selector design, read-only preview API, Recommendations preview/apply UI,
-  and Schedule static-snapshot preview/apply UI are now documented and
-  implemented
-- the next useful operator slice is a closure audit that proves selector copy,
-  user scoping, static snapshots, and no schedule/recommendation behavior drift
+  Schedule static-snapshot preview/apply UI, and selector closure audit are now
+  documented, implemented, and validated for the current scope
+- the remaining symbol/watchlist work is higher-risk because it introduces
+  provider discovery assumptions, normalized production UI, tags/groups, or
+  dynamic schedule semantics
 - provider-backed search, storage replacement, broad normalized table UI, and
   ranking/schedule behavior changes can remain deferred until explicitly scoped
 
 Do not start the next slice with provider-backed symbol search,
 storage replacement, normalized symbol-universe production UI, or ranking
-changes. The next implementation should be a small closure pass, not dynamic
-watchlist refresh.
+changes unless that work is explicitly scoped. Dynamic watchlist refresh remains
+deferred.

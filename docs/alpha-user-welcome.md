@@ -208,9 +208,9 @@ Interpretation rule:
 
 ## 7. Symbol discovery and watchlists
 
-Current symbol and watchlist management is still intentionally simple. You may
-need to know the symbols you want to inspect and, in scheduled-report contexts,
-manage symbol lists manually.
+Current symbol and watchlist management is improved but still intentionally
+manual. You may need to know the symbols you want to inspect and, in
+scheduled-report contexts, manage symbol lists yourself.
 
 Current manual list entry accepts tickers separated by commas, spaces, tabs, or
 new lines, then shows a parsed uppercase preview and duplicate feedback before
@@ -220,15 +220,18 @@ symbols to the existing list while keeping existing symbols first. Use
 `SPY` / `QQQ` as ETF substitutes when index data for `SPX` / `NDX` is
 unavailable.
 
-Future roadmap work is planned for better recommendation-universe management:
+Current watchlist and universe-selection improvements:
 
-- search by ticker and company/security name
-- user-scoped watchlists with searchable/sortable tables
-- add/delete individual symbols and richer import audit
-- active/inactive symbols
-- optional groups such as `Core`, `ETFs`, `Tech`, `Options Candidates`, and
-  `Watch Only`
-- provider/source support labels when available
+- current watchlists are user-scoped named symbol lists
+- the Schedules Watchlists card can search/sort saved lists, show symbol
+  counts, show normalized symbol chips, filter within a list, and remove
+  individual chips through the existing watchlist update path
+- watchlist editing supports **Replace current symbols** or **Add to existing
+  symbols**
+- a protected read-only symbol-universe preview API can resolve manual,
+  watchlist, watchlist-plus-manual, all-active, and mixed inputs without
+  submitting Recommendations, mutating schedules/watchlists, or calling
+  providers
 - Recommendations now has a preview-only universe selector for manual,
   watchlist, watchlist-plus-manual, and all-active sources; use **Use resolved
   symbols** to copy preview output into the existing manual input before
@@ -237,6 +240,22 @@ Future roadmap work is planned for better recommendation-universe management:
   **Use resolved symbols in this schedule** to copy preview output into the
   existing schedule symbol field, then save explicitly with Create or Update
   selected
+- schedules use static symbol snapshots; later watchlist edits do not
+  automatically change existing schedules
+
+Future roadmap work is still planned for richer recommendation-universe
+management:
+
+- search by ticker and company/security name
+- normalized symbol-universe production UI
+- richer import audit
+- active/inactive symbols in production watchlist workflows
+- optional groups such as `Core`, `ETFs`, `Tech`, `Options Candidates`, and
+  `Watch Only`
+- provider/source support labels when available
+- provider-backed symbol discovery/search
+- tags/groups selector behavior
+- dynamic watchlist refresh for schedules only if separately approved later
 - ETF/index substitution guidance such as `SPX` / `NDX` versus `SPY` / `QQQ`
 
 This future work is not trade execution. Provider support labels and options
@@ -247,18 +266,20 @@ Design checkpoint status:
 
 - the current-state inventory and future implementation plan now live in
   `docs/symbol-watchlist-design.md`
-- the recommended future path is a hybrid model: keep current watchlist
-  compatibility while designing dedicated user-symbol universe / watchlist
-  membership records before any migration
+- the roadmap is following a hybrid path: keep current watchlist compatibility
+  while adding dedicated user-symbol universe / watchlist membership
+  foundations for later production UI
 - the current comma-entry cleanup, current watchlist table polish, and bulk
   duplicate-handling slices are complete; recommendation/schedule
   universe-selection design is documented; the read-only preview API and
-  Recommendations and Schedules preview/apply selectors are complete;
+  Recommendations and Schedules preview/apply selectors plus closure audit are
+  complete for the current scope;
   provider-backed search, normalized symbol-universe production UI, import
   audit, and dynamic watchlist refresh remain future work
-- the schema/read-model checkpoint now recommends a future
-  `user_symbol_universe` plus `watchlist_symbols` model while preserving
-  current watchlist and schedule symbol snapshots for compatibility
+- the additive `user_symbol_universe` plus `watchlist_symbols` schema
+  foundation and internal repository/resolver foundation now exist, but current
+  Recommendation and Schedule production flows still use the existing symbol
+  arrays for compatibility
 - the universe-selection checkpoint recommends static resolved schedule
   snapshots by default so future schedule runs do not unexpectedly change when
   watchlists change
@@ -517,6 +538,15 @@ Current project status, in operator terms:
   planning now covers user-scoped canonical symbol rows, watchlist membership,
   compatibility snapshots, resolver behavior, migration/backfill, and rollback
   without implementing schema or runtime changes
+- Phase 10W4 complete: additive `user_symbol_universe` and
+  `watchlist_symbols` schema foundations exist for future normalized symbol
+  workflows, while current watchlist JSON storage, schedule payload symbols,
+  recommendation generation, provider behavior, and frontend UI remain
+  compatible
+- Phase 10W5 complete: internal repository/read-model and resolver helpers can
+  normalize, dedupe, combine, pin, exclude, and user-scope future symbol
+  universe inputs, but production Recommendations and Schedules are not wired
+  to replace their current symbol-array behavior
 - Phase 10W6 complete: the current Schedules Watchlists card now supports
   search/sort, symbol counts, normalized chips, per-list symbol filtering,
   duplicate feedback, and per-symbol removal using the existing watchlist update
@@ -542,6 +572,10 @@ Current project status, in operator terms:
   can copy resolved symbols into the existing schedule symbol input as a static
   snapshot without changing schedule execution or enabling dynamic watchlist
   refresh
+- Phase 10W8D complete: recommendation/schedule universe-selection closure
+  confirmed the preview API remains read-only/no-mutation and the
+  Recommendations and Schedules selectors remain preview/apply only, with queue
+  submit and schedule save/run behavior unchanged
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders

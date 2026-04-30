@@ -553,10 +553,14 @@ The codebase should define typed contracts for:
   providers, or changing runtime behavior. `10W8B` adds a Recommendations
   universe selector that previews manual/watchlist/all-active sources and only
   copies resolved symbols into the existing manual input when explicitly
-  requested, leaving queue submit behavior unchanged. `10W8C` adds a Schedule
-  universe selector that previews the same sources and only copies resolved
-  symbols into the existing schedule input as a static snapshot when explicitly
-  requested, leaving schedule execution behavior unchanged.
+requested, leaving queue submit behavior unchanged. `10W8C` adds a Schedule
+universe selector that previews the same sources and only copies resolved
+symbols into the existing schedule input as a static snapshot when explicitly
+requested, leaving schedule execution behavior unchanged. `10W8D` closes the
+current recommendation/schedule universe-selection scope after audit and
+validation, keeping provider-backed discovery, normalized production UI,
+tags/groups, dynamic watchlist refresh, recommendation generation changes, and
+schedule execution changes deferred.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -682,7 +686,9 @@ resolved symbols into the existing manual input while leaving queue submit and
 all schedule behavior unchanged. `10W8C` adds the Schedules selector UI for
 previewing those sources and explicitly copying resolved symbols into the
 existing schedule symbol input as a static snapshot while leaving schedule run
-behavior unchanged.
+behavior unchanged. `10W8D` closes the current selector scope with docs/test
+alignment and confirms the preview/apply paths remain separate from queue
+submit and schedule save/run behavior.
 Current manual entry now shows clearer separator guidance, parsed uppercase
 previews, duplicate feedback, and ETF/index substitute copy, but remains a
 temporary manual universe until richer watchlist management is implemented.

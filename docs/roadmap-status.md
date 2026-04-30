@@ -12,9 +12,9 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 271 collected; targeted 10W8A backend validation plus 10W8B and
-10W8C frontend validation passed. vitest 199, Playwright 31, and tsc clean
-from latest frontend validation.
+Tests: pytest 271 collected; targeted 10W8D backend validation plus 10W8B,
+10W8C, and 10W8D frontend validation passed. vitest 199, Playwright 31, and
+tsc clean from latest frontend validation.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -60,14 +60,15 @@ across equity Orders and durable paper-options rows. `10C4` is complete for
 compact Analysis and Replay metric-label help. `10C5` is complete for the
 closure audit, tiny safety-copy polish, and docs/test alignment, so the
 explainable metric glossary/tooltips rollout is closed for the current
-in-context scope. `10W1` through `10W8C` are complete for symbol/watchlist
+in-context scope. `10W1` through `10W8D` are complete for symbol/watchlist
 design, current comma-entry workflow cleanup, schema/read-model planning, and
 the additive symbol-universe schema/migration plus repository/resolver
 foundation, current watchlist UI polish, and bulk symbol merge/duplicate
 handling plus the recommendation/schedule universe-selection design checkpoint
 and read-only resolved-universe preview API, Recommendations universe
 selector/preview/apply UI, and Schedule static-snapshot universe
-selector/preview/apply UI.
+selector/preview/apply UI, followed by selector closure audit/docs/test
+alignment.
 Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
@@ -93,8 +94,12 @@ selector UI for previewing manual/watchlist/all-active universes and explicitly
 copying resolved symbols into the existing manual input without changing queue
 submit behavior. `10W8C` adds the Schedule selector UI for previewing and
 copying resolved symbols into the existing schedule symbol input as a static
-snapshot without changing schedule save payload shape or run behavior. Future operator glossary
-and explainable metric
+snapshot without changing schedule save payload shape or run behavior. `10W8D`
+closes the current recommendation/schedule selector scope after audit and
+validation, while provider-backed discovery, normalized production UI,
+tags/groups, dynamic watchlist refresh, recommendation generation changes, and
+schedule execution changes remain deferred.
+Future operator glossary and explainable metric
 tooltips are now tracked as workflow comprehension polish, not changes to
 scoring, probability modeling, provider behavior, or execution semantics.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
@@ -539,7 +544,7 @@ recommendation, or brokerage behavior.
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
   planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`
-  through `10W8C` complete; broader `10A`, broader `10B`, optional
+  through `10W8D` complete; broader `10A`, broader `10B`, optional
   glossary/reference-page work, provider search implementation, closure, and
   later subphases remain open
 - Theme:
@@ -641,6 +646,14 @@ Safe near-term:
   `Create` or `Update selected` action is used; scheduled runs still use saved
   static `payload.symbols` snapshots and dynamic watchlist refresh remains
   deferred
+- completed `10W8D`: closure audit for the current recommendation/schedule
+  universe-selection scope; confirms the backend preview API is read-only,
+  user-scoped, provider-free, and returns preview-only/no-execution/no-mutation
+  flags; confirms Recommendations and Schedules are preview/apply only, keep
+  existing submit/save paths explicit, preserve manual symbol entry and static
+  schedule payload snapshots, and keep provider-backed discovery, normalized
+  production UI, tags/groups, dynamic watchlist refresh, recommendation
+  generation changes, and schedule execution changes deferred
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
 - completed `10C1`: central glossary registry and reusable accessible
@@ -898,6 +911,7 @@ First implementation slice:
   backend preview-only use, `10W8B` Recommendations universe selector UI is
   complete for frontend preview/apply behavior, and `10W8C` Schedule universe
   selector UI is complete for frontend static-snapshot preview/apply behavior.
+  `10W8D` selector closure audit is complete for the current scope.
   Existing Phase 10 numbering is preserved: `10D` remains the
   expiration-settlement design checkpoint, so symbol/watchlist work uses a
   workflow-polish `10W` lane unless the roadmap is explicitly renumbered later.
@@ -942,6 +956,8 @@ First implementation slice:
   manual input pathway. `10W8C` implements the Schedule side as preview/apply
   only: the operator must click `Use resolved symbols in this schedule`, and
   create/update still saves the existing parsed `payload.symbols` snapshot.
+  `10W8D` closes the current selector scope without changing recommendation or
+  schedule runtime behavior.
 - Recommended data-model path:
   use the compatibility-first `user_symbol_universe` plus `watchlist_symbols`
   foundation now added in `10W4`. Keep current `watchlists.symbols` snapshots and schedule
@@ -962,12 +978,13 @@ First implementation slice:
   comma-entry copy` -> completed `10W3 schema/read-model checkpoint` ->
   completed `10W4 schema/migration foundation` -> completed `10W5 repository/read-model
   and resolver` -> completed `10W6 current watchlist table UI polish` ->
-  completed `10W7 bulk import/duplicate handling` -> completed `10W8 schedule/recommendation universe selection design` -> completed `10W8A resolved-universe preview helper/API` -> completed `10W8B Recommendations selector UI` -> completed `10W8C Schedule selector/snapshot behavior` -> `10W8D closure` -> `10W9
+  completed `10W7 bulk import/duplicate handling` -> completed `10W8 schedule/recommendation universe selection design` -> completed `10W8A resolved-universe preview helper/API` -> completed `10W8B Recommendations selector UI` -> completed `10W8C Schedule selector/snapshot behavior` -> completed `10W8D selector closure` -> `10W9
   provider-backed discovery only if separately approved` -> `10W10 closure`.
 - Suggested next implementation slice:
-  `10W8D` selector tests/docs closure only, if explicitly authorized. Keep
-  provider-backed search, normalized table production UI, dynamic watchlist
-  refresh, schedule execution changes, and ranking changes deferred.
+  `10W9` provider-backed discovery design/implementation only if separately
+  authorized. Keep provider-backed search, normalized table production UI,
+  dynamic watchlist refresh, schedule execution changes, and ranking changes
+  deferred until explicitly scoped.
 - Explicitly not complete:
   normalized symbol-universe production UI, provider probes,
   provider search/fetch behavior, live routing, brokerage execution,
@@ -1538,6 +1555,17 @@ diffs. Notable recent inflection points:
   runs still use static snapshots, and dynamic watchlist refresh, provider
   search, schema, recommendation generation, scoring, lifecycle, commission,
   live routing, and brokerage behavior remain unchanged.
+- 2026-04-30 - Phase 10W8D complete for recommendation/schedule
+  universe-selection closure: audit confirms the backend preview API remains
+  read-only, user-scoped, provider-free, no-mutation, and preview-only;
+  Recommendations and Schedules remain preview/apply only; existing queue
+  submit, schedule save, and static `payload.symbols` schedule-run semantics
+  remain unchanged; manual symbol parsing/guidance remains compatible. A tiny
+  backend assertion now covers the preview API's no-schedule-mutation and
+  no-watchlist-mutation flags. Provider-backed discovery, normalized
+  symbol-universe production UI, tags/groups, dynamic watchlist refresh,
+  recommendation generation changes, schedule execution changes, live routing,
+  and brokerage behavior remain deferred.
 - 2026-04-30 - Future operator glossary and explainable metric tooltips
   roadmap item added: a docs-only planning note now tracks concise
   hover/click/tap metric help, formulas and examples where useful, a shared

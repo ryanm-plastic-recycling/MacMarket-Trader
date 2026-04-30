@@ -71,6 +71,8 @@ def test_preview_manual_symbols_normalizes_dedupes_and_does_not_call_providers(m
     assert body["preview_only"] is True
     assert body["execution_enabled"] is False
     assert body["does_not_submit_recommendations"] is True
+    assert body["does_not_mutate_schedules"] is True
+    assert body["does_not_mutate_watchlists"] is True
     assert body["provider_metadata_available"] is False
 
 
