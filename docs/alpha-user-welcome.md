@@ -407,6 +407,9 @@ Current project status, in operator terms:
   scope is closed
 - Phase 9 complete: current options operator parity, provider/source/as-of,
   and Recommendations Expected Range visualization scope is closed
+- Phase 10 planning started: remaining options/provider/crypto work is being
+  organized into safe polish, design checkpoints, and explicitly later
+  implementation tracks
 
 Current options boundary:
 
@@ -418,9 +421,15 @@ Current options boundary:
 - current scoped Phase 8 paper-first options capability is complete
 - current scoped Phase 9 operator parity and Expected Range visualization
   capability is complete
+- Phase 10 does not enable new runtime behavior yet; its safest first
+  recommended slice is optional Analysis Expected Range visualization using
+  existing fields only
 - expiration settlement is still deferred
 - Analysis Expected Range visualization integration is still optional/future
 - richer options dashboard depth is still deferred
+- persisted options recommendations, options replay persistence,
+  assignment/exercise automation, naked shorts, probability/margin modeling,
+  crypto implementation, and live routing remain future work
 
 ## Final operator reminder
 

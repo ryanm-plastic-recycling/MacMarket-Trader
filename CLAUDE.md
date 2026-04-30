@@ -129,7 +129,7 @@ python -m macmarket_trader.cli seed-demo-data
 # Run due scheduled reports (also wired to MacMarket-StrategyScheduler task)
 python -m macmarket_trader.cli run-due-strategy-schedules
 
-# Poll Alpaca paper fills (Phase 10 — not yet active)
+# Poll Alpaca paper fills (future execution phase — not yet active)
 python -m macmarket_trader.cli poll-alpaca-fills
 ```
 
@@ -169,7 +169,7 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 - `console_url` in `config.py` is a `@property` that mirrors `app_base_url`. Do not add a separate `CONSOLE_URL` env var.
 - `apply_schema_updates()` handles all new columns automatically on startup. No manual Alembic migrations needed for nullable columns.
 - Identity reconciliation: `upsert_from_auth` matches by Clerk sub, then by email, then by `invited::email` prefix. Preserves `approval_status` and `app_role` through merge.
-- `BROKER_PROVIDER=mock` is the current production setting. Do not change to `alpaca` without completing Phase 10.
+- `BROKER_PROVIDER=mock` is the current production setting. Do not change to `alpaca` without a later explicit execution phase.
 - Sticky `thead th` pattern: inline styles `position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)"`.
 - `op-error` block style: `border: 1px dashed #7c4040; background: #2a1717`.
 
@@ -177,7 +177,7 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 (Alpaca paper integration) is next and not active.**
+**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; live/broker execution is not active.**
 
 Tests (2026-04-30): pytest 210, vitest 160, Playwright 31 (all passing, 0 skipped). tsc clean.
 
@@ -187,10 +187,13 @@ Phase 6 + Pass 4 ships the full Analyze → Recommendation → Replay → Paper 
 
 ---
 
-## Open Items (Phase 10 is next)
+## Open Items (Phase 10 planning/polish is next)
 
-### Phase 10 — Alpaca paper integration (NEXT)
-Wire `BROKER_PROVIDER=alpaca` for real paper fills. Keys configured in deployed `.env`: `APCA_API_KEY_ID=PK...`, `APCA_API_SECRET_KEY=...`, `ALPACA_PAPER_BASE_URL=https://paper-api.alpaca.markets`. Scaffold exists in `src/macmarket_trader/execution/`. `AlpacaBrokerProvider` needs: `place_order`, `get_order`, `cancel_order`, `get_account`. Fill polling via CLI `poll-alpaca-fills`, run every 5 min via existing scheduler script.
+### Phase 10 — Deferred-work planning and safe options polish (NEXT)
+Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. Recommended first implementation slice is frontend-only `10A1`: optional Analysis Expected Range visualization using existing payload fields and the existing reusable component.
+
+### Later execution phase — Alpaca paper integration (NOT ACTIVE)
+Wire `BROKER_PROVIDER=alpaca` only after a later explicit execution phase. Keys are configured in deployed `.env`, and scaffold exists in `src/macmarket_trader/execution/`, but real brokerage routing/execution remains disabled. Fill polling via CLI `poll-alpaca-fills` is not active.
 
 ### Phase 7 — Brokerage fees + commission modeling
 Closed for the current equity paper-readiness scope. `gross_pnl` / `net_pnl`, per-trade equity commission, per-contract options commission settings, and current fee display guardrails are documented in `docs/roadmap-status.md`.
@@ -201,8 +204,8 @@ Closed for the current scoped paper-first options capability: research preview, 
 ### Phase 9 — Options operator parity and data-quality hardening
 Closed for the current scope: durable paper-options Orders visibility, provider/source/as-of parity across the current options surfaces, and the Recommendations Expected Range visualization. Optional Analysis visualization, richer replay placement, provider-depth probes, and live routing remain future work only if explicitly reopened.
 
-### Phase 11 — Crypto
-Crypto-native strategy design + paper execution via Alpaca. Prerequisite: user specifies desired strategies before build.
+### Future crypto implementation
+Phase 10F may plan crypto architecture only. Crypto implementation, crypto paper execution, and crypto-specific provider wiring remain later work.
 
 ### Known gaps (no phase assigned)
 - `/account` page does not render Clerk `<UserProfile>` for MFA enrollment (Clerk MFA requires paid plan — deferred)

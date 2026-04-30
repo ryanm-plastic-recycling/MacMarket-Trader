@@ -312,6 +312,10 @@ Current implementation note:
   Phase 9 adds durable Orders visibility, source/as-of parity, and a compact
   Recommendations Expected Range visualization without changing backend,
   provider, lifecycle, commission, equity, payoff, or recommendation math
+- Phase 10 now organizes the remaining deferred work into safe near-term
+  polish, medium-risk design checkpoints, and explicitly later implementation
+  tracks before any settlement, assignment/exercise, routing, probability,
+  margin, persisted recommendation, replay-persistence, or crypto runtime work
 
 ## Deferred items that do not block current options closure
 

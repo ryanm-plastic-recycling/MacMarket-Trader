@@ -45,6 +45,10 @@ visualization scope. Analysis integration, future provider-depth, live
 routing, expiration settlement, assignment/exercise, and probability modeling
 remain deferred. Phase 9 is closed for the current options operator parity,
 source/as-of, and Expected Range visualization scope.
+Phase 10 planning is now open as a documentation-first deferred-work
+sequencing track. It defines safe near-term options polish, medium-risk
+design checkpoints, and explicitly later execution/crypto work without moving
+any runtime behavior.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md test context is now aligned to the
 current vitest 160 count,
@@ -484,19 +488,207 @@ recommendation, or brokerage behavior.
   recommendations, options replay persistence into equity replay flows, live
   routing/execution, broker integrations, or naked-short support
 
-### Phase 10 — Alpaca paper integration
-- Wire `BROKER_PROVIDER=alpaca` for real paper fills
-- Order placement via `https://paper-api.alpaca.markets`
-- Poll for fills, reconcile against local `paper_positions`
-- Keys configured in `.env`: `APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`,
-  `ALPACA_PAPER_BASE_URL`. Scaffold exists at
-  `src/macmarket_trader/execution/AlpacaBrokerProvider`. Not yet active.
+### Phase 10 - Deferred-work planning and safe options polish
+- Status:
+  planning started; implementation not started
+- Theme:
+  organize remaining options/provider/crypto work into explicit risk bands and
+  safe future slices before any higher-risk lifecycle, persistence, brokerage,
+  probability, margin, or crypto implementation work begins
+- Current safety posture:
+  paper-first only; no live routing; no real brokerage execution; provider
+  readiness does not equal execution enablement; Expected Range remains
+  research context only; payoff preview does not equal a recommendation;
+  options lifecycle remains paper-only; crypto remains future architecture /
+  planning unless explicitly implemented later
 
-### Phase 11 — Crypto
-- Crypto-native strategy design (separate from equity momentum patterns —
-  mean reversion, funding rate, BTC dominance regime)
-- Crypto paper execution via Alpaca
-- Prerequisite: operator must specify desired strategies before implementation
+#### Phase 10 deferred-work inventory and risk classification
+
+Safe near-term:
+
+- optional Analysis Expected Range visualization using the existing reusable
+  component and existing setup payload fields only
+- replay payoff visualization polish that remains read-only/non-persisted and
+  does not change payoff math
+- Orders dashboard polish for existing durable option positions/trades using
+  already persisted fields only
+- operator docs/training improvements and paper-only safety copy audits
+- provider-health copy/readiness-only clarifications that do not add probes
+
+Medium-risk:
+
+- broader Orders dashboard parity if it needs new read-model joins or backend
+  serialization, even without schema changes
+- options replay/history integration design checkpoint because it touches
+  future replay lineage and persistence semantics
+- provider-depth/readiness probes if later implemented, because even safe
+  probes can create paid-plan assumptions or imply execution readiness
+- advanced Expected Move visualization beyond the current range bar if it
+  introduces richer charting or interpretation language
+- persisted options recommendations design, before implementation, because it
+  must avoid `RecommendationService.generate()` drift and equity behavior
+  changes
+
+High-risk:
+
+- expiration settlement mode
+- assignment/exercise automation
+- partial fills for multi-leg option structures
+- options replay persistence into replay runs
+- persisted options recommendations implementation
+- probability modeling / probability-of-profit
+- margin modeling
+- naked short support
+
+Explicitly later / not now:
+
+- live routing / broker execution / real brokerage execution
+- crypto implementation or crypto paper execution
+- naked short support, unless a later margin/risk program explicitly designs it
+- assignment/exercise automation
+- probability-of-profit as an execution or recommendation signal
+- broad options order staging or brokerage order tickets
+
+#### 10A - Options polish and operator workflow cleanup
+
+- Type:
+  frontend-only or docs-only first
+- Complete when:
+  optional Analysis Expected Range visualization, compact replay-payoff polish,
+  or small operator-copy cleanup lands using existing payload fields only,
+  with safe missing-value rendering and no backend behavior changes
+- Explicitly not complete:
+  replay persistence, options recommendations persistence, settlement,
+  assignment/exercise, probability modeling, margin modeling, broker routing,
+  or lifecycle math changes
+- Must be tested:
+  rendered source/as-of and unavailable states, research-only copy, no
+  probability/execution/live-routing language, no `null` / `undefined` /
+  `NaN` / `Infinity`
+- Rollback/risk notes:
+  hide or remove the frontend component/copy; no data migration or backend
+  rollback should be required
+
+Recommended first implementation slice:
+
+- `10A1` optional Analysis Expected Range visualization. Reuse
+  `ExpectedRangeVisualization` in Analysis options mode with existing
+  `expected_range`, structure breakeven, expiration/DTE, source/as-of, and
+  risk fields only. Keep it compact, read-only, and explicitly labeled as
+  research context that does not change payoff math or approve execution.
+
+#### 10B - Orders dashboard parity for durable options rows
+
+- Type:
+  frontend-only first; backend read-model only if existing fields are
+  insufficient and no schema change is needed
+- Complete when:
+  durable paper-options rows are easier to scan for open/closed state,
+  expiration, DTE if derivable, legs, gross/opening/closing/total/net values,
+  and source-metadata limitations without adding lifecycle actions
+- Explicitly not complete:
+  close/open actions from Orders, expiration settlement, partial fills, staged
+  option orders, or brokerage routing
+- Must be tested:
+  open/closed row rendering, empty/loading/error states, safe unavailable
+  values, durable metadata limitation copy, and equity Orders regression
+- Rollback/risk notes:
+  keep the dedicated options section removable without disturbing equity
+  Orders tables
+
+#### 10C - Options replay/history integration design checkpoint
+
+- Type:
+  docs-only first
+- Complete when:
+  a mode-native design exists for future options replay history and lineage,
+  including whether options replay should have separate persistence rather than
+  reusing equity `replay_runs`
+- Explicitly not complete:
+  options replay persistence, equity replay table changes, replay execution
+  changes, or `RecommendationService.generate()` changes
+- Must be tested later:
+  no equity replay regressions, no persisted rows from read-only preview,
+  explicit market-mode separation, and source/as-of continuity
+- Rollback/risk notes:
+  design-only checkpoint; do not implement until storage and UX boundaries are
+  approved
+
+#### 10D - Expiration settlement design checkpoint
+
+- Type:
+  docs-only first
+- Complete when:
+  the repo has a settlement-mode design covering required settlement price,
+  expiration date checks, manual override/audit needs, long/short leg payoff at
+  expiration, and explicit assignment/exercise exclusions
+- Explicitly not complete:
+  expiration settlement implementation, assignment/exercise automation, broker
+  exercise actions, margin modeling, or naked short support
+- Must be tested later:
+  unsupported settlement rejection remains intact until implementation,
+  settlement math fixtures, no double-close, user scoping, and equity
+  lifecycle regression
+- Rollback/risk notes:
+  design-only checkpoint; implementation is high-risk and should require a
+  separate approval pass
+
+#### 10E - Provider-depth/readiness planning
+
+- Type:
+  docs-only first; later frontend/backend only if safe probes are explicitly
+  approved
+- Complete when:
+  provider-depth gaps are listed without paid-plan assumptions and readiness
+  copy remains clearly separated from execution enablement
+- Explicitly not complete:
+  new provider probes, paid-plan-specific claims, live routing, brokerage
+  execution, or provider-based order approval
+- Must be tested later:
+  readiness-only copy, no execution implication, safe unavailable statuses,
+  and no hidden provider/fallback mixing
+- Rollback/risk notes:
+  copy-only work is low risk; live probes are medium-risk and must be
+  separately scoped
+
+#### 10F - Crypto architecture planning only
+
+- Type:
+  docs-only
+- Complete when:
+  crypto mode requirements are documented separately from equities/options,
+  including 24/7 sessions, spot/perpetual distinction, funding/basis context,
+  provider assumptions, replay boundaries, and paper-only posture
+- Explicitly not complete:
+  crypto implementation, crypto provider wiring, crypto paper execution,
+  crypto recommendations, or crypto UI actions
+- Must be tested later:
+  market-mode separation, no equities logic leakage, safe provider/fallback
+  labels, and no execution implication
+- Rollback/risk notes:
+  planning-only; no runtime rollback
+
+#### 10G - Phase 10 closure
+
+- Type:
+  review/docs/test closure
+- Complete when:
+  Phase 10 completed slices are documented, deferred items remain explicit,
+  validation is green for touched surfaces, and no safety boundary has moved
+- Explicitly not complete:
+  live brokerage execution, real routing, expiration settlement,
+  assignment/exercise, naked shorts, probability/margin modeling, persisted
+  options recommendations, options replay persistence, or crypto implementation
+
+### Later execution / implementation tracks - not active
+- Alpaca paper integration:
+  `BROKER_PROVIDER=alpaca`, real paper order placement, fill polling, account
+  reconciliation, and broker execution semantics remain future work. Keys may
+  be configured and scaffold may exist, but `BROKER_PROVIDER=mock` remains the
+  current production setting.
+- Crypto implementation:
+  crypto-native strategy design and crypto paper execution remain later work
+  after `10F` planning and explicit operator strategy decisions.
 
 ## Still Open (no phase assigned)
 
@@ -527,7 +719,9 @@ recommendation, or brokerage behavior.
   paper-first only (research preview, read-only payoff preview, and
   paper-only lifecycle plus durable Orders visibility). Current provider and
   data-quality parity is closed under Phase 9; deeper provider-depth work,
-  crypto under Phase 11, and live execution remain deferred.
+  crypto implementation, and live execution remain deferred. Phase 10 now
+  organizes these items into planning/polish/design slices before any runtime
+  expansion.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -538,7 +732,8 @@ recommendation, or brokerage behavior.
 - Backup: daily 3 AM via `MacMarket-DB-Backup` scheduled task
 - Scheduler: every 5 min via `MacMarket-StrategyScheduler` scheduled task
 - Alpha users: 3 (admin + 2 approved)
-- Alpaca paper API keys: configured, `BROKER_PROVIDER=mock` (Phase 10 activates)
+- Alpaca paper API keys: configured, `BROKER_PROVIDER=mock` (execution phase
+  not active)
 
 ## Test Counts (last verified 2026-04-30)
 - pytest: 210
@@ -577,8 +772,10 @@ Equities are first-class today. Options now support a scoped paper-first
 research/replay-preview/manual-close lifecycle centered on
 `/recommendations`, plus durable paper-options visibility on `/orders` from
 Phase 9B. Current provider/source/as-of parity is closed under Phase 9;
-deeper provider-depth work remains future. Crypto remains future work under
-Phase 11. Cross-mode `expected_range` semantics
+deeper provider-depth work remains future. Phase 10 now organizes deferred
+options polish, provider-depth planning, and crypto architecture planning;
+crypto implementation remains future work. Cross-mode `expected_range`
+semantics
 remain spec-defined only until preview payloads, scoring, replay, and later
 mode-native operator surfaces carry method-tagged fields per mode.
 
@@ -775,6 +972,16 @@ diffs. Notable recent inflection points:
   on the practical options surfaces, and the Recommendations Expected Range
   visualization. Remaining items are explicitly deferred future/provider-depth
   work rather than blockers for Phase 9 closure.
+- 2026-04-30 - Phase 10 planning move complete: roadmap now treats Phase 10 as
+  a documentation-first sequencing and safe-polish track for deferred options,
+  provider-depth, replay/history, settlement-design, and crypto-architecture
+  work. The recommended first implementation slice is `10A1`, an optional
+  Analysis Expected Range visualization using existing payload fields and the
+  existing reusable component only. Live routing, real brokerage execution,
+  expiration settlement implementation, assignment/exercise automation, naked
+  shorts, persisted options recommendations, options replay persistence,
+  probability/margin modeling, and crypto implementation remain explicitly
+  later/not-now.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

@@ -517,8 +517,11 @@ The codebase should define typed contracts for:
   options capability remains paper-first: research preview, read-only payoff
   preview, supported paper open/manual-close lifecycle, durable Orders
   visibility, provider/source/as-of parity, and a Recommendations Expected
-  Range visualization. Phase 10 Alpaca paper integration remains future work
-  and is not active.
+  Range visualization. Phase 10 is the next safe planning and polish track for
+  remaining deferred options/provider/crypto work; live routing, real
+  brokerage execution, expiration settlement, assignment/exercise automation,
+  persisted options recommendations, and crypto implementation remain future
+  work and are not active.
 
 ## Success criteria for v1
 

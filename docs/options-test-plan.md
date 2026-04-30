@@ -383,6 +383,74 @@ Planning note:
   richer replay placement, or provider-depth work only if those scopes are
   explicitly reopened
 
+## Phase 10 planned test areas
+
+Phase 10 is planning/polish first. Tests should scale to the risk of the
+specific slice and continue to prove equity behavior and current options
+lifecycle behavior did not move.
+
+### 10A safe options UX/operator polish
+
+- Analysis optional Expected Range visualization renders computed lower/upper
+  bounds when existing fields are present
+- blocked/missing Analysis expected range renders muted unavailable state and
+  reason when available
+- source/as-of, method/provenance, expiration/DTE, and breakevens render
+  safely from existing payload fields
+- no `null`, `undefined`, `NaN`, `Infinity`, probability-of-profit,
+  execution-approval, live-routing, or broker-order language appears
+- replay payoff visualization polish, if added, remains read-only and
+  non-persisted
+
+### 10B durable Orders options polish
+
+- open and closed durable paper-options rows remain separate from equity
+  Orders rows
+- added filters, grouping, or summary copy preserve paper-only labels and
+  durable provider-metadata limitation copy
+- missing expiration/DTE, gross, commissions, net P&L, source, and as-of fields
+  render as `Unavailable` or `-`
+- no close/open/stage actions appear unless a later lifecycle phase explicitly
+  authorizes them
+- equity Orders tests remain green
+
+### 10C replay/history design checkpoint
+
+- docs-only by default; if later implementation is approved, tests must prove
+  read-only preview still creates no replay runs, recommendations, orders,
+  positions, or trades
+- future mode-native persistence tests must not reuse equity replay semantics
+  silently
+
+### 10D expiration settlement design checkpoint
+
+- docs-only by default; until implementation is explicitly approved,
+  expiration settlement requests must continue to reject with the existing
+  unsupported response
+- any later implementation needs settlement-price fixtures, user-scoping,
+  no-double-close, no-assignment/exercise, no-naked-short, and equity lifecycle
+  regression tests
+
+### 10E provider-depth/readiness planning
+
+- docs/copy tests should keep provider readiness separate from execution
+  enablement
+- any later probe implementation must have unavailable/degraded/blocked states,
+  no paid-plan-specific assumptions, and no routing/execution implication
+
+### 10F crypto architecture planning
+
+- docs-only by default
+- later implementation must test market-mode separation, 24/7 session handling,
+  provider/fallback labeling, and no equities/options lifecycle leakage
+
+### 10G closure
+
+- rerun touched frontend/backend tests for any implemented slices
+- confirm roadmap/docs identify completed slices vs deferred future work
+- confirm safety language still says paper-first, no live routing, no real
+  brokerage execution, and Expected Range remains research context only
+
 ## Suggested future test file direction
 
 Backend:
