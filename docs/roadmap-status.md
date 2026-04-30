@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 170, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 171, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -53,7 +53,9 @@ frontend-only explainable metric UX foundation: central glossary registry,
 reusable metric-help component, and narrow Settings / Expected Range /
 Provider Health integrations. `10C2` is complete for compact Recommendations
 score/risk-label help using the existing glossary and `MetricLabel`
-component. Remaining Phase 10 slices stay open.
+component. `10C3` is complete for compact Orders P&L/commission label help
+across equity Orders and durable paper-options rows. Remaining Phase 10 slices
+stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
@@ -538,6 +540,11 @@ Safe near-term:
   `CONF` / confidence, `RR`, Expected Range, max profit/loss, breakevens,
   gross/net P&L, and options commission labels without changing scoring,
   lifecycle, payoff, commission, provider, schema, or execution behavior
+- completed `10C3`: Orders P&L/commission label rollout for equity gross/net
+  and fee labels plus durable paper-options max profit/loss, breakevens,
+  gross/net P&L, opening/closing/total commissions, paper lifecycle, and leg
+  P&L/commission labels without adding Orders actions or changing lifecycle,
+  equity, commission, scoring, schema, provider, or execution behavior
 
 Medium-risk:
 
@@ -835,6 +842,12 @@ First implementation slice:
   confidence, and RR labels plus options risk labels for Expected Range, max
   profit/loss, breakevens, gross/net P&L, and options commissions now use the
   shared glossary help component where the labels are most visible.
+- `10C3` status:
+  complete for the Orders P&L/commission-label rollout. Equity Orders summary,
+  projected outcome, and closed-trade labels now use compact glossary help
+  for gross/net P&L and equity fees, while durable paper-options rows expose
+  help for max profit/loss, breakevens, gross/net P&L, options commissions,
+  paper lifecycle, and leg P&L/commission labels.
 - Initial term set:
   `RR` / risk-reward ratio, `CONF` / confidence, `Score`, Expected Range /
   Expected Move, `DTE`, `IV`, Open Interest, Breakeven, Max Profit, Max Loss,
@@ -859,7 +872,8 @@ First implementation slice:
   Health low-risk labels` -> `Analysis and Recommendations score/risk labels`
   -> `Replay and Orders P&L/commission labels` -> `optional glossary page`.
   The Recommendations part of the score/risk-label step is complete in
-  `10C2`; broader Analysis, Replay, and Orders rollout remains future work.
+  `10C2`; the Orders P&L/commission part is complete in `10C3`; broader
+  Analysis, Replay, and glossary-page rollout remains future work.
 - Explicitly not complete:
   probability modeling, recommendation scoring changes, provider probes, live
   routing, broker execution, commission math changes, payoff math changes,
@@ -959,7 +973,7 @@ First implementation slice:
 
 ## Test Counts (last verified 2026-04-30)
 - pytest: 210
-- vitest: 170
+- vitest: 171
 - Playwright: 31
 
 ## Core product pillars
@@ -1258,6 +1272,14 @@ diffs. Notable recent inflection points:
   commissions. Frontend tests cover the rollout and safety wording. No
   backend, schema, provider, recommendation scoring, equity, lifecycle,
   payoff, commission, routing, settlement, assignment/exercise,
+  symbol-discovery, watchlist, probability, or crypto behavior changed.
+- 2026-04-30 - Phase 10C3 complete for Orders explainable metric labels:
+  compact `MetricLabel` help now appears on equity Orders P&L/fee labels and
+  durable paper-options P&L, commission, max profit/loss, breakeven, paper
+  lifecycle, and leg result labels. Frontend tests cover the Orders source
+  wiring and durable options rendering. No backend, schema, provider,
+  recommendation scoring, equity behavior, lifecycle math, payoff math,
+  commission math, routing, Orders actions, settlement, assignment/exercise,
   symbol-discovery, watchlist, probability, or crypto behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission

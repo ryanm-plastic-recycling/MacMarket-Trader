@@ -409,6 +409,11 @@ Current status:
   risk/lifecycle labels expose help for Expected Range, max profit/loss,
   breakevens, gross/net P&L, and options commissions, and safety wording still
   avoids probability, live-routing, and broker-execution implications.
+- `10C3` is complete for Orders metric-help rollout. Coverage proves Orders
+  equity P&L/fee labels use `MetricLabel`, durable paper-options rows expose
+  help for gross/net P&L, options commissions, max profit/loss, breakevens,
+  paper lifecycle, and leg-level result labels, and no new Orders actions,
+  backend behavior, lifecycle math, or commission math are introduced.
 
 ### 10A safe options UX/operator polish
 
@@ -493,6 +498,24 @@ Current status:
   schema, provider, or backend behavior changes are expected
 - broader Analysis, Replay, Orders, and optional glossary-page rollout remains
   future work
+
+### 10C3 Orders metric-help rollout
+
+- Orders equity portfolio/projected outcome/closed-trade labels expose compact
+  help for gross P&L, net P&L, and equity fees where those labels are visible
+- durable paper-options section exposes help for max profit, max loss,
+  breakevens, gross P&L, net P&L, opening commissions, closing commissions,
+  total commissions, paper lifecycle, and leg-level gross/commission/net
+  result labels
+- options commission help includes the per-contract/per-leg/per-event wording
+  and not-multiplied-by-100 caveat
+- paper lifecycle help says persisted paper records do not mean external
+  orders were sent
+- no live-routing, broker-execution, new Orders actions, payoff-math,
+  lifecycle-math, commission-math, schema, provider, or backend behavior
+  changes are expected
+- broader Analysis, Replay, and optional glossary-page rollout remains future
+  work
 
 ### 10D expiration settlement design checkpoint
 

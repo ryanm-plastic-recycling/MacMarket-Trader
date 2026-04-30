@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { MetricLabel } from "@/components/ui/metric-help";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { GuidedStepRail } from "@/components/guided-step-rail";
@@ -547,7 +548,9 @@ export default function Page() {
           <div><div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Open positions</div><strong>{portfolioSummary.open_positions}</strong></div>
           <div><div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Open notional</div><strong>${portfolioSummary.total_open_notional.toFixed(2)}</strong></div>
           <div>
-            <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Realized net P&amp;L</div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>
+              <MetricLabel label="Realized net P&L" term="net_pnl" />
+            </div>
             <strong style={{ color: portfolioSummary.net_realized_pnl > 0 ? "#21c06e" : portfolioSummary.net_realized_pnl < 0 ? "#f44336" : "inherit" }}>
               {formatSignedDollars(portfolioSummary.net_realized_pnl)}
             </strong>
@@ -613,17 +616,17 @@ export default function Page() {
             {replayOutcome ? (
               <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
                 <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only round trip (entry + exit)</div>
-                <div><strong>Fees:</strong> ${replayOutcome.estimated_total_fees?.toFixed(2) ?? "0.00"} ({replayOutcome.fee_model ?? "equity_per_trade"})</div>
+                <div><strong><MetricLabel label="Fees" term="equity_commission_per_trade" />:</strong> ${replayOutcome.estimated_total_fees?.toFixed(2) ?? "0.00"} ({replayOutcome.fee_model ?? "equity_per_trade"})</div>
                 <div><strong>Entry fee:</strong> ${replayOutcome.estimated_entry_fee?.toFixed(2) ?? "0.00"} · <strong>Exit fee:</strong> ${replayOutcome.estimated_exit_fee?.toFixed(2) ?? "0.00"}</div>
                 <div>
-                  <strong>Projected net outcome:</strong>{" "}
+                  <strong><MetricLabel label="Projected net outcome" term="net_pnl" />:</strong>{" "}
                   {replayOutcome.projected_net_pnl != null
                     ? `${formatSignedDollars(replayOutcome.projected_net_pnl)}`
                     : "Unavailable for this candidate"}
                 </div>
                 {replayOutcome.projected_gross_pnl != null ? (
                   <div style={{ color: "var(--op-muted, #7a8999)" }}>
-                    Gross {formatSignedDollars(replayOutcome.projected_gross_pnl)} using existing recommendation levels.
+                    <MetricLabel label="Gross" term="gross_pnl" /> {formatSignedDollars(replayOutcome.projected_gross_pnl)} using existing recommendation levels.
                   </div>
                 ) : (
                   <div style={{ color: "var(--op-muted, #7a8999)" }}>
@@ -824,14 +827,14 @@ export default function Page() {
             <div style={{ marginTop: 4, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
               <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only lifecycle (entry + exit)</div>
               <div><strong>Entry fee:</strong> ${selected.estimated_entry_fee?.toFixed(2) ?? "0.00"} · <strong>Exit fee:</strong> ${selected.estimated_exit_fee?.toFixed(2) ?? "0.00"}</div>
-              <div><strong>Total fees:</strong> ${selected.estimated_total_fees?.toFixed(2) ?? "0.00"} ({selected.fee_model ?? "equity_per_trade"})</div>
+              <div><strong><MetricLabel label="Total fees" term="equity_commission_per_trade" />:</strong> ${selected.estimated_total_fees?.toFixed(2) ?? "0.00"} ({selected.fee_model ?? "equity_per_trade"})</div>
               <div>
-                <strong>Projected net outcome:</strong>{" "}
+                <strong><MetricLabel label="Projected net outcome" term="net_pnl" />:</strong>{" "}
                 {selected.projected_net_pnl != null ? formatSignedDollars(selected.projected_net_pnl) : "Unavailable"}
               </div>
               {selected.projected_gross_pnl != null ? (
                 <div style={{ color: "var(--op-muted, #7a8999)" }}>
-                  Gross {formatSignedDollars(selected.projected_gross_pnl)} using existing recommendation levels.
+                  <MetricLabel label="Gross" term="gross_pnl" /> {formatSignedDollars(selected.projected_gross_pnl)} using existing recommendation levels.
                 </div>
               ) : null}
             </div>
@@ -858,7 +861,7 @@ export default function Page() {
                     </div>
                     {selectedClosePreview ? (
                       <div style={{ marginTop: 8 }}>
-                        Gross <span style={{ color: pnlColor(selectedClosePreview.gross), fontWeight: 600 }}>{formatSignedDollars(selectedClosePreview.gross)}</span>
+                        <MetricLabel label="Gross" term="gross_pnl" /> <span style={{ color: pnlColor(selectedClosePreview.gross), fontWeight: 600 }}>{formatSignedDollars(selectedClosePreview.gross)}</span>
                         {" "}· Net after fees <span style={{ color: pnlColor(selectedClosePreview.net), fontWeight: 600 }}>{formatSignedDollars(selectedClosePreview.net)}</span>
                       </div>
                     ) : null}
@@ -883,9 +886,9 @@ export default function Page() {
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>qty</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>entry → exit</th>
-                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>gross P&amp;L</th>
-                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fees</th>
-                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>net P&amp;L</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}><MetricLabel label="gross P&L" term="gross_pnl" /></th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}><MetricLabel label="fees" term="equity_commission_per_trade" /></th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}><MetricLabel label="net P&L" term="net_pnl" /></th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>hold</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>reason</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>closed</th>

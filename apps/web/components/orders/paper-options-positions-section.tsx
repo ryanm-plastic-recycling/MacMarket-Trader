@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { Card, EmptyState, ErrorState, StatusBadge } from "@/components/operator-ui";
+import { MetricLabel } from "@/components/ui/metric-help";
 import {
   fetchOptionsPaperPositions,
   formatOptionsReplayToken,
@@ -118,9 +119,9 @@ function renderLegDetails(item: OptionsPaperLifecycleSummary) {
               <th>multiplier</th>
               <th>entry premium</th>
               <th>exit premium</th>
-              <th>leg gross</th>
-              <th>leg commission</th>
-              <th>leg net</th>
+              <th><MetricLabel label="leg gross" term="gross_pnl" /></th>
+              <th><MetricLabel label="leg commission" term="options_commission_per_contract" /></th>
+              <th><MetricLabel label="leg net" term="net_pnl" /></th>
             </tr>
           </thead>
           <tbody>
@@ -192,7 +193,7 @@ export function PaperOptionsPositionsSectionContent({
       <details style={{ marginBottom: 10 }}>
         <summary style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.84rem" }}>Options commission reminder</summary>
         <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.84rem", lineHeight: 1.45, marginTop: 4 }}>
-          {OPTIONS_COMMISSION_REMINDER_COPY} Formula: {OPTIONS_COMMISSION_FORMULA_COPY}.
+          <MetricLabel label="Options commission" term="options_commission_per_contract" />: {OPTIONS_COMMISSION_REMINDER_COPY} Formula: {OPTIONS_COMMISSION_FORMULA_COPY}.
         </div>
       </details>
       {loading && items.length === 0 ? (
@@ -213,7 +214,9 @@ export function PaperOptionsPositionsSectionContent({
       {!error && items.length > 0 ? (
         <div className="op-stack" style={{ gap: 12 }}>
           <section>
-            <div style={{ marginBottom: 6, fontWeight: 600 }}>Open paper positions</div>
+            <div style={{ marginBottom: 6, fontWeight: 600 }}>
+              <MetricLabel label="Open paper positions" term="paper_lifecycle" />
+            </div>
             {openItems.length === 0 ? (
               <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.9rem" }}>
                 No open paper option positions.
@@ -227,9 +230,9 @@ export function PaperOptionsPositionsSectionContent({
                       <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>structure / status</th>
                       <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>opened / expiry</th>
                       <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>premium / risk</th>
-                      <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>commissions</th>
+                      <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}><MetricLabel label="commissions" term="options_commission_per_contract" /></th>
                       <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>legs</th>
-                      <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>paper result</th>
+                      <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}><MetricLabel label="paper result" term="paper_lifecycle" /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -255,14 +258,14 @@ export function PaperOptionsPositionsSectionContent({
                         </td>
                         <td>
                           <div><strong>Open:</strong> {formatOpeningPremium(item)}</div>
-                          <div><strong>Max profit:</strong> {formatCompactCurrency(item.max_profit ?? null)}</div>
-                          <div><strong>Max loss:</strong> {formatCompactCurrency(item.max_loss ?? null)}</div>
-                          <div><strong>Breakevens:</strong> {formatBreakevens(item.breakevens)}</div>
+                          <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatCompactCurrency(item.max_profit ?? null)}</div>
+                          <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatCompactCurrency(item.max_loss ?? null)}</div>
+                          <div><strong><MetricLabel label="Breakevens" term="breakeven" />:</strong> {formatBreakevens(item.breakevens)}</div>
                         </td>
                         <td>
-                          <div><strong>Opening:</strong> {formatCompactCurrency(item.opening_commissions ?? null)}</div>
-                          <div><strong>Closing:</strong> —</div>
-                          <div><strong>Total:</strong> —</div>
+                          <div><strong><MetricLabel label="Opening" term="options_commission_per_contract" />:</strong> {formatCompactCurrency(item.opening_commissions ?? null)}</div>
+                          <div><strong><MetricLabel label="Closing" term="options_commission_per_contract" />:</strong> —</div>
+                          <div><strong><MetricLabel label="Total" term="options_commission_per_contract" />:</strong> —</div>
                         </td>
                         <td>{renderLegDetails(item)}</td>
                         <td>
@@ -279,7 +282,9 @@ export function PaperOptionsPositionsSectionContent({
             )}
           </section>
           <section>
-            <div style={{ marginBottom: 6, fontWeight: 600 }}>Manually closed paper positions</div>
+            <div style={{ marginBottom: 6, fontWeight: 600 }}>
+              <MetricLabel label="Manually closed paper positions" term="paper_lifecycle" />
+            </div>
             {closedItems.length === 0 ? (
               <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.9rem" }}>
                 No manually closed paper option positions yet.
@@ -294,7 +299,7 @@ export function PaperOptionsPositionsSectionContent({
                       <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>opened / closed</th>
                       <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>premium / risk</th>
                       <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>legs</th>
-                      <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>paper result</th>
+                      <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}><MetricLabel label="paper result" term="paper_lifecycle" /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -321,18 +326,18 @@ export function PaperOptionsPositionsSectionContent({
                         </td>
                         <td>
                           <div><strong>Open:</strong> {formatOpeningPremium(item)}</div>
-                          <div><strong>Max profit:</strong> {formatCompactCurrency(item.max_profit ?? null)}</div>
-                          <div><strong>Max loss:</strong> {formatCompactCurrency(item.max_loss ?? null)}</div>
-                          <div><strong>Breakevens:</strong> {formatBreakevens(item.breakevens)}</div>
+                          <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatCompactCurrency(item.max_profit ?? null)}</div>
+                          <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatCompactCurrency(item.max_loss ?? null)}</div>
+                          <div><strong><MetricLabel label="Breakevens" term="breakeven" />:</strong> {formatBreakevens(item.breakevens)}</div>
                         </td>
                         <td>{renderLegDetails(item)}</td>
                         <td>
                           <div><strong>Manual close recorded</strong></div>
-                          <div><strong>Gross P&amp;L:</strong> {formatCompactCurrency(item.gross_pnl ?? null)}</div>
-                          <div><strong>Opening commissions:</strong> {formatCompactCurrency(item.opening_commissions ?? null)}</div>
-                          <div><strong>Closing commissions:</strong> {formatCompactCurrency(item.closing_commissions ?? null)}</div>
-                          <div><strong>Total commissions:</strong> {formatCompactCurrency(item.total_commissions ?? null)}</div>
-                          <div><strong>Net P&amp;L:</strong> {formatCompactCurrency(item.net_pnl ?? null)}</div>
+                          <div><strong><MetricLabel label="Gross P&L" term="gross_pnl" />:</strong> {formatCompactCurrency(item.gross_pnl ?? null)}</div>
+                          <div><strong><MetricLabel label="Opening commissions" term="options_commission_per_contract" />:</strong> {formatCompactCurrency(item.opening_commissions ?? null)}</div>
+                          <div><strong><MetricLabel label="Closing commissions" term="options_commission_per_contract" />:</strong> {formatCompactCurrency(item.closing_commissions ?? null)}</div>
+                          <div><strong><MetricLabel label="Total commissions" term="options_commission_per_contract" />:</strong> {formatCompactCurrency(item.total_commissions ?? null)}</div>
+                          <div><strong><MetricLabel label="Net P&L" term="net_pnl" />:</strong> {formatCompactCurrency(item.net_pnl ?? null)}</div>
                         </td>
                       </tr>
                     ))}

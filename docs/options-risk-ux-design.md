@@ -90,6 +90,10 @@ Current implementation note:
   most visible score/risk labels: queue `Score`, `RR`, `CONF`, options
   Expected Range, max profit/loss, breakevens, gross/net P&L, and options
   commission labels.
+- `10C3` is complete for compact Orders metric-help rollout on equity
+  gross/net P&L and fee labels plus durable paper-options max profit/loss,
+  breakevens, gross/net P&L, opening/closing/total commissions, paper
+  lifecycle, and leg P&L/commission labels.
 
 ## UX goals
 
@@ -142,7 +146,8 @@ Options and cross-workflow risk surfaces should later use a shared glossary
 registry plus a reusable accessible help affordance for important labels,
 table headers, cards, and form fields.
 
-Current `10C1` foundation and `10C2` Recommendations rollout:
+Current `10C1` foundation, `10C2` Recommendations rollout, and `10C3`
+Orders rollout:
 
 - `apps/web/lib/glossary.ts` defines the initial shared term registry
 - `MetricHelp` / `MetricLabel` provide compact click/tap/keyboard-accessible
@@ -157,8 +162,12 @@ Current `10C1` foundation and `10C2` Recommendations rollout:
   - queue and detail labels for `Score`, `RR`, and `CONF` / confidence
   - options risk labels for Expected Range, max profit/loss, breakevens,
     gross/net P&L, and options commissions
-- broader Analysis, Replay, Orders, and a full glossary/reference page remain
-  future rollout items
+- Orders P&L/commission rollout is complete for the current compact slice:
+  - equity Orders gross/net P&L and fee labels
+  - durable paper-options max profit/loss, breakevens, gross/net P&L,
+    opening/closing/total commissions, paper lifecycle, and leg result labels
+- broader Analysis, Replay, and a full glossary/reference page remain future
+  rollout items
 - no recommendation scoring, probability modeling, provider behavior, payoff
   math, lifecycle math, commission math, or execution boundary changed
 
@@ -211,8 +220,9 @@ Suggested implementation sequence:
 6. Replay and Orders P&L/commission labels
 7. optional glossary/reference page
 
-The Recommendations portion of step 5 is complete in `10C2`; Analysis remains
-future rollout.
+The Recommendations portion of step 5 is complete in `10C2`; the Orders
+P&L/commission portion of step 6 is complete in `10C3`; Analysis and Replay
+remain future rollout.
 
 ### Expected range context
 

@@ -55,6 +55,9 @@ describe("PaperOptionsPositionsSectionContent", () => {
     expect(html).toContain("Source unavailable / As-of unavailable here is not a lifecycle error.");
     expect(html).toContain(OPTIONS_COMMISSION_REMINDER_COPY);
     expect(html).toContain(OPTIONS_COMMISSION_FORMULA_COPY);
+    expect(html).toContain("Help: Options commission");
+    expect(html).toContain("The paper options fee applied per contract, per leg, per open or close event.");
+    expect(html).toContain("Not per share and not multiplied by 100.");
     expect(html).toContain("No paper options positions yet");
     expect(html).not.toContain("live trading");
     expect(html).not.toContain("live routing");
@@ -178,6 +181,9 @@ describe("PaperOptionsPositionsSectionContent", () => {
 
     expect(html).toContain("Open paper positions");
     expect(html).toContain("Manually closed paper positions");
+    expect(html).toContain("Help: Open paper positions");
+    expect(html).toContain("Help: Manually closed paper positions");
+    expect(html).toContain("Paper lifecycle records do not mean external orders were sent.");
     expect(html).toContain("Open paper position");
     expect(html).toContain("Manually closed paper position");
     expect(html).toContain("AAPL");
@@ -198,6 +204,14 @@ describe("PaperOptionsPositionsSectionContent", () => {
     expect(html).toContain("$2.60");
     expect(html).toContain("$5.20");
     expect(html).toContain("$174.80");
+    expect(html).toContain("Help: Max profit");
+    expect(html).toContain("Help: Max loss");
+    expect(html).toContain("Help: Breakevens");
+    expect(html).toContain("Help: Gross P&amp;L");
+    expect(html).toContain("Help: Net P&amp;L");
+    expect(html).toContain("Help: Total commissions");
+    expect(html).toContain("Paper profit or loss before commissions are subtracted.");
+    expect(html).toContain("Paper profit or loss after modeled commissions are subtracted.");
     expect(html).toContain("Paper-only");
     expect(html).toContain("execution_enabled=false");
     expect(html).not.toContain("undefined");
@@ -270,6 +284,9 @@ describe("PaperOptionsPositionsSectionContent", () => {
     expect(html).toContain("leg gross");
     expect(html).toContain("leg commission");
     expect(html).toContain("leg net");
+    expect(html).toContain("Help: leg gross");
+    expect(html).toContain("Help: leg commission");
+    expect(html).toContain("Help: leg net");
     expect(html).toContain("buy");
     expect(html).toContain("CALL");
     expect(html).toContain("100");
