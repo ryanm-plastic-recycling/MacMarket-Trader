@@ -537,7 +537,9 @@ The codebase should define typed contracts for:
   adds the additive symbol-universe schema/migration foundation without
   changing current watchlist JSON behavior, schedule payload symbols,
   provider search, frontend UI, recommendation generation, or schedule
-  execution.
+  execution. `10W5` adds internal backend repository/read-model and resolver
+  helpers for the new tables while leaving production recommendation and
+  schedule flows on their current symbol-array inputs.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -643,10 +645,12 @@ comma-separated lists. The design checkpoint is captured in
 `docs/symbol-watchlist-design.md`; it recommends a hybrid path that preserves
 current watchlist compatibility while planning dedicated user-symbol universe
 records and watchlist membership records. The additive `10W4` schema
-foundation now exists for those future records, while current manual entry now
-shows clearer separator guidance, parsed uppercase previews, duplicate
-feedback, and ETF/index substitute copy, but remains a temporary manual
-universe until richer watchlist management is implemented. This is
+foundation now exists for those future records, and `10W5` adds internal
+read-model/resolver helpers without changing runtime recommendation or
+schedule behavior, while current manual entry now shows clearer separator
+guidance, parsed uppercase previews, duplicate feedback, and ETF/index
+substitute copy, but remains a temporary manual universe until richer
+watchlist management is implemented. This is
 recommendation-universe management only: provider support labels, options
 eligibility, and ETF/index substitution guidance such as `SPX` / `NDX` versus
 `SPY` / `QQQ` must not imply live routing or brokerage execution support.

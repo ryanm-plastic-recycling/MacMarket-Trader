@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import math
 from uuid import uuid4
@@ -35,7 +36,9 @@ from macmarket_trader.domain.models import (
     StrategyReportRunModel,
     StrategyReportScheduleModel,
     UserApprovalRequestModel,
+    UserSymbolUniverseModel,
     WatchlistModel,
+    WatchlistSymbolModel,
 )
 from macmarket_trader.domain.schemas import (
     FillRecord,
@@ -2162,6 +2165,441 @@ class WatchlistRepository:
             session.delete(row)
             session.commit()
             return True
+
+
+@dataclass(frozen=True)
+class SymbolUniverseResolution:
+    symbols: list[str]
+    source: str
+    provenance: dict[str, object]
+
+
+class SymbolUniverseResolver:
+    @staticmethod
+    def _iter_symbol_tokens(symbols: Iterable[str]) -> Iterable[str]:
+        for raw in symbols:
+            for token in str(raw).replace(",", " ").split():
+                yield token
+
+    @staticmethod
+    def normalize_symbol(symbol: str | None) -> str | None:
+        if symbol is None:
+            return None
+        normalized = str(symbol).strip().upper()
+        return normalized or None
+
+    @classmethod
+    def normalize_symbols(cls, symbols: Iterable[str] | None) -> list[str]:
+        if not symbols:
+            return []
+        output: list[str] = []
+        seen: set[str] = set()
+        for token in cls._iter_symbol_tokens(symbols):
+            normalized = cls.normalize_symbol(token)
+            if normalized is None or normalized in seen:
+                continue
+            seen.add(normalized)
+            output.append(normalized)
+        return output
+
+    @classmethod
+    def resolve(
+        cls,
+        *,
+        manual_symbols: Iterable[str] | None = None,
+        watchlist_symbols: Iterable[str] | None = None,
+        universe_symbols: Iterable[str] | None = None,
+        pinned_symbols: Iterable[str] | None = None,
+        exclusions: Iterable[str] | None = None,
+        watchlist_ids: Sequence[int] | None = None,
+        include_all_active: bool = False,
+    ) -> SymbolUniverseResolution:
+        buckets = {
+            "pinned": cls.normalize_symbols(pinned_symbols),
+            "manual": cls.normalize_symbols(manual_symbols),
+            "watchlist": cls.normalize_symbols(watchlist_symbols),
+            "all_active": cls.normalize_symbols(universe_symbols),
+        }
+        excluded = set(cls.normalize_symbols(exclusions))
+        output: list[str] = []
+        seen: set[str] = set()
+        duplicate_count = 0
+        excluded_count = 0
+
+        for bucket_name in ("pinned", "manual", "watchlist", "all_active"):
+            for symbol in buckets[bucket_name]:
+                if symbol in excluded:
+                    excluded_count += 1
+                    continue
+                if symbol in seen:
+                    duplicate_count += 1
+                    continue
+                seen.add(symbol)
+                output.append(symbol)
+
+        source_parts = [
+            name
+            for name in ("manual", "watchlist", "all_active")
+            if buckets[name]
+        ]
+        if not source_parts:
+            source = "empty"
+        elif len(source_parts) == 1:
+            source = source_parts[0]
+        else:
+            source = "mixed"
+
+        return SymbolUniverseResolution(
+            symbols=output,
+            source=source,
+            provenance={
+                "source": source,
+                "watchlist_ids": list(watchlist_ids or []),
+                "manual_count": len(buckets["manual"]),
+                "watchlist_count": len(buckets["watchlist"]),
+                "all_active_count": len(buckets["all_active"]),
+                "pinned_count": len(buckets["pinned"]),
+                "duplicate_count": duplicate_count,
+                "excluded_count": excluded_count,
+                "include_all_active": include_all_active,
+            },
+        )
+
+
+class SymbolUniverseRepository:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self.session_factory = session_factory
+        self.resolver = SymbolUniverseResolver()
+
+    @staticmethod
+    def normalize_symbol(symbol: str | None) -> str | None:
+        return SymbolUniverseResolver.normalize_symbol(symbol)
+
+    @staticmethod
+    def normalize_symbols(symbols: Iterable[str] | None) -> list[str]:
+        return SymbolUniverseResolver.normalize_symbols(symbols)
+
+    def upsert_user_symbol(
+        self,
+        *,
+        app_user_id: int,
+        symbol: str,
+        display_name: str | None = None,
+        asset_type: str | None = None,
+        exchange: str | None = None,
+        provider_source: str | None = None,
+        provider_symbol: str | None = None,
+        notes: str | None = None,
+        active: bool = True,
+        tags: list[str] | None = None,
+    ) -> UserSymbolUniverseModel:
+        normalized_symbol = self._require_normalized_symbol(symbol)
+        with self.session_factory() as session:
+            row = session.execute(
+                select(UserSymbolUniverseModel).where(
+                    UserSymbolUniverseModel.app_user_id == app_user_id,
+                    UserSymbolUniverseModel.normalized_symbol == normalized_symbol,
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                row = UserSymbolUniverseModel(
+                    app_user_id=app_user_id,
+                    symbol=normalized_symbol,
+                    normalized_symbol=normalized_symbol,
+                    display_name=display_name,
+                    asset_type=asset_type,
+                    exchange=exchange,
+                    provider_source=provider_source,
+                    provider_symbol=provider_symbol,
+                    notes=notes,
+                    active=active,
+                    tags=tags,
+                )
+                session.add(row)
+            else:
+                row.symbol = normalized_symbol
+                row.active = active
+                if display_name is not None:
+                    row.display_name = display_name
+                if asset_type is not None:
+                    row.asset_type = asset_type
+                if exchange is not None:
+                    row.exchange = exchange
+                if provider_source is not None:
+                    row.provider_source = provider_source
+                if provider_symbol is not None:
+                    row.provider_symbol = provider_symbol
+                if notes is not None:
+                    row.notes = notes
+                if tags is not None:
+                    row.tags = tags
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def get_user_symbol(
+        self,
+        *,
+        app_user_id: int,
+        symbol: str,
+    ) -> UserSymbolUniverseModel | None:
+        normalized_symbol = self._require_normalized_symbol(symbol)
+        with self.session_factory() as session:
+            return session.execute(
+                select(UserSymbolUniverseModel).where(
+                    UserSymbolUniverseModel.app_user_id == app_user_id,
+                    UserSymbolUniverseModel.normalized_symbol == normalized_symbol,
+                )
+            ).scalar_one_or_none()
+
+    def list_user_symbols(
+        self,
+        *,
+        app_user_id: int,
+        active: bool | None = True,
+    ) -> list[UserSymbolUniverseModel]:
+        with self.session_factory() as session:
+            stmt = select(UserSymbolUniverseModel).where(
+                UserSymbolUniverseModel.app_user_id == app_user_id
+            )
+            if active is not None:
+                stmt = stmt.where(UserSymbolUniverseModel.active.is_(active))
+            stmt = stmt.order_by(UserSymbolUniverseModel.normalized_symbol.asc())
+            return list(session.execute(stmt).scalars())
+
+    def set_user_symbol_active(
+        self,
+        *,
+        app_user_id: int,
+        symbol: str,
+        active: bool,
+    ) -> UserSymbolUniverseModel | None:
+        normalized_symbol = self._require_normalized_symbol(symbol)
+        with self.session_factory() as session:
+            row = session.execute(
+                select(UserSymbolUniverseModel).where(
+                    UserSymbolUniverseModel.app_user_id == app_user_id,
+                    UserSymbolUniverseModel.normalized_symbol == normalized_symbol,
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            row.active = active
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def add_watchlist_symbol(
+        self,
+        *,
+        app_user_id: int,
+        watchlist_id: int,
+        symbol: str,
+        user_symbol_id: int | None = None,
+        active: bool = True,
+        sort_order: int | None = None,
+        notes: str | None = None,
+    ) -> WatchlistSymbolModel | None:
+        normalized_symbol = self._require_normalized_symbol(symbol)
+        with self.session_factory() as session:
+            watchlist = self._get_watchlist_for_user(
+                session=session,
+                app_user_id=app_user_id,
+                watchlist_id=watchlist_id,
+            )
+            if watchlist is None:
+                return None
+            if user_symbol_id is not None:
+                linked = session.execute(
+                    select(UserSymbolUniverseModel).where(
+                        UserSymbolUniverseModel.id == user_symbol_id,
+                        UserSymbolUniverseModel.app_user_id == app_user_id,
+                    )
+                ).scalar_one_or_none()
+                if linked is None:
+                    return None
+
+            row = session.execute(
+                select(WatchlistSymbolModel).where(
+                    WatchlistSymbolModel.watchlist_id == watchlist_id,
+                    WatchlistSymbolModel.normalized_symbol == normalized_symbol,
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                row = WatchlistSymbolModel(
+                    watchlist_id=watchlist_id,
+                    app_user_id=app_user_id,
+                    user_symbol_id=user_symbol_id,
+                    symbol=normalized_symbol,
+                    normalized_symbol=normalized_symbol,
+                    active=active,
+                    sort_order=sort_order,
+                    notes=notes,
+                )
+                session.add(row)
+            else:
+                row.app_user_id = app_user_id
+                if user_symbol_id is not None:
+                    row.user_symbol_id = user_symbol_id
+                row.symbol = normalized_symbol
+                row.active = active
+                if sort_order is not None:
+                    row.sort_order = sort_order
+                if notes is not None:
+                    row.notes = notes
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def list_watchlist_symbols(
+        self,
+        *,
+        app_user_id: int,
+        watchlist_id: int,
+        active: bool | None = True,
+    ) -> list[WatchlistSymbolModel]:
+        with self.session_factory() as session:
+            stmt = select(WatchlistSymbolModel).where(
+                WatchlistSymbolModel.watchlist_id == watchlist_id,
+                WatchlistSymbolModel.app_user_id == app_user_id,
+            )
+            if active is not None:
+                stmt = stmt.where(WatchlistSymbolModel.active.is_(active))
+            stmt = stmt.order_by(
+                WatchlistSymbolModel.sort_order.is_(None),
+                WatchlistSymbolModel.sort_order.asc(),
+                WatchlistSymbolModel.normalized_symbol.asc(),
+                WatchlistSymbolModel.id.asc(),
+            )
+            return list(session.execute(stmt).scalars())
+
+    def set_watchlist_symbol_active(
+        self,
+        *,
+        app_user_id: int,
+        watchlist_id: int,
+        symbol: str,
+        active: bool,
+    ) -> WatchlistSymbolModel | None:
+        normalized_symbol = self._require_normalized_symbol(symbol)
+        with self.session_factory() as session:
+            row = session.execute(
+                select(WatchlistSymbolModel).where(
+                    WatchlistSymbolModel.watchlist_id == watchlist_id,
+                    WatchlistSymbolModel.app_user_id == app_user_id,
+                    WatchlistSymbolModel.normalized_symbol == normalized_symbol,
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            row.active = active
+            session.commit()
+            session.refresh(row)
+            return row
+
+    def remove_watchlist_symbol(
+        self,
+        *,
+        app_user_id: int,
+        watchlist_id: int,
+        symbol: str,
+        deactivate: bool = True,
+    ) -> bool:
+        normalized_symbol = self._require_normalized_symbol(symbol)
+        with self.session_factory() as session:
+            row = session.execute(
+                select(WatchlistSymbolModel).where(
+                    WatchlistSymbolModel.watchlist_id == watchlist_id,
+                    WatchlistSymbolModel.app_user_id == app_user_id,
+                    WatchlistSymbolModel.normalized_symbol == normalized_symbol,
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return False
+            if deactivate:
+                row.active = False
+            else:
+                session.delete(row)
+            session.commit()
+            return True
+
+    def resolve_symbols(
+        self,
+        *,
+        app_user_id: int,
+        manual_symbols: Iterable[str] | None = None,
+        watchlist_ids: Sequence[int] | None = None,
+        include_all_active: bool = False,
+        include_inactive: bool = False,
+        exclusions: Iterable[str] | None = None,
+        pinned_symbols: Iterable[str] | None = None,
+        include_legacy_watchlist_symbols: bool = True,
+    ) -> SymbolUniverseResolution:
+        watchlist_symbols: list[str] = []
+        active_filter = None if include_inactive else True
+        for watchlist_id in watchlist_ids or []:
+            memberships = self.list_watchlist_symbols(
+                app_user_id=app_user_id,
+                watchlist_id=watchlist_id,
+                active=active_filter,
+            )
+            if memberships:
+                watchlist_symbols.extend(row.normalized_symbol for row in memberships)
+                continue
+            if include_legacy_watchlist_symbols:
+                watchlist_symbols.extend(
+                    self._legacy_watchlist_symbols(
+                        app_user_id=app_user_id,
+                        watchlist_id=watchlist_id,
+                    )
+                )
+
+        universe_symbols: list[str] = []
+        if include_all_active:
+            universe_symbols = [
+                row.normalized_symbol
+                for row in self.list_user_symbols(app_user_id=app_user_id, active=active_filter)
+            ]
+
+        return self.resolver.resolve(
+            manual_symbols=manual_symbols,
+            watchlist_symbols=watchlist_symbols,
+            universe_symbols=universe_symbols,
+            pinned_symbols=pinned_symbols,
+            exclusions=exclusions,
+            watchlist_ids=watchlist_ids,
+            include_all_active=include_all_active,
+        )
+
+    def _legacy_watchlist_symbols(self, *, app_user_id: int, watchlist_id: int) -> list[str]:
+        with self.session_factory() as session:
+            row = self._get_watchlist_for_user(
+                session=session,
+                app_user_id=app_user_id,
+                watchlist_id=watchlist_id,
+            )
+            return list(row.symbols or []) if row is not None else []
+
+    @staticmethod
+    def _require_normalized_symbol(symbol: str) -> str:
+        normalized_symbol = SymbolUniverseResolver.normalize_symbol(symbol)
+        if normalized_symbol is None:
+            raise ValueError("symbol required")
+        return normalized_symbol
+
+    @staticmethod
+    def _get_watchlist_for_user(
+        *,
+        session: Session,
+        app_user_id: int,
+        watchlist_id: int,
+    ) -> WatchlistModel | None:
+        return session.execute(
+            select(WatchlistModel).where(
+                WatchlistModel.id == watchlist_id,
+                WatchlistModel.app_user_id == app_user_id,
+            )
+        ).scalar_one_or_none()
 
 
 class StrategyReportRepository:

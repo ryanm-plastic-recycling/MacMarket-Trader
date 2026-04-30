@@ -4,12 +4,14 @@ Last updated: 2026-04-30
 
 ## Purpose
 
-This document is a design checkpoint for better user-scoped symbol discovery,
-watchlist management, and recommendation-universe selection.
+This document started as a design checkpoint for better user-scoped symbol
+discovery, watchlist management, and recommendation-universe selection. It now
+also tracks the completed additive schema and internal repository/resolver
+foundation slices.
 
-It is documentation-only. It does not implement symbol search, change
-recommendation generation, add provider probes, change schemas, or imply live
-trading / brokerage routing.
+It does not implement symbol search, change recommendation generation, add
+provider probes, change current schedule execution, or imply live trading /
+brokerage routing.
 
 ## Current-state Inventory
 
@@ -139,6 +141,35 @@ Implemented now:
   membership
 
 Still unchanged by `10W4`:
+
+- existing `watchlists.symbols` JSON/list behavior
+- existing `strategy_report_schedules.payload.symbols` behavior
+- recommendation queue symbol handling
+- schedule execution behavior
+- frontend UI
+- provider-backed symbol search or metadata enrichment
+- live routing or brokerage execution
+
+## 10W5 Repository / Read-model and Resolver Foundation
+
+Status: complete for the current backend-only repository/read-model scope.
+
+Implemented now:
+
+- `SymbolUniverseRepository` internal helpers to upsert/get/list user-symbol
+  rows, mark them active/inactive, add/list/deactivate/remove normalized
+  watchlist membership rows, and create snapshot-only membership rows without
+  provider metadata
+- `SymbolUniverseResolver` pure helper to normalize, uppercase, trim, ignore
+  blanks, dedupe, apply exclusions, and combine pinned, manual, watchlist, and
+  active user-universe symbols in deterministic order
+- resolver fallback that can read legacy `watchlists.symbols` snapshots when a
+  watchlist has not been represented in normalized membership rows yet
+- focused backend tests for duplicate/upsert behavior, nullable provider
+  metadata, active filtering, snapshot-only membership, user scoping, resolver
+  dedupe/order, and legacy watchlist compatibility
+
+Still unchanged by `10W5`:
 
 - existing `watchlists.symbols` JSON/list behavior
 - existing `strategy_report_schedules.payload.symbols` behavior
@@ -489,8 +520,9 @@ Recommended staged implementation after this design checkpoint:
    `metadata_status=manual` or `metadata_unavailable` if that field is added
    later.
 3. Repository read model:
-   add repository methods to list, upsert, deactivate, and resolve user symbols
-   by current user. Keep `WatchlistRepository` compatibility methods intact.
+   complete for the current internal helper scope. `SymbolUniverseRepository`
+   can list, upsert, deactivate, and resolve user symbols by current user while
+   `WatchlistRepository` compatibility methods remain intact.
 4. Compatibility bridge:
    keep writing or deriving `watchlists.symbols` string arrays until old
    Schedules UI/API paths are retired.
@@ -619,8 +651,10 @@ Recommended slices:
   `watchlists.symbols` and schedule payload symbol snapshots untouched. No
   backfill was run in this slice.
 - `10W5` repository/read-model and resolver:
-  add user-symbol repository methods plus resolver functions that emit current
-  symbol arrays and provenance without changing ranking/scoring.
+  complete; adds user-symbol repository methods plus resolver functions that
+  emit current symbol arrays and provenance without changing ranking/scoring,
+  recommendation generation, schedule execution, current watchlist JSON
+  behavior, or frontend UI.
 - `10W6` user-scoped watchlist table UI:
   frontend table around the new read model, starting with manual add, delete,
   search, sort, active/inactive display, tags, and notes.
@@ -637,18 +671,17 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W4`: repository/read-model and resolver.
+Next after `10W5`: user-scoped watchlist table UI.
 
 Why:
 
-- it can start reading the new additive tables without replacing existing
-  watchlist JSON behavior
-- it can emit the same symbol arrays current recommendation and schedule paths
-  already accept
-- it keeps provider-backed search, UI replacement, storage replacement, and
-  metadata enrichment deferred
+- the additive schema and internal read-model now exist
+- table UI can remain display/manual-management oriented before
+  recommendation/schedule selector integration
+- it keeps provider-backed search, storage replacement, bulk import, and
+  ranking/schedule behavior changes deferred
 
 Do not start the next slice with provider-backed symbol search,
-recommendation/schedule selector behavior, UI replacement, or storage
-replacement. The next implementation should be a small repository/read-model
-and resolver foundation with compatibility tests.
+recommendation/schedule selector behavior, storage replacement, or bulk import.
+The next implementation should be a small user-scoped table UI around the
+current read model.
