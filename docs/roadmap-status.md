@@ -58,11 +58,11 @@ across equity Orders and durable paper-options rows. `10C4` is complete for
 compact Analysis and Replay metric-label help. `10C5` is complete for the
 closure audit, tiny safety-copy polish, and docs/test alignment, so the
 explainable metric glossary/tooltips rollout is closed for the current
-in-context scope. `10W1` through `10W7` are complete for symbol/watchlist
+in-context scope. `10W1` through `10W8` are complete for symbol/watchlist
 design, current comma-entry workflow cleanup, schema/read-model planning, and
 the additive symbol-universe schema/migration plus repository/resolver
 foundation, current watchlist UI polish, and bulk symbol merge/duplicate
-handling.
+handling plus the recommendation/schedule universe-selection design checkpoint.
 Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
@@ -77,8 +77,11 @@ tables internally without wiring production recommendation or schedule flows to
 them, while `10W6` improves the current Schedules watchlist table using only
 existing `watchlists.symbols` arrays and existing update/delete routes. `10W7`
 adds client-side replace/merge handling and duplicate feedback for bulk pasted
-symbols while preserving the same persisted arrays. Future operator glossary and
-explainable metric
+symbols while preserving the same persisted arrays. `10W8` now documents how
+future Recommendation and Schedule selectors should resolve manual, watchlist,
+all-active, tags/groups, exclusions, and pinned symbols into the same current
+symbol-array shape without changing runtime behavior. Future operator glossary
+and explainable metric
 tooltips are now tracked as workflow comprehension polish, not changes to
 scoring, probability modeling, provider behavior, or execution semantics.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
@@ -523,10 +526,9 @@ recommendation, or brokerage behavior.
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
   planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`
-  through `10W7` complete; broader `10A`, broader `10B`, optional
-  glossary/reference-page work,
-  recommendation/schedule universe selection, provider search implementation,
-  and later subphases remain open
+  through `10W8` complete; broader `10A`, broader `10B`, optional
+  glossary/reference-page work, resolved-universe preview implementation,
+  provider search implementation, and later subphases remain open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -592,6 +594,14 @@ Safe near-term:
   updates still submit the same deduped `symbols` array without provider
   search, normalized-table production UI, recommendation-generation, or
   schedule-execution changes
+- completed `10W8`: docs-only recommendation/schedule universe-selection
+  design checkpoint; records current raw symbol-array flows, future selector
+  modes (`manual`, `watchlist`, `watchlist_plus_manual`, `all_active`,
+  `tags`, `mixed`, exclusions, pinned symbols), schedule static-snapshot
+  preference, optional dynamic-watchlist risk, resolver rules, future preview
+  API implications, UX concepts, tests, and implementation slices without
+  changing application code, schema, provider behavior, recommendation
+  generation, or schedule execution
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
 - completed `10C1`: central glossary registry and reusable accessible
@@ -843,7 +853,9 @@ First implementation slice:
   and focused backend tests. `10W5` repository/read-model and resolver
   foundation is complete for internal backend helpers only. `10W6` current
   watchlist table/list polish and `10W7` bulk merge/duplicate handling are
-  complete for the existing frontend JSON watchlist workflow.
+  complete for the existing frontend JSON watchlist workflow. `10W8`
+  recommendation/schedule universe-selection design is complete as a docs-only
+  checkpoint.
   Existing Phase 10 numbering is preserved: `10D` remains the
   expiration-settlement design checkpoint, so symbol/watchlist work uses a
   workflow-polish `10W` lane unless the roadmap is explicitly renumbered later.
@@ -879,6 +891,10 @@ First implementation slice:
   recommendation and scheduled-report workflows should eventually select from
   watchlists or groups rather than raw comma lists, while still allowing manual
   symbol entry when metadata is missing or provider lookup is unavailable.
+  The `10W8` design says non-manual sources should show a resolved preview
+  before submit, Recommendations should still submit a resolved `symbols` array
+  unless a later contract is approved, and schedules should default to a static
+  resolved snapshot rather than silently changing as watchlists change.
 - Recommended data-model path:
   use the compatibility-first `user_symbol_universe` plus `watchlist_symbols`
   foundation now added in `10W4`. Keep current `watchlists.symbols` snapshots and schedule
@@ -899,12 +915,12 @@ First implementation slice:
   comma-entry copy` -> completed `10W3 schema/read-model checkpoint` ->
   completed `10W4 schema/migration foundation` -> completed `10W5 repository/read-model
   and resolver` -> completed `10W6 current watchlist table UI polish` ->
-  completed `10W7 bulk import/duplicate handling` -> `10W8 schedule/recommendation universe selection` -> `10W9
+  completed `10W7 bulk import/duplicate handling` -> completed `10W8 schedule/recommendation universe selection design` -> `10W8A resolved-universe preview helper/API` -> `10W8B Recommendations selector UI` -> `10W8C Schedule selector/snapshot behavior` -> `10W8D closure` -> `10W9
   provider-backed discovery only if separately approved` -> `10W10 closure`.
 - Suggested next implementation slice:
-  `10W8` schedule/recommendation universe selection only, if explicitly
-  authorized. Keep provider-backed search, normalized table production UI, and
-  ranking changes deferred.
+  `10W8A` resolved-universe preview helper/API only, if explicitly authorized.
+  Keep provider-backed search, normalized table production UI, and ranking
+  changes deferred.
 - Explicitly not complete:
   normalized symbol-universe production UI, provider probes,
   provider search/fetch behavior, live routing, brokerage execution,
@@ -1437,6 +1453,14 @@ diffs. Notable recent inflection points:
   behavior, strategy schedule payload symbols, recommendation generation,
   schedule execution, normalized symbol-universe production UI, provider
   search/probes, live routing, and brokerage execution remain unchanged.
+- 2026-04-30 - Phase 10W8 complete as a docs-only recommendation/schedule
+  universe-selection design checkpoint: `docs/symbol-watchlist-design.md` now
+  records current raw symbol-array flows, future selector modes, static schedule
+  snapshot semantics, optional dynamic-watchlist risk, resolver rules, future
+  preview API implications, UX concepts, tests, and implementation slices
+  (`10W8A` through `10W8D`). No application code, backend behavior, frontend
+  behavior, schema, provider search/probes, recommendation generation, schedule
+  execution, live routing, or brokerage execution changed.
 - 2026-04-30 - Future operator glossary and explainable metric tooltips
   roadmap item added: a docs-only planning note now tracks concise
   hover/click/tap metric help, formulas and examples where useful, a shared

@@ -229,6 +229,8 @@ Future roadmap work is planned for better recommendation-universe management:
 - optional groups such as `Core`, `ETFs`, `Tech`, `Options Candidates`, and
   `Watch Only`
 - provider/source support labels when available
+- future universe selectors for Recommendations and Schedules, with resolved
+  previews before submit
 - ETF/index substitution guidance such as `SPX` / `NDX` versus `SPY` / `QQQ`
 
 This future work is not trade execution. Provider support labels and options
@@ -243,12 +245,16 @@ Design checkpoint status:
   compatibility while designing dedicated user-symbol universe / watchlist
   membership records before any migration
 - the current comma-entry cleanup, current watchlist table polish, and bulk
-  duplicate-handling slices are complete; provider-backed search, normalized
-  symbol-universe production UI, import audit, and recommendation-universe
-  selectors remain future work
+  duplicate-handling slices are complete; recommendation/schedule
+  universe-selection design is documented; provider-backed search, normalized
+  symbol-universe production UI, import audit, and selector implementation
+  remain future work
 - the schema/read-model checkpoint now recommends a future
   `user_symbol_universe` plus `watchlist_symbols` model while preserving
   current watchlist and schedule symbol snapshots for compatibility
+- the universe-selection checkpoint recommends static resolved schedule
+  snapshots by default so future schedule runs do not unexpectedly change when
+  watchlists change
 
 ## 8. Metric glossary and tooltips
 
@@ -510,6 +516,10 @@ Current project status, in operator terms:
   explicit for pasted symbols, preserve existing symbols first when merging,
   append new unique symbols in pasted order, and report duplicates before
   saving the same current symbol-array shape
+- Phase 10W8 complete as a design checkpoint: future Recommendations and
+  Schedules universe selectors should resolve manual, watchlist, all-active,
+  tags/groups, exclusions, and pinned symbols into previewed symbol arrays
+  before submit, with static schedule snapshots as the default
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders

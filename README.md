@@ -545,7 +545,9 @@ The codebase should define typed contracts for:
   the existing watchlist update route while keeping existing JSON persistence.
   `10W7` adds replace/add-to-existing bulk paste handling and duplicate
   feedback for current watchlist edits while preserving the same symbols-array
-  payloads.
+  payloads. `10W8` documents the future recommendation/schedule universe
+  selector design, including resolved previews and static schedule snapshots,
+  without changing runtime behavior.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -660,6 +662,10 @@ per-symbol removal through the current update route. `10W7` adds explicit
 replace versus add-to-existing handling for bulk pasted watchlist symbols,
 keeps existing symbols first when merging, appends new unique symbols in paste
 order, and reports duplicates before saving the same deduped symbol array.
+`10W8` now documents how future Recommendations and Schedules selectors should
+resolve manual lists, watchlists, all-active symbols, tags/groups, exclusions,
+and pinned symbols into previewed arrays before submit, with static schedule
+snapshots as the default and dynamic watchlist refresh deferred.
 Current manual entry now shows clearer separator guidance, parsed uppercase
 previews, duplicate feedback, and ETF/index substitute copy, but remains a
 temporary manual universe until richer watchlist management is implemented.

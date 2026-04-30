@@ -7,7 +7,8 @@ Last updated: 2026-04-30
 This document started as a design checkpoint for better user-scoped symbol
 discovery, watchlist management, and recommendation-universe selection. It now
 also tracks the completed additive schema, internal repository/resolver
-foundation, current watchlist UI polish, and bulk symbol handling slices.
+foundation, current watchlist UI polish, bulk symbol handling, and
+recommendation/schedule universe-selection design slices.
 
 It does not implement symbol search, change recommendation generation, add
 provider probes, change current schedule execution, or imply live trading /
@@ -49,6 +50,11 @@ Current symbol entry is intentionally simple:
 - Recommendation queue:
   `/user/recommendations/queue` reads `symbols` directly from the request,
   fetches bars per symbol, and passes them into the same ranking engine.
+- SymbolUniverseResolver:
+  the internal resolver can already normalize, dedupe, combine manual,
+  watchlist, all-active, pinned, and excluded symbols, and fall back to legacy
+  watchlist `symbols` snapshots. It is not wired into production
+  Recommendations or schedule flows yet.
 
 Current scoping:
 
@@ -90,6 +96,9 @@ Current limitations:
 - There are no tags/groups, notes, import audit, or per-symbol update
   timestamps.
 - Recommendation and schedule workflows still depend on raw symbol arrays.
+- Universe selection is not yet a production workflow. Current compatibility
+  remains JSON/snapshot-based until a later implementation explicitly wires
+  resolver output into Recommendations or Schedules.
 
 ## 10W2 Current Manual-entry Cleanup
 
@@ -252,6 +261,230 @@ Still unchanged by `10W7`:
 - import files, CSV parsing, or import audit trails
 - active/inactive symbol state, tags/groups, and notes in production UI
 - live routing or brokerage execution
+
+## 10W8 Recommendation / Schedule Universe Selection Design Checkpoint
+
+Status: complete as a documentation-only design checkpoint.
+
+No application code, backend behavior, frontend behavior, schema, provider
+behavior, recommendation generation, or schedule execution is changed by this
+section.
+
+### Current Flow Inventory
+
+Current Recommendations flow:
+
+- the frontend queue form holds a manual symbol text field
+- `parseManualSymbolEntry(...)` normalizes that text before submit
+- `/user/recommendations/queue` receives a `symbols` array
+- the backend uppercases non-blank symbols, fetches bars for each symbol, and
+  passes `bars_by_symbol` into the ranking engine
+- recommendation generation/scoring does not know whether symbols came from
+  manual entry, a copied watchlist, or a future selector
+
+Current schedule flow:
+
+- the Schedules form holds a manual symbol text field
+- saved watchlists can be applied into that field by copying their current
+  `symbols` JSON values
+- schedule create/update persists copied symbols inside
+  `strategy_report_schedules.payload.symbols`
+- `StrategyReportService.run_schedule()` reads that payload snapshot at run
+  time
+- current schedules do not stay linked to a watchlist after creation/update
+
+Current watchlist flow:
+
+- `/user/watchlists` exposes user-scoped rows with `id`, `name`, `symbols`, and
+  `created_at`
+- current watchlist UI edits the existing JSON/list array through current
+  create/update/delete routes
+- the normalized `user_symbol_universe` and `watchlist_symbols` tables exist,
+  and repository/resolver helpers exist, but production UI does not require
+  those tables yet
+
+### Future Universe Selection Modes
+
+Future Recommendation and Schedule forms should support these source modes:
+
+- `manual`: temporary symbols entered directly in the form
+- `watchlist`: one selected user-scoped watchlist
+- `watchlist_plus_manual`: selected watchlist plus temporary additions
+- `all_active`: all active rows in the user's symbol universe
+- `tags`: selected user-scoped tags/groups such as `Core`, `ETFs`, or
+  `Options Candidates`
+- `mixed`: a deliberate combination of supported selector buckets
+- `exclusions`: symbols removed after inclusion
+- `pinned`: priority symbols placed first without duplication
+
+Schedule-specific modes:
+
+- `static_snapshot`: store the resolved symbols used at creation/update time
+  and run future reports from that snapshot
+- `dynamic_watchlist`: optionally refresh from a watchlist at run time only
+  after a later explicit approval, because dynamic schedules can change results
+  without the operator editing the schedule
+
+The first schedule implementation should default to static snapshots.
+
+### Recommendations Workflow Design
+
+Future Recommendations should let the operator choose a universe source before
+submitting the queue:
+
+- a compact `Universe source` dropdown: manual list, watchlist, group/tag, all
+  active, or mixed
+- source-specific controls, such as watchlist picker or tag picker
+- optional manual additions
+- optional exclusions and pinned symbols
+- a resolved-symbol preview before submit
+- symbol count, duplicate/exclusion warning, and source badge
+- `Metadata unavailable` copy when provider metadata is absent
+- SPX/NDX versus SPY/QQQ guidance near options/index-sensitive choices
+
+Guardrails:
+
+- selecting a non-manual source must not silently change current queue behavior
+- the final submit should still send a resolved `symbols` array unless/until a
+  separately approved backend contract is added
+- provider metadata must be optional and non-blocking
+- missing metadata should not block manual symbols
+- no selector label should imply execution support
+
+### Schedule Workflow Design
+
+Future Schedules should separate "source chosen by the operator" from "symbols
+used by the run":
+
+- store resolved `symbols` as the execution/audit snapshot
+- optionally store `universe_selector` metadata such as:
+  - `source_type`: `manual`, `watchlist`, `watchlist_plus_manual`, `tags`,
+    `all_active`, or `mixed`
+  - selected watchlist IDs or tag names
+  - manual additions
+  - exclusions
+  - pinned symbols
+  - resolver version
+  - resolved_at timestamp
+- show a static snapshot warning:
+  `Schedules use the resolved snapshot saved here unless dynamic refresh is
+  explicitly enabled later.`
+- if dynamic refresh is ever added, label it separately as
+  `Refresh from watchlist at run time` and show that future runs may change as
+  list membership changes
+
+Initial schedule selector behavior should not change current schedule execution.
+It should resolve at create/update time and persist the same `payload.symbols`
+shape current runs already consume.
+
+### Resolver Rules
+
+The future resolver should:
+
+1. Normalize symbols to uppercase and trim blanks.
+2. Ignore empty tokens.
+3. Dedupe by normalized symbol.
+4. Preserve deterministic order:
+   pinned symbols first, then manual additions, then watchlist membership order
+   or legacy watchlist snapshot order, then tags/groups, then all-active
+   fallback order.
+5. Apply exclusions last.
+6. Respect active-only filtering for user-universe and watchlist-membership
+   modes by default.
+7. Enforce user scoping for every watchlist, tag/group, and user-symbol row.
+8. Treat provider metadata as nullable and non-blocking.
+9. Avoid provider API calls.
+10. Return a provenance summary with selected source IDs/names, duplicate
+    counts, excluded counts, pinned symbols, and metadata fallback counts when
+    available.
+
+### Data Model and API Implications
+
+Existing `10W4` / `10W5` foundation can support the future selector:
+
+- `user_symbol_universe` for all-active and tag/group selections
+- `watchlist_symbols` for normalized membership and active state
+- legacy `watchlists.symbols` as a compatibility snapshot/fallback
+- `SymbolUniverseResolver` as the deterministic symbol-array resolver
+
+Likely future APIs:
+
+- `POST /user/symbol-universe/preview`
+  returns resolved symbols plus provenance for UI preview without triggering
+  recommendation generation or schedule execution
+- `POST /user/recommendations/universe-preview`
+  optional narrower wrapper if Recommendations needs mode-specific copy
+- `POST /user/strategy-schedules/universe-preview`
+  optional narrower wrapper if Schedules needs snapshot/dynamic warnings
+- future watchlist membership APIs for normalized add/remove/active state,
+  still preserving legacy snapshots during migration
+
+Do not implement these APIs in the design checkpoint.
+
+### UX Concepts
+
+Use compact operator-console controls:
+
+- `Universe source` dropdown
+- source badge such as `Manual`, `Watchlist snapshot`, `All active`, or `Mixed`
+- resolved-symbol preview with count
+- duplicate and exclusion warning line
+- pinned-symbol chip row if used
+- static snapshot warning for schedules
+- `Provider metadata unavailable` muted note
+- SPX/NDX versus SPY/QQQ guidance where options/index coverage matters
+- no execution, routing, or broker-readiness language
+
+### Future Tests
+
+Future implementation should test:
+
+- manual list resolution
+- watchlist resolution through normalized membership
+- legacy watchlist `symbols` fallback
+- all-active resolution
+- tags/groups resolution if implemented
+- watchlist plus manual additions
+- exclusions applied last
+- pinned symbols first
+- deterministic ordering
+- duplicate counts/provenance
+- user scoping
+- provider metadata unavailable fallback
+- schedule static snapshot behavior
+- optional dynamic-watchlist mode only if separately approved
+- Recommendation submit uses resolved symbols without changing scoring
+- schedule create/update stores resolved symbols without changing run behavior
+- no provider lookup is required
+- no execution/routing implication appears
+
+### Recommended Implementation Slices
+
+- `10W8` design checkpoint:
+  complete with this section; docs-only.
+- `10W8A` resolved-universe preview helper/API:
+  backend read-only preview using existing resolver, no recommendation or
+  schedule execution side effects.
+- `10W8B` Recommendations universe selector UI:
+  frontend selector and preview that submits the same resolved `symbols` array
+  current queue behavior already accepts.
+- `10W8C` Schedule universe source selector / snapshot behavior:
+  frontend selector and optional selector metadata while preserving
+  `payload.symbols` as the run snapshot.
+- `10W8D` tests/docs closure:
+  prove resolver provenance, user scoping, snapshot semantics, fallback copy,
+  and no recommendation/scoring/schedule-execution drift.
+
+Risk notes:
+
+- Dynamic schedules are higher risk than static snapshots because watchlist
+  edits could affect future reports without schedule edits.
+- Tag/group selection depends on normalized production UI and should wait until
+  tags exist in usable operator workflows.
+- Provider-backed discovery and metadata enrichment remain separate from
+  selector resolution.
+- Recommendation scoring and `RecommendationService.generate()` must not change
+  as part of universe selection.
 
 ## Symbol Discovery Design
 
@@ -738,8 +971,11 @@ Recommended slices:
   merge/replace edit modes, merged preview, deterministic existing-first order,
   and duplicate feedback while preserving existing watchlist JSON behavior.
 - `10W8` recommendation/schedule universe selection:
-  resolve watchlists, tags/groups, exclusions, pinned symbols, and temporary
-  manual symbols into current symbol arrays.
+  complete as a design checkpoint; plans manual, watchlist, watchlist plus
+  manual, all-active, tags/groups, exclusions, pinned symbols, static schedule
+  snapshots, optional dynamic watchlist mode later, resolver provenance, API
+  implications, UX, tests, and implementation slices without changing runtime
+  behavior.
 - `10W9` provider-backed symbol discovery:
   add provider-backed search only after explicit provider-design approval.
 - `10W10` closure:
@@ -748,22 +984,19 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W7`: recommendation/schedule universe selection design or
-implementation, if explicitly authorized.
+Next after `10W8`: resolved-universe preview helper/API (`10W8A`), if
+explicitly authorized.
 
 Why:
 
-- current manual entry, saved-list management, and merge/replace bulk paste are
-  easier to inspect
-- the next useful operator step is choosing watchlists or temporary manual
-  symbols as a recommendation/schedule universe while still resolving to the
-  current symbol-array shape
-- provider-backed search, storage replacement, normalized table production UI,
-  and ranking/schedule behavior changes can remain deferred until explicitly
-  scoped
+- the selector design is now documented
+- a read-only preview API can validate resolver output and provenance before
+  any Recommendations or Schedules UI starts using it
+- provider-backed search, storage replacement, broad normalized table UI, and
+  ranking/schedule behavior changes can remain deferred until explicitly scoped
 
 Do not start the next slice with provider-backed symbol search,
 storage replacement, normalized symbol-universe production UI, or ranking
-changes. The next implementation should be a small universe-selection slice
-that resolves into the current symbol arrays without changing recommendation
+changes. The next implementation should be read-only preview plumbing that
+resolves into the current symbol arrays without changing recommendation
 generation or schedule execution.
