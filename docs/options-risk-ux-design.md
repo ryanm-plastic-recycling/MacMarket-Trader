@@ -86,6 +86,10 @@ Current implementation note:
   foundation: central glossary registry, reusable metric-help component, and
   narrow first integrations in Settings commission labels, Expected Range
   visualization labels, and Provider Health readiness context.
+- `10C2` is complete for compact Recommendations metric-help rollout on the
+  most visible score/risk labels: queue `Score`, `RR`, `CONF`, options
+  Expected Range, max profit/loss, breakevens, gross/net P&L, and options
+  commission labels.
 
 ## UX goals
 
@@ -138,7 +142,7 @@ Options and cross-workflow risk surfaces should later use a shared glossary
 registry plus a reusable accessible help affordance for important labels,
 table headers, cards, and form fields.
 
-Current `10C1` foundation:
+Current `10C1` foundation and `10C2` Recommendations rollout:
 
 - `apps/web/lib/glossary.ts` defines the initial shared term registry
 - `MetricHelp` / `MetricLabel` provide compact click/tap/keyboard-accessible
@@ -148,8 +152,13 @@ Current `10C1` foundation:
   - Settings options commission per contract
   - Expected Range visualization labels
   - Provider Health readiness context
-- broader Analysis/Recommendations score columns, Replay, Orders, and a full
-  glossary/reference page remain future rollout items
+- Recommendations score/risk-label rollout is complete for the current
+  compact slice:
+  - queue and detail labels for `Score`, `RR`, and `CONF` / confidence
+  - options risk labels for Expected Range, max profit/loss, breakevens,
+    gross/net P&L, and options commissions
+- broader Analysis, Replay, Orders, and a full glossary/reference page remain
+  future rollout items
 - no recommendation scoring, probability modeling, provider behavior, payoff
   math, lifecycle math, commission math, or execution boundary changed
 
@@ -201,6 +210,9 @@ Suggested implementation sequence:
 5. Analysis and Recommendations score/risk labels
 6. Replay and Orders P&L/commission labels
 7. optional glossary/reference page
+
+The Recommendations portion of step 5 is complete in `10C2`; Analysis remains
+future rollout.
 
 ### Expected range context
 

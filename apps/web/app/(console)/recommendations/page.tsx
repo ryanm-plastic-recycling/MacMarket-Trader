@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { WorkflowChart } from "@/components/charts/workflow-chart";
 import { OptionsResearchPreview } from "@/components/recommendations/options-research-preview";
+import { MetricLabel } from "@/components/ui/metric-help";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
@@ -601,7 +602,7 @@ export default function RecommendationsPage() {
           {!loading.queue && queue.length === 0 ? <EmptyState title="No queue candidates" hint="Refresh queue with at least one symbol." /> : null}
           {queue.length > 0 ? (
             <table className="op-table">
-              <thead><tr><th>rank</th><th>symbol</th><th>strategy</th><th>status</th><th>score</th><th>rr</th><th>conf</th><th></th></tr></thead>
+              <thead><tr><th>rank</th><th>symbol</th><th>strategy</th><th>status</th><th><MetricLabel label="score" term="score" /></th><th><MetricLabel label="rr" term="rr" /></th><th><MetricLabel label="conf" term="confidence" /></th><th></th></tr></thead>
               <tbody>
                 {queue.map((row) => {
                   const key = `${row.symbol}-${row.strategy}-${row.rank}`;
@@ -680,8 +681,8 @@ export default function RecommendationsPage() {
                 <>
                   <div><strong>workflow source:</strong> {selectedQueue.workflow_source}{selectedQueue.source && selectedQueue.source !== selectedQueue.workflow_source ? ` (${selectedQueue.source})` : ""}</div>
                   <div><strong>status:</strong> {selectedQueue.status.replace(/_/g, " ")}</div>
-                  <div><strong>score:</strong> {selectedQueue.score}</div>
-                  <div><strong>expected rr:</strong> {selectedQueue.expected_rr} &nbsp; <strong>confidence:</strong> {selectedQueue.confidence}</div>
+                  <div><strong><MetricLabel label="score" term="score" />:</strong> {selectedQueue.score}</div>
+                  <div><strong><MetricLabel label="expected rr" term="rr" />:</strong> {selectedQueue.expected_rr} &nbsp; <strong><MetricLabel label="confidence" term="confidence" />:</strong> {selectedQueue.confidence}</div>
                   <div><strong>thesis:</strong> {selectedQueue.thesis}</div>
                   <div><strong>reason:</strong> {selectedQueue.reason_text}</div>
                   <div><strong>trigger:</strong> {asText(selectedQueue.trigger)}</div>
@@ -798,7 +799,7 @@ export default function RecommendationsPage() {
                   <div style={sep}>
                     <div style={label}>SIZING &amp; QUALITY</div>
                     {sizing ? <div><strong>shares:</strong> {asText(sizing.shares)} &nbsp; <strong>risk $:</strong> {asText(sizing.risk_dollars)} &nbsp; <strong>stop dist:</strong> {asText(sizing.stop_distance)}</div> : null}
-                    {quality ? <div><strong>expected RR:</strong> {asText(quality.expected_rr)} &nbsp; <strong>confidence:</strong> {asText(quality.confidence)} &nbsp; <strong>risk score:</strong> {asText(quality.risk_score)}</div> : null}
+                    {quality ? <div><strong><MetricLabel label="expected RR" term="rr" />:</strong> {asText(quality.expected_rr)} &nbsp; <strong><MetricLabel label="confidence" term="confidence" />:</strong> {asText(quality.confidence)} &nbsp; <strong><MetricLabel label="risk score" term="score" />:</strong> {asText(quality.risk_score)}</div> : null}
                   </div>
                 ) : null}
 
@@ -810,7 +811,7 @@ export default function RecommendationsPage() {
                   <>
                     <div><strong>promoted from:</strong> Rank {asText(selectedRecProvenance.rank)} — {asText(selectedRecProvenance.strategy)} on {asText(selectedRecProvenance.symbol)}</div>
                     <div><strong>queue status:</strong> {typeof selectedRecProvenance.status === "string" ? selectedRecProvenance.status.replace(/_/g, " ") : asText(selectedRecProvenance.status)}</div>
-                    <div><strong>queue score:</strong> {asText(selectedRecProvenance.score)} &nbsp; <strong>rr:</strong> {asText(selectedRecProvenance.expected_rr)} &nbsp; <strong>conf:</strong> {asText(selectedRecProvenance.confidence)}</div>
+                    <div><strong><MetricLabel label="queue score" term="score" />:</strong> {asText(selectedRecProvenance.score)} &nbsp; <strong><MetricLabel label="rr" term="rr" />:</strong> {asText(selectedRecProvenance.expected_rr)} &nbsp; <strong><MetricLabel label="conf" term="confidence" />:</strong> {asText(selectedRecProvenance.confidence)}</div>
                     <div><strong>timeframe:</strong> {asText(selectedRecProvenance.timeframe)} &nbsp; <strong>workflow source:</strong> {asText(selectedRecProvenance.workflow_source)}</div>
                   </>
                 ) : (

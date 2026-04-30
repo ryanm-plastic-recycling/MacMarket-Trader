@@ -236,9 +236,11 @@ payoff preview.
 
 The first glossary foundation is now in place: a shared registry and reusable
 metric-help component can provide small in-context help icons with accessible
-click/tap explanations. The first rollout is intentionally narrow, covering
-commission settings, Expected Range labels, and Provider readiness context
-before broader score tables and workflow pages are retrofitted.
+click/tap explanations. The rollout currently covers commission settings,
+Expected Range labels, Provider readiness context, and the most visible
+Recommendations score/risk labels such as `Score`, `RR`, `CONF`, max
+profit/loss, breakevens, gross/net P&L, and options commissions. Broader
+Analysis, Replay, Orders, and reference-page rollout remains future work.
 
 Important interpretation rules:
 
@@ -464,9 +466,9 @@ Current project status, in operator terms:
   management is planned for recommendation-universe management, not execution
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation and
-  narrow first integrations; broader rollout remains future work and does not
-  change scoring, probability, provider, execution, payoff, lifecycle, or
-  commission behavior
+  `10C2` Recommendations score/risk-label rollout; broader rollout remains
+  future work and does not change scoring, probability, provider, execution,
+  payoff, lifecycle, or commission behavior
 
 Current options boundary:
 

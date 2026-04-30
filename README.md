@@ -522,7 +522,9 @@ The codebase should define typed contracts for:
   Expected Range visualization on Analysis with existing fields only, and
   `10B1` polishes durable Orders visibility for paper options with existing
   lifecycle fields only. `10C1` adds the central explainable metric glossary
-  registry and reusable metric-help foundation with narrow first integrations.
+  registry and reusable metric-help foundation with narrow first integrations;
+  `10C2` adds compact help to the most visible Recommendations score/risk
+  labels without changing scoring or lifecycle behavior.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.

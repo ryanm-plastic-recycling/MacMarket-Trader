@@ -598,6 +598,16 @@ describe("OptionsStructureRiskSummary", () => {
     expect(html).toContain("Manually closed");
     expect(html).toContain("$180.00");
     expect(html).toContain("$174.80");
+    expect(html).toContain("Help: Max profit");
+    expect(html).toContain("Help: Max loss");
+    expect(html).toContain("Help: Breakevens");
+    expect(html).toContain("Help: Expected Range");
+    expect(html).toContain("The largest modeled gain for the structure");
+    expect(html).toContain("The largest modeled loss for the structure");
+    expect(html).toContain("Underlying price where the structure&#x27;s modeled payoff");
+    expect(html).toContain("Paper profit or loss before commissions are subtracted.");
+    expect(html).toContain("Paper profit or loss after modeled commissions are subtracted.");
+    expect(html).toContain("The paper options fee applied per contract, per leg, per open or close event.");
     expect(html).toContain("Expected Range is research context only. It does not modify expiration payoff math.");
     expect(html).toContain("Commission is per contract per leg, not multiplied by 100.");
     expect(html).not.toContain("undefined");
@@ -878,7 +888,12 @@ describe("OptionsPaperLifecyclePanel", () => {
     );
 
     expect(html).toContain("Paper option position manually closed");
-    expect(html).toContain("Gross P&amp;L:");
+    expect(html).toContain("Gross P&amp;L");
+    expect(html).toContain("Net P&amp;L");
+    expect(html).toContain("Help: Gross P&amp;L");
+    expect(html).toContain("Help: Net P&amp;L");
+    expect(html).toContain("Help: Total commissions");
+    expect(html).toContain("not multiplied by 100");
     expect(html).toContain("$300.00");
     expect(html).toContain("$297.40");
     expect(html).toContain("$2.60");

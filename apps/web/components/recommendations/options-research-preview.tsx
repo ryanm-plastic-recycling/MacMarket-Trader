@@ -5,8 +5,10 @@ import React, { useEffect, useState } from "react";
 import { Card, EmptyState, ErrorState, StatusBadge } from "@/components/operator-ui";
 import { WorkflowChart } from "@/components/charts/workflow-chart";
 import { ExpectedRangeVisualization } from "@/components/options/expected-range-visualization";
+import { MetricLabel } from "@/components/ui/metric-help";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
 import type { HacoChartPayload } from "@/lib/haco-api";
+import type { GlossaryTermKey } from "@/lib/glossary";
 import {
   buildOptionsReplayPreviewRequest,
   canRenderOptionsResearchChart,
@@ -189,10 +191,12 @@ function getPaperLifecycleLabel(
 
 function RiskMetricCard({
   label,
+  term,
   value,
   detail,
 }: {
   label: string;
+  term?: GlossaryTermKey;
   value: string;
   detail?: string | null;
 }) {
@@ -205,7 +209,9 @@ function RiskMetricCard({
         background: "rgba(18, 28, 40, 0.28)",
       }}
     >
-      <div style={{ fontSize: "0.76rem", fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: "0.76rem", fontWeight: 600, marginBottom: 4 }}>
+        {term ? <MetricLabel label={label} term={term} /> : label}
+      </div>
       <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>{value}</div>
       {detail ? (
         <div style={{ marginTop: 4, color: "var(--op-muted, #7a8999)", lineHeight: 1.45, fontSize: "0.82rem" }}>
@@ -464,21 +470,25 @@ export function OptionsStructureRiskSummary({
         />
         <RiskMetricCard
           label="Max profit"
+          term="max_profit"
           value={formatResearchCurrency(maxProfit)}
           detail={replayPreview ? "Read-only expiration payoff preview loaded." : "Research contract estimate."}
         />
         <RiskMetricCard
           label="Max loss"
+          term="max_loss"
           value={formatResearchCurrency(maxLoss)}
           detail={replayPreview ? "Read-only expiration payoff preview loaded." : "Research contract estimate."}
         />
         <RiskMetricCard
           label="Breakevens"
+          term="breakeven"
           value={formatBreakevenSummary(breakevens)}
           detail={replayBreakevens.length > 0 ? "Replay payoff preview values." : "Research contract values."}
         />
         <RiskMetricCard
           label="Expiration / DTE"
+          term="dte"
           value={formatResearchValue(structure?.expiration)}
           detail={`DTE ${formatResearchValue(structure?.dte, "—")}`}
         />
@@ -489,16 +499,19 @@ export function OptionsStructureRiskSummary({
         />
         <RiskMetricCard
           label="Replay payoff preview"
+          term="replay_payoff_preview"
           value={replayStatus}
           detail={replayStatusDetail}
         />
         <RiskMetricCard
           label="Expected Range"
+          term="expected_range"
           value={expectedRangeStatus}
           detail={expectedRangeDetail}
         />
         <RiskMetricCard
           label="Paper lifecycle"
+          term="paper_lifecycle"
           value={paperLifecycleLabel}
           detail={paperLifecycleDetail}
         />
@@ -543,11 +556,11 @@ export function OptionsStructureRiskSummary({
               gap: 10,
             }}
           >
-            <RiskMetricCard label="Gross P&amp;L" value={formatResearchCurrency(paperCloseResult.gross_pnl)} />
-            <RiskMetricCard label="Opening commissions" value={formatResearchCurrency(paperCloseResult.opening_commissions)} />
-            <RiskMetricCard label="Closing commissions" value={formatResearchCurrency(paperCloseResult.closing_commissions)} />
-            <RiskMetricCard label="Total commissions" value={formatResearchCurrency(paperCloseResult.total_commissions)} />
-            <RiskMetricCard label="Net P&amp;L" value={formatResearchCurrency(paperCloseResult.net_pnl)} />
+            <RiskMetricCard label="Gross P&L" term="gross_pnl" value={formatResearchCurrency(paperCloseResult.gross_pnl)} />
+            <RiskMetricCard label="Opening commissions" term="options_commission_per_contract" value={formatResearchCurrency(paperCloseResult.opening_commissions)} />
+            <RiskMetricCard label="Closing commissions" term="options_commission_per_contract" value={formatResearchCurrency(paperCloseResult.closing_commissions)} />
+            <RiskMetricCard label="Total commissions" term="options_commission_per_contract" value={formatResearchCurrency(paperCloseResult.total_commissions)} />
+            <RiskMetricCard label="Net P&L" term="net_pnl" value={formatResearchCurrency(paperCloseResult.net_pnl)} />
           </div>
           <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
             Commission is per contract per leg, not multiplied by 100.
@@ -784,14 +797,14 @@ export function OptionsPaperLifecyclePanel({
           <div><strong>Expiration:</strong> {formatResearchValue(setup.option_structure?.expiration)}</div>
           <div><strong>DTE:</strong> {formatResearchValue(setup.option_structure?.dte)}</div>
           <div><strong>{getOptionsPremiumLabel(setup.option_structure)}:</strong> {formatResearchCurrency(getOptionsPremiumValue(setup.option_structure))}</div>
-          <div><strong>Max profit:</strong> {formatResearchCurrency(setup.option_structure?.max_profit)}</div>
-          <div><strong>Max loss:</strong> {formatResearchCurrency(setup.option_structure?.max_loss)}</div>
+          <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatResearchCurrency(setup.option_structure?.max_profit)}</div>
+          <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchCurrency(setup.option_structure?.max_loss)}</div>
         </div>
         <div>
-          <div><strong>Options commission / contract:</strong> {formatResearchCurrency(commissionPerContract)}</div>
+          <div><strong><MetricLabel label="Options commission / contract" term="options_commission_per_contract" />:</strong> {formatResearchCurrency(commissionPerContract)}</div>
           <div><strong>Estimated opening commission:</strong> {formatResearchCurrency(openingCommissionEstimate)}</div>
           <div><strong>Estimated open + close commission:</strong> {formatResearchCurrency(lifecycleCommissionEstimate)}</div>
-          <div><strong>Breakevens:</strong> {(() => {
+          <div><strong><MetricLabel label="Breakevens" term="breakeven" />:</strong> {(() => {
             const breakevens = openAvailability.request?.breakevens ?? [];
             return breakevens.length > 0 ? breakevens.map((value) => formatResearchCurrency(value)).join(" / ") : "Unavailable";
           })()}</div>
@@ -868,15 +881,15 @@ export function OptionsPaperLifecyclePanel({
               <div><strong>Opening commissions:</strong> {formatResearchCurrency(closeResult?.opening_commissions ?? openResult.opening_commissions)}</div>
             </div>
             <div>
-              <div><strong>Max profit:</strong> {formatResearchCurrency(openResult.max_profit)}</div>
-              <div><strong>Max loss:</strong> {formatResearchCurrency(openResult.max_loss)}</div>
+              <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatResearchCurrency(openResult.max_profit)}</div>
+              <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchCurrency(openResult.max_loss)}</div>
               <div>
-                <strong>Breakevens:</strong>{" "}
+                <strong><MetricLabel label="Breakevens" term="breakeven" />:</strong>{" "}
                 {(openResult.breakevens ?? []).length > 0
                   ? (openResult.breakevens ?? []).map((value) => formatResearchCurrency(value)).join(" / ")
                   : "Unavailable"}
               </div>
-              <div><strong>Commission / contract:</strong> {formatResearchCurrency(closeResult?.commission_per_contract ?? openResult.commission_per_contract ?? commissionPerContract)}</div>
+              <div><strong><MetricLabel label="Commission / contract" term="options_commission_per_contract" />:</strong> {formatResearchCurrency(closeResult?.commission_per_contract ?? openResult.commission_per_contract ?? commissionPerContract)}</div>
             </div>
           </div>
 
@@ -997,13 +1010,13 @@ export function OptionsPaperLifecyclePanel({
                 <div className="op-grid-2" style={{ gap: 12, marginBottom: 10 }}>
                   <div>
                     <div><strong>Settlement mode:</strong> {formatResearchValue(closeResult.settlement_mode)}</div>
-                    <div><strong>Gross P&amp;L:</strong> {formatResearchCurrency(closeResult.gross_pnl)}</div>
-                    <div><strong>Net P&amp;L:</strong> {formatResearchCurrency(closeResult.net_pnl)}</div>
+                    <div><strong><MetricLabel label="Gross P&L" term="gross_pnl" />:</strong> {formatResearchCurrency(closeResult.gross_pnl)}</div>
+                    <div><strong><MetricLabel label="Net P&L" term="net_pnl" />:</strong> {formatResearchCurrency(closeResult.net_pnl)}</div>
                   </div>
                   <div>
-                    <div><strong>Opening commissions:</strong> {formatResearchCurrency(closeResult.opening_commissions)}</div>
-                    <div><strong>Closing commissions:</strong> {formatResearchCurrency(closeResult.closing_commissions)}</div>
-                    <div><strong>Total commissions:</strong> {formatResearchCurrency(closeResult.total_commissions)}</div>
+                    <div><strong><MetricLabel label="Opening commissions" term="options_commission_per_contract" />:</strong> {formatResearchCurrency(closeResult.opening_commissions)}</div>
+                    <div><strong><MetricLabel label="Closing commissions" term="options_commission_per_contract" />:</strong> {formatResearchCurrency(closeResult.closing_commissions)}</div>
+                    <div><strong><MetricLabel label="Total commissions" term="options_commission_per_contract" />:</strong> {formatResearchCurrency(closeResult.total_commissions)}</div>
                   </div>
                 </div>
               </div>
@@ -1018,9 +1031,9 @@ export function OptionsPaperLifecyclePanel({
                     <th>leg</th>
                     <th>entry</th>
                     <th>exit</th>
-                    <th>gross P&amp;L</th>
-                    <th>commission</th>
-                    <th>net P&amp;L</th>
+                    <th><MetricLabel label="gross P&L" term="gross_pnl" /></th>
+                    <th><MetricLabel label="commission" term="options_commission_per_contract" /></th>
+                    <th><MetricLabel label="net P&L" term="net_pnl" /></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1124,10 +1137,10 @@ export function OptionsReplayPreviewPanel({
               <div><strong>Status:</strong> {formatOptionsReplayToken(preview.status)}</div>
               <div><strong>Structure:</strong> {formatOptionsReplayToken(preview.structure_type)}</div>
               <div><strong>{netPremiumLabel}:</strong> {formatResearchCurrency(preview.net_credit ?? preview.net_debit)}</div>
-              <div><strong>Max profit:</strong> {formatResearchCurrency(preview.max_profit)}</div>
-              <div><strong>Max loss:</strong> {formatResearchCurrency(preview.max_loss)}</div>
+              <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatResearchCurrency(preview.max_profit)}</div>
+              <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchCurrency(preview.max_loss)}</div>
               <div>
-                <strong>Breakevens:</strong>{" "}
+                <strong><MetricLabel label="Breakevens" term="breakeven" />:</strong>{" "}
                 {breakevens.length > 0
                   ? breakevens.map((value) => formatResearchCurrency(value)).join(" / ")
                   : "Unavailable"}
@@ -1306,12 +1319,12 @@ export function OptionsResearchPreview({
           <div><strong>Workflow source:</strong> {formatResearchValue(setup.workflow_source)}</div>
           <div><strong>Structure:</strong> {formatResearchValue(structure?.type)}</div>
           <div><strong>Expiration:</strong> {formatResearchValue(structure?.expiration)}</div>
-          <div><strong>DTE:</strong> {formatResearchValue(structure?.dte)}</div>
+          <div><strong><MetricLabel label="DTE" term="dte" />:</strong> {formatResearchValue(structure?.dte)}</div>
           <div><strong>{premiumLabel}:</strong> {formatResearchValue(premiumValue)}</div>
-          <div><strong>Max profit:</strong> {formatResearchValue(structure?.max_profit)}</div>
-          <div><strong>Max loss:</strong> {formatResearchValue(structure?.max_loss)}</div>
-          <div><strong>Breakeven low:</strong> {formatResearchValue(structure?.breakeven_low)}</div>
-          <div><strong>Breakeven high:</strong> {formatResearchValue(structure?.breakeven_high)}</div>
+          <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatResearchValue(structure?.max_profit)}</div>
+          <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchValue(structure?.max_loss)}</div>
+          <div><strong><MetricLabel label="Breakeven low" term="breakeven" />:</strong> {formatResearchValue(structure?.breakeven_low)}</div>
+          <div><strong><MetricLabel label="Breakeven high" term="breakeven" />:</strong> {formatResearchValue(structure?.breakeven_high)}</div>
           <div><strong>IV snapshot:</strong> {formatResearchValue(structure?.iv_snapshot)}</div>
           <div style={{ marginTop: 8 }}>
             <strong>Legs:</strong>

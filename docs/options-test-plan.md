@@ -404,6 +404,11 @@ Current status:
   metric-help rendering, unknown-term safety, commission guardrail copy,
   Expected Range research-only caveats, confidence/score non-probability
   wording, Provider readiness non-execution wording, and Settings integration.
+- `10C2` is complete for Recommendations metric-help rollout. Coverage proves
+  queue/detail `Score`, `RR`, and `CONF` labels use `MetricLabel`, options
+  risk/lifecycle labels expose help for Expected Range, max profit/loss,
+  breakevens, gross/net P&L, and options commissions, and safety wording still
+  avoids probability, live-routing, and broker-execution implications.
 
 ### 10A safe options UX/operator polish
 
@@ -472,6 +477,22 @@ Current status:
 - Settings page renders the commission help integrations
 - broader Analysis, Recommendations, Replay, Orders, and glossary-page rollout
   remains future work
+
+### 10C2 Recommendations metric-help rollout
+
+- Recommendations queue headers and detail labels expose compact help for
+  `Score`, `RR`, and `CONF` / confidence without changing scoring or
+  recommendation generation
+- Recommendations options risk cards expose help for Expected Range, max
+  profit, max loss, breakevens, replay payoff preview, and paper lifecycle
+- paper lifecycle result labels expose help for gross P&L, net P&L, and
+  options commissions, including the not-multiplied-by-100 commission caveat
+- confidence and score glossary copy still does not describe either value as
+  probability of profit
+- no live-routing, broker-execution, payoff-math, lifecycle-math, commission,
+  schema, provider, or backend behavior changes are expected
+- broader Analysis, Replay, Orders, and optional glossary-page rollout remains
+  future work
 
 ### 10D expiration settlement design checkpoint
 

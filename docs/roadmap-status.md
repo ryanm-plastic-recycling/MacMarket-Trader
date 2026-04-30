@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 168, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 170, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -51,7 +51,9 @@ and `10B1` is complete for frontend-only Orders display/readability polish on
 durable paper-options lifecycle rows. `10C1` is complete for the first
 frontend-only explainable metric UX foundation: central glossary registry,
 reusable metric-help component, and narrow Settings / Expected Range /
-Provider Health integrations. Remaining Phase 10 slices stay open.
+Provider Health integrations. `10C2` is complete for compact Recommendations
+score/risk-label help using the existing glossary and `MetricLabel`
+component. Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
@@ -532,6 +534,10 @@ Safe near-term:
 - completed `10C1`: central glossary registry and reusable accessible
   metric-help component with narrow Settings, Expected Range, and Provider
   Health integrations
+- completed `10C2`: Recommendations score/risk-label rollout for `Score`,
+  `CONF` / confidence, `RR`, Expected Range, max profit/loss, breakevens,
+  gross/net P&L, and options commission labels without changing scoring,
+  lifecycle, payoff, commission, provider, schema, or execution behavior
 
 Medium-risk:
 
@@ -824,6 +830,11 @@ First implementation slice:
   metric-help component now exist, with first integrations limited to Settings
   commission labels, Expected Range visualization labels, and Provider Health
   readiness context.
+- `10C2` status:
+  complete for the Recommendations score/risk-label rollout. Queue score,
+  confidence, and RR labels plus options risk labels for Expected Range, max
+  profit/loss, breakevens, gross/net P&L, and options commissions now use the
+  shared glossary help component where the labels are most visible.
 - Initial term set:
   `RR` / risk-reward ratio, `CONF` / confidence, `Score`, Expected Range /
   Expected Move, `DTE`, `IV`, Open Interest, Breakeven, Max Profit, Max Loss,
@@ -847,6 +858,8 @@ First implementation slice:
   `accessible InfoTooltip/MetricHelp component` -> `Settings and Provider
   Health low-risk labels` -> `Analysis and Recommendations score/risk labels`
   -> `Replay and Orders P&L/commission labels` -> `optional glossary page`.
+  The Recommendations part of the score/risk-label step is complete in
+  `10C2`; broader Analysis, Replay, and Orders rollout remains future work.
 - Explicitly not complete:
   probability modeling, recommendation scoring changes, provider probes, live
   routing, broker execution, commission math changes, payoff math changes,
@@ -928,8 +941,9 @@ First implementation slice:
   workflow-polish item now covers a shared glossary registry plus accessible
   in-context help, while keeping confidence/score separate from probability of
   profit and preserving paper-only/non-execution guardrails. `10C1` has landed
-  the shared foundation and first low-risk integrations; broader table/page
-  rollout remains open.
+  the shared foundation and first low-risk integrations; `10C2` has landed the
+  Recommendations score/risk-label rollout. Broader Analysis, Replay, Orders,
+  and glossary-page rollout remains open.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -945,7 +959,7 @@ First implementation slice:
 
 ## Test Counts (last verified 2026-04-30)
 - pytest: 210
-- vitest: 160
+- vitest: 170
 - Playwright: 31
 
 ## Core product pillars
@@ -1237,6 +1251,14 @@ diffs. Notable recent inflection points:
   backend, schema, provider, lifecycle, commission, equity, recommendation,
   routing, settlement, assignment/exercise, naked-short, probability, symbol
   discovery, watchlist, or crypto behavior changed.
+- 2026-04-30 - Phase 10C2 complete for Recommendations explainable metric
+  labels: compact `MetricLabel` help now appears on queue `Score`, `RR`, and
+  `CONF` labels plus the options risk/paper-lifecycle labels for Expected
+  Range, max profit/loss, breakevens, gross/net P&L, and options
+  commissions. Frontend tests cover the rollout and safety wording. No
+  backend, schema, provider, recommendation scoring, equity, lifecycle,
+  payoff, commission, routing, settlement, assignment/exercise,
+  symbol-discovery, watchlist, probability, or crypto behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

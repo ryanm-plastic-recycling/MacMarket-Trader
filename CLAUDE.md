@@ -179,7 +179,13 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 
 **CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; 10A1 is complete for Analysis Expected Range visualization reuse, 10B1 is complete for Orders durable paper-options display/readability polish, and 10C1 is complete for the explainable metric glossary foundation; live/broker execution is not active.**
 
-Tests (2026-04-30): pytest 210, vitest 168, Playwright 31 (all passing, 0 skipped). tsc clean.
+Tests (2026-04-30): pytest 210, vitest 170, Playwright 31 (all passing, 0 skipped). tsc clean.
+
+Phase 10C2 is complete for compact Recommendations score/risk-label help using
+the existing glossary and `MetricLabel` foundation. Broader Analysis, Replay,
+Orders, and glossary-page rollout remains open; scoring, provider behavior,
+backend behavior, lifecycle math, payoff math, commission math, equity
+behavior, schema, and execution semantics did not change.
 
 Deployment: `https://macmarket.io` via Cloudflare Tunnel; backend `uvicorn` on `127.0.0.1:9510`; frontend Next.js on `0.0.0.0:9500`; SQLite at `C:\Dashboard\MacMarket-Trader\macmarket_trader.db`; daily 3 AM backup via `MacMarket-DB-Backup` task; strategy scheduler every 5 min via `MacMarket-StrategyScheduler` task.
 
