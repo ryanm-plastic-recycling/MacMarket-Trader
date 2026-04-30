@@ -20,19 +20,23 @@ Current symbol entry is intentionally simple:
 - Symbol Analyze:
   a single free-text symbol input drives an ad-hoc symbol snapshot.
 - Recommendations:
-  the queue form stores a comma-separated text field in the frontend, splits it
-  into `symbols`, and posts those symbols to `/user/recommendations/queue`.
+  the queue form stores a manual text field in the frontend, accepts comma,
+  space, or new-line separated symbols, shows a normalized uppercase parsed
+  preview plus duplicate feedback, and posts those symbols to
+  `/user/recommendations/queue`.
 - Scheduled Strategy Reports:
-  the schedule form stores a comma-separated text field in the frontend, splits
-  it into `symbols`, and persists those symbols inside the schedule payload.
+  the schedule form stores a manual text field in the frontend, accepts comma,
+  space, or new-line separated symbols, shows a normalized uppercase parsed
+  preview plus duplicate feedback, and persists those symbols inside the
+  schedule payload.
 - Watchlists:
   the backend has a user-scoped `watchlists` table with `app_user_id`, `name`,
   `symbols` JSON, and `created_at`. The current repository supports list,
   upsert, update, and delete by current user.
 - Schedules page:
   shows a basic Watchlists card where users enter a watchlist name plus a
-  comma-separated symbol list, then apply the saved list back into the schedule
-  comma field.
+  manual symbol list, review the same parsed preview, then apply the saved list
+  back into the schedule symbol field.
 - Scheduled runs:
   `StrategyReportService.run_schedule()` reads `symbols` from the schedule
   payload, fetches bars per symbol, and passes a `bars_by_symbol` map into
@@ -62,6 +66,35 @@ Current limitations:
 - There are no tags/groups, notes, import audit, or per-symbol update
   timestamps.
 - Recommendation and schedule workflows still depend on raw symbol arrays.
+
+## 10W2 Current Manual-entry Cleanup
+
+Status: complete for the current frontend-only scope.
+
+Current manual-entry surfaces now provide clearer operator guidance without
+changing backend behavior, storage, provider access, schedule execution, or
+recommendation generation:
+
+- Recommendations labels the queue input as `Symbols to evaluate`, explains
+  comma/space/new-line separators, shows an example list, shows SPX/NDX versus
+  SPY/QQQ substitute guidance, and labels the list as a temporary manual
+  universe until richer watchlist management exists.
+- Recommendations shows a read-only parsed preview with normalized uppercase
+  symbols, symbol count, and duplicate feedback.
+- Schedules and the current Watchlists card use the same manual-entry helper
+  copy and parsed preview while continuing to save resolved symbol arrays.
+- Analysis keeps its single-symbol behavior and adds a small provider-access
+  hint for ticker symbols and index symbols.
+
+Still deferred after `10W2`:
+
+- provider-backed symbol search
+- schema or migration work
+- normalized `user_symbol_universe` / `watchlist_symbols` records
+- replacing existing watchlist storage
+- recommendation/schedule universe selector behavior
+- provider metadata enrichment
+- any live routing, brokerage execution, or execution approval semantics
 
 ## Symbol Discovery Design
 
@@ -325,8 +358,9 @@ Recommended slices:
 - `10W1` symbol/watchlist design checkpoint:
   complete with this document and roadmap alignment; docs-only.
 - `10W2` current-state cleanup / copy polish:
-  clarify current comma-entry limitations on Recommendations and Schedules,
-  with no schema or backend behavior changes.
+  complete; clarifies current comma-entry limitations on Recommendations,
+  Schedules, current watchlist editing, and Analysis single-symbol entry, with
+  no schema or backend behavior changes.
 - `10W3` schema/read-model checkpoint:
   design normalized universe tables, backfill, compatibility, and rollback
   before any migration.
@@ -359,4 +393,3 @@ Why:
 Do not start with provider-backed symbol search, schema migration, or
 recommendation/schedule resolver changes until the read-model checkpoint is
 approved.
-

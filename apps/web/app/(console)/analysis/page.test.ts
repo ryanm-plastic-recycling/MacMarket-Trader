@@ -9,6 +9,8 @@ describe("analysis options provider/source/as-of copy", () => {
   it("keeps options expected range and chain context wired to safe source/as-of fallbacks", () => {
     expect(source).toContain('import { ExpectedRangeVisualization } from "@/components/options/expected-range-visualization";');
     expect(source).toContain('import { MetricLabel } from "@/components/ui/metric-help";');
+    expect(source).toContain('import { SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";');
+    expect(source).toContain("SYMBOL_ENTRY_HELP_COPY.singleSymbolHint");
     expect(source).toContain('<MetricLabel label="Workflow source" term="provider_readiness" />');
     expect(source).toContain('<MetricLabel label="Confidence" term="confidence" />');
     expect(source).toContain('<MetricLabel label="Expected Range status" term="expected_range" />');

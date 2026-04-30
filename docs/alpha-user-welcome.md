@@ -212,6 +212,12 @@ Current symbol and watchlist management is still intentionally simple. You may
 need to know the symbols you want to inspect and, in scheduled-report contexts,
 manage symbol lists manually.
 
+Current manual list entry accepts tickers separated by commas, spaces, or new
+lines, then shows a parsed uppercase preview and duplicate feedback before you
+refresh a Recommendations queue or save a schedule/watchlist list. Use
+`SPY` / `QQQ` as ETF substitutes when index data for `SPX` / `NDX` is
+unavailable.
+
 Future roadmap work is planned for better recommendation-universe management:
 
 - search by ticker and company/security name
@@ -234,8 +240,9 @@ Design checkpoint status:
 - the recommended future path is a hybrid model: keep current watchlist
   compatibility while designing dedicated user-symbol universe / watchlist
   membership records before any migration
-- the safest first implementation slice is copy/UI cleanup around existing
-  comma-entry workflows, not provider-backed search or schema changes
+- the current comma-entry cleanup slice is complete; provider-backed search,
+  schema/read-model work, richer watchlist tables, and recommendation-universe
+  selectors remain future work
 
 ## 8. Metric glossary and tooltips
 
@@ -481,6 +488,10 @@ Current project status, in operator terms:
 - Symbol/watchlist design checkpoint complete: current watchlists are still
   simple user-scoped named symbol lists, while the future plan recommends a
   hybrid user-symbol universe model before richer implementation
+- Phase 10W2 complete: current manual symbol entry on Recommendations,
+  Schedules, and watchlist editing now has clearer helper copy, parsed
+  uppercase previews, duplicate feedback, and SPX/NDX versus SPY/QQQ guidance
+  without changing backend storage, provider search, or recommendation behavior
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders

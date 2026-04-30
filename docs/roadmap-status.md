@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 175, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 182, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -58,7 +58,8 @@ across equity Orders and durable paper-options rows. `10C4` is complete for
 compact Analysis and Replay metric-label help. `10C5` is complete for the
 closure audit, tiny safety-copy polish, and docs/test alignment, so the
 explainable metric glossary/tooltips rollout is closed for the current
-in-context scope. Remaining Phase 10 slices stay open.
+in-context scope. `10W1` and `10W2` are complete for symbol/watchlist design
+plus current comma-entry workflow cleanup. Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
@@ -70,7 +71,7 @@ tooltips are now tracked as workflow comprehension polish, not changes to
 scoring, probability modeling, provider behavior, or execution semantics.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md test context is now aligned to the
-current vitest 160 count,
+then-current frontend test count,
 API-level iron condor open/close lifecycle coverage was added, expiration
 settlement rejection coverage was added, the `opening_commissions`
 reconstruction limitation was documented, and the dead `opening_commissions`
@@ -509,9 +510,10 @@ recommendation, or brokerage behavior.
 
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
-  planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`
+  planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`/`10W2`
   complete; broader `10A`, broader `10B`, optional glossary/reference-page
-  work, symbol/watchlist implementation, and later subphases remain open
+  work, symbol/watchlist schema/read-model/provider-search implementation, and
+  later subphases remain open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -540,6 +542,10 @@ Safe near-term:
 - completed `10W1`: symbol discovery and watchlist / recommendation-universe
   design checkpoint in `docs/symbol-watchlist-design.md`, preserving existing
   Phase 10 numbering where `10D` remains expiration settlement design
+- completed `10W2`: frontend-only current comma-entry cleanup for
+  Recommendations, Schedules, and current watchlist editing using shared
+  manual parsing / parsed-preview helpers; no schema, provider search, storage
+  replacement, or recommendation-generation behavior changed
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
 - completed `10C1`: central glossary registry and reusable accessible
@@ -777,25 +783,27 @@ First implementation slice:
 #### Future workflow polish - Symbol discovery and watchlist management
 
 - Type:
-  docs/design first; later frontend/user-workflow work only after explicit
-  approval
+  docs/design first; current frontend copy/preview cleanup is complete; later
+  schema, provider, and user-workflow work only after explicit approval
 - Status:
   `10W1` design checkpoint complete in
-  [symbol-watchlist-design.md](symbol-watchlist-design.md). Existing Phase 10
-  numbering is preserved: `10D` remains the expiration-settlement design
-  checkpoint, so symbol/watchlist work uses a workflow-polish `10W` lane unless
-  the roadmap is explicitly renumbered later.
+  [symbol-watchlist-design.md](symbol-watchlist-design.md). `10W2` current
+  comma-entry cleanup is complete for the existing frontend manual-entry
+  surfaces. Existing Phase 10 numbering is preserved: `10D` remains the
+  expiration-settlement design checkpoint, so symbol/watchlist work uses a
+  workflow-polish `10W` lane unless the roadmap is explicitly renumbered later.
 - Purpose:
   replace comma-only symbol entry and ad hoc operator memory with a user-scoped
   recommendation-universe workflow. This is symbol discovery and research
   universe management only, not trade execution, routing, or broker support.
 - Current-state inventory:
   Analysis and Symbol Analyze use single-symbol free-text inputs;
-  Recommendations and Schedules still split comma-separated frontend fields
-  into symbol arrays; schedules persist copied symbol arrays inside payloads;
-  current watchlists are user-scoped rows with name plus `symbols` JSON; there
-  is no provider-backed symbol search endpoint or persisted symbol-metadata
-  read model yet.
+  Recommendations and Schedules now show clearer manual-entry guidance and a
+  parsed uppercase preview for comma/space/new-line input; schedules persist
+  copied symbol arrays inside payloads; current watchlists are user-scoped rows
+  with name plus `symbols` JSON and now share the same manual-entry preview;
+  there is no provider-backed symbol search endpoint or persisted
+  symbol-metadata read model yet.
 - Symbol discovery target:
   operators should eventually be able to search by ticker and company/security
   name; review ticker, name, asset type, exchange, provider/source support
@@ -827,15 +835,15 @@ First implementation slice:
   planning context until crypto is explicitly implemented; secrets and API keys
   stay out of docs and UI.
 - Suggested implementation order:
-  `10W1 design checkpoint` -> `10W2 current-state cleanup / comma-entry copy`
-  -> `10W3 schema/read-model checkpoint` -> `10W4 user-scoped watchlist table
-  UI` -> `10W5 bulk import/duplicate handling` -> `10W6 schedule/
-  recommendation universe selection` -> `10W7 provider-backed discovery only
-  if separately approved` -> `10W8 closure`.
-- Suggested first implementation slice:
-  `10W2` current-state cleanup / UI copy for existing comma entry. Keep it
-  frontend-only and manual-entry friendly; do not start with provider-backed
-  search, schema migration, or recommendation/schedule resolver changes.
+  completed `10W1 design checkpoint` -> completed `10W2 current-state cleanup /
+  comma-entry copy` -> `10W3 schema/read-model checkpoint` -> `10W4
+  user-scoped watchlist table UI` -> `10W5 bulk import/duplicate handling` ->
+  `10W6 schedule/recommendation universe selection` -> `10W7 provider-backed
+  discovery only if separately approved` -> `10W8 closure`.
+- Suggested next implementation slice:
+  `10W3` schema/read-model checkpoint. Keep provider-backed search, schema
+  migration, storage replacement, and recommendation/schedule resolver changes
+  deferred until that checkpoint is explicitly approved.
 - Explicitly not complete:
   schema changes, provider probes, provider search/fetch behavior, live
   routing, brokerage execution, recommendation generation changes, options
@@ -847,7 +855,8 @@ First implementation slice:
   no provider/live-routing implication, and no change to
   `RecommendationService.generate()` behavior.
 - Rollback/risk notes:
-  design-only now; later implementation should be split so watchlist UI can be
+  `10W2` is frontend-only and can be reverted by removing the shared parser /
+  preview wiring. Later implementation should be split so watchlist UI can be
   disabled without affecting existing scheduled reports or recommendation
   generation.
 
@@ -1030,7 +1039,7 @@ First implementation slice:
 
 ## Test Counts (last verified 2026-04-30)
 - pytest: 210
-- vitest: 171
+- vitest: 182
 - Playwright: 31
 
 ## Core product pillars
@@ -1311,6 +1320,15 @@ diffs. Notable recent inflection points:
   for expiration-settlement design. No application code, backend behavior,
   frontend behavior, schema, provider probes, live routing, or recommendation
   generation changed.
+- 2026-04-30 - Phase 10W2 complete for current comma-entry symbol workflow
+  cleanup: Recommendations, Schedules, and current watchlist editing now share
+  frontend-only manual symbol parsing and a parsed uppercase preview for
+  comma/space/new-line input, duplicate feedback, ETF/index substitution copy,
+  and concise future-watchlist guidance. Analysis now has a single-symbol
+  provider-access hint. No backend behavior, schema, provider search/probes,
+  watchlist storage replacement, schedule execution behavior, recommendation
+  generation, equity behavior, options lifecycle behavior, live routing, or
+  brokerage execution changed.
 - 2026-04-30 - Future operator glossary and explainable metric tooltips
   roadmap item added: a docs-only planning note now tracks concise
   hover/click/tap metric help, formulas and examples where useful, a shared

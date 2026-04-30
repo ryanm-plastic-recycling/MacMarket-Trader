@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { SymbolEntryPreview } from "@/components/symbol-entry-preview";
 import { fetchWorkflowApi } from "@/lib/api-client";
+import { parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
 import type { MarketMode } from "@/lib/strategy-registry";
 
 function toRelativeTime(dateStr: string | undefined | null): string {
@@ -175,7 +177,7 @@ export default function SchedulesPage() {
   const searchParams = useSearchParams();
   const createFormRef = useRef<HTMLDivElement | null>(null);
   const prefill = useMemo(() => ({
-    symbols: (searchParams.get("symbols") ?? "").split(",").map((item) => item.trim().toUpperCase()).filter(Boolean),
+    symbols: parseManualSymbolEntry(searchParams.get("symbols") ?? "").symbols,
     name: (searchParams.get("name") ?? "").trim(),
   }), [searchParams]);
 
@@ -205,6 +207,8 @@ export default function SchedulesPage() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
   const [runDetailFeedback, setRunDetailFeedback] = useState<{ state: "idle" | "loading" | "error"; message: string }>({ state: "idle", message: "" });
+  const parsedScheduleSymbols = useMemo(() => parseManualSymbolEntry(symbols), [symbols]);
+  const parsedWatchlistSymbols = useMemo(() => parseManualSymbolEntry(wlSymbols), [wlSymbols]);
 
   async function load() {
     setFeedback({ state: "loading", message: "Loading schedules..." });
@@ -229,7 +233,7 @@ export default function SchedulesPage() {
     setWlFeedback({ state: "loading", message: "Saving..." });
     const body = {
       name: wlName.trim() || "My Watchlist",
-      symbols: wlSymbols.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean),
+      symbols: parsedWatchlistSymbols.symbols,
     };
     const url = editingWlId ? `/api/user/watchlists/${editingWlId}` : "/api/user/watchlists";
     const result = await fetchWorkflowApi(url, {
@@ -291,7 +295,7 @@ export default function SchedulesPage() {
 
   async function createOrUpdateSchedule(scheduleId?: number) {
     const scheduleConfig = {
-      symbols: symbols.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean),
+      symbols: parsedScheduleSymbols.symbols,
       enabled_strategies: ["Event Continuation", "Breakout / Prior-Day High", "Pullback / Trend Continuation"],
       top_n: topN,
       market_mode: marketMode,
@@ -370,9 +374,18 @@ export default function SchedulesPage() {
       />
 
       <div ref={createFormRef}><Card title="Create / update schedule">
-        <div className="op-row">
+        <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Schedule name" />
-          <input value={symbols} onChange={(e) => setSymbols(e.target.value)} placeholder="AAPL,MSFT,NVDA" style={{ minWidth: 260 }} />
+          <label style={{ display: "grid", gap: 4, minWidth: 300, flex: "1 1 320px" }}>
+            <span>Symbols to evaluate</span>
+            <textarea
+              value={symbols}
+              onChange={(e) => setSymbols(e.target.value.toUpperCase())}
+              placeholder="SPY, QQQ, AAPL, MSFT"
+              rows={2}
+              style={{ minWidth: 260, resize: "vertical" }}
+            />
+          </label>
           {watchlists.length > 0 && (
             <select
               defaultValue=""
@@ -394,6 +407,14 @@ export default function SchedulesPage() {
             <option value="crypto">crypto (research preview)</option>
           </select>
         </div>
+        <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
+          <div>{SYMBOL_ENTRY_HELP_COPY.separators}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.example}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.substitutes}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.temporaryUniverse}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.futureWatchlists}</div>
+        </div>
+        <SymbolEntryPreview parsed={parsedScheduleSymbols} />
         <div className="op-row">
           <label>
             Frequency&nbsp;
@@ -445,14 +466,18 @@ export default function SchedulesPage() {
       </div>
 
       <Card title={editingWlId ? `Edit watchlist: ${wlName}` : "Watchlists"}>
-        <div className="op-row">
+        <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
           <input value={wlName} onChange={(e) => setWlName(e.target.value)} placeholder="Watchlist name" />
-          <input
-            value={wlSymbols}
-            onChange={(e) => setWlSymbols(e.target.value)}
-            placeholder="AAPL,MSFT,NVDA"
-            style={{ minWidth: 260 }}
-          />
+          <label style={{ display: "grid", gap: 4, minWidth: 300, flex: "1 1 320px" }}>
+            <span>Symbols to evaluate</span>
+            <textarea
+              value={wlSymbols}
+              onChange={(e) => setWlSymbols(e.target.value.toUpperCase())}
+              placeholder="SPY, QQQ, AAPL, MSFT"
+              rows={2}
+              style={{ minWidth: 260, resize: "vertical" }}
+            />
+          </label>
           <button onClick={() => void saveWatchlist()}>{editingWlId ? "Update" : "Create"}</button>
           {editingWlId && (
             <button onClick={() => { setEditingWlId(null); setWlName("My Watchlist"); setWlSymbols(""); }}>
@@ -460,6 +485,12 @@ export default function SchedulesPage() {
             </button>
           )}
         </div>
+        <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
+          <div>{SYMBOL_ENTRY_HELP_COPY.separators}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.example}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.futureWatchlists}</div>
+        </div>
+        <SymbolEntryPreview parsed={parsedWatchlistSymbols} />
         <InlineFeedback state={wlFeedback.state} message={wlFeedback.message} />
         {watchlists.length === 0 ? (
           <EmptyState title="No watchlists" hint="Create a named symbol list to quickly populate schedule forms." />

@@ -528,7 +528,10 @@ The codebase should define typed contracts for:
   `10C4` adds compact help to Analysis and Replay metric labels. `10C5`
   closes the current in-context glossary/tooltips scope with tiny safety-copy
   and test/doc alignment, without changing scoring, replay, or lifecycle
-  behavior.
+  behavior. `10W1` documents the future symbol/watchlist plan, and `10W2`
+  improves current manual comma/space/new-line entry copy and parsed previews
+  on Recommendations, Schedules, and current watchlist editing without adding
+  provider search, schema, or recommendation behavior.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -633,7 +636,10 @@ and eventual recommendation-universe selection from watchlists instead of raw
 comma-separated lists. The design checkpoint is captured in
 `docs/symbol-watchlist-design.md`; it recommends a hybrid path that preserves
 current watchlist compatibility while planning dedicated user-symbol universe
-records before any schema or runtime implementation. This is
+records before any schema or runtime implementation. Current manual entry now
+shows clearer separator guidance, parsed uppercase previews, duplicate
+feedback, and ETF/index substitute copy, but remains a temporary manual
+universe until richer watchlist management is implemented. This is
 recommendation-universe management only: provider support labels, options
 eligibility, and ETF/index substitution guidance such as `SPX` / `NDX` versus
 `SPY` / `QQQ` must not imply live routing or brokerage execution support.

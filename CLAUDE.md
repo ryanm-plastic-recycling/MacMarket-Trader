@@ -177,9 +177,9 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; 10A1 is complete for Analysis Expected Range visualization reuse, 10B1 is complete for Orders durable paper-options display/readability polish, 10C1 through 10C5 are complete for the current explainable metric glossary/tooltips scope, and 10W1 is complete for symbol/watchlist design; live/broker execution is not active.**
+**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; 10A1 is complete for Analysis Expected Range visualization reuse, 10B1 is complete for Orders durable paper-options display/readability polish, 10C1 through 10C5 are complete for the current explainable metric glossary/tooltips scope, and 10W1/10W2 are complete for symbol/watchlist design plus current comma-entry cleanup; live/broker execution is not active.**
 
-Tests (2026-04-30): pytest 210, vitest 175, Playwright 31 (all passing, 0 skipped). tsc clean.
+Tests (2026-04-30): pytest 210, vitest 182, Playwright 31 (all passing, 0 skipped). tsc clean.
 
 Phase 10C2 is complete for compact Recommendations score/risk-label help using
 the existing glossary and `MetricLabel` foundation. Broader Analysis, Replay,
@@ -210,8 +210,10 @@ glossary/reference-page work remains open.
 Symbol discovery and watchlist management has a docs-only design checkpoint in
 `docs/symbol-watchlist-design.md`. Existing Phase 10 numbering is preserved:
 `10D` remains expiration-settlement design, while the symbol/watchlist plan is
-tracked as `10W1` workflow polish with no schema, provider, runtime, or
-recommendation-generation changes.
+tracked as `10W` workflow polish. `10W2` adds frontend-only helper copy and
+parsed previews around current manual comma/space/new-line entry on
+Recommendations, Schedules, and current watchlist editing; schema, provider
+search, runtime storage, and recommendation-generation changes remain deferred.
 
 Deployment: `https://macmarket.io` via Cloudflare Tunnel; backend `uvicorn` on `127.0.0.1:9510`; frontend Next.js on `0.0.0.0:9500`; SQLite at `C:\Dashboard\MacMarket-Trader\macmarket_trader.db`; daily 3 AM backup via `MacMarket-DB-Backup` task; strategy scheduler every 5 min via `MacMarket-StrategyScheduler` task.
 
@@ -222,7 +224,7 @@ Phase 6 + Pass 4 ships the full Analyze → Recommendation → Replay → Paper 
 ## Open Items (Phase 10 planning/polish is next)
 
 ### Phase 10 — Deferred-work planning and safe options polish (NEXT)
-Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. `10A1` is complete for frontend-only Analysis Expected Range visualization using existing payload fields and the existing reusable component; `10B1` is complete for frontend-only Orders durable paper-options display/readability polish using existing lifecycle fields only; `10C1` through `10C5` are complete for the current in-context explainable metric glossary/tooltips scope; `10W1` is complete for the docs-only symbol discovery/watchlist design checkpoint. Broader `10A`/`10B`, optional glossary/reference-page work, symbol/watchlist implementation, and replay/history design work remain open.
+Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. `10A1` is complete for frontend-only Analysis Expected Range visualization using existing payload fields and the existing reusable component; `10B1` is complete for frontend-only Orders durable paper-options display/readability polish using existing lifecycle fields only; `10C1` through `10C5` are complete for the current in-context explainable metric glossary/tooltips scope; `10W1` is complete for the docs-only symbol discovery/watchlist design checkpoint and `10W2` is complete for frontend-only current comma-entry symbol workflow cleanup. Broader `10A`/`10B`, optional glossary/reference-page work, symbol/watchlist schema/read-model/provider search implementation, and replay/history design work remain open.
 
 ### Later execution phase — Alpaca paper integration (NOT ACTIVE)
 Wire `BROKER_PROVIDER=alpaca` only after a later explicit execution phase. Keys are configured in deployed `.env`, and scaffold exists in `src/macmarket_trader/execution/`, but real brokerage routing/execution remains disabled. Fill polling via CLI `poll-alpaca-fills` is not active.

@@ -9,12 +9,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { WorkflowChart } from "@/components/charts/workflow-chart";
 import { OptionsResearchPreview } from "@/components/recommendations/options-research-preview";
+import { SymbolEntryPreview } from "@/components/symbol-entry-preview";
 import { MetricLabel } from "@/components/ui/metric-help";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, parseGuidedFlowState } from "@/lib/guided-workflow";
+import { parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import {
   formatResearchValue,
@@ -117,6 +119,7 @@ export default function RecommendationsPage() {
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
   const [showQueue, setShowQueue] = useState(!guidedState.guided);
+  const parsedSymbols = useMemo(() => parseManualSymbolEntry(symbols), [symbols]);
 
   const selectedQueue = useMemo(
     () => queue.find((item) => `${item.symbol}-${item.strategy}-${item.rank}` === selectedQueueKey) ?? null,
@@ -154,11 +157,8 @@ export default function RecommendationsPage() {
 
   async function loadQueue(overrideSymbols?: string[]) {
     const activeSymbols = overrideSymbols?.length
-      ? overrideSymbols
-      : symbols
-          .split(",")
-          .map((item) => item.trim().toUpperCase())
-          .filter(Boolean);
+      ? parseManualSymbolEntry(overrideSymbols.join(",")).symbols
+      : parsedSymbols.symbols;
     if (!activeSymbols.length) {
       setQueue([]);
       return;
@@ -565,16 +565,35 @@ export default function RecommendationsPage() {
         </Card>
       ) : null}
 
-      {showExecutionCtas ? <Card>
-        <div className="op-row">
-          <input value={symbols} onChange={(e) => setSymbols(e.target.value.toUpperCase())} style={{ minWidth: 320 }} placeholder="AAPL,MSFT,NVDA" />
-          <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
-          {!guidedState.guided ? (
-            <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
-          ) : null}
-          <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>
-          {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
+      {showExecutionCtas ? <Card title="Recommendation universe">
+        <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
+          <label style={{ display: "grid", gap: 4, minWidth: 320, flex: "1 1 360px" }}>
+            <span>Symbols to evaluate</span>
+            <textarea
+              value={symbols}
+              onChange={(e) => setSymbols(e.target.value.toUpperCase())}
+              rows={2}
+              placeholder="SPY, QQQ, AAPL, MSFT"
+              style={{ minWidth: 320, resize: "vertical" }}
+            />
+          </label>
+          <div className="op-row" style={{ alignItems: "center", flexWrap: "wrap", paddingTop: 22 }}>
+            <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
+            {!guidedState.guided ? (
+              <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
+            ) : null}
+            <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>
+            {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
+          </div>
         </div>
+        <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
+          <div>{SYMBOL_ENTRY_HELP_COPY.separators}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.example}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.substitutes}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.temporaryUniverse}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.futureWatchlists}</div>
+        </div>
+        <SymbolEntryPreview parsed={parsedSymbols} />
         <InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadQueue()} />
       </Card> : null}
 

@@ -17,6 +17,7 @@ import { fetchStrategyRegistry, filterStrategiesByMode, type MarketMode, type St
 import { GuidedStepRail } from "@/components/guided-step-rail";
 import { buildGuidedQuery, GUIDED_FLOW_LABEL, parseGuidedFlowState } from "@/lib/guided-workflow";
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
+import { SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import {
   formatResearchCell,
@@ -346,7 +347,13 @@ export default function Page() {
 
     <Card>
       <div className="op-grid-4">
-        <div><label>Symbol</label><input value={draftSymbol} onChange={(e) => setDraftSymbol(e.target.value.toUpperCase())} /></div>
+        <div>
+          <label>Symbol</label>
+          <input value={draftSymbol} onChange={(e) => setDraftSymbol(e.target.value.toUpperCase())} />
+          <div style={{ marginTop: 4, color: "var(--op-muted, #7a8999)", fontSize: "0.78rem", lineHeight: 1.4 }}>
+            {SYMBOL_ENTRY_HELP_COPY.singleSymbolHint}
+          </div>
+        </div>
         <div><label>Market mode</label><select value={draftMarketMode} onChange={(e) => setDraftMarketMode(e.target.value as MarketMode)}><option value="equities">Equities</option><option value="options">Options (research preview)</option><option value="crypto">Crypto (research preview)</option></select></div>
         <div><label>Timeframe</label><select value={draftTimeframe} onChange={(e) => setDraftTimeframe(e.target.value as SupportedTimeframe)}>{SUPPORTED_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}</select></div>
         <div>
