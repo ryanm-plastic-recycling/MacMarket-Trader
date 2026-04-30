@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 171, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 174, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -54,8 +54,9 @@ reusable metric-help component, and narrow Settings / Expected Range /
 Provider Health integrations. `10C2` is complete for compact Recommendations
 score/risk-label help using the existing glossary and `MetricLabel`
 component. `10C3` is complete for compact Orders P&L/commission label help
-across equity Orders and durable paper-options rows. Remaining Phase 10 slices
-stay open.
+across equity Orders and durable paper-options rows. `10C4` is complete for
+compact Analysis and Replay metric-label help. Remaining Phase 10 slices stay
+open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
@@ -545,6 +546,11 @@ Safe near-term:
   gross/net P&L, opening/closing/total commissions, paper lifecycle, and leg
   P&L/commission labels without adding Orders actions or changing lifecycle,
   equity, commission, scoring, schema, provider, or execution behavior
+- completed `10C4`: Analysis and Replay metric-label rollout for Analysis
+  options risk/source labels and Replay score, confidence, gross/net P&L, and
+  fee labels without changing recommendation scoring, replay behavior,
+  lifecycle math, payoff math, commission math, schema, provider behavior, or
+  execution semantics
 
 Medium-risk:
 
@@ -848,6 +854,11 @@ First implementation slice:
   for gross/net P&L and equity fees, while durable paper-options rows expose
   help for max profit/loss, breakevens, gross/net P&L, options commissions,
   paper lifecycle, and leg P&L/commission labels.
+- `10C4` status:
+  complete for the Analysis and Replay metric-label rollout. Analysis now uses
+  compact glossary help on options risk/source labels, and Replay now uses it
+  on score, confidence, gross/net P&L, and fee labels where those labels are
+  visible.
 - Initial term set:
   `RR` / risk-reward ratio, `CONF` / confidence, `Score`, Expected Range /
   Expected Move, `DTE`, `IV`, Open Interest, Breakeven, Max Profit, Max Loss,
@@ -872,8 +883,9 @@ First implementation slice:
   Health low-risk labels` -> `Analysis and Recommendations score/risk labels`
   -> `Replay and Orders P&L/commission labels` -> `optional glossary page`.
   The Recommendations part of the score/risk-label step is complete in
-  `10C2`; the Orders P&L/commission part is complete in `10C3`; broader
-  Analysis, Replay, and glossary-page rollout remains future work.
+  `10C2`; the Orders P&L/commission part is complete in `10C3`; the Analysis
+  and Replay label rollout is complete in `10C4`; optional glossary-page
+  rollout remains future work.
 - Explicitly not complete:
   probability modeling, recommendation scoring changes, provider probes, live
   routing, broker execution, commission math changes, payoff math changes,

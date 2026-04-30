@@ -94,6 +94,9 @@ Current implementation note:
   gross/net P&L and fee labels plus durable paper-options max profit/loss,
   breakevens, gross/net P&L, opening/closing/total commissions, paper
   lifecycle, and leg P&L/commission labels.
+- `10C4` is complete for compact Analysis and Replay metric-help rollout on
+  Analysis options risk/source labels plus Replay score, confidence,
+  gross/net P&L, and fee labels.
 
 ## UX goals
 
@@ -166,8 +169,7 @@ Orders rollout:
   - equity Orders gross/net P&L and fee labels
   - durable paper-options max profit/loss, breakevens, gross/net P&L,
     opening/closing/total commissions, paper lifecycle, and leg result labels
-- broader Analysis, Replay, and a full glossary/reference page remain future
-  rollout items
+- a full glossary/reference page remains a future rollout item
 - no recommendation scoring, probability modeling, provider behavior, payoff
   math, lifecycle math, commission math, or execution boundary changed
 
@@ -222,7 +224,8 @@ Suggested implementation sequence:
 
 The Recommendations portion of step 5 is complete in `10C2`; the Orders
 P&L/commission portion of step 6 is complete in `10C3`; Analysis and Replay
-remain future rollout.
+label rollout is complete in `10C4`. The optional glossary/reference page
+remains future work.
 
 ### Expected range context
 

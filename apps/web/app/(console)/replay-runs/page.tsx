@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { MetricLabel } from "@/components/ui/metric-help";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
 import { GuidedStepRail } from "@/components/guided-step-rail";
@@ -385,15 +386,15 @@ export default function Page() {
         {runDetail?.estimated_total_fees != null ? (
           <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
             <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only round trip (entry + exit)</div>
-            <div><strong>Fees:</strong> ${runDetail.estimated_total_fees.toFixed(2)} ({runDetail.fee_model ?? "equity_per_trade"})</div>
+            <div><strong><MetricLabel label="Fees" term="equity_commission_per_trade" />:</strong> ${runDetail.estimated_total_fees.toFixed(2)} ({runDetail.fee_model ?? "equity_per_trade"})</div>
             <div><strong>Entry fee:</strong> ${runDetail.estimated_entry_fee?.toFixed(2) ?? "0.00"} · <strong>Exit fee:</strong> ${runDetail.estimated_exit_fee?.toFixed(2) ?? "0.00"}</div>
             <div>
-              <strong>Projected net outcome:</strong>{" "}
+              <strong><MetricLabel label="Projected net outcome" term="net_pnl" />:</strong>{" "}
               {runDetail.projected_net_pnl != null ? `${runDetail.projected_net_pnl >= 0 ? "+" : ""}${runDetail.projected_net_pnl.toFixed(2)}` : "Unavailable"}
             </div>
             {runDetail.projected_gross_pnl != null ? (
               <div style={{ color: "var(--op-muted, #7a8999)" }}>
-                Gross {runDetail.projected_gross_pnl >= 0 ? "+" : ""}{runDetail.projected_gross_pnl.toFixed(2)} using existing recommendation levels.
+                <MetricLabel label="Gross P&L" term="gross_pnl" /> {runDetail.projected_gross_pnl >= 0 ? "+" : ""}{runDetail.projected_gross_pnl.toFixed(2)} using existing recommendation levels.
               </div>
             ) : (
               <div style={{ color: "var(--op-muted, #7a8999)" }}>
@@ -441,6 +442,7 @@ export default function Page() {
           {runDetail?.estimated_total_fees != null ? (
             <div className="op-card" style={{ marginBottom: 8, padding: 10 }}>
               <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only stageable candidate preview (entry + exit)</div>
+              <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}><MetricLabel label="Fees" term="equity_commission_per_trade" /> · <MetricLabel label="Projected net" term="net_pnl" /></div>
               <div><strong>Fees:</strong> ${runDetail.estimated_total_fees.toFixed(2)} · <strong>Projected net:</strong> {runDetail.projected_net_pnl != null ? `${runDetail.projected_net_pnl >= 0 ? "+" : ""}${runDetail.projected_net_pnl.toFixed(2)}` : "Unavailable"}</div>
             </div>
           ) : null}
@@ -483,6 +485,9 @@ export default function Page() {
                 <div><strong>entry zone:</strong> {fmtLevelRange(s.entry)}</div>
                 <div><strong>stop / invalidation:</strong> {fmt((s.invalidation as Record<string, unknown> | null | undefined)?.["price"])} {(s.invalidation as Record<string, unknown> | null | undefined)?.["reason"] ? `(${String((s.invalidation as Record<string, unknown>)["reason"])})` : ""}</div>
                 <div><strong>targets:</strong> T1 {fmt((s.targets as Record<string, unknown> | null | undefined)?.["target_1"])} · T2 {fmt((s.targets as Record<string, unknown> | null | undefined)?.["target_2"])}</div>
+                {(s.quality != null || s.confidence != null) ? (
+                  <div><strong><MetricLabel label="Score" term="score" />:</strong> {fmt(s.quality)} · <strong><MetricLabel label="Confidence" term="confidence" />:</strong> {fmt(s.confidence)}</div>
+                ) : null}
                 <details style={{ marginTop: 6 }}>
                   <summary>Raw operator detail</summary>
                   <div><strong>entry:</strong> {JSON.stringify(s.entry ?? {})}</div>

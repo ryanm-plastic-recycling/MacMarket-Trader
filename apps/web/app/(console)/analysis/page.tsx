@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { WorkflowChart } from "@/components/charts/workflow-chart";
 import { ExpectedRangeVisualization } from "@/components/options/expected-range-visualization";
+import { MetricLabel } from "@/components/ui/metric-help";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
@@ -377,7 +378,7 @@ export default function Page() {
         <div><strong>Active/inactive:</strong> {setup?.active ? "active" : "inactive"} — {setup?.active_reason ?? "loading"}</div>
         <div><strong>Selected strategy:</strong> {appliedStrategy}</div>
         <div><strong>Symbol / mode / timeframe:</strong> {appliedSymbol} / {appliedMarketMode} / {appliedTimeframe}</div>
-        <div><strong>Workflow source:</strong> {formatResearchValue(setup?.workflow_source ?? source, "Source unavailable")}</div>
+        <div><strong><MetricLabel label="Workflow source" term="provider_readiness" />:</strong> {formatResearchValue(setup?.workflow_source ?? source, "Source unavailable")}</div>
         {setup?.operator_guidance ? <div><strong>Mode guidance:</strong> {setup.operator_guidance}</div> : null}
         <div><strong>Summary:</strong> {setupSummary ?? "loading"}</div>
         {appliedMarketMode === "options" && optionStructure ? (
@@ -385,14 +386,14 @@ export default function Page() {
             <div><strong>Structure:</strong> {formatResearchValue(optionStructure.type)}</div>
             <div><strong>Legs:</strong> {getOptionsLegDisplayLines(optionStructure).join(" | ")}</div>
             <div><strong>{optionPremiumLabel}:</strong> {formatResearchValue(optionPremiumValue)}</div>
-            <div><strong>Max P/L:</strong> {formatResearchValue(optionStructure.max_profit)} / {formatResearchValue(optionStructure.max_loss)}</div>
-            <div><strong>Breakevens:</strong> {formatResearchValue(optionStructure.breakeven_low)} - {formatResearchValue(optionStructure.breakeven_high)}</div>
-            <div><strong>Expiration / DTE:</strong> {formatResearchValue(optionStructure.expiration)} / {formatResearchValue(optionStructure.dte)}</div>
-            <div><strong>IV snapshot:</strong> {formatResearchValue(optionStructure.iv_snapshot)}</div>
+            <div><strong><MetricLabel label="Max profit" term="max_profit" /> / <MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchValue(optionStructure.max_profit)} / {formatResearchValue(optionStructure.max_loss)}</div>
+            <div><strong><MetricLabel label="Breakevens" term="breakeven" />:</strong> {formatResearchValue(optionStructure.breakeven_low)} - {formatResearchValue(optionStructure.breakeven_high)}</div>
+            <div><strong>Expiration / <MetricLabel label="DTE" term="dte" />:</strong> {formatResearchValue(optionStructure.expiration)} / {formatResearchValue(optionStructure.dte)}</div>
+            <div><strong><MetricLabel label="IV snapshot" term="iv" />:</strong> {formatResearchValue(optionStructure.iv_snapshot)}</div>
           </div>
         ) : (
           <>
-            <div><strong>Confidence/filter state:</strong> {setup?.confidence ?? "-"} · {(setup?.filters ?? []).join(", ")}</div>
+            <div><strong><MetricLabel label="Confidence" term="confidence" />/filter state:</strong> {setup?.confidence ?? "-"} · {(setup?.filters ?? []).join(", ")}</div>
             <div><strong>Targets:</strong> {setup?.targets?.join(" / ") ?? "-"}</div>
           </>
         )}
@@ -415,12 +416,12 @@ export default function Page() {
       <Card title="Expected move">
         {expectedRange ? (
           <>
-            <div><strong>Status:</strong> {formatResearchValue(expectedRange.status)}</div>
+            <div><strong><MetricLabel label="Expected Range status" term="expected_range" />:</strong> {formatResearchValue(expectedRange.status)}</div>
             <div><strong>Method:</strong> {formatResearchValue(expectedRange.method, "Source unavailable")}</div>
             <div><strong>Reference price:</strong> {formatResearchValue(expectedRange.reference_price_type, "Source unavailable")}</div>
             <div><strong>As-of:</strong> {formatResearchTimestamp(expectedRange.snapshot_timestamp ?? null)}</div>
-            <div><strong>Move:</strong> {formatResearchValue(expectedRange.absolute_move)} ({formatResearchValue(expectedRange.lower_bound)} to {formatResearchValue(expectedRange.upper_bound)})</div>
-            <div><strong>Horizon:</strong> {expectedRangeHorizon}</div>
+            <div><strong><MetricLabel label="Expected Move" term="expected_range" />:</strong> {formatResearchValue(expectedRange.absolute_move)} ({formatResearchValue(expectedRange.lower_bound)} to {formatResearchValue(expectedRange.upper_bound)})</div>
+            <div><strong><MetricLabel label="Horizon / DTE" term="dte" />:</strong> {expectedRangeHorizon}</div>
             <div><strong>Source notes:</strong> {formatResearchValue(expectedRange.provenance_notes, "Source unavailable")}</div>
             {expectedRange.reason ? <div><strong>Reason:</strong> {expectedRange.reason}</div> : null}
             <div>{formatExpectedMoveSummary(expectedRange)}</div>
@@ -480,8 +481,8 @@ export default function Page() {
             <div style={{ fontSize: "0.85rem", marginBottom: 8 }}>
               <strong>Underlying:</strong> {formatResearchValue(optionsChainPreview.underlying)}
               {optionsChainPreview.expiry ? <> &nbsp; <strong>Nearest expiry:</strong> {optionsChainPreview.expiry}</> : null}
-              <> &nbsp; <strong>Source:</strong> {formatResearchValue(optionsChainPreview.source, "Source unavailable")}</>
-              <> &nbsp; <strong>As-of:</strong> {formatResearchTimestamp(optionsChainPreview.data_as_of ?? null)}</>
+              <> &nbsp; <strong><MetricLabel label="Source" term="provider_readiness" />:</strong> {formatResearchValue(optionsChainPreview.source, "Source unavailable")}</>
+              <> &nbsp; <strong><MetricLabel label="As-of" term="provider_readiness" />:</strong> {formatResearchTimestamp(optionsChainPreview.data_as_of ?? null)}</>
             </div>
             <div className="op-grid-2" style={{ gap: 12 }}>
               <div>

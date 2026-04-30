@@ -414,6 +414,11 @@ Current status:
   help for gross/net P&L, options commissions, max profit/loss, breakevens,
   paper lifecycle, and leg-level result labels, and no new Orders actions,
   backend behavior, lifecycle math, or commission math are introduced.
+- `10C4` is complete for Analysis and Replay metric-help rollout. Coverage
+  proves Analysis options risk/source labels and Replay score, confidence,
+  gross/net P&L, and fee labels use `MetricLabel`, while glossary safety copy
+  still avoids probability, broker-simulation, live-routing, and execution
+  implications.
 
 ### 10A safe options UX/operator polish
 
@@ -514,8 +519,26 @@ Current status:
 - no live-routing, broker-execution, new Orders actions, payoff-math,
   lifecycle-math, commission-math, schema, provider, or backend behavior
   changes are expected
-- broader Analysis, Replay, and optional glossary-page rollout remains future
-  work
+- Analysis and Replay rollout is covered by `10C4`; optional glossary-page
+  rollout remains future work
+
+### 10C4 Analysis and Replay metric-help rollout
+
+- Analysis options setup/research labels expose compact help for provider
+  source/readiness, Expected Range / Expected Move, DTE, IV, breakevens, max
+  profit, max loss, and confidence where those labels are visible
+- Replay labels expose compact help for score, confidence, gross P&L, net
+  P&L, and equity fee estimates where those labels are visible
+- score and confidence glossary copy still does not describe either value as
+  probability of profit
+- Expected Range help still says it does not change payoff math or approve
+  execution
+- Replay-related help does not imply broker mark-to-market simulation,
+  routing, or live execution
+- no backend, replay behavior, recommendation scoring, schema, provider,
+  lifecycle-math, payoff-math, commission-math, or equity behavior changes are
+  expected
+- optional glossary/reference-page rollout remains future work
 
 ### 10D expiration settlement design checkpoint
 
