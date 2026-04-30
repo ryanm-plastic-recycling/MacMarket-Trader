@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 160, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 168, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -48,7 +48,10 @@ options operator parity, source/as-of, and Expected Range visualization scope.
 Phase 10 planning is now open as a deferred-work sequencing track. `10A1` is
 complete for the frontend-only Analysis Expected Range visualization reuse,
 and `10B1` is complete for frontend-only Orders display/readability polish on
-durable paper-options lifecycle rows; remaining Phase 10 slices stay open.
+durable paper-options lifecycle rows. `10C1` is complete for the first
+frontend-only explainable metric UX foundation: central glossary registry,
+reusable metric-help component, and narrow Settings / Expected Range /
+Provider Health integrations. Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
@@ -526,6 +529,9 @@ Safe near-term:
   recommendation-universe workflow polish, before any schema or runtime changes
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
+- completed `10C1`: central glossary registry and reusable accessible
+  metric-help component with narrow Settings, Expected Range, and Provider
+  Health integrations
 
 Medium-risk:
 
@@ -631,6 +637,39 @@ First implementation slice:
 - Rollback/risk notes:
   keep the dedicated options section removable without disturbing equity
   Orders tables
+
+#### 10C1 - Operator glossary foundation
+
+- Type:
+  frontend-only shared foundation
+- Complete when:
+  a central glossary registry and reusable accessible metric-help component
+  exist, the required initial terms are covered, and only low-risk surfaces are
+  wired first
+- Status:
+  complete for the current first slice. `apps/web/lib/glossary.ts` now defines
+  the initial terms, `MetricHelp` / `MetricLabel` provide compact
+  click/tap/keyboard-accessible help, and Settings commission labels, Expected
+  Range visualization labels, and Provider Health readiness context are wired
+  without retrofitting the whole app.
+- Explicitly not complete:
+  broad Analysis, Recommendations tables, Replay, Orders, score columns,
+  full glossary/reference page, probability modeling, provider probes,
+  recommendation-generation changes, lifecycle behavior changes, payoff math
+  changes, commission math changes, schema changes, live routing, or broker
+  execution
+- Must be tested:
+  required registry terms, known/unknown `MetricHelp` rendering, commission
+  guardrail copy, Expected Range research-only caveats, confidence/score
+  non-probability wording, Provider readiness non-execution wording, and
+  Settings integration
+- Rollback/risk notes:
+  remove the help icons/imports and leave the registry unused; no backend,
+  data, or schema rollback should be required
+- Note:
+  this implements the glossary foundation slice requested as `10C1`; the
+  separate options replay/history design checkpoint below remains open and is
+  not closed by this work.
 
 #### 10C - Options replay/history integration design checkpoint
 
@@ -780,6 +819,11 @@ First implementation slice:
   implement a central glossary registry when this becomes code, so terms stay
   consistent across the app and can optionally power a future glossary or
   reference page.
+- `10C1` status:
+  complete for the first foundation slice. The shared registry and reusable
+  metric-help component now exist, with first integrations limited to Settings
+  commission labels, Expected Range visualization labels, and Provider Health
+  readiness context.
 - Initial term set:
   `RR` / risk-reward ratio, `CONF` / confidence, `Score`, Expected Range /
   Expected Move, `DTE`, `IV`, Open Interest, Breakeven, Max Profit, Max Loss,
@@ -883,7 +927,9 @@ First implementation slice:
   provider readiness, paper lifecycle, and replay payoff preview. A future
   workflow-polish item now covers a shared glossary registry plus accessible
   in-context help, while keeping confidence/score separate from probability of
-  profit and preserving paper-only/non-execution guardrails.
+  profit and preserving paper-only/non-execution guardrails. `10C1` has landed
+  the shared foundation and first low-risk integrations; broader table/page
+  rollout remains open.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -1182,6 +1228,15 @@ diffs. Notable recent inflection points:
   provider probes, live routing, brokerage execution, recommendation
   generation, probability modeling, payoff math, lifecycle math, or commission
   math.
+- 2026-04-30 - Phase 10C1 complete for the explainable metric UX foundation:
+  frontend now has a central glossary registry, reusable `MetricHelp` /
+  `MetricLabel` component, focused tests for required terms and safety copy,
+  and narrow first integrations in Settings commission labels, Expected Range
+  visualization labels, and Provider Health readiness context. Broader
+  Analysis/Recommendations/Replay/Orders rollout remains future work, and no
+  backend, schema, provider, lifecycle, commission, equity, recommendation,
+  routing, settlement, assignment/exercise, naked-short, probability, symbol
+  discovery, watchlist, or crypto behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

@@ -127,10 +127,10 @@ describe("ExpectedRangeVisualization", () => {
 
     expect(html).toContain("Expected Range is research context only.");
     expect(html).toContain("It does not change payoff math or approve execution.");
+    expect(html).toContain("does not change payoff math, approve execution, or represent probability of profit.");
     expect(html).toContain("Range is based on available provider data and assumptions.");
     expect(html).toContain("Source unavailable");
     expect(html).toContain("As-of unavailable");
-    expect(html).not.toContain("probability of profit");
     expect(html).not.toContain("chance of winning");
     expect(html).not.toContain("execution approved");
     expect(html).not.toContain("trade signal");

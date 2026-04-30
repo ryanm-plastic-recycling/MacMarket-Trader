@@ -2,6 +2,7 @@
 
 import React from "react";
 
+import { MetricLabel } from "@/components/ui/metric-help";
 import type { OptionsExpectedRange } from "@/lib/recommendations";
 
 type ExpectedRangeVisualizationProps = {
@@ -139,7 +140,9 @@ export function ExpectedRangeVisualization({
           background: "rgba(18, 28, 40, 0.22)",
         }}
       >
-        <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: 4 }}>Expected Range visualization</div>
+        <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: 4 }}>
+          <MetricLabel label="Expected Range visualization" term="expected_range" />
+        </div>
         <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
           Unavailable. {unavailableReason(expectedRange)}
         </div>
@@ -198,7 +201,9 @@ export function ExpectedRangeVisualization({
     >
       <div className="op-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: "0.82rem", fontWeight: 700 }}>Expected Range visualization</div>
+          <div style={{ fontSize: "0.82rem", fontWeight: 700 }}>
+            <MetricLabel label="Expected Range visualization" term="expected_range" />
+          </div>
           <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem", marginTop: 2 }}>
             {safeText(workflowSource, "Source unavailable")} - {formatToken(expectedRange.method)} -{" "}
             {formatTimestamp(expectedRange.snapshot_timestamp)}

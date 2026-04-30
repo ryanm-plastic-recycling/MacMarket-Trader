@@ -82,6 +82,10 @@ Current implementation note:
   caveats without changing recommendation scoring, probability modeling,
   provider behavior, payoff math, lifecycle math, commission math, or
   execution boundaries.
+- `10C1` is complete for the first frontend-only explainable metric
+  foundation: central glossary registry, reusable metric-help component, and
+  narrow first integrations in Settings commission labels, Expected Range
+  visualization labels, and Provider Health readiness context.
 
 ## UX goals
 
@@ -133,6 +137,21 @@ Each surface should later show:
 Options and cross-workflow risk surfaces should later use a shared glossary
 registry plus a reusable accessible help affordance for important labels,
 table headers, cards, and form fields.
+
+Current `10C1` foundation:
+
+- `apps/web/lib/glossary.ts` defines the initial shared term registry
+- `MetricHelp` / `MetricLabel` provide compact click/tap/keyboard-accessible
+  in-context help
+- first integrations are intentionally narrow:
+  - Settings equity commission per trade
+  - Settings options commission per contract
+  - Expected Range visualization labels
+  - Provider Health readiness context
+- broader Analysis/Recommendations score columns, Replay, Orders, and a full
+  glossary/reference page remain future rollout items
+- no recommendation scoring, probability modeling, provider behavior, payoff
+  math, lifecycle math, commission math, or execution boundary changed
 
 Initial options-relevant terms:
 

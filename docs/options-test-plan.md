@@ -399,6 +399,11 @@ Current status:
   open/closed status clarity, commission reminders, expandable leg details,
   provider/source/as-of limitation copy, missing-value safety, and no
   live-routing or broker-execution implication.
+- `10C1` is complete for the frontend-only explainable metric UX foundation.
+  Coverage focuses on the required glossary registry terms, reusable
+  metric-help rendering, unknown-term safety, commission guardrail copy,
+  Expected Range research-only caveats, confidence/score non-probability
+  wording, Provider readiness non-execution wording, and Settings integration.
 
 ### 10A safe options UX/operator polish
 
@@ -443,6 +448,30 @@ Current status:
   positions, or trades
 - future mode-native persistence tests must not reuse equity replay semantics
   silently
+- note:
+  `10C1` is an explainable metric UX foundation slice and does not close this
+  replay/history checkpoint
+
+### 10C1 explainable metric UX foundation
+
+- glossary registry contains `rr`, `confidence`, `score`, `expected_range`,
+  `dte`, `iv`, `open_interest`, `breakeven`, `max_profit`, `max_loss`,
+  `gross_pnl`, `net_pnl`, `equity_commission_per_trade`,
+  `options_commission_per_contract`, `provider_readiness`,
+  `paper_lifecycle`, and `replay_payoff_preview`
+- known `MetricHelp` / `MetricLabel` terms render compact help content
+- unknown terms render nothing rather than crashing
+- options commission help says per contract, per leg, per event, not per
+  share, and not multiplied by 100
+- Expected Range help says it does not change payoff math, approve execution,
+  or represent probability of profit
+- `CONF` and `Score` glossary copy does not describe either value as
+  probability of profit
+- Provider readiness glossary copy does not imply live routing or broker
+  execution
+- Settings page renders the commission help integrations
+- broader Analysis, Recommendations, Replay, Orders, and glossary-page rollout
+  remains future work
 
 ### 10D expiration settlement design checkpoint
 

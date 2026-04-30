@@ -4,6 +4,7 @@ import React from "react";
 import { useEffect, useState } from "react";
 
 import { Card, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { MetricLabel } from "@/components/ui/metric-help";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import {
   OPTIONS_COMMISSION_EXAMPLE_TEXT,
@@ -155,9 +156,12 @@ export default function SettingsPage() {
               style={{ width: 140 }}
             />
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>Equity commission / trade ($)</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label htmlFor="equity-commission-per-trade">
+              <MetricLabel label="Equity commission / trade ($)" term="equity_commission_per_trade" />
+            </label>
             <input
+              id="equity-commission-per-trade"
               type="number"
               min={COMMISSION_PER_TRADE_MIN}
               max={COMMISSION_PER_TRADE_MAX}
@@ -166,10 +170,13 @@ export default function SettingsPage() {
               onChange={(e) => setCommissionPerTradeInput(e.target.value)}
               style={{ width: 140 }}
             />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>Options commission per contract ($)</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label htmlFor="options-commission-per-contract">
+              <MetricLabel label="Options commission per contract ($)" term="options_commission_per_contract" />
+            </label>
             <input
+              id="options-commission-per-contract"
               type="number"
               min={COMMISSION_PER_CONTRACT_MIN}
               max={COMMISSION_PER_CONTRACT_MAX}
@@ -178,7 +185,7 @@ export default function SettingsPage() {
               onChange={(e) => setCommissionPerContractInput(e.target.value)}
               style={{ width: 140 }}
             />
-          </label>
+          </div>
           <button onClick={() => void saveTradeSettings()} disabled={feedback.state === "loading"}>
             {feedback.state === "loading" ? "Saving…" : "Save"}
           </button>

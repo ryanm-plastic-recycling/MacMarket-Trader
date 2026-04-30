@@ -40,7 +40,11 @@ describe("SettingsPage", () => {
     const html = renderToStaticMarkup(<SettingsPage />);
 
     expect(html).toContain("Options commission per contract ($)");
+    expect(html).toContain("Equity commission per trade");
+    expect(html).toContain("The paper fee applied to each equity paper-trade event.");
+    expect(html).toContain("The paper options fee applied per contract, per leg, per open or close event.");
     expect(html).toContain("Not per share. Do not multiply by 100.");
+    expect(html).toContain("not multiplied by 100");
     expect(html).toContain("Total options commission = commission per contract x contracts x legs x open/close events.");
     expect(html).toContain("Example: $0.65 commission, 1 iron condor, 4 legs, open + close = $0.65 x 1 x 4 x 2 = $5.20 total estimated commission.");
   });

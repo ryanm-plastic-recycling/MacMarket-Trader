@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Card, ErrorState, PageHeader, StatusBadge } from "@/components/operator-ui";
+import { MetricLabel } from "@/components/ui/metric-help";
 import { fetchWorkflowApi } from "@/lib/api-client";
 
 type ProviderHealth = {
@@ -136,6 +137,9 @@ export function ProviderHealthPanel() {
       />
 
       <Card title="Operator summary">
+        <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: 8 }}>
+          <MetricLabel label="Provider readiness" term="provider_readiness" />
+        </div>
         <div className="op-row" style={{ flexWrap: "wrap" }}>
           <StatusBadge tone={healthyProvider ? "good" : "warn"}>workflow mode: {market?.workflow_execution_mode ?? "-"}</StatusBadge>
           <span>configured: <strong>{market?.configured_provider ?? "-"}</strong></span>

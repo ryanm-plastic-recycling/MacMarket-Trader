@@ -521,7 +521,9 @@ The codebase should define typed contracts for:
   for remaining deferred options/provider/crypto work; `10A1` reuses the
   Expected Range visualization on Analysis with existing fields only, and
   `10B1` polishes durable Orders visibility for paper options with existing
-  lifecycle fields only. Live routing, real brokerage execution, expiration settlement,
+  lifecycle fields only. `10C1` adds the central explainable metric glossary
+  registry and reusable metric-help foundation with narrow first integrations.
+  Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
 

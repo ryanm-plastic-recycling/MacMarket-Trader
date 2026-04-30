@@ -234,10 +234,11 @@ The console currently exposes operator abbreviations and risk terms such as
 gross/net P&L, commissions, Provider readiness, Paper lifecycle, and Replay
 payoff preview.
 
-Future roadmap work is planned for small in-context help icons and accessible
-hover/click/tap explanations. The goal is to explain what a value means, how
-it is calculated when a formula exists, and what it should not be interpreted
-as.
+The first glossary foundation is now in place: a shared registry and reusable
+metric-help component can provide small in-context help icons with accessible
+click/tap explanations. The first rollout is intentionally narrow, covering
+commission settings, Expected Range labels, and Provider readiness context
+before broader score tables and workflow pages are retrofitted.
 
 Important interpretation rules:
 
@@ -462,9 +463,10 @@ Current project status, in operator terms:
 - Future workflow polish added: symbol discovery and user-scoped watchlist
   management is planned for recommendation-universe management, not execution
 - Future workflow polish added: operator glossary and explainable metric
-  tooltips are planned for in-context definitions, formulas, examples, and
-  caveats without changing scoring, probability, provider, execution, payoff,
-  lifecycle, or commission behavior
+  tooltips are now started with the `10C1` shared glossary foundation and
+  narrow first integrations; broader rollout remains future work and does not
+  change scoring, probability, provider, execution, payoff, lifecycle, or
+  commission behavior
 
 Current options boundary:
 
