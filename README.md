@@ -630,10 +630,13 @@ roadmap item tracks searchable ticker/name discovery, user-scoped
 searchable/sortable watchlists, bulk add/import, duplicate handling,
 active/inactive symbols, optional tags/groups, provider/source support labels,
 and eventual recommendation-universe selection from watchlists instead of raw
-comma-separated lists. This is recommendation-universe management only:
-provider support labels, options eligibility, and ETF/index substitution
-guidance such as `SPX` / `NDX` versus `SPY` / `QQQ` must not imply live routing
-or brokerage execution support.
+comma-separated lists. The design checkpoint is captured in
+`docs/symbol-watchlist-design.md`; it recommends a hybrid path that preserves
+current watchlist compatibility while planning dedicated user-symbol universe
+records before any schema or runtime implementation. This is
+recommendation-universe management only: provider support labels, options
+eligibility, and ETF/index substitution guidance such as `SPX` / `NDX` versus
+`SPY` / `QQQ` must not imply live routing or brokerage execution support.
 
 Another future operator-console polish item tracks explainable metric help:
 small accessible info affordances, a shared glossary registry, concise

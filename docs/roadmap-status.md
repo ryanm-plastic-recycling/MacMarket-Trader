@@ -63,9 +63,11 @@ The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
 tracked as a recommendation-universe workflow item, not trade execution or
-broker routing. Future operator glossary and explainable metric tooltips are
-now tracked as workflow comprehension polish, not changes to scoring,
-probability modeling, provider behavior, or execution semantics.
+broker routing; the design checkpoint is now captured in
+`docs/symbol-watchlist-design.md` without changing schema, provider behavior,
+or recommendation generation. Future operator glossary and explainable metric
+tooltips are now tracked as workflow comprehension polish, not changes to
+scoring, probability modeling, provider behavior, or execution semantics.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md test context is now aligned to the
 current vitest 160 count,
@@ -507,9 +509,9 @@ recommendation, or brokerage behavior.
 
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
-  planning started; `10A1`, `10B1`, and `10C1` through `10C5` complete;
-  broader `10A`, broader `10B`, optional glossary/reference-page work, and
-  later subphases remain open
+  planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`
+  complete; broader `10A`, broader `10B`, optional glossary/reference-page
+  work, symbol/watchlist implementation, and later subphases remain open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -535,6 +537,9 @@ Safe near-term:
 - provider-health copy/readiness-only clarifications that do not add probes
 - docs/design checkpoint for symbol discovery and watchlist management as
   recommendation-universe workflow polish, before any schema or runtime changes
+- completed `10W1`: symbol discovery and watchlist / recommendation-universe
+  design checkpoint in `docs/symbol-watchlist-design.md`, preserving existing
+  Phase 10 numbering where `10D` remains expiration settlement design
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
 - completed `10C1`: central glossary registry and reusable accessible
@@ -774,10 +779,23 @@ First implementation slice:
 - Type:
   docs/design first; later frontend/user-workflow work only after explicit
   approval
+- Status:
+  `10W1` design checkpoint complete in
+  [symbol-watchlist-design.md](symbol-watchlist-design.md). Existing Phase 10
+  numbering is preserved: `10D` remains the expiration-settlement design
+  checkpoint, so symbol/watchlist work uses a workflow-polish `10W` lane unless
+  the roadmap is explicitly renumbered later.
 - Purpose:
   replace comma-only symbol entry and ad hoc operator memory with a user-scoped
   recommendation-universe workflow. This is symbol discovery and research
   universe management only, not trade execution, routing, or broker support.
+- Current-state inventory:
+  Analysis and Symbol Analyze use single-symbol free-text inputs;
+  Recommendations and Schedules still split comma-separated frontend fields
+  into symbol arrays; schedules persist copied symbol arrays inside payloads;
+  current watchlists are user-scoped rows with name plus `symbols` JSON; there
+  is no provider-backed symbol search endpoint or persisted symbol-metadata
+  read model yet.
 - Symbol discovery target:
   operators should eventually be able to search by ticker and company/security
   name; review ticker, name, asset type, exchange, provider/source support
@@ -795,6 +813,13 @@ First implementation slice:
   recommendation and scheduled-report workflows should eventually select from
   watchlists or groups rather than raw comma lists, while still allowing manual
   symbol entry when metadata is missing or provider lookup is unavailable.
+- Recommended data-model path:
+  use a hybrid migration path later. Keep current `watchlists` compatibility
+  while designing dedicated user-symbol universe / watchlist-symbol read models
+  for duplicate handling, active/inactive state, tags/groups, notes,
+  provider/source metadata, and schedule/recommendation universe resolution.
+  Early resolvers should emit the same symbol arrays current ranking paths
+  already accept.
 - Guardrails:
   provider support labels must not imply live routing; missing metadata should
   not block manual symbol entry; options eligibility/provider coverage is
@@ -802,11 +827,15 @@ First implementation slice:
   planning context until crypto is explicitly implemented; secrets and API keys
   stay out of docs and UI.
 - Suggested implementation order:
-  `design checkpoint` -> `read-only symbol search/source-label UX using
-  existing provider capabilities only if already available` ->
-  `user-scoped watchlist table UX` -> `bulk import/duplicate handling` ->
-  `schedule/recommendation universe selection from groups` ->
-  `provider-depth enrichment only if separately approved`.
+  `10W1 design checkpoint` -> `10W2 current-state cleanup / comma-entry copy`
+  -> `10W3 schema/read-model checkpoint` -> `10W4 user-scoped watchlist table
+  UI` -> `10W5 bulk import/duplicate handling` -> `10W6 schedule/
+  recommendation universe selection` -> `10W7 provider-backed discovery only
+  if separately approved` -> `10W8 closure`.
+- Suggested first implementation slice:
+  `10W2` current-state cleanup / UI copy for existing comma entry. Keep it
+  frontend-only and manual-entry friendly; do not start with provider-backed
+  search, schema migration, or recommendation/schedule resolver changes.
 - Explicitly not complete:
   schema changes, provider probes, provider search/fetch behavior, live
   routing, brokerage execution, recommendation generation changes, options
@@ -1273,6 +1302,15 @@ diffs. Notable recent inflection points:
   recommendation-universe management only, with no application code, schema,
   provider probes, live routing, brokerage execution, or recommendation
   generation behavior changed.
+- 2026-04-30 - Symbol discovery and watchlist management design checkpoint
+  complete (`10W1`): `docs/symbol-watchlist-design.md` now records the
+  current-state inventory, symbol-discovery UX, watchlist-management UX,
+  recommendation-universe selection model, data-model alternatives, hybrid
+  recommendation, provider assumptions, future tests, and implementation
+  slices. Existing Phase 10 numbering is preserved, with `10D` still reserved
+  for expiration-settlement design. No application code, backend behavior,
+  frontend behavior, schema, provider probes, live routing, or recommendation
+  generation changed.
 - 2026-04-30 - Future operator glossary and explainable metric tooltips
   roadmap item added: a docs-only planning note now tracks concise
   hover/click/tap metric help, formulas and examples where useful, a shared

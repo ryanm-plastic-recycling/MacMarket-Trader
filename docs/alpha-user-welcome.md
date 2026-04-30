@@ -227,6 +227,16 @@ This future work is not trade execution. Provider support labels and options
 eligibility are research context only, and missing metadata should not block
 manual symbol entry.
 
+Design checkpoint status:
+
+- the current-state inventory and future implementation plan now live in
+  `docs/symbol-watchlist-design.md`
+- the recommended future path is a hybrid model: keep current watchlist
+  compatibility while designing dedicated user-symbol universe / watchlist
+  membership records before any migration
+- the safest first implementation slice is copy/UI cleanup around existing
+  comma-entry workflows, not provider-backed search or schema changes
+
 ## 8. Metric glossary and tooltips
 
 The console currently exposes operator abbreviations and risk terms such as
@@ -468,6 +478,9 @@ Current project status, in operator terms:
   display-only paper lifecycle records using existing persisted fields only
 - Future workflow polish added: symbol discovery and user-scoped watchlist
   management is planned for recommendation-universe management, not execution
+- Symbol/watchlist design checkpoint complete: current watchlists are still
+  simple user-scoped named symbol lists, while the future plan recommends a
+  hybrid user-symbol universe model before richer implementation
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders
