@@ -177,9 +177,9 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; 10A1 is complete for Analysis Expected Range visualization reuse, 10B1 is complete for Orders durable paper-options display/readability polish, and 10C1 is complete for the explainable metric glossary foundation; live/broker execution is not active.**
+**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; 10A1 is complete for Analysis Expected Range visualization reuse, 10B1 is complete for Orders durable paper-options display/readability polish, and 10C1 through 10C5 are complete for the current explainable metric glossary/tooltips scope; live/broker execution is not active.**
 
-Tests (2026-04-30): pytest 210, vitest 174, Playwright 31 (all passing, 0 skipped). tsc clean.
+Tests (2026-04-30): pytest 210, vitest 175, Playwright 31 (all passing, 0 skipped). tsc clean.
 
 Phase 10C2 is complete for compact Recommendations score/risk-label help using
 the existing glossary and `MetricLabel` foundation. Broader Analysis, Replay,
@@ -200,6 +200,13 @@ without changing recommendation scoring, replay behavior, backend behavior,
 lifecycle math, payoff math, commission math, equity behavior, schema, or
 execution semantics. A broader glossary/reference page remains open.
 
+Phase 10C5 is complete for the explainable metrics glossary closure audit. The
+current in-context rollout is closed across Settings, Provider Health, Expected
+Range, Recommendations, Orders, Analysis, and Replay. Tiny glossary safety-copy
+polish keeps Provider readiness separate from live routing/broker execution and
+Replay payoff preview separate from broker mark-to-market simulation; optional
+glossary/reference-page work remains open.
+
 Deployment: `https://macmarket.io` via Cloudflare Tunnel; backend `uvicorn` on `127.0.0.1:9510`; frontend Next.js on `0.0.0.0:9500`; SQLite at `C:\Dashboard\MacMarket-Trader\macmarket_trader.db`; daily 3 AM backup via `MacMarket-DB-Backup` task; strategy scheduler every 5 min via `MacMarket-StrategyScheduler` task.
 
 Phase 6 + Pass 4 ships the full Analyze → Recommendation → Replay → Paper Order → Position → Close workflow with cancel-staged + reopen-closed (5 min) lifecycle, `display_id` labels (`AAPL-EVCONT-20260429-0830`), per-user `risk_dollars_per_trade` + Settings page at `/settings`, welcome guide at `/welcome` with brand header on pre-auth pages, invite email with welcome CTA, timezone-aware schedules, role-conditional sidebar, sticky Active Trade banner, auto-advance guided CTAs, Polygon market data (equities live; options chain preview research-only), and Cloudflare Access invite-only enforcement. Phase 7 is closed for equity paper-readiness, Phase 8 is closed for the scoped paper-first options capability, and Phase 9 is closed for current options provider/source/as-of parity plus Recommendations Expected Range visualization. See `docs/roadmap-status.md` for full phase history.
@@ -209,7 +216,7 @@ Phase 6 + Pass 4 ships the full Analyze → Recommendation → Replay → Paper 
 ## Open Items (Phase 10 planning/polish is next)
 
 ### Phase 10 — Deferred-work planning and safe options polish (NEXT)
-Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. `10A1` is complete for frontend-only Analysis Expected Range visualization using existing payload fields and the existing reusable component; `10B1` is complete for frontend-only Orders durable paper-options display/readability polish using existing lifecycle fields only; `10C1` is complete for the frontend-only central glossary registry and reusable metric-help foundation; `10C2` through `10C4` are complete for compact Recommendations, Orders, Analysis, and Replay metric-help rollout. Broader `10A`/`10B`, optional glossary/reference-page work, and replay/history design work remain open.
+Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. `10A1` is complete for frontend-only Analysis Expected Range visualization using existing payload fields and the existing reusable component; `10B1` is complete for frontend-only Orders durable paper-options display/readability polish using existing lifecycle fields only; `10C1` through `10C5` are complete for the current in-context explainable metric glossary/tooltips scope. Broader `10A`/`10B`, optional glossary/reference-page work, and replay/history design work remain open.
 
 ### Later execution phase — Alpaca paper integration (NOT ACTIVE)
 Wire `BROKER_PROVIDER=alpaca` only after a later explicit execution phase. Keys are configured in deployed `.env`, and scaffold exists in `src/macmarket_trader/execution/`, but real brokerage routing/execution remains disabled. Fill polling via CLI `poll-alpaca-fills` is not active.

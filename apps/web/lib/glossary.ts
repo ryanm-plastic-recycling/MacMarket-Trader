@@ -139,7 +139,7 @@ export const GLOSSARY_TERMS: Record<GlossaryTermKey, GlossaryTerm> = {
     label: "Provider readiness",
     title: "Provider readiness",
     definition: "Operator visibility into configured data providers, fallback/blocking mode, and whether safe checks are available.",
-    caveat: "Readiness is workflow-trust context. It is not trade approval or account connectivity.",
+    caveat: "Readiness is workflow-trust context. It is not live routing, broker execution, trade approval, or account connectivity.",
     relatedTerms: ["expected_range", "iv", "open_interest"],
   },
   paper_lifecycle: {
@@ -153,7 +153,7 @@ export const GLOSSARY_TERMS: Record<GlossaryTermKey, GlossaryTerm> = {
     label: "Replay payoff preview",
     title: "Replay payoff preview",
     definition: "A read-only options payoff inspection using deterministic expiration-payoff assumptions.",
-    caveat: "It does not create replay runs, orders, positions, trades, or execution approval.",
+    caveat: "It does not create replay runs, orders, positions, trades, broker mark-to-market simulation, or execution approval.",
     relatedTerms: ["expected_range", "breakeven", "paper_lifecycle"],
   },
 };

@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 174, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 175, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -55,8 +55,10 @@ Provider Health integrations. `10C2` is complete for compact Recommendations
 score/risk-label help using the existing glossary and `MetricLabel`
 component. `10C3` is complete for compact Orders P&L/commission label help
 across equity Orders and durable paper-options rows. `10C4` is complete for
-compact Analysis and Replay metric-label help. Remaining Phase 10 slices stay
-open.
+compact Analysis and Replay metric-label help. `10C5` is complete for the
+closure audit, tiny safety-copy polish, and docs/test alignment, so the
+explainable metric glossary/tooltips rollout is closed for the current
+in-context scope. Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
@@ -505,8 +507,9 @@ recommendation, or brokerage behavior.
 
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
-  planning started; `10A1` and `10B1` complete; broader `10A`, broader `10B`,
-  and later subphases remain open
+  planning started; `10A1`, `10B1`, and `10C1` through `10C5` complete;
+  broader `10A`, broader `10B`, optional glossary/reference-page work, and
+  later subphases remain open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -551,6 +554,10 @@ Safe near-term:
   fee labels without changing recommendation scoring, replay behavior,
   lifecycle math, payoff math, commission math, schema, provider behavior, or
   execution semantics
+- completed `10C5`: explainable metrics glossary closure audit for the current
+  in-context scope, including tiny glossary safety-copy polish, focused tests,
+  and docs alignment while keeping the optional glossary/reference page future
+  work
 
 Medium-risk:
 
@@ -859,6 +866,13 @@ First implementation slice:
   compact glossary help on options risk/source labels, and Replay now uses it
   on score, confidence, gross/net P&L, and fee labels where those labels are
   visible.
+- `10C5` status:
+  complete for the closure audit. Settings, Provider Health, Expected Range,
+  Recommendations, Orders, Analysis, and Replay have current-scope in-context
+  metric help on the highest-confusion labels; glossary safety wording remains
+  explicit about no probability-of-profit, no broker execution, no live
+  routing, no broker mark-to-market simulation, and unchanged payoff,
+  commission, lifecycle, scoring, provider, and equity behavior.
 - Initial term set:
   `RR` / risk-reward ratio, `CONF` / confidence, `Score`, Expected Range /
   Expected Move, `DTE`, `IV`, Open Interest, Breakeven, Max Profit, Max Loss,
@@ -884,8 +898,9 @@ First implementation slice:
   -> `Replay and Orders P&L/commission labels` -> `optional glossary page`.
   The Recommendations part of the score/risk-label step is complete in
   `10C2`; the Orders P&L/commission part is complete in `10C3`; the Analysis
-  and Replay label rollout is complete in `10C4`; optional glossary-page
-  rollout remains future work.
+  and Replay label rollout is complete in `10C4`; the current-scope closure
+  audit is complete in `10C5`; optional glossary-page rollout remains future
+  work.
 - Explicitly not complete:
   probability modeling, recommendation scoring changes, provider probes, live
   routing, broker execution, commission math changes, payoff math changes,
@@ -968,8 +983,9 @@ First implementation slice:
   in-context help, while keeping confidence/score separate from probability of
   profit and preserving paper-only/non-execution guardrails. `10C1` has landed
   the shared foundation and first low-risk integrations; `10C2` has landed the
-  Recommendations score/risk-label rollout. Broader Analysis, Replay, Orders,
-  and glossary-page rollout remains open.
+  Recommendations score/risk-label rollout; `10C3` through `10C5` have landed
+  Orders, Analysis, Replay, and closure-audit coverage for the current
+  in-context scope. Optional glossary/reference-page rollout remains open.
 
 ## Deployment State
 - URL: https://macmarket.io
@@ -1293,6 +1309,14 @@ diffs. Notable recent inflection points:
   recommendation scoring, equity behavior, lifecycle math, payoff math,
   commission math, routing, Orders actions, settlement, assignment/exercise,
   symbol-discovery, watchlist, probability, or crypto behavior changed.
+- 2026-04-30 - Phase 10C5 closure audit complete for explainable metric
+  glossary/tooltips current scope: Settings, Provider Health, Expected Range,
+  Recommendations, Orders, Analysis, and Replay now have compact in-context
+  help on the highest-confusion labels. Tiny glossary safety-copy polish and
+  focused tests keep confidence/score separate from probability of profit,
+  Provider readiness separate from live routing/broker execution, and Replay
+  payoff preview separate from broker mark-to-market simulation. Optional
+  glossary/reference-page work remains future, and Phase 10 remains open.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

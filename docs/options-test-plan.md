@@ -419,6 +419,11 @@ Current status:
   gross/net P&L, and fee labels use `MetricLabel`, while glossary safety copy
   still avoids probability, broker-simulation, live-routing, and execution
   implications.
+- `10C5` is complete for the explainable metrics closure audit. Coverage now
+  confirms the current in-context glossary/tooltips scope across Settings,
+  Provider Health, Expected Range, Recommendations, Orders, Analysis, and
+  Replay, with focused safety tests for provider readiness and replay payoff
+  preview wording. Optional glossary/reference-page work remains deferred.
 
 ### 10A safe options UX/operator polish
 
@@ -538,6 +543,24 @@ Current status:
 - no backend, replay behavior, recommendation scoring, schema, provider,
   lifecycle-math, payoff-math, commission-math, or equity behavior changes are
   expected
+- optional glossary/reference-page rollout remains future work
+
+### 10C5 explainable metrics closure audit
+
+- Settings commission fields, Provider Health readiness, Expected Range,
+  Recommendations score/risk labels, Orders P&L/commission labels, Analysis
+  options risk/source labels, and Replay score/P&L/fee labels have current-scope
+  `MetricHelp` / `MetricLabel` coverage
+- glossary tests verify the required term registry, unknown-term safety, options
+  commission per-contract/per-leg/per-event wording, Expected Range
+  research-only wording, confidence/score non-probability wording, Provider
+  readiness non-execution wording, and Replay payoff preview no
+  broker-mark-to-market-simulation wording
+- component tests verify compact native help markup that works via click/tap and
+  keyboard-accessible summary behavior
+- no backend, schema, provider, scoring, equity, lifecycle-math, payoff-math,
+  commission-math, live-routing, broker-execution, symbol-discovery, watchlist,
+  or probability behavior changes are expected
 - optional glossary/reference-page rollout remains future work
 
 ### 10D expiration settlement design checkpoint

@@ -243,7 +243,8 @@ profit/loss, breakevens, gross/net P&L, and options commissions. Orders now
 also has compact help on the main P&L and commission labels for equity paper
 records and durable paper-options rows. Analysis and Replay now have compact
 help on the most relevant options risk/source, score/confidence, P&L, and fee
-labels. A broader glossary/reference page remains future work.
+labels. The current in-context glossary/tooltips rollout is now closed for
+those surfaces; a broader glossary/reference page remains future work.
 
 Important interpretation rules:
 
@@ -470,8 +471,9 @@ Current project status, in operator terms:
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders
-  P&L/commission-label rollout, and `10C4` Analysis/Replay label rollout; the
-  optional reference-page rollout remains future work and does not change
+  P&L/commission-label rollout, `10C4` Analysis/Replay label rollout, and
+  `10C5` closure audit for the current in-context scope; the optional
+  reference-page rollout remains future work and does not change
   scoring, probability, provider, execution, replay behavior, payoff,
   lifecycle, or commission behavior
 

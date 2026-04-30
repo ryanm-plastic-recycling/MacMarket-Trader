@@ -24,7 +24,8 @@ describe("replay metric help labels", () => {
     expect(GLOSSARY_TERMS.confidence.caveat).not.toMatch(/probability of profit/i);
     expect(GLOSSARY_TERMS.score.caveat).not.toMatch(/probability of profit/i);
     expect(GLOSSARY_TERMS.replay_payoff_preview.definition).toMatch(/read-only/i);
-    expect(GLOSSARY_TERMS.replay_payoff_preview.caveat).not.toMatch(/broker mark-to-market|broker simulation|live trading|broker routing/i);
+    expect(GLOSSARY_TERMS.replay_payoff_preview.caveat).toMatch(/does not create .*broker mark-to-market simulation/i);
+    expect(GLOSSARY_TERMS.replay_payoff_preview.caveat).not.toMatch(/live trading|broker routing/i);
     expect(GLOSSARY_TERMS.net_pnl.definition).toMatch(/after modeled commissions/i);
     expect(GLOSSARY_TERMS.gross_pnl.definition).toMatch(/before commissions/i);
   });

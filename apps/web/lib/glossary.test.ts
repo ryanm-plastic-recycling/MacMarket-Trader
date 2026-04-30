@@ -60,8 +60,18 @@ describe("glossary registry", () => {
     const copy = `${providerReadiness?.definition} ${providerReadiness?.caveat}`.toLowerCase();
 
     expect(copy).toContain("workflow-trust context");
+    expect(copy).toContain("not live routing, broker execution");
     expect(copy).not.toContain("broker routing");
-    expect(copy).not.toContain("broker execution");
-    expect(copy).not.toContain("live routing");
+    expect(copy).not.toContain("live trading");
+  });
+
+  it("keeps replay payoff preview from implying broker simulation", () => {
+    const replayPayoffPreview = getGlossaryTerm("replay_payoff_preview");
+    const copy = `${replayPayoffPreview?.definition} ${replayPayoffPreview?.caveat}`.toLowerCase();
+
+    expect(copy).toContain("read-only");
+    expect(copy).toContain("broker mark-to-market simulation");
+    expect(copy).not.toContain("live trading");
+    expect(copy).not.toContain("broker routing");
   });
 });

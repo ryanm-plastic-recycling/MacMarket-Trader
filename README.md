@@ -525,8 +525,10 @@ The codebase should define typed contracts for:
   registry and reusable metric-help foundation with narrow first integrations;
   `10C2` adds compact help to the most visible Recommendations score/risk
   labels, `10C3` adds compact help to Orders P&L/commission labels, and
-  `10C4` adds compact help to Analysis and Replay metric labels, without
-  changing scoring, replay, or lifecycle behavior.
+  `10C4` adds compact help to Analysis and Replay metric labels. `10C5`
+  closes the current in-context glossary/tooltips scope with tiny safety-copy
+  and test/doc alignment, without changing scoring, replay, or lifecycle
+  behavior.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.

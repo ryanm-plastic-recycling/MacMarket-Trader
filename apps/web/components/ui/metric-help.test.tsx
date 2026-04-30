@@ -14,7 +14,10 @@ describe("MetricHelp", () => {
   it("renders a known glossary term with accessible summary help", () => {
     const html = renderToStaticMarkup(<MetricHelp term="rr" />);
 
+    expect(html).toContain("<details");
+    expect(html).toContain("<summary");
     expect(html).toContain("Help: RR");
+    expect(html).toContain('role="note"');
     expect(html).toContain("Risk-reward ratio");
     expect(html).toContain("expected reward / planned risk");
   });

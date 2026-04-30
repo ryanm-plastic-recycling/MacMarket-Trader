@@ -97,6 +97,10 @@ Current implementation note:
 - `10C4` is complete for compact Analysis and Replay metric-help rollout on
   Analysis options risk/source labels plus Replay score, confidence,
   gross/net P&L, and fee labels.
+- `10C5` is complete for the explainable metric closure audit. The current
+  in-context glossary/tooltips scope is closed across Settings, Provider
+  Health, Expected Range, Recommendations, Orders, Analysis, and Replay;
+  optional glossary/reference-page work remains deferred.
 
 ## UX goals
 
@@ -149,8 +153,8 @@ Options and cross-workflow risk surfaces should later use a shared glossary
 registry plus a reusable accessible help affordance for important labels,
 table headers, cards, and form fields.
 
-Current `10C1` foundation, `10C2` Recommendations rollout, and `10C3`
-Orders rollout:
+Current `10C1` foundation, `10C2` Recommendations rollout, `10C3` Orders
+rollout, `10C4` Analysis/Replay rollout, and `10C5` closure audit:
 
 - `apps/web/lib/glossary.ts` defines the initial shared term registry
 - `MetricHelp` / `MetricLabel` provide compact click/tap/keyboard-accessible
@@ -169,6 +173,12 @@ Orders rollout:
   - equity Orders gross/net P&L and fee labels
   - durable paper-options max profit/loss, breakevens, gross/net P&L,
     opening/closing/total commissions, paper lifecycle, and leg result labels
+- Analysis/Replay rollout is complete for the current compact slice:
+  - Analysis options risk/source labels
+  - Replay score, confidence, gross/net P&L, and fee labels
+- the closure audit confirmed the current in-context scope is covered without
+  adding probability modeling, broker simulation, live routing, or execution
+  approval language
 - a full glossary/reference page remains a future rollout item
 - no recommendation scoring, probability modeling, provider behavior, payoff
   math, lifecycle math, commission math, or execution boundary changed
@@ -224,8 +234,8 @@ Suggested implementation sequence:
 
 The Recommendations portion of step 5 is complete in `10C2`; the Orders
 P&L/commission portion of step 6 is complete in `10C3`; Analysis and Replay
-label rollout is complete in `10C4`. The optional glossary/reference page
-remains future work.
+label rollout is complete in `10C4`; the current-scope closure audit is
+complete in `10C5`. The optional glossary/reference page remains future work.
 
 ### Expected range context
 
@@ -588,6 +598,9 @@ Current closure status:
   Expected Range visualization is complete for the current frontend-only slice
 - `10B1` Orders durable paper-options display/readability polish is complete
   for the current frontend-only slice
+- `10C5` explainable metric glossary/tooltips closure audit is complete for the
+  current in-context scope; optional glossary/reference-page work remains
+  future
 - deeper replay/provider visualization remains deferred
 - `8F` is now complete for the current scoped paper-first options capability
 - full live-routing, settlement, assignment/exercise, and broader Orders

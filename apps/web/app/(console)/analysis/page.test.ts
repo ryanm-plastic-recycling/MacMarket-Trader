@@ -43,6 +43,7 @@ describe("analysis options provider/source/as-of copy", () => {
     expect(GLOSSARY_TERMS.score.caveat).not.toMatch(/probability of profit/i);
     expect(GLOSSARY_TERMS.expected_range.caveat).toMatch(/does not change payoff math/i);
     expect(GLOSSARY_TERMS.expected_range.caveat).toMatch(/approve execution/i);
-    expect(GLOSSARY_TERMS.provider_readiness.caveat).not.toMatch(/live trading|broker execution|broker routing/i);
+    expect(GLOSSARY_TERMS.provider_readiness.caveat).toMatch(/not live routing, broker execution/i);
+    expect(GLOSSARY_TERMS.provider_readiness.caveat).not.toMatch(/live trading|broker routing/i);
   });
 });
