@@ -48,10 +48,26 @@ Current symbol entry is intentionally simple:
 Current scoping:
 
 - Watchlist rows and schedule rows are user-scoped by `app_user_id`.
+- `watchlists` currently has `id`, `app_user_id`, `name`, `symbols` JSON, and
+  `created_at`.
+- `WatchlistRepository` lists by `app_user_id`, upserts by
+  `(app_user_id, name)`, updates by `(id, app_user_id)`, and deletes by
+  `(id, app_user_id)`.
+- Watchlist API responses currently expose `id`, `name`, `symbols`, and
+  `created_at`; they do not expose per-symbol metadata, active state, tags, or
+  notes.
+- The current frontend Watchlists card edits one name plus one manual symbol
+  field, then saves the parsed `symbols` array and can apply a saved list back
+  into the schedule form.
 - Schedule payload symbols are copied into each schedule payload rather than
   linked to a watchlist row.
+- `strategy_report_schedules.payload.symbols` is the execution-time symbol
+  snapshot used by `StrategyReportService.run_schedule()`.
 - Recommendation queue requests are transient and are not currently linked to a
   persisted watchlist.
+- `/user/recommendations/queue` receives a `symbols` array in the request,
+  uppercases entries, fetches bars per symbol, and passes a `bars_by_symbol`
+  map into `DeterministicRankingEngine.rank_candidates(...)`.
 - Provider/source metadata for symbols is not persisted in watchlists.
 - There is no current provider-backed symbol search endpoint or symbol metadata
   table.
@@ -95,6 +111,14 @@ Still deferred after `10W2`:
 - recommendation/schedule universe selector behavior
 - provider metadata enrichment
 - any live routing, brokerage execution, or execution approval semantics
+
+## 10W3 Schema / Read-model Checkpoint
+
+Status: complete as a documentation-only design checkpoint.
+
+No schema, migration, backend, frontend, provider, schedule, or
+recommendation-generation behavior is implemented by this section. It defines
+the future read model and compatibility plan only.
 
 ## Symbol Discovery Design
 
@@ -161,102 +185,138 @@ symbol list the queue and schedule paths already accept.
 
 ## Data-model Options
 
-### Option A: Extend Existing Watchlist Records
+### Option A: Keep Existing Watchlist JSON/List Model and Add UI Only
 
-Extend the current `watchlists` row and `symbols` JSON payload to carry objects
-instead of strings.
+Keep `watchlists.symbols` as a JSON `list[str]` and build richer frontend
+editing around the current API.
 
-Potential shape:
+Evaluation:
 
-```json
-{
-  "symbol": "AAPL",
-  "name": "Apple Inc.",
-  "asset_type": "equity",
-  "exchange": "NASDAQ",
-  "active": true,
-  "tags": ["Core", "Tech"],
-  "notes": "Primary large-cap watch",
-  "source": "manual",
-  "updated_at": "2026-04-30T00:00:00Z"
-}
-```
+- Migration complexity:
+  lowest; no migration required.
+- Compatibility with schedules/recommendations:
+  strongest short-term compatibility because schedules and queue requests
+  already accept symbol arrays.
+- User scoping:
+  already adequate at the watchlist row level through `app_user_id`.
+- Duplicate handling:
+  can be handled in frontend/backend parsing, but cannot be enforced cleanly
+  across all watchlists or a user-wide universe.
+- Active/inactive support:
+  weak; would require JSON objects or sidecar state.
+- Tags/groups support:
+  weak; tags inside JSON would be hard to query and sort.
+- Notes/source metadata:
+  possible only as JSON object expansion, with poor queryability.
+- Provider metadata enrichment:
+  poor fit; nullable metadata inside JSON is difficult to index and refresh.
+- Rollback risk:
+  lowest if strings remain strings; rises if the JSON payload changes from
+  strings to objects.
+- Test complexity:
+  low for current behavior, but grows quickly for metadata, filtering, and
+  duplicate rules.
 
-Pros:
+Verdict:
 
-- lowest migration pressure if implemented as payload-compatible JSON
-- keeps current watchlist routes conceptually intact
-- easy rollback to old symbol arrays if new UI is hidden
+- Safe for short-term copy/UX polish only.
+- Not sufficient as the long-term read model for searchable/sortable
+  watchlists, active filters, tags, notes, or metadata.
 
-Cons:
+### Option B: Add Normalized Watchlist Membership Records, Preserve Existing Compatibility
 
-- harder to query, filter, dedupe, and sort at the database layer
-- harder to enforce uniqueness per user/watchlist/symbol
-- less suitable for tags, active filters, provider metadata, or auditability
-- schedule payloads may keep diverging from watchlist truth
+Keep `watchlists` as the named collection table, preserve `watchlists.symbols`
+as a compatibility snapshot, and add a normalized membership table such as
+`watchlist_symbols`.
 
-### Option B: Dedicated User Symbol Universe / Watchlist Symbol Tables
+Evaluation:
 
-Add normalized tables later, for example:
+- Migration complexity:
+  moderate; requires a table migration and optional backfill from existing
+  `watchlists.symbols`.
+- Compatibility with schedules/recommendations:
+  good if resolver functions continue to emit symbol arrays and legacy
+  `watchlists.symbols` remains readable.
+- User scoping:
+  inherited through `watchlists.app_user_id`; direct `app_user_id` on the
+  membership table could be redundant but useful for query/index simplicity.
+- Duplicate handling:
+  good within a watchlist via unique `(watchlist_id, normalized_symbol)` or
+  `(watchlist_id, user_symbol_id)`.
+- Active/inactive support:
+  good per watchlist membership.
+- Tags/groups support:
+  possible per membership, but user-wide tags across watchlists remain
+  awkward unless tags are normalized separately.
+- Notes/source metadata:
+  possible per membership; provider metadata remains duplicated if the same
+  symbol appears in many watchlists.
+- Provider metadata enrichment:
+  only moderate; without a canonical user symbol row, enrichment is repeated
+  per membership or kept in JSON.
+- Rollback risk:
+  moderate; the compatibility `symbols` snapshot lets old routes keep working
+  while new membership UI can be disabled.
+- Test complexity:
+  moderate; must prove membership scoping, compatibility snapshots, and
+  duplicate handling.
 
-- `user_symbol_universe`
-  - `id`
-  - `app_user_id`
-  - `symbol`
-  - `display_name`
-  - `asset_type`
-  - `exchange`
-  - `provider_source`
-  - `metadata_status`
-  - `active`
-  - `notes`
-  - `created_at`
-  - `updated_at`
-- `watchlist_symbols`
-  - `watchlist_id`
-  - `user_symbol_id`
-  - `sort_order`
-  - `tags` or a separate tag join table
-  - `created_at`
-  - `updated_at`
+Verdict:
 
-Pros:
+- Useful intermediate model if the product only needs richer watchlist rows.
+- Less ideal if the product needs a user-wide active universe, tags, notes, or
+  provider/source metadata independent of watchlist membership.
 
-- best user scoping and duplicate handling
-- supports per-symbol active/inactive state across watchlists
-- supports searchable/sortable tables without parsing JSON
-- better foundation for schedule/recommendation universe selection
-- easier to test uniqueness, permissions, and metadata fallbacks
+### Option C: Add User Symbol Universe plus Watchlist Membership Records
 
-Cons:
+Add a canonical per-user symbol table such as `user_symbol_universe`, and add a
+membership/join table such as `watchlist_symbols` that links watchlists to
+those canonical rows. Preserve current `watchlists.symbols` as a compatibility
+snapshot until migration closure.
 
-- requires schema/migration design and backfill from existing JSON watchlists
-- needs compatibility logic for old watchlist payloads and schedule payloads
-- higher rollback planning burden
+Evaluation:
 
-### Option C: Hybrid Compatibility Layer
+- Migration complexity:
+  highest, but can be staged safely: add nullable tables first, backfill later,
+  then route new UI through the read model.
+- Compatibility with schedules/recommendations:
+  strong if a resolver emits the same `list[str]` arrays already consumed by
+  schedules and recommendation queues.
+- User scoping:
+  strongest; `user_symbol_universe.app_user_id` makes each symbol row
+  explicitly user-scoped, and watchlists still remain user-scoped.
+- Duplicate handling:
+  strongest; unique `(app_user_id, normalized_symbol)` prevents duplicate
+  canonical rows, and unique `(watchlist_id, user_symbol_id)` prevents
+  duplicate membership.
+- Active/inactive support:
+  strongest; can support user-wide active state plus optional
+  membership-specific active state.
+- Tags/groups support:
+  strongest; tags can start as JSON on the user symbol row and later normalize
+  if needed.
+- Notes/source metadata:
+  strongest; user notes and source/import metadata can live once on the
+  canonical row, with optional watchlist-specific notes on membership.
+- Provider metadata enrichment:
+  best fit; provider metadata can be nullable, non-blocking, and refreshed
+  independently of watchlist membership.
+- Rollback risk:
+  manageable if current `watchlists.symbols` and schedule payload snapshots are
+  preserved until all read paths are migrated.
+- Test complexity:
+  highest, but the tests map cleanly to user scoping, uniqueness, resolver
+  behavior, metadata fallback, and compatibility guarantees.
 
-Keep current `watchlists.symbols` JSON for compatibility while adding a
-dedicated universe table and a resolver layer. The UI reads/writes the new
-normalized model, but schedules and recommendation queue requests continue to
-receive resolved symbol arrays until a later persistence migration is complete.
+Verdict:
 
-Pros:
-
-- lets new UI and resolver land without immediately changing ranking/scoring
-- supports gradual migration and fallback to old watchlist rows
-- keeps schedule and recommendation paths stable in early slices
-- can backfill normalized rows from existing JSON watchlists
-
-Cons:
-
-- temporary dual-write/read complexity
-- requires clear source-of-truth rules during migration
-- needs tests to prevent drift between JSON rows and normalized rows
+- Best long-term model.
+- Requires explicit migration/backfill and resolver phases, but keeps current
+  ranking and schedule execution contracts stable.
 
 ## Recommended Approach
 
-Use the hybrid approach.
+Use Option C with a compatibility-first rollout.
 
 Reasoning:
 
@@ -265,19 +325,162 @@ Reasoning:
 - Normalized per-symbol rows are the right long-term model for duplicate
   handling, active/inactive status, tags, notes, source labels, and provider
   metadata.
-- The safest early implementation can resolve normalized universe selections
-  into the same symbol arrays already used by Recommendations and Schedules.
+- The safest implementation can preserve current `watchlists.symbols` as a
+  compatibility snapshot while new resolver functions emit the same symbol
+  arrays already used by Recommendations and Schedules.
 - `RecommendationService.generate()` and deterministic ranking can stay
   unchanged while the operator universe improves around them.
 
 Recommended source-of-truth rule for later implementation:
 
 - `user_symbol_universe` is the long-term per-user symbol truth.
-- `watchlists` remain named collections.
+- `watchlists` remain named collections and legacy compatibility snapshots.
+- `watchlist_symbols` links named watchlists to canonical user symbol rows.
 - schedules should eventually store a universe selector snapshot plus a
   resolved symbol snapshot for auditability.
 - recommendation queue requests should accept a resolved list plus optional
   provenance such as `watchlist_id`, `tags`, `exclusions`, and `manual_symbols`.
+
+## Proposed Future Fields
+
+These are design fields only. They are not implemented in 10W3.
+
+### `user_symbol_universe`
+
+- `id`: integer primary key
+- `app_user_id`: foreign key to `app_users.id`, indexed
+- `symbol`: operator-facing symbol as entered or displayed, for example `BRK.B`
+- `normalized_symbol`: canonical uppercase lookup key used for uniqueness and
+  resolver dedupe, for example `BRK.B`
+- `display_name`: nullable company/security name
+- `asset_type`: nullable enum/string such as `equity`, `etf`, `index`,
+  `option_underlying`, `crypto`, or `unknown`
+- `exchange`: nullable exchange/venue label
+- `provider_source`: nullable provider/source label, for example `polygon`
+- `provider_symbol`: nullable provider-specific symbol if it differs from the
+  app normalized symbol
+- `metadata_status`: nullable status such as `manual`, `metadata_unavailable`,
+  `provider_discovered`, or `provider_verified`
+- `notes`: nullable operator notes
+- `active`: boolean user-wide active flag, default `true`
+- `tags`: JSON list of strings for early tags/groups such as `Core`, `ETFs`,
+  `Tech`, `Options Candidates`, or `Watch Only`
+- `created_at`: timezone-aware timestamp, indexed
+- `updated_at`: timezone-aware timestamp
+
+Suggested constraints/indexes:
+
+- unique `(app_user_id, normalized_symbol)`
+- index `(app_user_id, active)`
+- index `(app_user_id, asset_type)` if asset filters land
+
+### `watchlist_symbols`
+
+- `id`: integer primary key
+- `watchlist_id`: foreign key to `watchlists.id`, indexed
+- `user_symbol_id`: foreign key to `user_symbol_universe.id`, indexed
+- `active`: boolean membership-level active flag, default `true`
+- `sort_order`: nullable integer for user ordering
+- `added_at`: timezone-aware timestamp
+- `notes`: nullable watchlist-specific notes
+
+Suggested constraints/indexes:
+
+- unique `(watchlist_id, user_symbol_id)`
+- index `(watchlist_id, active, sort_order)`
+
+Compatibility notes:
+
+- Keep `watchlists.symbols` as a string-array snapshot while old UI/API flows
+  still depend on it.
+- Backfill `user_symbol_universe` from `watchlists.symbols`, but do not require
+  provider metadata during backfill.
+- Do not remove or change `strategy_report_schedules.payload.symbols`; keep it
+  as the audit/execution snapshot even after selectors exist.
+
+## Resolver Design
+
+Future workflows should call a resolver that returns a deterministic resolved
+symbol list and a provenance summary. It should not call
+`RecommendationService.generate()` and should not change deterministic ranking
+logic.
+
+Inputs:
+
+- `manual_symbols`: temporary parsed symbols from the current text field
+- `all_active`: boolean to include all active user universe rows
+- `watchlist_ids`: selected user-scoped watchlists
+- `tags`: selected user-scoped tags/groups
+- `include_inactive`: normally false
+- `exclusions`: symbols to omit after inclusion
+- `pinned_symbols`: symbols to put first without duplicating
+
+Resolution rules:
+
+1. Normalize every incoming symbol to the same uppercase `normalized_symbol`
+   format used by 10W2 parsing.
+2. Load only rows owned by the current `app_user_id`.
+3. Include active user-universe rows, selected watchlist memberships, selected
+   tags, and manual temporary symbols according to the selector.
+4. Apply exclusions after inclusion.
+5. Dedupe by `normalized_symbol`, preserving deterministic order:
+   pinned symbols, manual symbols, watchlist order, tag/group order, then
+   alphabetical fallback.
+6. Return:
+   - `symbols`: resolved `list[str]`
+   - `source`: `manual`, `watchlist`, `tags`, `all_active`, or `mixed`
+   - `provenance`: selected watchlist IDs, tags, exclusions, duplicate count,
+     and metadata fallback count
+
+Schedules should eventually persist both:
+
+- `universe_selector`: the operator's selector, for example watchlist IDs,
+  tags, exclusions, pinned symbols, and manual symbols
+- `symbols`: the resolved snapshot used by a run
+
+Recommendations should eventually send the resolved `symbols` array plus
+optional provenance to the queue endpoint, while the endpoint and ranking engine
+continue to treat symbols as an input array.
+
+## Migration / Compatibility Strategy
+
+Recommended staged implementation after this design checkpoint:
+
+1. `10W4` schema/migration foundation:
+   add `user_symbol_universe` and `watchlist_symbols` tables with nullable
+   provider metadata, indexes, and uniqueness constraints. Do not change
+   current routes yet.
+2. Backfill helper:
+   create optional, idempotent backfill from existing `watchlists.symbols` into
+   user universe rows and watchlist memberships. Manual symbols should use
+   `metadata_status=manual` or `metadata_unavailable`.
+3. Repository read model:
+   add repository methods to list, upsert, deactivate, and resolve user symbols
+   by current user. Keep `WatchlistRepository` compatibility methods intact.
+4. Compatibility bridge:
+   keep writing or deriving `watchlists.symbols` string arrays until old
+   Schedules UI/API paths are retired.
+5. UI table:
+   introduce a table view for user symbols and watchlist memberships after the
+   repository read model exists.
+6. Selector integration:
+   add recommendation/schedule universe selectors that resolve to the current
+   `symbols` array. Keep schedule payload snapshots.
+7. Provider-backed discovery:
+   only after explicit provider-design approval, enrich nullable metadata from
+   provider search. Missing metadata must not block manual symbols.
+8. Closure:
+   audit old compatibility paths before considering removal of
+   `watchlists.symbols` reliance.
+
+Rollback posture:
+
+- If the new UI is disabled, old `watchlists.symbols`,
+  `strategy_report_schedules.payload.symbols`, and direct queue symbol arrays
+  should still work.
+- If provider metadata enrichment fails, manual symbols remain usable.
+- If backfill is incomplete, resolver code should fall back to current
+  watchlist snapshots rather than blocking scheduled reports.
 
 ## Provider Assumptions
 
@@ -313,15 +516,21 @@ Future operator flow:
 
 Backend / API tests:
 
+- migration creates `user_symbol_universe` and `watchlist_symbols`
 - manual add creates a user-scoped symbol row
+- manual symbols can exist without provider metadata
 - duplicate add returns deterministic skip/merge feedback
+- duplicate normalized symbols are prevented within a user universe
 - delete or deactivate affects only the current user
 - active/inactive filtering affects universe resolution
 - tags/groups filter the resolved universe correctly
 - watchlist membership is user-scoped
+- watchlist membership prevents duplicate `(watchlist_id, user_symbol_id)`
+- existing `watchlists.symbols` compatibility rows remain readable
 - schedule creation can store universe selectors and resolved symbol snapshots
 - recommendation queue can receive a resolved universe without changing
   recommendation generation
+- resolver returns deduped symbols with deterministic ordering
 - provider metadata unavailable fallback does not block manual symbols
 - SPX/NDX caveat metadata can be represented without implying execution
 - no live routing, broker execution, or order support language appears
@@ -362,34 +571,43 @@ Recommended slices:
   Schedules, current watchlist editing, and Analysis single-symbol entry, with
   no schema or backend behavior changes.
 - `10W3` schema/read-model checkpoint:
-  design normalized universe tables, backfill, compatibility, and rollback
-  before any migration.
-- `10W4` user-scoped watchlist table UI:
-  frontend table around existing or new read model, starting with manual add,
-  delete, search, sort, and active/inactive display.
-- `10W5` bulk import and duplicate handling:
+  complete with this section; design normalized universe tables, backfill,
+  compatibility, resolver behavior, and rollback before any migration.
+- `10W4` schema/migration foundation:
+  add normalized tables, indexes, uniqueness constraints, and optional
+  idempotent backfill while keeping old `watchlists.symbols` and schedule
+  payload symbol snapshots working.
+- `10W5` repository/read-model and resolver:
+  add user-symbol repository methods plus resolver functions that emit current
+  symbol arrays and provenance without changing ranking/scoring.
+- `10W6` user-scoped watchlist table UI:
+  frontend table around the new read model, starting with manual add, delete,
+  search, sort, active/inactive display, tags, and notes.
+- `10W7` bulk import and duplicate handling:
   paste/import workflow with deterministic duplicate feedback.
-- `10W6` recommendation/schedule universe selection:
+- `10W8` recommendation/schedule universe selection:
   resolve watchlists, tags/groups, exclusions, pinned symbols, and temporary
   manual symbols into current symbol arrays.
-- `10W7` provider-backed symbol discovery:
+- `10W9` provider-backed symbol discovery:
   add provider-backed search only after explicit provider-design approval.
-- `10W8` closure:
+- `10W10` closure:
   docs/tests audit proving user scoping, fallback metadata, no execution
   implication, and no recommendation-generation drift.
 
-## Suggested First Implementation Slice
+## Suggested Next Implementation Slice
 
-Start with `10W2`: current-state cleanup / UI copy for existing comma entry.
+Start with `10W4`: schema/migration foundation.
 
 Why:
 
-- frontend-only
-- no schema or provider behavior
-- improves operator understanding immediately
-- can label watchlists as recommendation-universe management only
-- can keep manual entry as the fallback path
+- it is the narrowest implementation step after the read-model design
+- it can add nullable tables without changing recommendation or schedule
+  execution behavior
+- it preserves existing `watchlists.symbols` compatibility
+- it can be tested independently before UI or resolver rollout
+- it keeps provider-backed search and metadata enrichment deferred
 
-Do not start with provider-backed symbol search, schema migration, or
-recommendation/schedule resolver changes until the read-model checkpoint is
-approved.
+Do not start with provider-backed symbol search, recommendation/schedule
+selector behavior, or storage replacement. The first implementation should be a
+small migration/read-model foundation with rollback notes and compatibility
+tests.

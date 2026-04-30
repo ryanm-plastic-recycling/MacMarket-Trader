@@ -243,6 +243,9 @@ Design checkpoint status:
 - the current comma-entry cleanup slice is complete; provider-backed search,
   schema/read-model work, richer watchlist tables, and recommendation-universe
   selectors remain future work
+- the schema/read-model checkpoint now recommends a future
+  `user_symbol_universe` plus `watchlist_symbols` model while preserving
+  current watchlist and schedule symbol snapshots for compatibility
 
 ## 8. Metric glossary and tooltips
 
@@ -492,6 +495,10 @@ Current project status, in operator terms:
   Schedules, and watchlist editing now has clearer helper copy, parsed
   uppercase previews, duplicate feedback, and SPX/NDX versus SPY/QQQ guidance
   without changing backend storage, provider search, or recommendation behavior
+- Phase 10W3 complete as a design checkpoint: future symbol-universe schema
+  planning now covers user-scoped canonical symbol rows, watchlist membership,
+  compatibility snapshots, resolver behavior, migration/backfill, and rollback
+  without implementing schema or runtime changes
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders
