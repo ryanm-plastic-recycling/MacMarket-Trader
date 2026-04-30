@@ -229,9 +229,12 @@ Future roadmap work is planned for better recommendation-universe management:
 - optional groups such as `Core`, `ETFs`, `Tech`, `Options Candidates`, and
   `Watch Only`
 - provider/source support labels when available
-- future universe selectors for Recommendations and Schedules, with resolved
-  previews before submit; the backend preview route now exists, but the
-  operator selector UI is still future work
+- Recommendations now has a preview-only universe selector for manual,
+  watchlist, watchlist-plus-manual, and all-active sources; use **Use resolved
+  symbols** to copy preview output into the existing manual input before
+  refreshing the queue
+- a future Schedules universe selector is still planned with static resolved
+  snapshots by default
 - ETF/index substitution guidance such as `SPX` / `NDX` versus `SPY` / `QQQ`
 
 This future work is not trade execution. Provider support labels and options
@@ -247,9 +250,10 @@ Design checkpoint status:
   membership records before any migration
 - the current comma-entry cleanup, current watchlist table polish, and bulk
   duplicate-handling slices are complete; recommendation/schedule
-  universe-selection design is documented; the read-only preview API is
-  complete; provider-backed search, normalized symbol-universe production UI,
-  import audit, and selector implementation remain future work
+  universe-selection design is documented; the read-only preview API and
+  Recommendations preview/apply selector are complete; provider-backed search,
+  normalized symbol-universe production UI, import audit, and Schedule selector
+  implementation remain future work
 - the schema/read-model checkpoint now recommends a future
   `user_symbol_universe` plus `watchlist_symbols` model while preserving
   current watchlist and schedule symbol snapshots for compatibility
@@ -525,6 +529,11 @@ Current project status, in operator terms:
   manual, watchlist, watchlist-plus-manual, all-active, and mixed symbol
   universe inputs without submitting Recommendations, mutating schedules or
   watchlists, calling providers, or implying execution
+- Phase 10W8B complete: Recommendations now has a preview-only universe
+  selector that can resolve manual, saved-watchlist, watchlist-plus-manual, and
+  all-active sources and explicitly copy resolved symbols into the existing
+  manual queue input without changing recommendation generation or schedule
+  behavior
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders

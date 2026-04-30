@@ -41,6 +41,30 @@ type QueueSummary = {
   no_trade_count: number;
 };
 
+type RecommendationWatchlist = {
+  id: number;
+  name: string;
+  symbols: string[];
+  created_at?: string | null;
+};
+
+type UniverseSourceType = "manual" | "watchlist" | "watchlist_plus_manual" | "all_active";
+
+type SymbolUniversePreviewResponse = {
+  resolved_symbols: string[];
+  symbol_count: number;
+  duplicates_ignored: number;
+  exclusions_applied: number;
+  pinned_symbols_applied: string[];
+  source_type: UniverseSourceType | string;
+  source_label: string;
+  warnings: string[];
+  provider_metadata_available: boolean;
+  provider_metadata_note?: string | null;
+  preview_only: boolean;
+  does_not_submit_recommendations: boolean;
+};
+
 function formatDate(dateStr: string): string {
   if (!dateStr) return "-";
   const d = new Date(dateStr);
@@ -58,6 +82,17 @@ function toNum(v: unknown): number | null {
   if (v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function formatUniverseWarning(value: string): string {
+  switch (value) {
+    case "provider_metadata_not_used":
+      return "Provider metadata is not used by this read-only preview.";
+    case "resolved_universe_empty":
+      return "No symbols resolved for this preview.";
+    default:
+      return value.replace(/_/g, " ");
+  }
 }
 
 type RecLevels = { entryLow: number | null; entryHigh: number | null; stop: number | null; target1: number | null; target2: number | null };
@@ -115,11 +150,23 @@ export default function RecommendationsPage() {
   const [tableSymbolFilter, setTableSymbolFilter] = useState("");
   const [tableStrategyFilter, setTableStrategyFilter] = useState("");
   const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "approved" | "rejected">("all");
+  const [watchlists, setWatchlists] = useState<RecommendationWatchlist[]>([]);
+  const [watchlistsLoading, setWatchlistsLoading] = useState(false);
+  const [universeMode, setUniverseMode] = useState<UniverseSourceType>("manual");
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState("");
+  const [manualAdditions, setManualAdditions] = useState("");
+  const [pinnedSymbols, setPinnedSymbols] = useState("");
+  const [excludedSymbols, setExcludedSymbols] = useState("");
+  const [universePreview, setUniversePreview] = useState<SymbolUniversePreviewResponse | null>(null);
+  const [universeFeedback, setUniverseFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
   const [showQueue, setShowQueue] = useState(!guidedState.guided);
   const parsedSymbols = useMemo(() => parseManualSymbolEntry(symbols), [symbols]);
+  const parsedManualAdditions = useMemo(() => parseManualSymbolEntry(manualAdditions), [manualAdditions]);
+  const parsedPinnedSymbols = useMemo(() => parseManualSymbolEntry(pinnedSymbols), [pinnedSymbols]);
+  const parsedExcludedSymbols = useMemo(() => parseManualSymbolEntry(excludedSymbols), [excludedSymbols]);
 
   const selectedQueue = useMemo(
     () => queue.find((item) => `${item.symbol}-${item.strategy}-${item.rank}` === selectedQueueKey) ?? null,
@@ -153,6 +200,17 @@ export default function RecommendationsPage() {
         setSelectedQueueKey(null);
       }
     }
+  }
+
+  async function loadWatchlists() {
+    setWatchlistsLoading(true);
+    const result = await fetchWorkflowApi<RecommendationWatchlist>("/api/user/watchlists");
+    setWatchlistsLoading(false);
+    if (!result.ok) {
+      return;
+    }
+    setWatchlists(result.items);
+    setSelectedWatchlistId((prev) => prev || (result.items[0]?.id ? String(result.items[0].id) : ""));
   }
 
   async function loadQueue(overrideSymbols?: string[]) {
@@ -189,6 +247,57 @@ export default function RecommendationsPage() {
       return first ? `${first.symbol}-${first.strategy}-${first.rank}` : null;
     });
     setFeedback({ state: "success", message: "Ranked queue updated." });
+  }
+
+  async function previewUniverse() {
+    const needsWatchlist = universeMode === "watchlist" || universeMode === "watchlist_plus_manual";
+    const watchlistId = selectedWatchlistId ? Number(selectedWatchlistId) : null;
+    if (needsWatchlist && (!watchlistId || !Number.isFinite(watchlistId))) {
+      setUniversePreview(null);
+      setUniverseFeedback({ state: "error", message: "Select a saved watchlist before previewing this universe." });
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      source_type: universeMode,
+      active_only: true,
+    };
+    if (universeMode === "manual") {
+      payload.manual_symbols = symbols;
+    }
+    if (universeMode === "watchlist" && watchlistId) {
+      payload.watchlist_id = watchlistId;
+    }
+    if (universeMode === "watchlist_plus_manual" && watchlistId) {
+      payload.watchlist_id = watchlistId;
+      payload.manual_symbols = manualAdditions;
+    }
+    if (pinnedSymbols.trim()) {
+      payload.pinned_symbols = pinnedSymbols;
+    }
+    if (excludedSymbols.trim()) {
+      payload.excluded_symbols = excludedSymbols;
+    }
+
+    setUniverseFeedback({ state: "loading", message: "Previewing recommendation universe..." });
+    const result = await fetchWorkflowApi<SymbolUniversePreviewResponse>("/api/user/symbol-universe/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!result.ok || !result.data) {
+      setUniversePreview(null);
+      setUniverseFeedback({ state: "error", message: result.error ?? "Unable to preview recommendation universe." });
+      return;
+    }
+    setUniversePreview(result.data);
+    setUniverseFeedback({ state: "success", message: "Universe preview resolved. This preview does not submit recommendations." });
+  }
+
+  function applyResolvedSymbols() {
+    if (!universePreview?.resolved_symbols.length) return;
+    setSymbols(universePreview.resolved_symbols.join(", "));
+    setUniverseFeedback({ state: "success", message: "Resolved symbols copied into the existing manual input. Refresh queue still uses the manual path." });
   }
 
   async function promoteSelected() {
@@ -333,6 +442,11 @@ export default function RecommendationsPage() {
   useEffect(() => {
     if (!authReady || isPreviewMode) return;
     void loadRecommendations();
+  }, [authReady, isPreviewMode]);
+
+  useEffect(() => {
+    if (!authReady || isPreviewMode) return;
+    void loadWatchlists();
   }, [authReady, isPreviewMode]);
 
   useEffect(() => {
@@ -566,12 +680,135 @@ export default function RecommendationsPage() {
       ) : null}
 
       {showExecutionCtas ? <Card title="Recommendation universe">
+        <div style={{ marginBottom: 10, color: "var(--op-muted, #7a8999)", fontSize: "0.86rem", lineHeight: 1.5 }}>
+          <div>Choose a recommendation-universe source, preview the resolved symbols, then explicitly copy them into the existing manual input when useful.</div>
+          <div>This preview does not submit recommendations. Provider metadata may be unavailable.</div>
+        </div>
+        <div className="op-row" style={{ alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
+          <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
+            <span>Universe source</span>
+            <select
+              value={universeMode}
+              onChange={(e) => {
+                setUniverseMode(e.target.value as UniverseSourceType);
+                setUniversePreview(null);
+                setUniverseFeedback({ state: "idle", message: "" });
+              }}
+            >
+              <option value="manual">Manual symbols</option>
+              <option value="watchlist">Saved watchlist</option>
+              <option value="watchlist_plus_manual">Watchlist + manual additions</option>
+              <option value="all_active">All active symbols</option>
+            </select>
+          </label>
+          {(universeMode === "watchlist" || universeMode === "watchlist_plus_manual") ? (
+            <label style={{ display: "grid", gap: 4, minWidth: 240 }}>
+              <span>Saved watchlist</span>
+              <select
+                value={selectedWatchlistId}
+                onChange={(e) => {
+                  setSelectedWatchlistId(e.target.value);
+                  setUniversePreview(null);
+                }}
+                disabled={watchlistsLoading || watchlists.length === 0}
+              >
+                {watchlists.length ? watchlists.map((watchlist) => (
+                  <option key={watchlist.id} value={watchlist.id}>
+                    {watchlist.name} ({parseManualSymbolEntry((watchlist.symbols ?? []).join(",")).symbols.length})
+                  </option>
+                )) : <option value="">{watchlistsLoading ? "Loading watchlists..." : "No saved watchlists"}</option>}
+              </select>
+            </label>
+          ) : null}
+          <button onClick={() => void previewUniverse()} disabled={universeFeedback.state === "loading"}>
+            {universeFeedback.state === "loading" ? "Previewing..." : "Preview universe"}
+          </button>
+          <button
+            className="op-btn op-btn-secondary"
+            onClick={applyResolvedSymbols}
+            disabled={!universePreview?.resolved_symbols.length}
+          >
+            Use resolved symbols
+          </button>
+        </div>
+        {universeMode === "watchlist_plus_manual" ? (
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: "grid", gap: 4, minWidth: 320 }}>
+              <span>Manual additions for selected watchlist</span>
+              <textarea
+                value={manualAdditions}
+                onChange={(e) => {
+                  setManualAdditions(e.target.value.toUpperCase());
+                  setUniversePreview(null);
+                }}
+                rows={2}
+                placeholder="TSLA, AMD"
+                style={{ minWidth: 320, resize: "vertical" }}
+              />
+            </label>
+            <SymbolEntryPreview parsed={parsedManualAdditions} />
+          </div>
+        ) : null}
+        <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap", marginBottom: 8 }}>
+          <label style={{ display: "grid", gap: 4, minWidth: 220, flex: "1 1 220px" }}>
+            <span>Pinned symbols (optional)</span>
+            <input
+              value={pinnedSymbols}
+              onChange={(e) => {
+                setPinnedSymbols(e.target.value.toUpperCase());
+                setUniversePreview(null);
+              }}
+              placeholder="SPY, QQQ"
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4, minWidth: 220, flex: "1 1 220px" }}>
+            <span>Excluded symbols (optional)</span>
+            <input
+              value={excludedSymbols}
+              onChange={(e) => {
+                setExcludedSymbols(e.target.value.toUpperCase());
+                setUniversePreview(null);
+              }}
+              placeholder="TSLA"
+            />
+          </label>
+        </div>
+        {(parsedPinnedSymbols.symbols.length || parsedExcludedSymbols.symbols.length) ? (
+          <div style={{ marginTop: -2, marginBottom: 8, color: "var(--op-muted, #7a8999)", fontSize: "0.82rem", lineHeight: 1.45 }}>
+            {parsedPinnedSymbols.symbols.length ? <div>Pinned preview: {parsedPinnedSymbols.symbols.join(", ")}</div> : null}
+            {parsedExcludedSymbols.symbols.length ? <div>Excluded preview: {parsedExcludedSymbols.symbols.join(", ")}</div> : null}
+          </div>
+        ) : null}
+        {universePreview ? (
+          <div style={{ marginBottom: 10, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+            <div className="op-row" style={{ flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+              <StatusBadge tone="neutral">{universePreview.source_label || "Universe preview"}</StatusBadge>
+              <StatusBadge tone="good">{universePreview.symbol_count} symbol{universePreview.symbol_count === 1 ? "" : "s"}</StatusBadge>
+              <StatusBadge tone="neutral">{universePreview.duplicates_ignored} duplicate{universePreview.duplicates_ignored === 1 ? "" : "s"} ignored</StatusBadge>
+              <StatusBadge tone="neutral">{universePreview.exclusions_applied} exclusion{universePreview.exclusions_applied === 1 ? "" : "s"} applied</StatusBadge>
+              {universePreview.preview_only ? <StatusBadge tone="warn">preview only</StatusBadge> : null}
+            </div>
+            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
+              <div><strong>Resolved symbols:</strong> {universePreview.resolved_symbols.length ? universePreview.resolved_symbols.join(", ") : "—"}</div>
+              {universePreview.pinned_symbols_applied.length ? <div><strong>Pinned applied:</strong> {universePreview.pinned_symbols_applied.join(", ")}</div> : null}
+              <div>This preview does not submit recommendations.</div>
+              <div>Source note: {universePreview.provider_metadata_note || "Provider metadata may be unavailable for this preview."}</div>
+              {universePreview.warnings.length ? (
+                <div>Warnings: {universePreview.warnings.map(formatUniverseWarning).join(" · ")}</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        <InlineFeedback state={universeFeedback.state} message={universeFeedback.message} />
         <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
           <label style={{ display: "grid", gap: 4, minWidth: 320, flex: "1 1 360px" }}>
             <span>Symbols to evaluate</span>
             <textarea
               value={symbols}
-              onChange={(e) => setSymbols(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                setSymbols(e.target.value.toUpperCase());
+                setUniversePreview(null);
+              }}
               rows={2}
               placeholder="SPY, QQQ, AAPL, MSFT"
               style={{ minWidth: 320, resize: "vertical" }}

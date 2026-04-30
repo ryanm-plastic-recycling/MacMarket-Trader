@@ -55,8 +55,10 @@ Current symbol entry is intentionally simple:
   the internal resolver can already normalize, dedupe, combine manual,
   watchlist, all-active, pinned, and excluded symbols, and fall back to legacy
   watchlist `symbols` snapshots. The `10W8A` preview route can read this
-  resolver output for operator preview, but it is not wired into production
-  Recommendations submit behavior or schedule execution yet.
+  resolver output for operator preview, and `10W8B` adds a Recommendations
+  selector that can preview and explicitly copy resolved symbols into the
+  existing manual input. Recommendation submit behavior and schedule execution
+  remain unchanged.
 
 Current scoping:
 
@@ -98,9 +100,11 @@ Current limitations:
 - There are no tags/groups, notes, import audit, or per-symbol update
   timestamps.
 - Recommendation and schedule workflows still depend on raw symbol arrays.
-- Universe selection is not yet a production workflow. Current compatibility
-  remains JSON/snapshot-based until a later implementation explicitly wires
-  resolver output into Recommendations or Schedules.
+- Universe selection is only partially surfaced: Recommendations can preview a
+  resolved universe and copy it into the existing manual symbol field, but the
+  queue submit path still uses the current manual `symbols` array. Schedules
+  remain JSON/snapshot-based until a later implementation explicitly wires a
+  schedule selector.
 
 ## 10W2 Current Manual-entry Cleanup
 
@@ -468,8 +472,9 @@ Future implementation should test:
   complete for the current backend read-only preview route using the existing
   resolver, no recommendation or schedule execution side effects.
 - `10W8B` Recommendations universe selector UI:
-  frontend selector and preview that submits the same resolved `symbols` array
-  current queue behavior already accepts.
+  complete for the current frontend selector/preview/apply scope; the selector
+  uses the read-only preview API and only copies resolved symbols into the
+  existing manual input when the operator clicks `Use resolved symbols`.
 - `10W8C` Schedule universe source selector / snapshot behavior:
   frontend selector and optional selector metadata while preserving
   `payload.symbols` as the run snapshot.
@@ -524,6 +529,40 @@ Still unchanged by `10W8A`:
 - normalized symbol-universe production UI remains deferred
 - tags/groups source selection remains deferred
 - live routing, brokerage execution, and recommendation/scoring behavior remain
+  unchanged
+
+## 10W8B Recommendations Universe Selector UI
+
+Status: complete for the current frontend preview/apply scope.
+
+Implemented now:
+
+- same-origin frontend proxy for `POST /user/symbol-universe/preview`
+- compact Recommendations `Recommendation universe` selector modes for
+  `manual`, `watchlist`, `watchlist_plus_manual`, and `all_active`
+- saved-watchlist selection using the existing watchlist list endpoint
+- optional pinned and excluded symbol fields for preview context
+- read-only preview rendering for resolved symbols, symbol count, duplicate
+  count, applied exclusions, applied pinned symbols, source label, warnings,
+  provider-metadata note, and `preview only` state
+- explicit copy that says the preview does not submit Recommendations
+- explicit `Use resolved symbols` button that copies preview output into the
+  existing manual `Symbols to evaluate` field
+- frontend source tests for selector rendering, preview proxy wiring,
+  preview/apply separation, metadata rendering, and safety copy
+
+Still unchanged by `10W8B`:
+
+- current Recommendation queue submit continues to use the existing manual
+  input path and `symbols` array
+- recommendation generation, scoring, and `RecommendationService.generate()`
+  behavior are unchanged
+- schedule create/update/run behavior still uses current payload snapshots
+- current watchlist JSON persistence remains unchanged
+- provider-backed symbol search and metadata enrichment remain deferred
+- normalized symbol-universe production UI remains deferred
+- tags/groups source selection remains deferred
+- live routing, brokerage execution, and provider fetch behavior remain
   unchanged
 
 ## Symbol Discovery Design
@@ -1022,6 +1061,10 @@ Recommended slices:
   arrays with provenance while avoiding provider calls, recommendation submit,
   schedule mutation, watchlist mutation, schema changes, and production UI
   wiring.
+- `10W8B` Recommendations universe selector UI:
+  complete for frontend preview/apply behavior; uses the read-only preview API
+  and existing watchlist list endpoint, then copies resolved symbols into the
+  existing manual field only when explicitly requested.
 - `10W9` provider-backed symbol discovery:
   add provider-backed search only after explicit provider-design approval.
 - `10W10` closure:
@@ -1030,21 +1073,19 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W8A`: Recommendations universe selector UI (`10W8B`), if
-explicitly authorized.
+Next after `10W8B`: Schedule universe source selector / snapshot behavior
+(`10W8C`), if explicitly authorized.
 
 Why:
 
-- the selector design and read-only preview API are now documented and
-  implemented
-- the next useful operator slice is a compact Recommendations selector that
-  uses preview output but still submits the same resolved `symbols` array the
-  current queue already accepts
+- the selector design, read-only preview API, and Recommendations preview/apply
+  UI are now documented and implemented
+- the next useful operator slice is a compact Schedules selector that preserves
+  static `payload.symbols` snapshots by default
 - provider-backed search, storage replacement, broad normalized table UI, and
   ranking/schedule behavior changes can remain deferred until explicitly scoped
 
 Do not start the next slice with provider-backed symbol search,
 storage replacement, normalized symbol-universe production UI, or ranking
-changes. The next implementation should be a small Recommendations selector
-that uses the preview route without changing recommendation generation or
-schedule execution.
+changes. The next implementation should keep schedule execution unchanged and
+make any resolved schedule universe explicit before it is saved as a snapshot.

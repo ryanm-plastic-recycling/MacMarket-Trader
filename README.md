@@ -550,7 +550,10 @@ The codebase should define typed contracts for:
   without changing runtime behavior. `10W8A` adds a protected read-only
   resolved-universe preview API that returns symbol arrays and provenance
   without submitting Recommendations, mutating schedules/watchlists, calling
-  providers, or changing runtime behavior.
+  providers, or changing runtime behavior. `10W8B` adds a Recommendations
+  universe selector that previews manual/watchlist/all-active sources and only
+  copies resolved symbols into the existing manual input when explicitly
+  requested, leaving queue submit and schedule behavior unchanged.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -670,8 +673,10 @@ resolve manual lists, watchlists, all-active symbols, tags/groups, exclusions,
 and pinned symbols into previewed arrays before submit, with static schedule
 snapshots as the default and dynamic watchlist refresh deferred. `10W8A` adds
 the backend-only read preview route for manual, watchlist,
-watchlist-plus-manual, all-active, and mixed symbol universes while leaving the
-operator selector UI and all recommendation/schedule behavior unchanged.
+watchlist-plus-manual, all-active, and mixed symbol universes. `10W8B` adds the
+Recommendations selector UI for previewing those sources and explicitly copying
+resolved symbols into the existing manual input while leaving queue submit and
+all schedule behavior unchanged.
 Current manual entry now shows clearer separator guidance, parsed uppercase
 previews, duplicate feedback, and ETF/index substitute copy, but remains a
 temporary manual universe until richer watchlist management is implemented.

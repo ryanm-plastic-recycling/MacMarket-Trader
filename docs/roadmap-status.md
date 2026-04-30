@@ -12,8 +12,9 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 271 collected; targeted 10W8A backend validation passed.
-vitest 190, Playwright 31, and tsc clean from latest frontend validation.
+Tests: pytest 271 collected; targeted 10W8A backend validation and 10W8B
+frontend validation passed. vitest 194, Playwright 31, and tsc clean from
+latest frontend validation.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -59,12 +60,13 @@ across equity Orders and durable paper-options rows. `10C4` is complete for
 compact Analysis and Replay metric-label help. `10C5` is complete for the
 closure audit, tiny safety-copy polish, and docs/test alignment, so the
 explainable metric glossary/tooltips rollout is closed for the current
-in-context scope. `10W1` through `10W8A` are complete for symbol/watchlist
+in-context scope. `10W1` through `10W8B` are complete for symbol/watchlist
 design, current comma-entry workflow cleanup, schema/read-model planning, and
 the additive symbol-universe schema/migration plus repository/resolver
 foundation, current watchlist UI polish, and bulk symbol merge/duplicate
 handling plus the recommendation/schedule universe-selection design checkpoint
-and read-only resolved-universe preview API.
+read-only resolved-universe preview API, and Recommendations universe
+selector/preview/apply UI.
 Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
@@ -85,7 +87,10 @@ all-active, tags/groups, exclusions, and pinned symbols into the same current
 symbol-array shape without changing runtime behavior. `10W8A` adds a protected
 read-only preview route for that resolver output without submitting
 Recommendations, mutating schedules/watchlists, calling providers, or changing
-runtime recommendation/schedule behavior. Future operator glossary
+runtime recommendation/schedule behavior. `10W8B` adds the Recommendations
+selector UI for previewing manual/watchlist/all-active universes and explicitly
+copying resolved symbols into the existing manual input without changing queue
+submit behavior. Future operator glossary
 and explainable metric
 tooltips are now tracked as workflow comprehension polish, not changes to
 scoring, probability modeling, provider behavior, or execution semantics.
@@ -531,9 +536,9 @@ recommendation, or brokerage behavior.
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
   planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`
-  through `10W8A` complete; broader `10A`, broader `10B`, optional
-  glossary/reference-page work, Recommendations/Schedules selector UI,
-  provider search implementation, and later subphases remain open
+  through `10W8B` complete; broader `10A`, broader `10B`, optional
+  glossary/reference-page work, Schedule selector UI, provider search
+  implementation, and later subphases remain open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -615,6 +620,14 @@ Safe near-term:
   preview-only/no-execution/no-recommendation-submit flags without provider
   calls, schema changes, schedule execution changes, watchlist mutation, or
   recommendation-generation changes
+- completed `10W8B`: frontend Recommendations universe selector/preview/apply
+  UI using the read-only preview API and existing watchlist list endpoint;
+  supports manual, saved-watchlist, watchlist-plus-manual, and all-active
+  preview modes, optional pinned/excluded symbols, resolved count/warning
+  display, and an explicit `Use resolved symbols` button that copies the
+  preview into the existing manual input without changing recommendation
+  generation, queue submit behavior, provider calls, schema, or schedule
+  execution
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
 - completed `10C1`: central glossary registry and reusable accessible
@@ -868,8 +881,9 @@ First implementation slice:
   watchlist table/list polish and `10W7` bulk merge/duplicate handling are
   complete for the existing frontend JSON watchlist workflow. `10W8`
   recommendation/schedule universe-selection design is complete as a docs-only
-  checkpoint, and `10W8A` read-only resolved-universe preview API is complete
-  for backend preview-only use.
+  checkpoint, `10W8A` read-only resolved-universe preview API is complete for
+  backend preview-only use, and `10W8B` Recommendations universe selector UI is
+  complete for frontend preview/apply behavior.
   Existing Phase 10 numbering is preserved: `10D` remains the
   expiration-settlement design checkpoint, so symbol/watchlist work uses a
   workflow-polish `10W` lane unless the roadmap is explicitly renumbered later.
@@ -908,7 +922,10 @@ First implementation slice:
   The `10W8` design says non-manual sources should show a resolved preview
   before submit, Recommendations should still submit a resolved `symbols` array
   unless a later contract is approved, and schedules should default to a static
-  resolved snapshot rather than silently changing as watchlists change.
+  resolved snapshot rather than silently changing as watchlists change. `10W8B`
+  implements the Recommendations side as preview/apply only: the operator must
+  click `Use resolved symbols`, and queue refresh still uses the existing
+  manual input pathway.
 - Recommended data-model path:
   use the compatibility-first `user_symbol_universe` plus `watchlist_symbols`
   foundation now added in `10W4`. Keep current `watchlists.symbols` snapshots and schedule
@@ -929,12 +946,12 @@ First implementation slice:
   comma-entry copy` -> completed `10W3 schema/read-model checkpoint` ->
   completed `10W4 schema/migration foundation` -> completed `10W5 repository/read-model
   and resolver` -> completed `10W6 current watchlist table UI polish` ->
-  completed `10W7 bulk import/duplicate handling` -> completed `10W8 schedule/recommendation universe selection design` -> completed `10W8A resolved-universe preview helper/API` -> `10W8B Recommendations selector UI` -> `10W8C Schedule selector/snapshot behavior` -> `10W8D closure` -> `10W9
+  completed `10W7 bulk import/duplicate handling` -> completed `10W8 schedule/recommendation universe selection design` -> completed `10W8A resolved-universe preview helper/API` -> completed `10W8B Recommendations selector UI` -> `10W8C Schedule selector/snapshot behavior` -> `10W8D closure` -> `10W9
   provider-backed discovery only if separately approved` -> `10W10 closure`.
 - Suggested next implementation slice:
-  `10W8B` Recommendations universe selector UI only, if explicitly authorized.
-  Keep provider-backed search, normalized table production UI, schedule selector
-  behavior, and ranking changes deferred.
+  `10W8C` Schedule universe selector / snapshot behavior only, if explicitly
+  authorized. Keep provider-backed search, normalized table production UI, and
+  ranking changes deferred.
 - Explicitly not complete:
   normalized symbol-universe production UI, provider probes,
   provider search/fetch behavior, live routing, brokerage execution,
@@ -1130,8 +1147,8 @@ First implementation slice:
   not active)
 
 ## Test Counts (last verified 2026-04-30)
-- pytest: 210
-- vitest: 182
+- pytest: 271 collected
+- vitest: 194
 - Playwright: 31
 
 ## Core product pillars
@@ -1485,6 +1502,15 @@ diffs. Notable recent inflection points:
   watchlists, and does not change schema, recommendation generation, schedule
   execution, scoring, lifecycle, commission, provider-search, live routing, or
   brokerage behavior.
+- 2026-04-30 - Phase 10W8B complete for the Recommendations universe selector
+  UI: the Recommendations page can now preview manual, saved-watchlist,
+  watchlist-plus-manual, and all-active symbol universes through the read-only
+  preview API, render resolved symbols/counts/warnings/provider-metadata notes,
+  and copy resolved symbols into the existing manual input only when the
+  operator clicks `Use resolved symbols`. This frontend pass adds only a
+  same-origin proxy plus UI/tests/docs and does not change recommendation
+  generation, queue submit behavior, schedule execution, provider search,
+  schema, scoring, lifecycle, commission, live routing, or brokerage behavior.
 - 2026-04-30 - Future operator glossary and explainable metric tooltips
   roadmap item added: a docs-only planning note now tracks concise
   hover/click/tap metric help, formulas and examples where useful, a shared
