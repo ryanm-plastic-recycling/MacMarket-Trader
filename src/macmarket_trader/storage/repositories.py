@@ -1464,8 +1464,6 @@ class OptionPaperRepository:
         if total_commissions is None:
             return None, None
         opening_commissions = _clean_option_money(total_commissions / 2.0)
-        if opening_commissions is None:
-            return None, None
         closing_commissions = _clean_option_money(total_commissions - opening_commissions)
         return opening_commissions, closing_commissions
 

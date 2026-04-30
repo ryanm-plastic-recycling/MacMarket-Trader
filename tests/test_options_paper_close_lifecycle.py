@@ -108,11 +108,69 @@ def _vertical_debit_payload(*, quantity: int = 1) -> dict[str, object]:
     }
 
 
+def _iron_condor_payload(*, quantity: int = 1) -> dict[str, object]:
+    expiration = date(2026, 5, 15).isoformat()
+    return {
+        "market_mode": "options",
+        "structure_type": "iron_condor",
+        "underlying_symbol": "qqq",
+        "legs": [
+            {
+                "action": "buy",
+                "right": "put",
+                "strike": 90.0,
+                "expiration": expiration,
+                "premium": 1.0,
+                "quantity": quantity,
+                "label": "long put wing",
+            },
+            {
+                "action": "sell",
+                "right": "put",
+                "strike": 95.0,
+                "expiration": expiration,
+                "premium": 2.5,
+                "quantity": quantity,
+                "label": "short put body",
+            },
+            {
+                "action": "sell",
+                "right": "call",
+                "strike": 105.0,
+                "expiration": expiration,
+                "premium": 2.0,
+                "quantity": quantity,
+                "label": "short call body",
+            },
+            {
+                "action": "buy",
+                "right": "call",
+                "strike": 110.0,
+                "expiration": expiration,
+                "premium": 1.0,
+                "quantity": quantity,
+                "label": "long call wing",
+            },
+        ],
+        "notes": "paper iron condor close test",
+    }
+
+
 def _open_vertical_position(*, quantity: int = 1) -> dict[str, object]:
     response = client.post(
         "/user/options/paper-structures/open",
         headers=_USER_AUTH,
         json=_vertical_debit_payload(quantity=quantity),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _open_iron_condor_position(*, quantity: int = 1) -> dict[str, object]:
+    response = client.post(
+        "/user/options/paper-structures/open",
+        headers=_USER_AUTH,
+        json=_iron_condor_payload(quantity=quantity),
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -134,6 +192,87 @@ def _close_payload(*, open_payload: dict[str, object], long_exit: float, short_e
         ],
         "notes": "manual close test",
     }
+
+
+def test_iron_condor_open_close_lifecycle_keeps_options_isolated_and_commissions_per_contract() -> None:
+    user_id = _approve_user(
+        headers=_USER_AUTH,
+        external_auth_user_id="clerk_user",
+        commission_per_contract=0.65,
+    )
+    before_open = _counts()
+    open_payload = _open_iron_condor_position(quantity=2)
+
+    assert open_payload["structure_type"] == "iron_condor"
+    assert len(open_payload["legs"]) == 4
+
+    after_open = _counts()
+    assert after_open["option_orders"] == before_open["option_orders"] + 1
+    assert after_open["option_order_legs"] == before_open["option_order_legs"] + 4
+    assert after_open["option_positions"] == before_open["option_positions"] + 1
+    assert after_open["option_position_legs"] == before_open["option_position_legs"] + 4
+    assert after_open["option_trades"] == before_open["option_trades"]
+    assert after_open["option_trade_legs"] == before_open["option_trade_legs"]
+    assert after_open["equity_orders"] == before_open["equity_orders"]
+    assert after_open["equity_positions"] == before_open["equity_positions"]
+    assert after_open["equity_trades"] == before_open["equity_trades"]
+    assert after_open["recommendations"] == before_open["recommendations"]
+    assert after_open["replay_runs"] == before_open["replay_runs"]
+
+    close_payload = {
+        "settlement_mode": "manual_close",
+        "legs": [
+            {"position_leg_id": open_payload["legs"][0]["id"], "exit_premium": 0.4},
+            {"position_leg_id": open_payload["legs"][1]["id"], "exit_premium": 1.0},
+            {"position_leg_id": open_payload["legs"][2]["id"], "exit_premium": 0.8},
+            {"position_leg_id": open_payload["legs"][3]["id"], "exit_premium": 0.3},
+        ],
+        "notes": "manual iron condor close test",
+    }
+    response = client.post(
+        f"/user/options/paper-structures/{open_payload['position_id']}/close",
+        headers=_USER_AUTH,
+        json=close_payload,
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert payload["structure_type"] == "iron_condor"
+    assert payload["settlement_mode"] == "manual_close"
+    assert payload["gross_pnl"] == 280.0
+    assert payload["commission_per_contract"] == 0.65
+    assert payload["opening_commissions"] == 5.2
+    assert payload["closing_commissions"] == 5.2
+    assert payload["total_commissions"] == 10.4
+    assert payload["total_commissions"] != 1040.0
+    assert payload["net_pnl"] == 269.6
+    assert len(payload["legs"]) == 4
+    assert [leg["leg_gross_pnl"] for leg in payload["legs"]] == [-120.0, 300.0, 240.0, -140.0]
+    assert [leg["leg_commission"] for leg in payload["legs"]] == [2.6, 2.6, 2.6, 2.6]
+
+    after_close = _counts()
+    assert after_close["option_orders"] == before_open["option_orders"] + 1
+    assert after_close["option_order_legs"] == before_open["option_order_legs"] + 4
+    assert after_close["option_positions"] == before_open["option_positions"] + 1
+    assert after_close["option_position_legs"] == before_open["option_position_legs"] + 4
+    assert after_close["option_trades"] == before_open["option_trades"] + 1
+    assert after_close["option_trade_legs"] == before_open["option_trade_legs"] + 4
+    assert after_close["equity_orders"] == before_open["equity_orders"]
+    assert after_close["equity_positions"] == before_open["equity_positions"]
+    assert after_close["equity_trades"] == before_open["equity_trades"]
+    assert after_close["recommendations"] == before_open["recommendations"]
+    assert after_close["replay_runs"] == before_open["replay_runs"]
+
+    with SessionLocal() as session:
+        position_row = session.get(PaperOptionPositionModel, open_payload["position_id"])
+        trade_row = session.get(PaperOptionTradeModel, payload["trade_id"])
+        assert position_row is not None
+        assert trade_row is not None
+        assert position_row.app_user_id == user_id
+        assert position_row.status == "closed"
+        assert trade_row.gross_pnl == 280.0
+        assert trade_row.total_commissions == 10.4
+        assert trade_row.net_pnl == 269.6
 
 
 def test_manual_close_option_structure_creates_trade_and_closes_position() -> None:
@@ -347,3 +486,33 @@ def test_manual_close_option_structure_requires_all_legs() -> None:
     assert response.status_code == 409, response.text
     assert response.json()["detail"] == "all_position_legs_must_be_closed_together"
     assert _counts() == before
+
+
+def test_expiration_settlement_close_is_rejected_without_creating_trade() -> None:
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    open_payload = _open_vertical_position()
+    before = _counts()
+
+    response = client.post(
+        f"/user/options/paper-structures/{open_payload['position_id']}/close",
+        headers=_USER_AUTH,
+        json={
+            "settlement_mode": "expiration",
+            "underlying_settlement_price": 210.0,
+            "legs": [
+                {
+                    "position_leg_id": leg["id"],
+                    "exit_premium": 0.0,
+                }
+                for leg in open_payload["legs"]
+            ],
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "expiration_settlement_not_yet_supported"
+    assert _counts() == before
+
+    with SessionLocal() as session:
+        position_row = session.get(PaperOptionPositionModel, open_payload["position_id"])
+        assert position_row is not None
+        assert position_row.status == "open"

@@ -37,6 +37,13 @@ other options surfaces and advanced Expected Move visualization stay deferred.
 Phase 9A planning is complete for options operator parity and data-quality
 hardening. Phase 9B is complete for durable paper-options Orders/Positions
 visibility. Phase 9C / 9D remain planned.
+Phase 8 options hardening micro-pass preserved the scoped paper-only options
+boundary and recorded that CLAUDE.md now carries the vitest 146 count,
+API-level iron condor open/close lifecycle coverage was added, expiration
+settlement rejection coverage was added, the `opening_commissions`
+reconstruction limitation was documented, and the dead `opening_commissions`
+branch was removed without adding feature, schema, UI, replay,
+recommendation, or brokerage behavior.
 
 ## Completed Phases
 

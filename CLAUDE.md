@@ -179,7 +179,7 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 
 **CURRENT STATE: Phases 0–6 + Pass 4 complete. Private alpha live at https://macmarket.io. 3 alpha users. Phase 9 (Alpaca paper integration) is next.**
 
-Tests (2026-04-29): pytest 210, vitest 99, Playwright 31 (all passing, 0 skipped). tsc clean.
+Tests (2026-04-29): pytest 210, vitest 146, Playwright 31 (all passing, 0 skipped). tsc clean.
 
 Deployment: `https://macmarket.io` via Cloudflare Tunnel; backend `uvicorn` on `127.0.0.1:9510`; frontend Next.js on `0.0.0.0:9500`; SQLite at `C:\Dashboard\MacMarket-Trader\macmarket_trader.db`; daily 3 AM backup via `MacMarket-DB-Backup` task; strategy scheduler every 5 min via `MacMarket-StrategyScheduler` task.
 

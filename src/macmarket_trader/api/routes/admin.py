@@ -1153,6 +1153,16 @@ def close_order(order_id: str, req: dict[str, object], _user=Depends(require_app
     }
 
 
+@user_router.get("/orders/portfolio-summary")
+def paper_portfolio_summary(_user=Depends(require_approved_user)):
+    summary = paper_portfolio_repo.summary(app_user_id=_user.id)
+    return {
+        **summary,
+        "lifecycle_status": "scaffolded",
+        "notes": "Position/trade lifecycle accounting endpoints are enabled. Realized P&L remains zero until close-trade lifecycle writes are connected.",
+    }
+
+
 @user_router.post("/orders")
 def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
     guided = bool(req.get("guided"))

@@ -433,6 +433,16 @@ Current fee rules:
 - zero commission keeps `net_pnl == gross_pnl`
 - Phase 7 `commission_per_trade` equity behavior remains unchanged
 
+Current audit limitation:
+
+- `opening_commissions` is currently derived/reconstructed from position legs
+  and the current `commission_per_contract` when closing and listing paper
+  option summaries. If `commission_per_contract` changes between open and
+  close, the displayed opening commission split can differ from the original
+  open-time estimate. This is acceptable for the current paper-only scope; a
+  future auditability pass should persist open-time commission snapshots if
+  stronger fee reconstruction is needed.
+
 ## Draft contract and payload direction
 
 These are future payload sketches only. They are not approved for runtime yet.
