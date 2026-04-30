@@ -412,6 +412,8 @@ Current project status, in operator terms:
   implementation tracks
 - Phase 10A1 complete: Analysis now includes the compact Expected Range
   visualization for options research setups using existing setup fields only
+- Phase 10B1 complete: Orders durable paper-options rows are easier to scan as
+  display-only paper lifecycle records using existing persisted fields only
 
 Current options boundary:
 
@@ -425,8 +427,10 @@ Current options boundary:
   capability is complete
 - Phase 10 does not enable backend runtime behavior; `10A1` adds the optional
   Analysis Expected Range visualization using existing fields only
+- `10B1` improves Orders display/readability for saved and manually closed
+  paper option lifecycle rows without adding Orders actions
 - expiration settlement is still deferred
-- richer options dashboard depth is still deferred
+- broader options dashboard depth and workflow actions remain deferred
 - persisted options recommendations, options replay persistence,
   assignment/exercise automation, naked shorts, probability/margin modeling,
   crypto implementation, and live routing remain future work

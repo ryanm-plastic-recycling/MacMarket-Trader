@@ -72,9 +72,11 @@ Current implementation note:
   scope
 - Phase 10 is the current planning/polish track. `10A1` is complete for the
   optional Analysis Expected Range visualization using existing payload fields
-  and the current reusable component only. Orders polish and replay/payoff
-  visualization polish remain safe only while they stay read-only, paper-only,
-  and avoid lifecycle/math/provider behavior changes.
+  and the current reusable component only. `10B1` is complete for
+  display-only Orders readability on durable paper-options rows. Remaining
+  Orders polish and replay/payoff visualization polish remain safe only while
+  they stay read-only, paper-only, and avoid lifecycle/math/provider behavior
+  changes.
 
 ## UX goals
 
@@ -358,6 +360,11 @@ Current paper-lifecycle UX now adds:
 - a source/as-of limitation note explaining that durable paper lifecycle rows
   may not include full provider metadata yet and that this is not a lifecycle
   error
+- `10B1` now polishes this section into a clearer durable-paper blotter:
+  display-only helper copy, no-broker-order copy, separate open versus
+  manually closed status labels, compact debit/credit and risk summaries,
+  commission and gross/net result visibility, and expandable leg-detail tables
+  using existing persisted lifecycle fields only
 
 Later Orders maturity can still add:
 
@@ -473,6 +480,8 @@ Current closure status:
   scope
 - Phase 10 is open for planning and safe polish only; `10A1` optional Analysis
   Expected Range visualization is complete for the current frontend-only slice
+- `10B1` Orders durable paper-options display/readability polish is complete
+  for the current frontend-only slice
 - deeper replay/provider visualization remains deferred
 - `8F` is now complete for the current scoped paper-first options capability
 - full live-routing, settlement, assignment/exercise, and broader Orders

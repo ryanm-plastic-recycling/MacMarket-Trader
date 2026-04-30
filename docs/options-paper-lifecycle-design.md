@@ -1,6 +1,6 @@
 # Phase 8D Options Paper Lifecycle Design
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 ## Purpose
 
@@ -671,8 +671,9 @@ Current guardrails:
 - paper open/close UI remains paper-only and broker-order-free
 - no expiration-settlement UI exists yet
 - no assignment/exercise UI exists yet
-- broader Orders dashboard parity for durable option positions/trades remains
-  deferred
+- broader Orders dashboard parity for durable option positions/trades is now
+  partially addressed by `10B1` display/readability polish; lifecycle actions
+  from Orders remain deferred
 
 Current rules:
 
@@ -778,6 +779,25 @@ Recommended placement:
   visible before confirmation
 - closed options structures should later appear in a dedicated closed-trades
   section with gross/net commission detail
+
+Current `10B1` Orders display/readability polish:
+
+- Orders now treats durable paper-options rows as display-only paper lifecycle
+  records sourced from structures saved in Recommendations
+- open paper positions and manually closed paper positions are visually
+  separated with compact status labels
+- rows show existing persisted fields only: underlying, structure type,
+  opened/closed timestamps, expiration, leg count, opening debit/credit,
+  max profit/loss, breakevens, opening/closing/total commissions, gross P&L,
+  and net P&L where available
+- leg details are expandable and show action, right, strike, expiration,
+  contracts, multiplier, entry premium, exit premium, leg gross P&L, leg
+  commission, and leg net P&L when those fields exist
+- the section repeats that no broker orders were sent, manual close remains in
+  the Recommendations workflow, and provider/source/as-of metadata may be
+  limited on durable lifecycle rows
+- no open, close, settlement, assignment/exercise, replay, routing, or
+  brokerage action was added to Orders
 
 Important UX distinction:
 

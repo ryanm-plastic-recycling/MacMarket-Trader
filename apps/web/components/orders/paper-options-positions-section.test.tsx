@@ -23,6 +23,9 @@ vi.mock("@/components/operator-ui", async () => {
 });
 
 import {
+  OPTIONS_COMMISSION_FORMULA_COPY,
+  OPTIONS_COMMISSION_REMINDER_COPY,
+  OPTIONS_DURABLE_PURPOSE_COPY,
   OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE,
   PaperOptionsPositionsSectionContent,
 } from "@/components/orders/paper-options-positions-section";
@@ -33,7 +36,36 @@ const { renderToStaticMarkup } = require("react-dom/server") as {
 };
 
 describe("PaperOptionsPositionsSectionContent", () => {
-  it("renders open and closed paper option lifecycle rows safely", () => {
+  it("explains display-only durable paper option lifecycle records", () => {
+    const html = renderToStaticMarkup(
+      <PaperOptionsPositionsSectionContent
+        loading={false}
+        error={null}
+        items={[]}
+      />,
+    );
+
+    expect(html).toContain("Paper options positions");
+    expect(html).toContain("Durable paper lifecycle records");
+    expect(html).toContain("No broker orders were sent");
+    expect(html).toContain("Display-only");
+    expect(html).toContain(OPTIONS_DURABLE_PURPOSE_COPY);
+    expect(html).toContain(OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE);
+    expect(html).toContain("Provider/source context may be limited on durable lifecycle rows.");
+    expect(html).toContain("Source unavailable / As-of unavailable here is not a lifecycle error.");
+    expect(html).toContain(OPTIONS_COMMISSION_REMINDER_COPY);
+    expect(html).toContain(OPTIONS_COMMISSION_FORMULA_COPY);
+    expect(html).toContain("No paper options positions yet");
+    expect(html).not.toContain("live trading");
+    expect(html).not.toContain("live routing");
+    expect(html).not.toContain("broker execution");
+    expect(html).not.toContain("real-money routing");
+    expect(html).not.toContain("staged brokerage order");
+    expect(html).not.toContain("assignment/exercise support");
+    expect(html).not.toContain("expiration settlement support");
+  });
+
+  it("renders open and closed paper option lifecycle rows with key fields", () => {
     const html = renderToStaticMarkup(
       <PaperOptionsPositionsSectionContent
         loading={false}
@@ -59,7 +91,7 @@ describe("PaperOptionsPositionsSectionContent", () => {
             breakevens: [207.6],
             settlement_mode: null,
             gross_pnl: null,
-            opening_commissions: null,
+            opening_commissions: 1.3,
             closing_commissions: null,
             total_commissions: null,
             net_pnl: null,
@@ -144,44 +176,108 @@ describe("PaperOptionsPositionsSectionContent", () => {
       />,
     );
 
-    expect(html).toContain("Paper Options Positions");
-    expect(html).toContain("Paper-only");
-    expect(html).toContain("Open paper options positions");
-    expect(html).toContain("Closed paper options positions");
-    expect(html).toContain("Pending manual paper close");
+    expect(html).toContain("Open paper positions");
+    expect(html).toContain("Manually closed paper positions");
+    expect(html).toContain("Open paper position");
+    expect(html).toContain("Manually closed paper position");
+    expect(html).toContain("AAPL");
+    expect(html).toContain("Vertical Debit Spread");
+    expect(html).toContain("Debit $2.60");
+    expect(html).toContain("$740.00");
+    expect(html).toContain("$260.00");
+    expect(html).toContain("$207.60");
+    expect(html).toContain("Not final");
     expect(html).toContain("Gross, commissions, and net paper result appear after manual close.");
+    expect(html).toContain("SPY");
+    expect(html).toContain("Iron Condor");
+    expect(html).toContain("Credit $2.50");
     expect(html).toContain("Position #22");
     expect(html).toContain("Trade #77");
+    expect(html).toContain("Manual close recorded");
     expect(html).toContain("$180.00");
-    expect(html).toContain("$174.80");
+    expect(html).toContain("$2.60");
     expect(html).toContain("$5.20");
-    expect(html).toContain("Separate from equity orders and replay payoff preview.");
-    expect(html).toContain(OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE);
-    expect(html).toContain("Source unavailable on durable rows");
-    expect(html).toContain("As-of unavailable on durable rows");
-    expect(html).toContain("Source unavailable / As-of unavailable here is not a lifecycle error.");
+    expect(html).toContain("$174.80");
+    expect(html).toContain("Paper-only");
+    expect(html).toContain("execution_enabled=false");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
     expect(html).not.toContain("NaN");
     expect(html).not.toContain("Infinity");
-    expect(html).not.toContain("live trading");
-    expect(html).not.toContain("broker execution");
   });
 
-  it("renders empty and missing values safely", () => {
+  it("renders leg detail columns for open and closed lifecycle rows", () => {
     const html = renderToStaticMarkup(
       <PaperOptionsPositionsSectionContent
         loading={false}
         error={null}
-        items={[]}
+        items={[
+          {
+            position_id: 31,
+            trade_id: 32,
+            market_mode: "options",
+            underlying_symbol: "MSFT",
+            structure_type: "vertical_debit_spread",
+            status: "closed",
+            expiration: "2026-05-15",
+            opened_at: "2026-04-29T13:00:00Z",
+            closed_at: "2026-04-29T15:00:00Z",
+            source_order_id: 15,
+            contract_count: 1,
+            leg_count: 2,
+            opening_net_debit: 2.5,
+            opening_net_credit: null,
+            max_profit: 250,
+            max_loss: 250,
+            breakevens: [102.5],
+            settlement_mode: "manual_close",
+            gross_pnl: 120,
+            opening_commissions: 1.3,
+            closing_commissions: 1.3,
+            total_commissions: 2.6,
+            net_pnl: 117.4,
+            execution_enabled: false,
+            persistence_enabled: true,
+            paper_only: true,
+            operator_disclaimer: "paper only",
+            legs: [
+              {
+                action: "buy",
+                right: "call",
+                strike: 100,
+                expiration: "2026-05-15",
+                quantity: 1,
+                multiplier: 100,
+                entry_premium: 4.2,
+                exit_premium: 5.8,
+                status: "closed",
+                label: "Long call",
+                leg_gross_pnl: 160,
+                leg_commission: 1.3,
+                leg_net_pnl: 158.7,
+              },
+            ],
+          },
+        ]}
       />,
     );
 
-    expect(html).toContain("No paper options positions yet");
-    expect(html).toContain("Save as paper option position");
-    expect(html).toContain(OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE);
-    expect(html).not.toContain("undefined");
-    expect(html).not.toContain("null");
+    expect(html).toContain("action");
+    expect(html).toContain("right");
+    expect(html).toContain("strike");
+    expect(html).toContain("entry premium");
+    expect(html).toContain("exit premium");
+    expect(html).toContain("leg gross");
+    expect(html).toContain("leg commission");
+    expect(html).toContain("leg net");
+    expect(html).toContain("buy");
+    expect(html).toContain("CALL");
+    expect(html).toContain("100");
+    expect(html).toContain("1 contract");
+    expect(html).toContain("$4.20");
+    expect(html).toContain("$5.80");
+    expect(html).toContain("$160.00");
+    expect(html).toContain("$158.70");
   });
 
   it("renders loading and error states safely", () => {
@@ -222,7 +318,7 @@ describe("PaperOptionsPositionsSectionContent", () => {
             closed_at: null,
             source_order_id: null,
             contract_count: null,
-            leg_count: 1,
+            leg_count: 0,
             opening_net_debit: null,
             opening_net_credit: null,
             max_profit: null,

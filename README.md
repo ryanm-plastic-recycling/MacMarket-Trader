@@ -519,8 +519,9 @@ The codebase should define typed contracts for:
   visibility, provider/source/as-of parity, and a Recommendations Expected
   Range visualization. Phase 10 is the current safe planning and polish track
   for remaining deferred options/provider/crypto work; `10A1` reuses the
-  Expected Range visualization on Analysis with existing fields only. Live
-  routing, real brokerage execution, expiration settlement,
+  Expected Range visualization on Analysis with existing fields only, and
+  `10B1` polishes durable Orders visibility for paper options with existing
+  lifecycle fields only. Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
 

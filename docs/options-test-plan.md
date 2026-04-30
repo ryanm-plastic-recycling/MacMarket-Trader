@@ -394,6 +394,11 @@ Current status:
   visualization reuse. Coverage stays focused on Analysis wiring/copy plus the
   reusable component's existing computed, blocked, missing, invalid-number, and
   safety-copy render tests.
+- `10B1` is complete for frontend-only Orders durable paper-options
+  display/readability polish. Coverage focuses on display-only purpose copy,
+  open/closed status clarity, commission reminders, expandable leg details,
+  provider/source/as-of limitation copy, missing-value safety, and no
+  live-routing or broker-execution implication.
 
 ### 10A safe options UX/operator polish
 
@@ -412,6 +417,17 @@ Current status:
 
 - open and closed durable paper-options rows remain separate from equity
   Orders rows
+- `10B1` current coverage proves the section explains display-only durable
+  paper lifecycle records saved from Recommendations
+- `10B1` current coverage proves open paper position and manually closed paper
+  position labels render clearly
+- `10B1` current coverage proves gross P&L, opening/closing/total
+  commissions, and net P&L render for closed rows when available
+- `10B1` current coverage proves expandable leg details render action, right,
+  strike, expiration, contracts, multiplier, entry/exit premiums, and
+  leg-level gross/commission/net values safely
+- `10B1` current coverage proves options commission copy says not multiplied
+  by 100 and shows the contracts x legs x events formula
 - added filters, grouping, or summary copy preserve paper-only labels and
   durable provider-metadata limitation copy
 - missing expiration/DTE, gross, commissions, net P&L, source, and as-of fields

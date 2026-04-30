@@ -46,10 +46,12 @@ provider-depth, live routing, expiration settlement, assignment/exercise, and
 probability modeling remain deferred. Phase 9 is closed for the current
 options operator parity, source/as-of, and Expected Range visualization scope.
 Phase 10 planning is now open as a deferred-work sequencing track. `10A1` is
-complete for the frontend-only Analysis Expected Range visualization reuse;
-remaining Phase 10 slices stay open. The track defines safe near-term options
-polish, medium-risk design checkpoints, and explicitly later execution/crypto
-work without moving backend runtime behavior.
+complete for the frontend-only Analysis Expected Range visualization reuse,
+and `10B1` is complete for frontend-only Orders display/readability polish on
+durable paper-options lifecycle rows; remaining Phase 10 slices stay open.
+The track defines safe near-term options polish, medium-risk design
+checkpoints, and explicitly later execution/crypto work without moving backend
+runtime behavior.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md test context is now aligned to the
 current vitest 160 count,
@@ -491,8 +493,8 @@ recommendation, or brokerage behavior.
 
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
-  planning started; `10A1` complete; broader `10A` and later subphases remain
-  open
+  planning started; `10A1` and `10B1` complete; broader `10A`, broader `10B`,
+  and later subphases remain open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -594,6 +596,13 @@ First implementation slice:
   durable paper-options rows are easier to scan for open/closed state,
   expiration, DTE if derivable, legs, gross/opening/closing/total/net values,
   and source-metadata limitations without adding lifecycle actions
+- `10B1` status:
+  complete for the current frontend-only display/readability slice. Orders now
+  labels durable paper-options rows as display-only paper lifecycle records,
+  separates open paper positions from manually closed records, shows compact
+  debit/credit, risk, commission, gross/net, status, and leg-detail tables
+  from existing persisted lifecycle fields, and keeps provider/source/as-of
+  limitations muted rather than error-like.
 - Explicitly not complete:
   close/open actions from Orders, expiration settlement, partial fills, staged
   option orders, or brokerage routing
@@ -998,6 +1007,16 @@ diffs. Notable recent inflection points:
   equity behavior, recommendation generation, live routing, settlement,
   assignment/exercise, naked-short support, probability modeling, and crypto
   implementation remain unchanged.
+- 2026-04-30 - Phase 10B1 complete: Orders durable paper-options visibility
+  now has a frontend-only display/readability polish pass. The section clearly
+  describes display-only durable paper lifecycle records, no broker orders
+  sent, manual close remaining in Recommendations, provider/source/as-of
+  metadata limits, open versus manually closed paper states, compact
+  debit/credit/risk/commission/gross/net summaries, and expandable leg detail
+  tables using existing persisted options lifecycle fields only. No backend,
+  schema, provider, lifecycle, commission, equity, replay, recommendation,
+  routing, settlement, assignment/exercise, naked-short, probability, or crypto
+  behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI
