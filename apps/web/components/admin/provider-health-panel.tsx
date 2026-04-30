@@ -28,6 +28,9 @@ type ProviderHealth = {
   checked_at: string;
 };
 
+export const OPTIONS_PROVIDER_READINESS_NOTE =
+  "Options/index data note: SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes. Options chain, IV, Greeks, and open interest depend on provider coverage. This readiness view does not enable execution.";
+
 export function ProviderHealthPanel() {
   const [data, setData] = useState<ProviderHealth | null>(null);
   const [loading, setLoading] = useState(true);
@@ -156,6 +159,9 @@ export function ProviderHealthPanel() {
         </p>
         <p style={{ ...muted, margin: "6px 0 0" }}>
           Alpaca readiness on this page is paper-provider readiness only. No live brokerage execution or credential entry is enabled here.
+        </p>
+        <p style={{ ...muted, margin: "6px 0 0" }}>
+          {OPTIONS_PROVIDER_READINESS_NOTE}
         </p>
       </Card>
 

@@ -314,8 +314,10 @@ Planning note:
 
 - `9A` is planning only
 - `9B` is now implemented/current
-- `9C` and `9D` remain future options test areas after the current `9B`
-  durable-visibility scope
+- `9C1` is now implemented for the updated Analysis, Orders durable
+  paper-options, and Provider Health surfaces
+- remaining `9C` parity and `9D` visualization remain future options test
+  areas after the current `9C1` scope
 
 ### 9B current tests — durable operator visibility
 
@@ -330,8 +332,16 @@ Planning note:
   their own durable operator surface
 - missing position/trade fields still render as `Unavailable` or `-`
 
-### 9C future tests — provider/source/as-of parity
+### 9C current and future tests - provider/source/as-of parity
 
+- Analysis options Expected Range renders method, reference-price provenance,
+  source notes, and as-of fallback safely from existing setup payload fields
+- Analysis chain preview renders source/as-of, provider-plan caveats,
+  reference-only notes, incomplete side warnings, and safe missing field values
+- Orders durable paper-options rows render a muted limitation note rather than
+  treating absent provider metadata as an error
+- Provider Health options/index caveats remain readiness-only and do not imply
+  routing or execution
 - provider/source/as-of labels remain consistent across research preview,
   payoff preview, paper lifecycle, and future durable options listings
 - reference-only snapshots, missing `last` / `volume`, incomplete call/put

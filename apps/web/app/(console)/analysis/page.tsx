@@ -17,7 +17,12 @@ import { buildGuidedQuery, GUIDED_FLOW_LABEL, parseGuidedFlowState } from "@/lib
 import { formatExpectedMoveSummary } from "@/lib/analysis-expected-range";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import {
+  formatResearchCell,
+  formatResearchTimestamp,
   formatResearchValue,
+  getOptionsChainIncompleteSideWarning,
+  getOptionsChainPreviewNotes,
+  getOptionsChainUnavailableMessage,
   getOptionsLegDisplayLines,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
@@ -50,14 +55,17 @@ type SetupPayload = {
   option_structure?: OptionsResearchStructure;
   expected_range?: {
     method?: string | null;
+    reference_price_type?: string | null;
     absolute_move?: number | null;
     lower_bound?: number | null;
     upper_bound?: number | null;
     horizon_value?: number | null;
     horizon_unit?: string | null;
+    snapshot_timestamp?: string | null;
+    provenance_notes?: string | null;
     status: "computed" | "blocked" | "omitted";
     reason?: string | null;
-  };
+  } | null;
   options_chain_preview?: {
     underlying: string;
     expiry?: string | null;
@@ -66,7 +74,7 @@ type SetupPayload = {
     data_as_of?: string | null;
     source?: string | null;
     reason?: string | null;
-  } | null;
+  };
 };
 
 const STORAGE_KEY = "macmarket-indicators-analysis";
@@ -279,6 +287,15 @@ export default function Page() {
     source: setup?.workflow_source ?? source,
   });
   const researchPreviewHref = researchPreviewQuery ? `/recommendations?${researchPreviewQuery}` : "/recommendations";
+  const expectedRange = setup?.expected_range ?? null;
+  const optionsChainPreview = setup?.options_chain_preview ?? null;
+  const optionsChainUnavailableMessage = getOptionsChainUnavailableMessage(optionsChainPreview);
+  const optionsChainIncompleteSideWarning = getOptionsChainIncompleteSideWarning(optionsChainPreview);
+  const optionsChainPreviewNotes = getOptionsChainPreviewNotes(optionsChainPreview);
+  const expectedRangeHorizon =
+    expectedRange && (expectedRange.horizon_value != null || expectedRange.horizon_unit)
+      ? `${formatResearchValue(expectedRange.horizon_value)} ${formatResearchValue(expectedRange.horizon_unit)}`.trim()
+      : "Unavailable";
 
   return <section className="op-stack">
     <PageHeader title="Trade Setup" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
@@ -354,7 +371,7 @@ export default function Page() {
         <div><strong>Active/inactive:</strong> {setup?.active ? "active" : "inactive"} — {setup?.active_reason ?? "loading"}</div>
         <div><strong>Selected strategy:</strong> {appliedStrategy}</div>
         <div><strong>Symbol / mode / timeframe:</strong> {appliedSymbol} / {appliedMarketMode} / {appliedTimeframe}</div>
-        <div><strong>Workflow source:</strong> {setup?.workflow_source ?? source}</div>
+        <div><strong>Workflow source:</strong> {formatResearchValue(setup?.workflow_source ?? source, "Source unavailable")}</div>
         {setup?.operator_guidance ? <div><strong>Mode guidance:</strong> {setup.operator_guidance}</div> : null}
         <div><strong>Summary:</strong> {setupSummary ?? "loading"}</div>
         {appliedMarketMode === "options" && optionStructure ? (
@@ -383,80 +400,131 @@ export default function Page() {
           {createRecommendationDisabled ? (
             <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>
               {appliedMarketMode === "options"
-                ? "Options research stays read-only in Phase 8B. Use Recommendations to review the contract preview; queue, replay, and paper orders remain unavailable."
+                ? "Options research stays read-only in the current paper-only scope. Use Recommendations to review the contract preview and paper lifecycle tools; equity queue and replay workflows remain separate."
                 : "This market mode stays read-only in the current build. Persisted recommendations remain equities-only."}
             </div>
           ) : null}
         </div>
       </Card>
       <Card title="Expected move">
-        {setup?.expected_range ? (
+        {expectedRange ? (
           <>
-            <div><strong>Status:</strong> {setup.expected_range.status}</div>
-            <div><strong>Method:</strong> {setup.expected_range.method ?? "-"}</div>
-            <div><strong>Move:</strong> {setup.expected_range.absolute_move ?? "-"} ({setup.expected_range.lower_bound ?? "-"} to {setup.expected_range.upper_bound ?? "-"})</div>
-            <div><strong>Horizon:</strong> {setup.expected_range.horizon_value ?? "-"} {setup.expected_range.horizon_unit ?? ""}</div>
-            {setup.expected_range.reason ? <div><strong>Reason:</strong> {setup.expected_range.reason}</div> : null}
-            <div>{formatExpectedMoveSummary(setup.expected_range)}</div>
+            <div><strong>Status:</strong> {formatResearchValue(expectedRange.status)}</div>
+            <div><strong>Method:</strong> {formatResearchValue(expectedRange.method, "Source unavailable")}</div>
+            <div><strong>Reference price:</strong> {formatResearchValue(expectedRange.reference_price_type, "Source unavailable")}</div>
+            <div><strong>As-of:</strong> {formatResearchTimestamp(expectedRange.snapshot_timestamp ?? null)}</div>
+            <div><strong>Move:</strong> {formatResearchValue(expectedRange.absolute_move)} ({formatResearchValue(expectedRange.lower_bound)} to {formatResearchValue(expectedRange.upper_bound)})</div>
+            <div><strong>Horizon:</strong> {expectedRangeHorizon}</div>
+            <div><strong>Source notes:</strong> {formatResearchValue(expectedRange.provenance_notes, "Source unavailable")}</div>
+            {expectedRange.reason ? <div><strong>Reason:</strong> {expectedRange.reason}</div> : null}
+            <div>{formatExpectedMoveSummary(expectedRange)}</div>
+            {appliedMarketMode === "options" ? (
+              <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
+                Expected range is research context only. It does not change expiration payoff math or enable execution.
+              </div>
+            ) : null}
           </>
-        ) : <div>Expected move data unavailable for this setup.</div>}
+        ) : (
+          <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
+            Expected move data unavailable for this setup. Source unavailable. As-of unavailable.
+          </div>
+        )}
       </Card>
     </div>
 
     {appliedMarketMode === "options" && setup?.options_chain_preview !== undefined ? (
       <Card title="Options chain preview">
-        {setup.options_chain_preview === null || setup.options_chain_preview?.reason ? (
-          <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
-            {setup.options_chain_preview?.reason ?? "Options chain data unavailable — Polygon options plan not configured."}
+        {optionsChainPreview?.reason ? (
+          <div style={{ display: "grid", gap: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
+            <div>{optionsChainUnavailableMessage}</div>
+            <div>Source unavailable. As-of unavailable.</div>
+          </div>
+        ) : optionsChainPreview === null ? (
+          <div style={{ display: "grid", gap: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
+            <div>{optionsChainUnavailableMessage}</div>
+            <div>Provider plan or payload may not include this data. SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes.</div>
+            <div>Source unavailable. As-of unavailable.</div>
           </div>
         ) : (
           <>
             <div style={{ fontSize: "0.85rem", marginBottom: 8 }}>
-              <strong>Underlying:</strong> {setup.options_chain_preview.underlying}
-              {setup.options_chain_preview.expiry ? <> &nbsp; <strong>Nearest expiry:</strong> {setup.options_chain_preview.expiry}</> : null}
-              {setup.options_chain_preview.source ? <> &nbsp; <span style={{ color: "var(--op-muted, #7a8999)" }}>({setup.options_chain_preview.source})</span></> : null}
+              <strong>Underlying:</strong> {formatResearchValue(optionsChainPreview.underlying)}
+              {optionsChainPreview.expiry ? <> &nbsp; <strong>Nearest expiry:</strong> {optionsChainPreview.expiry}</> : null}
+              <> &nbsp; <strong>Source:</strong> {formatResearchValue(optionsChainPreview.source, "Source unavailable")}</>
+              <> &nbsp; <strong>As-of:</strong> {formatResearchTimestamp(optionsChainPreview.data_as_of ?? null)}</>
             </div>
             <div className="op-grid-2" style={{ gap: 12 }}>
               <div>
                 <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 4 }}>Calls</div>
-                {setup.options_chain_preview.calls && setup.options_chain_preview.calls.length > 0 ? (
+                {optionsChainPreview.calls && optionsChainPreview.calls.length > 0 ? (
                   <table className="op-table">
                     <thead><tr><th>strike</th><th>expiry</th><th>last</th><th>volume</th></tr></thead>
                     <tbody>
-                      {setup.options_chain_preview.calls.map((c, i) => (
+                      {optionsChainPreview.calls.map((contract, i) => {
+                        const c = {
+                          strike: formatResearchCell(contract.strike),
+                          expiry: formatResearchCell(contract.expiry),
+                          last_price: formatResearchCell(contract.last_price),
+                          volume: formatResearchCell(contract.volume),
+                        };
+                        return (
                         <tr key={i}>
                           <td>{c.strike ?? "—"}</td>
                           <td>{c.expiry ?? "—"}</td>
                           <td>{c.last_price ?? "—"}</td>
                           <td>{c.volume ?? "—"}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>No call contracts returned.</div>}
               </div>
               <div>
                 <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 4 }}>Puts</div>
-                {setup.options_chain_preview.puts && setup.options_chain_preview.puts.length > 0 ? (
+                {optionsChainPreview.puts && optionsChainPreview.puts.length > 0 ? (
                   <table className="op-table">
                     <thead><tr><th>strike</th><th>expiry</th><th>last</th><th>volume</th></tr></thead>
                     <tbody>
-                      {setup.options_chain_preview.puts.map((p, i) => (
+                      {optionsChainPreview.puts.map((contract, i) => {
+                        const p = {
+                          strike: formatResearchCell(contract.strike),
+                          expiry: formatResearchCell(contract.expiry),
+                          last_price: formatResearchCell(contract.last_price),
+                          volume: formatResearchCell(contract.volume),
+                        };
+                        return (
                         <tr key={i}>
                           <td>{p.strike ?? "—"}</td>
                           <td>{p.expiry ?? "—"}</td>
                           <td>{p.last_price ?? "—"}</td>
                           <td>{p.volume ?? "—"}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem" }}>No put contracts returned.</div>}
               </div>
             </div>
-            {setup.options_chain_preview.data_as_of ? (
+            {optionsChainIncompleteSideWarning ? (
+              <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#f7b267" }}>
+                {optionsChainIncompleteSideWarning}
+              </div>
+            ) : null}
+            {optionsChainPreviewNotes.map((note) => (
+              <div key={note} style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
+                {note}
+              </div>
+            ))}
+            {!optionsChainPreview.data_as_of ? (
               <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
-                Reference data as of {setup.options_chain_preview.data_as_of}. Research preview — no execution support.
+                Reference data as of As-of unavailable. Chain preview unavailable fields may reflect provider plan or payload coverage. Research preview only; no execution support.
+              </div>
+            ) : null}
+            {optionsChainPreview.data_as_of ? (
+              <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
+                Reference data as of {optionsChainPreview.data_as_of}. Research preview — no execution support.
               </div>
             ) : null}
           </>

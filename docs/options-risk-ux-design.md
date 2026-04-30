@@ -50,6 +50,12 @@ Current implementation note:
 - `9B` now adds a durable paper-options visibility section on Orders, while
   broader multi-surface parity and richer expiration/status views remain
   future work
+- `9C1` now extends provider/source/as-of parity to the practical existing
+  surfaces outside Recommendations: Analysis options Expected Range and chain
+  preview context use existing payload metadata and safe fallbacks; Orders
+  durable paper-options rows disclose that full provider/source metadata remains
+  research-preview context; Provider Health carries options/index data caveats
+  as readiness context only
 
 ## UX goals
 
@@ -179,6 +185,9 @@ Current paper-lifecycle UX now adds:
 - gross/opening/closing/total/net result visibility for closed paper option
   positions
 - paper-only labels that stay separate from the existing equity Orders tables
+- a source/as-of limitation note explaining that durable paper lifecycle rows
+  may not include full provider metadata yet and that this is not a lifecycle
+  error
 
 Later Orders maturity can still add:
 
@@ -280,8 +289,10 @@ Must not change:
 Current closure status:
 
 - `8E` is complete for the current Recommendations options surface only
-- broader provider/source/as-of parity across other options surfaces remains
-  deferred
+- `9C1` is complete for Analysis, Orders durable paper-options rows, and
+  Provider Health copy using existing payload fields only
+- remaining provider/source/as-of parity across any future or still-uncovered
+  options surfaces remains deferred to the rest of `9C`
 - advanced Expected Move visualization remains deferred
 - `8F` is now complete for the current scoped paper-first options capability
 - full live-routing, settlement, assignment/exercise, and broader Orders

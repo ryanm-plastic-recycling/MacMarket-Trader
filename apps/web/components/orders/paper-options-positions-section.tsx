@@ -12,6 +12,9 @@ import {
   type OptionsPaperLifecycleSummaryLeg,
 } from "@/lib/recommendations";
 
+export const OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE =
+  "Provider/source context is captured in research preview; durable paper lifecycle rows may not include full provider metadata yet.";
+
 function formatCompactCurrency(value: number | null | undefined): string {
   return formatResearchCurrency(value, "—");
 }
@@ -83,9 +86,14 @@ export function PaperOptionsPositionsSectionContent({
     <Card title="Paper Options Positions">
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <StatusBadge tone="neutral">Paper-only</StatusBadge>
+        <StatusBadge tone="neutral">Source unavailable on durable rows</StatusBadge>
+        <StatusBadge tone="neutral">As-of unavailable on durable rows</StatusBadge>
         <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.9rem" }}>
           Durable saved paper option positions and manual-close results. Separate from equity orders and replay payoff preview.
         </span>
+      </div>
+      <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.84rem", marginBottom: 10, lineHeight: 1.45 }}>
+        {OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE} Source unavailable / As-of unavailable here is not a lifecycle error.
       </div>
       {loading && items.length === 0 ? (
         <div style={{ color: "var(--op-muted, #7a8999)" }}>Loading paper options positions…</div>

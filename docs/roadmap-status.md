@@ -36,7 +36,9 @@ paper-first options capability only. Broader provider/source parity across
 other options surfaces and advanced Expected Move visualization stay deferred.
 Phase 9A planning is complete for options operator parity and data-quality
 hardening. Phase 9B is complete for durable paper-options Orders/Positions
-visibility. Phase 9C / 9D remain planned.
+visibility. Phase 9C1 is complete for Analysis, Orders durable paper-options
+rows, and Provider Health source/as-of/readiness copy parity using existing
+payload fields only. Remaining Phase 9C parity and Phase 9D remain planned.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md now carries the vitest 146 count,
 API-level iron condor open/close lifecycle coverage was added, expiration
@@ -408,6 +410,17 @@ recommendation, or brokerage behavior.
   side warnings, and missing market-field handling are presented consistently
   across options research, payoff preview, paper lifecycle, and future durable
   operator surfaces
+- 9C1 implemented now:
+  Analysis options research now mirrors the existing Recommendations
+  provider/source/as-of copy for Expected Range and chain preview fields where
+  the setup payload already provides them; Orders durable paper-options rows now
+  state that full provider/source metadata remains captured in research preview
+  rather than persisted lifecycle rows; Provider Health adds options/index data
+  caveats without implying execution enablement. No backend behavior, schema,
+  lifecycle math, commission math, equity behavior, or UI actions changed.
+- 9C remaining:
+  Continue parity checks across any future options-facing surfaces and keep
+  missing market fields from reading as healthy or as zero.
 - 9D scope:
   Expected Move visualization
 - 9D acceptance target:
@@ -417,8 +430,9 @@ recommendation, or brokerage behavior.
   explicitly changes that contract
 - Phase 9 implementation order:
   `9A` planning -> `9B` durable options Orders/Positions visibility
-  complete -> `9C` provider/source/as-of parity across options surfaces ->
-  `9D` Expected Move visualization
+  complete -> `9C1` initial provider/source/as-of parity pass complete for
+  updated surfaces -> remaining `9C` parity -> `9D` Expected Move
+  visualization
 - Phase 9 not included:
   expiration settlement, assignment/exercise automation, persisted options
   recommendations, options replay persistence into equity replay flows, live
@@ -671,6 +685,13 @@ diffs. Notable recent inflection points:
   through Orders, using the dedicated options persistence path without
   changing equity order/replay behavior, live-routing boundaries, or options
   lifecycle math. Frontend and targeted backend validation passed.
+- 2026-04-29 - Phase 9C1 complete for the current provider/source/as-of parity
+  micro-pass: Analysis options Expected Range and chain preview copy now uses
+  existing source/as-of/provenance fields and safe fallback text, Orders
+  durable paper-options rows document that full provider/source metadata remains
+  research-preview context, and Provider Health carries options/index data
+  caveats as readiness context only. Remaining 9C parity and 9D visualization
+  stay planned.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

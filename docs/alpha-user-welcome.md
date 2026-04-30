@@ -194,10 +194,12 @@ Practical operator notes:
   coverage
 - missing options data is often a provider/plan limitation unless the app
   explicitly shows a different error
-- the Recommendations options risk surface now repeats workflow source, chain
-  source/as-of, and Expected Range provenance when available; missing values
-  should render as `Source unavailable` or `As-of unavailable`, not as a
-  hidden zero or silent success
+- the Recommendations options risk surface and Analysis options preview now
+  repeat workflow source, chain source/as-of, and Expected Range provenance
+  when available; missing values should render as `Source unavailable` or
+  `As-of unavailable`, not as a hidden zero or silent success
+- durable Orders paper-options rows may not include full provider/source
+  metadata yet; use the research preview for chain source/as-of context
 
 Interpretation rule:
 
@@ -389,7 +391,10 @@ Current project status, in operator terms:
 - Phase 8 is closed for the current scoped paper-first options capability
 - Phase 9A complete: options operator parity and data-quality planning
 - Phase 9B complete: durable paper-options Orders/Positions visibility
-- Phase 9C planned next: provider/source/as-of parity across options surfaces
+- Phase 9C1 complete: initial provider/source/as-of parity for Analysis,
+  Orders durable paper-options rows, and Provider Health copy
+- Remaining Phase 9C planned next: finish parity across any still-uncovered
+  options surfaces
 
 Current options boundary:
 
@@ -400,7 +405,7 @@ Current options boundary:
   Recommendations
 - current scoped Phase 8 paper-first options capability is complete
 - expiration settlement is still deferred
-- broader provider/source/as-of parity and richer options dashboard depth are
+- remaining provider/source/as-of parity and richer options dashboard depth are
   still deferred
 
 ## Final operator reminder

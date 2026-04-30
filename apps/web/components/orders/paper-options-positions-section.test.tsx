@@ -22,7 +22,10 @@ vi.mock("@/components/operator-ui", async () => {
   };
 });
 
-import { PaperOptionsPositionsSectionContent } from "@/components/orders/paper-options-positions-section";
+import {
+  OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE,
+  PaperOptionsPositionsSectionContent,
+} from "@/components/orders/paper-options-positions-section";
 
 const require = createRequire(import.meta.url);
 const { renderToStaticMarkup } = require("react-dom/server") as {
@@ -153,6 +156,10 @@ describe("PaperOptionsPositionsSectionContent", () => {
     expect(html).toContain("$174.80");
     expect(html).toContain("$5.20");
     expect(html).toContain("Separate from equity orders and replay payoff preview.");
+    expect(html).toContain(OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE);
+    expect(html).toContain("Source unavailable on durable rows");
+    expect(html).toContain("As-of unavailable on durable rows");
+    expect(html).toContain("Source unavailable / As-of unavailable here is not a lifecycle error.");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
     expect(html).not.toContain("NaN");
@@ -172,6 +179,7 @@ describe("PaperOptionsPositionsSectionContent", () => {
 
     expect(html).toContain("No paper options positions yet");
     expect(html).toContain("Save as paper option position");
+    expect(html).toContain(OPTIONS_DURABLE_SOURCE_CONTEXT_NOTE);
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
   });
