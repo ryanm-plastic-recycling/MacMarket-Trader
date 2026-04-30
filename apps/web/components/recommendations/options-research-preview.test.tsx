@@ -946,6 +946,9 @@ describe("OptionsPaperLifecyclePanel", () => {
     expect(html).toContain("Underlying source");
     expect(html).toContain("Chain preview source");
     expect(html).toContain("Expected Range provenance");
+    expect(html).toContain("Expected Range visualization");
+    expect(html).toContain("$101.80");
+    expect(html).toContain("$110.20");
     expect(html).toContain("2026-04-29 13:00 UTC");
     expect(html).toContain("2026-04-29 13:01 UTC");
     expect(html).toContain("Derived from the current IV snapshot.");

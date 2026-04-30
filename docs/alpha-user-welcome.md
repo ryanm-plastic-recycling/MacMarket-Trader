@@ -403,6 +403,8 @@ Current project status, in operator terms:
   design checkpoint
 - Phase 9D2 complete: reusable Expected Range visualization component with
   first Recommendations integration
+- Phase 9D complete: current Recommendations Expected Range visualization
+  scope is closed
 
 Current options boundary:
 
@@ -413,6 +415,7 @@ Current options boundary:
   Recommendations
 - current scoped Phase 8 paper-first options capability is complete
 - expiration settlement is still deferred
+- Analysis Expected Range visualization integration is still optional/future
 - richer options dashboard depth is still deferred
 
 ## Final operator reminder

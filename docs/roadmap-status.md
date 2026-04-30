@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 159, Playwright 31. tsc clean.
+Tests: pytest 210, vitest 160, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -39,10 +39,10 @@ hardening. Phase 9B is complete for durable paper-options Orders/Positions
 visibility. Phase 9C is complete for the current provider/source/as-of parity
 scope across Analysis, Recommendations, Orders durable paper-options rows,
 Provider Health, and operator guidance using existing payload fields only.
-Phase 9D1 design checkpoint is complete for advanced Expected Move /
-Expected Range visualization. Phase 9D2 is complete for the reusable
-Expected Range visualization component and first Recommendations integration;
-remaining 9D polish remains planned.
+Phase 9D is complete for the current Recommendations Expected Range
+visualization scope. Analysis integration, future provider-depth, live
+routing, expiration settlement, assignment/exercise, and probability modeling
+remain deferred.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md now carries the vitest 146 count,
 API-level iron condor open/close lifecycle coverage was added, expiration
@@ -387,9 +387,8 @@ recommendation, or brokerage behavior.
 - Status:
   `9A` complete for planning; `9B` complete for the current durable paper
   options Orders/Positions visibility scope; `9C` complete for the current
-  provider/source/as-of parity scope; `9D1` design checkpoint complete; `9D2`
-  reusable Expected Range visualization component plus first Recommendations
-  integration complete; `9D3+` polish remains planned
+  provider/source/as-of parity scope; `9D` complete for the current
+  Recommendations Expected Range visualization scope
 - Theme:
   durable operator visibility for current paper-first options plus consistent
   provider/data-quality framing, without adding live execution semantics
@@ -453,6 +452,12 @@ recommendation, or brokerage behavior.
   and provenance text, blocked/unavailable states, and explicit research-only
   safety copy. Missing or invalid values render as `Unavailable` / `-` rather
   than `null`, `undefined`, `NaN`, or `Infinity`.
+- 9D closure:
+  complete for the current Recommendations Expected Range visualization scope.
+  Closure audit tightened derived range-midpoint labeling so the component does
+  not imply an actual current/reference price when the payload does not carry
+  one, confirmed the component stays compact inside `Structure risk`, and kept
+  Analysis integration optional/future.
 - 9D not included:
   probability of profit, broker mark-to-market simulation, expiration
   settlement, assignment/exercise modeling, IV surface modeling, live
@@ -463,8 +468,9 @@ recommendation, or brokerage behavior.
   complete -> `9C` provider/source/as-of parity complete for current scope ->
   `9D1` design checkpoint complete -> `9D2` reusable Expected Range
   visualization component plus first Recommendations integration complete ->
-  `9D3` additional Recommendations/replay risk-surface polish if needed ->
-  optional `9D4` Analysis integration -> `9D5` closure tests/docs
+  `9D` closure audit complete for current Recommendations scope. Optional
+  Analysis integration, richer replay/visual polish, and provider-depth work
+  move to future phases only if explicitly reopened.
 - Phase 9 not included:
   expiration settlement, assignment/exercise automation, persisted options
   recommendations, options replay persistence into equity replay flows, live
@@ -528,7 +534,7 @@ recommendation, or brokerage behavior.
 
 ## Test Counts (last verified 2026-04-30)
 - pytest: 210
-- vitest: 159
+- vitest: 160
 - Playwright: 31
 
 ## Core product pillars
@@ -746,6 +752,15 @@ diffs. Notable recent inflection points:
   rendering, and safety-copy states. No backend, schema, provider-fetch,
   lifecycle, commission, equity, recommendation-generation, payoff-math, or
   execution behavior changed.
+- 2026-04-30 - Phase 9D closure complete for the current Recommendations
+  Expected Range visualization scope: audit/polish confirmed lower/upper
+  bounds, breakeven markers, blocked/missing states, safe invalid-number
+  rendering, compact placement, and research-only safety copy. A tiny label
+  polish now distinguishes a derived range midpoint from an actual
+  current/reference price. Frontend validation passed at 160 vitest tests plus
+  clean TypeScript; no backend, schema, provider, lifecycle, commission,
+  equity, payoff, recommendation-generation, routing, settlement, assignment,
+  exercise, naked-short, or probability behavior changed.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

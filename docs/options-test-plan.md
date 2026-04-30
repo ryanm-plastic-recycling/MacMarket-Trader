@@ -320,7 +320,10 @@ Planning note:
 - `9D1` design is complete
 - `9D2` is now implemented/current for the reusable frontend Expected Range
   visualization component plus first Recommendations integration
-- remaining `9D` polish remains planned
+- `9D` is now closed for the current Recommendations Expected Range
+  visualization scope
+- optional Analysis integration, richer replay placement, and provider-depth
+  polish remain future work only if explicitly reopened
 
 ### 9B current tests — durable operator visibility
 
@@ -371,8 +374,11 @@ Planning note:
   change payoff math or approve execution
 - `9D2` current coverage checks against probability-of-profit, live-trading,
   routing, and trade-signal claims
-- remaining future coverage should follow any `9D3` Recommendations/replay
-  polish or optional `9D4` Analysis integration
+- closure coverage confirms derived range-midpoint copy does not imply an
+  actual current/reference price when the payload does not carry one
+- remaining future coverage should follow optional Analysis integration,
+  richer replay placement, or provider-depth work only if those scopes are
+  explicitly reopened
 
 ## Suggested future test file direction
 

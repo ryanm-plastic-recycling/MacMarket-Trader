@@ -43,11 +43,32 @@ describe("ExpectedRangeVisualization", () => {
     expect(html).toContain("$105.00");
     expect(html).toContain("Breakeven 1");
     expect(html).toContain("Breakeven 2");
+    expect(html).toContain("Range midpoint");
+    expect(html).toContain("$100.00");
     expect(html).toContain("$97.50 / $106.00");
     expect(html).toContain("Breakeven outside expected range: $106.00.");
     expect(html).toContain("IV 1sigma");
     expect(html).toContain("2026-04-29 13:00 UTC");
     expect(html).toContain("Derived from available IV snapshot.");
+  });
+
+  it("labels explicit current price separately from derived range midpoint", () => {
+    const html = renderToStaticMarkup(
+      <ExpectedRangeVisualization
+        expectedRange={{
+          status: "computed",
+          method: "iv_move",
+          absolute_move: 4,
+          lower_bound: 96,
+          upper_bound: 104,
+        }}
+        currentPrice={101}
+      />,
+    );
+
+    expect(html).toContain("Current");
+    expect(html).toContain("$101.00");
+    expect(html).not.toContain("Range midpoint");
   });
 
   it("renders blocked expected range reasons in a muted unavailable state", () => {

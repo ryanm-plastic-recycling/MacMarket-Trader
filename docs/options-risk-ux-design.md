@@ -64,6 +64,9 @@ Current implementation note:
 - `9D2` now adds the first reusable Expected Range visualization component
   inside Recommendations `Structure risk`, using existing payload fields only
   and keeping Expected Range explicitly research-only
+- `9D` is now closed for the current Recommendations Expected Range
+  visualization scope; optional Analysis integration and deeper provider/visual
+  depth remain future work
 
 ## UX goals
 
@@ -127,6 +130,7 @@ Status:
 
 - `9D1` design checkpoint complete
 - `9D2` reusable component plus first Recommendations integration complete
+- `9D` closure complete for the current Recommendations scope
 - no application code, backend behavior, schema, provider probing, lifecycle
   math, commission math, equity behavior, or payoff math changes are authorized
   by this visualization slice
@@ -232,9 +236,20 @@ Recommended implementation slices:
 - `9D1` design checkpoint: complete with this section and roadmap alignment
 - `9D2` reusable Expected Range visualization component using existing fields
   only, with first Recommendations `Structure risk` integration: complete
-- `9D3` additional Recommendations/replay risk-surface polish if needed
-- `9D4` optional Analysis integration if the component remains compact
-- `9D5` closure tests/docs
+- `9D` closure audit for current Recommendations scope: complete
+- optional Analysis integration, richer replay placement, and provider-depth
+  polish remain future work only if explicitly reopened
+
+Closure notes:
+
+- computed ranges show lower/upper bounds and breakeven markers
+- blocked, omitted, missing, and invalid-number states render safely
+- derived range midpoint labeling does not imply an actual current/reference
+  price when that price is absent from the payload
+- the component stays inside Recommendations `Structure risk` and does not
+  broaden or redesign the options page
+- no probability, execution-approval, live-trading, or routing language is
+  introduced
 
 Recommended test plan for 9D implementation:
 
@@ -429,8 +444,10 @@ Current closure status:
   parity checks in their own phase
 - `9D1` design checkpoint is complete for advanced Expected Move visualization
 - `9D2` reusable component plus first Recommendations integration is complete
-- `9D3` / `9D4` remain planned for additional Recommendations/replay polish and
-  optional Analysis integration
+- `9D` is closed for the current Recommendations Expected Range visualization
+  scope
+- optional Analysis integration and deeper replay/provider visualization remain
+  deferred
 - `8F` is now complete for the current scoped paper-first options capability
 - full live-routing, settlement, assignment/exercise, and broader Orders
   parity remain explicitly outside this scope

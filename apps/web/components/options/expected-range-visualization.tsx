@@ -153,16 +153,24 @@ export function ExpectedRangeVisualization({
   const lower = Math.min(lowerRaw, upperRaw);
   const upper = Math.max(lowerRaw, upperRaw);
   const absoluteMove = finiteNumber(expectedRange?.absolute_move);
-  const derivedReference = finiteNumber(referencePrice)
-    ?? finiteNumber(currentPrice)
-    ?? deriveReferencePrice(lower, upper, absoluteMove);
+  const explicitReferencePrice = finiteNumber(referencePrice);
+  const explicitCurrentPrice = finiteNumber(currentPrice);
+  const midpointPrice = deriveReferencePrice(lower, upper, absoluteMove);
+  const referenceMarker =
+    explicitReferencePrice != null
+      ? { label: "Reference", value: explicitReferencePrice }
+      : explicitCurrentPrice != null
+        ? { label: "Current", value: explicitCurrentPrice }
+        : midpointPrice != null
+          ? { label: "Range midpoint", value: midpointPrice }
+          : null;
   const breakevenValues = (breakevens ?? []).filter(
     (value): value is number => typeof value === "number" && Number.isFinite(value),
   );
   const markers: Marker[] = [
-    ...(derivedReference == null
+    ...(referenceMarker == null
       ? []
-      : [{ key: "reference", label: "Reference", value: derivedReference, tone: "reference" as const }]),
+      : [{ key: "reference", label: referenceMarker.label, value: referenceMarker.value, tone: "reference" as const }]),
     ...breakevenValues.map((value, index) => ({
       key: `breakeven-${index}-${value}`,
       label: `Breakeven ${index + 1}`,
@@ -284,7 +292,10 @@ export function ExpectedRangeVisualization({
       >
         <div><strong>Lower:</strong> {formatCurrency(lower)}</div>
         <div><strong>Upper:</strong> {formatCurrency(upper)}</div>
-        <div><strong>Reference:</strong> {derivedReference == null ? "Unavailable" : formatCurrency(derivedReference)}</div>
+        <div>
+          <strong>{referenceMarker?.label ?? "Reference"}:</strong>{" "}
+          {referenceMarker == null ? "Unavailable" : formatCurrency(referenceMarker.value)}
+        </div>
         <div><strong>Breakevens:</strong> {breakevenValues.length > 0 ? breakevenValues.map((value) => formatCurrency(value)).join(" / ") : "Unavailable"}</div>
         <div><strong>Max profit:</strong> {formatCurrency(maxProfit)}</div>
         <div><strong>Max loss:</strong> {formatCurrency(maxLoss)}</div>
