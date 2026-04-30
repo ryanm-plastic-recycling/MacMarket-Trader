@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const previewProxySource = readFileSync(new URL("../../api/user/symbol-universe/preview/route.ts", import.meta.url), "utf8");
 
 describe("schedules manual symbol entry cleanup", () => {
   it("adds helper copy and parsed previews to schedule and watchlist symbol entry", () => {
@@ -23,6 +24,58 @@ describe("schedules manual symbol entry cleanup", () => {
     expect(source).not.toContain("broker routing");
     expect(source).not.toContain("live trading");
     expect(source).not.toContain("execution approval");
+  });
+});
+
+describe("schedule universe static snapshot selector", () => {
+  it("adds schedule universe source modes using the read-only preview proxy", () => {
+    expect(source).toContain('type ScheduleUniverseSourceType = "manual" | "watchlist" | "watchlist_plus_manual" | "all_active";');
+    expect(source).toContain('const [scheduleUniverseMode, setScheduleUniverseMode] = useState<ScheduleUniverseSourceType>("manual");');
+    expect(source).toContain('"/api/user/symbol-universe/preview"');
+    expect(source).toContain('<option value="manual">Manual symbols</option>');
+    expect(source).toContain('<option value="watchlist">Saved watchlist</option>');
+    expect(source).toContain('<option value="watchlist_plus_manual">Watchlist + manual additions</option>');
+    expect(source).toContain('<option value="all_active">All active symbols</option>');
+    expect(previewProxySource).toContain('backendPath: "/user/symbol-universe/preview"');
+  });
+
+  it("explains static snapshot behavior and keeps dynamic refresh disabled", () => {
+    expect(source).toContain("Schedules use a static symbol snapshot. Preview and apply the symbols you want saved into this schedule.");
+    expect(source).toContain("Later watchlist edits do not automatically change existing schedules.");
+    expect(source).toContain("Dynamic watchlist refresh is deferred and not enabled.");
+    expect(source).not.toContain("Refresh from watchlist at run time");
+  });
+
+  it("keeps preview separate from schedule save and applies only to symbol state", () => {
+    expect(source).toContain("async function previewScheduleUniverse()");
+    expect(source).toContain("function applyScheduleUniverseSnapshot()");
+    expect(source).toContain('setSymbols(scheduleUniversePreview.resolved_symbols.join(", "));');
+    expect(source).toContain("Preview only. It does not save or update this schedule.");
+    expect(source).toContain("Use resolved symbols in this schedule");
+    expect(source).toContain("Use Create or Update selected to save.");
+    expect(source).toContain("symbols: parsedScheduleSymbols.symbols");
+  });
+
+  it("renders duplicate, exclusion, pinned, warning, and provider metadata context", () => {
+    expect(source).toContain("scheduleUniversePreview.symbol_count");
+    expect(source).toContain("scheduleUniversePreview.duplicates_ignored");
+    expect(source).toContain("scheduleUniversePreview.exclusions_applied");
+    expect(source).toContain("scheduleUniversePreview.pinned_symbols_applied");
+    expect(source).toContain("scheduleUniversePreview.warnings.map(formatUniverseWarning)");
+    expect(source).toContain("Provider metadata may be unavailable.");
+    expect(source).toContain("Pinned symbols (optional)");
+    expect(source).toContain("Excluded symbols (optional)");
+  });
+
+  it("keeps schedule selector copy away from unsafe routing language", () => {
+    const selectorStart = source.indexOf('      <div ref={createFormRef}><Card title="Create / update schedule">');
+    const selectorEnd = source.indexOf('        <div className="op-row">', selectorStart);
+    const selectorSource = source.slice(selectorStart, selectorEnd).toLowerCase();
+
+    expect(selectorSource).not.toContain("live trading");
+    expect(selectorSource).not.toContain("broker execution");
+    expect(selectorSource).not.toContain("broker routing");
+    expect(selectorSource).not.toContain("real-money");
   });
 });
 

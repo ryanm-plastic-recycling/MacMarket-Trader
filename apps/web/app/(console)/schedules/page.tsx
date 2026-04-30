@@ -150,6 +150,22 @@ type RunDetail = {
 type Watchlist = { id: number; name: string; symbols: string[]; created_at: string };
 type WatchlistSort = "name" | "symbol_count";
 type WatchlistSaveMode = "replace" | "merge";
+type ScheduleUniverseSourceType = "manual" | "watchlist" | "watchlist_plus_manual" | "all_active";
+
+type SymbolUniversePreviewResponse = {
+  resolved_symbols: string[];
+  symbol_count: number;
+  duplicates_ignored: number;
+  exclusions_applied: number;
+  pinned_symbols_applied: string[];
+  source_type: ScheduleUniverseSourceType | string;
+  source_label: string;
+  warnings: string[];
+  provider_metadata_available: boolean;
+  provider_metadata_note?: string | null;
+  preview_only: boolean;
+  does_not_submit_recommendations: boolean;
+};
 
 function formatDateOrDash(value: string | undefined | null): string {
   if (!value) return "—";
@@ -160,6 +176,17 @@ function formatDateOrDash(value: string | undefined | null): string {
     day: "numeric",
     year: "numeric",
   }).format(date);
+}
+
+function formatUniverseWarning(value: string): string {
+  switch (value) {
+    case "provider_metadata_not_used":
+      return "Provider metadata is not used by this read-only preview.";
+    case "resolved_universe_empty":
+      return "No symbols resolved for this preview.";
+    default:
+      return value.replace(/_/g, " ");
+  }
 }
 
 const TIMEZONES: { value: string; label: string }[] = [
@@ -208,6 +235,13 @@ export default function SchedulesPage() {
   const [timezone, setTimezone] = useState("America/Indiana/Indianapolis");
   const [emailTarget, setEmailTarget] = useState("");
   const [topN, setTopN] = useState(5);
+  const [scheduleUniverseMode, setScheduleUniverseMode] = useState<ScheduleUniverseSourceType>("manual");
+  const [selectedScheduleWatchlistId, setSelectedScheduleWatchlistId] = useState("");
+  const [scheduleManualAdditions, setScheduleManualAdditions] = useState("");
+  const [schedulePinnedSymbols, setSchedulePinnedSymbols] = useState("");
+  const [scheduleExcludedSymbols, setScheduleExcludedSymbols] = useState("");
+  const [scheduleUniversePreview, setScheduleUniversePreview] = useState<SymbolUniversePreviewResponse | null>(null);
+  const [scheduleUniverseFeedback, setScheduleUniverseFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   // Watchlist state
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
@@ -225,6 +259,9 @@ export default function SchedulesPage() {
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
   const [runDetailFeedback, setRunDetailFeedback] = useState<{ state: "idle" | "loading" | "error"; message: string }>({ state: "idle", message: "" });
   const parsedScheduleSymbols = useMemo(() => parseManualSymbolEntry(symbols), [symbols]);
+  const parsedScheduleManualAdditions = useMemo(() => parseManualSymbolEntry(scheduleManualAdditions), [scheduleManualAdditions]);
+  const parsedSchedulePinnedSymbols = useMemo(() => parseManualSymbolEntry(schedulePinnedSymbols), [schedulePinnedSymbols]);
+  const parsedScheduleExcludedSymbols = useMemo(() => parseManualSymbolEntry(scheduleExcludedSymbols), [scheduleExcludedSymbols]);
   const parsedWatchlistSymbols = useMemo(() => parseManualSymbolEntry(wlSymbols), [wlSymbols]);
   const editingWatchlist = useMemo(
     () => watchlists.find((wl) => wl.id === editingWlId) ?? null,
@@ -275,7 +312,10 @@ export default function SchedulesPage() {
 
   async function loadWatchlists() {
     const result = await fetchWorkflowApi<Watchlist>("/api/user/watchlists");
-    if (result.ok) setWatchlists(result.items);
+    if (result.ok) {
+      setWatchlists(result.items);
+      setSelectedScheduleWatchlistId((prev) => prev || (result.items[0]?.id ? String(result.items[0].id) : ""));
+    }
   }
 
   async function saveWatchlist() {
@@ -366,7 +406,60 @@ export default function SchedulesPage() {
     setTopN(selected.config_summary?.top_n ?? selected.payload?.top_n ?? 5);
     setSelectedRunId(null);
     setRunDetail(null);
+    setScheduleUniversePreview(null);
+    setScheduleUniverseFeedback({ state: "idle", message: "" });
   }, [selected?.id, prefill.name, prefill.symbols.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function previewScheduleUniverse() {
+    const needsWatchlist = scheduleUniverseMode === "watchlist" || scheduleUniverseMode === "watchlist_plus_manual";
+    const watchlistId = selectedScheduleWatchlistId ? Number(selectedScheduleWatchlistId) : null;
+    if (needsWatchlist && (!watchlistId || !Number.isFinite(watchlistId))) {
+      setScheduleUniversePreview(null);
+      setScheduleUniverseFeedback({ state: "error", message: "Select a saved watchlist before previewing this schedule universe." });
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      source_type: scheduleUniverseMode,
+      active_only: true,
+    };
+    if (scheduleUniverseMode === "manual") {
+      payload.manual_symbols = symbols;
+    }
+    if (scheduleUniverseMode === "watchlist" && watchlistId) {
+      payload.watchlist_id = watchlistId;
+    }
+    if (scheduleUniverseMode === "watchlist_plus_manual" && watchlistId) {
+      payload.watchlist_id = watchlistId;
+      payload.manual_symbols = scheduleManualAdditions;
+    }
+    if (schedulePinnedSymbols.trim()) {
+      payload.pinned_symbols = schedulePinnedSymbols;
+    }
+    if (scheduleExcludedSymbols.trim()) {
+      payload.excluded_symbols = scheduleExcludedSymbols;
+    }
+
+    setScheduleUniverseFeedback({ state: "loading", message: "Previewing schedule universe..." });
+    const result = await fetchWorkflowApi<SymbolUniversePreviewResponse>("/api/user/symbol-universe/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!result.ok || !result.data) {
+      setScheduleUniversePreview(null);
+      setScheduleUniverseFeedback({ state: "error", message: result.error ?? "Unable to preview schedule universe." });
+      return;
+    }
+    setScheduleUniversePreview(result.data);
+    setScheduleUniverseFeedback({ state: "success", message: "Schedule universe preview resolved. Preview does not save or update this schedule." });
+  }
+
+  function applyScheduleUniverseSnapshot() {
+    if (!scheduleUniversePreview?.resolved_symbols.length) return;
+    setSymbols(scheduleUniversePreview.resolved_symbols.join(", "));
+    setScheduleUniverseFeedback({ state: "success", message: "Resolved symbols copied into this schedule as the pending static snapshot. Use Create or Update selected to save." });
+  }
 
   async function createOrUpdateSchedule(scheduleId?: number) {
     const scheduleConfig = {
@@ -449,13 +542,135 @@ export default function SchedulesPage() {
       />
 
       <div ref={createFormRef}><Card title="Create / update schedule">
+        <div style={{ marginBottom: 10, color: "var(--op-muted, #7a8999)", fontSize: "0.86rem", lineHeight: 1.5 }}>
+          <div>Schedules use a static symbol snapshot. Preview and apply the symbols you want saved into this schedule.</div>
+          <div>Later watchlist edits do not automatically change existing schedules. Dynamic watchlist refresh is deferred and not enabled.</div>
+          <div>This is recommendation-universe schedule setup, not order flow. Provider metadata may be unavailable.</div>
+        </div>
+        <div className="op-row" style={{ alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
+          <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
+            <span>Schedule universe source</span>
+            <select
+              value={scheduleUniverseMode}
+              onChange={(e) => {
+                setScheduleUniverseMode(e.target.value as ScheduleUniverseSourceType);
+                setScheduleUniversePreview(null);
+                setScheduleUniverseFeedback({ state: "idle", message: "" });
+              }}
+            >
+              <option value="manual">Manual symbols</option>
+              <option value="watchlist">Saved watchlist</option>
+              <option value="watchlist_plus_manual">Watchlist + manual additions</option>
+              <option value="all_active">All active symbols</option>
+            </select>
+          </label>
+          {(scheduleUniverseMode === "watchlist" || scheduleUniverseMode === "watchlist_plus_manual") ? (
+            <label style={{ display: "grid", gap: 4, minWidth: 240 }}>
+              <span>Saved watchlist</span>
+              <select
+                value={selectedScheduleWatchlistId}
+                onChange={(e) => {
+                  setSelectedScheduleWatchlistId(e.target.value);
+                  setScheduleUniversePreview(null);
+                }}
+                disabled={watchlists.length === 0}
+              >
+                {watchlists.length ? watchlists.map((wl) => (
+                  <option key={wl.id} value={wl.id}>{wl.name} ({parseManualSymbolEntry((wl.symbols ?? []).join(",")).symbols.length})</option>
+                )) : <option value="">No saved watchlists</option>}
+              </select>
+            </label>
+          ) : null}
+          <button onClick={() => void previewScheduleUniverse()} disabled={scheduleUniverseFeedback.state === "loading"}>
+            {scheduleUniverseFeedback.state === "loading" ? "Previewing..." : "Preview schedule universe"}
+          </button>
+          <button
+            className="op-btn op-btn-secondary"
+            onClick={applyScheduleUniverseSnapshot}
+            disabled={!scheduleUniversePreview?.resolved_symbols.length}
+          >
+            Use resolved symbols in this schedule
+          </button>
+        </div>
+        {scheduleUniverseMode === "watchlist_plus_manual" ? (
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: "grid", gap: 4, minWidth: 320 }}>
+              <span>Manual additions for selected watchlist</span>
+              <textarea
+                value={scheduleManualAdditions}
+                onChange={(e) => {
+                  setScheduleManualAdditions(e.target.value.toUpperCase());
+                  setScheduleUniversePreview(null);
+                }}
+                rows={2}
+                placeholder="TSLA, AMD"
+                style={{ minWidth: 320, resize: "vertical" }}
+              />
+            </label>
+            <SymbolEntryPreview parsed={parsedScheduleManualAdditions} />
+          </div>
+        ) : null}
+        <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap", marginBottom: 8 }}>
+          <label style={{ display: "grid", gap: 4, minWidth: 220, flex: "1 1 220px" }}>
+            <span>Pinned symbols (optional)</span>
+            <input
+              value={schedulePinnedSymbols}
+              onChange={(e) => {
+                setSchedulePinnedSymbols(e.target.value.toUpperCase());
+                setScheduleUniversePreview(null);
+              }}
+              placeholder="SPY, QQQ"
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4, minWidth: 220, flex: "1 1 220px" }}>
+            <span>Excluded symbols (optional)</span>
+            <input
+              value={scheduleExcludedSymbols}
+              onChange={(e) => {
+                setScheduleExcludedSymbols(e.target.value.toUpperCase());
+                setScheduleUniversePreview(null);
+              }}
+              placeholder="TSLA"
+            />
+          </label>
+        </div>
+        {(parsedSchedulePinnedSymbols.symbols.length || parsedScheduleExcludedSymbols.symbols.length) ? (
+          <div style={{ marginTop: -2, marginBottom: 8, color: "var(--op-muted, #7a8999)", fontSize: "0.82rem", lineHeight: 1.45 }}>
+            {parsedSchedulePinnedSymbols.symbols.length ? <div>Pinned preview: {parsedSchedulePinnedSymbols.symbols.join(", ")}</div> : null}
+            {parsedScheduleExcludedSymbols.symbols.length ? <div>Excluded preview: {parsedScheduleExcludedSymbols.symbols.join(", ")}</div> : null}
+          </div>
+        ) : null}
+        {scheduleUniversePreview ? (
+          <div style={{ marginBottom: 10, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+            <div className="op-row" style={{ flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+              <StatusBadge tone="neutral">{scheduleUniversePreview.source_label || "Schedule universe preview"}</StatusBadge>
+              <StatusBadge tone="good">{scheduleUniversePreview.symbol_count} symbol{scheduleUniversePreview.symbol_count === 1 ? "" : "s"}</StatusBadge>
+              <StatusBadge tone="neutral">{scheduleUniversePreview.duplicates_ignored} duplicate{scheduleUniversePreview.duplicates_ignored === 1 ? "" : "s"} ignored</StatusBadge>
+              <StatusBadge tone="neutral">{scheduleUniversePreview.exclusions_applied} exclusion{scheduleUniversePreview.exclusions_applied === 1 ? "" : "s"} applied</StatusBadge>
+              {scheduleUniversePreview.preview_only ? <StatusBadge tone="warn">preview only</StatusBadge> : null}
+            </div>
+            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
+              <div><strong>Resolved symbols:</strong> {scheduleUniversePreview.resolved_symbols.length ? scheduleUniversePreview.resolved_symbols.join(", ") : "—"}</div>
+              {scheduleUniversePreview.pinned_symbols_applied.length ? <div><strong>Pinned applied:</strong> {scheduleUniversePreview.pinned_symbols_applied.join(", ")}</div> : null}
+              <div>Preview only. It does not save or update this schedule.</div>
+              <div>Source note: {scheduleUniversePreview.provider_metadata_note || "Provider metadata may be unavailable for this preview."}</div>
+              {scheduleUniversePreview.warnings.length ? (
+                <div>Warnings: {scheduleUniversePreview.warnings.map(formatUniverseWarning).join(" · ")}</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        <InlineFeedback state={scheduleUniverseFeedback.state} message={scheduleUniverseFeedback.message} />
         <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Schedule name" />
           <label style={{ display: "grid", gap: 4, minWidth: 300, flex: "1 1 320px" }}>
             <span>Symbols to evaluate</span>
             <textarea
               value={symbols}
-              onChange={(e) => setSymbols(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                setSymbols(e.target.value.toUpperCase());
+                setScheduleUniversePreview(null);
+              }}
               placeholder="SPY, QQQ, AAPL, MSFT"
               rows={2}
               style={{ minWidth: 260, resize: "vertical" }}
@@ -466,7 +681,10 @@ export default function SchedulesPage() {
               defaultValue=""
               onChange={(e) => {
                 const wl = watchlists.find((w) => w.id === Number(e.target.value));
-                if (wl) setSymbols(wl.symbols.join(","));
+                if (wl) {
+                  setSymbols(wl.symbols.join(","));
+                  setScheduleUniversePreview(null);
+                }
                 e.currentTarget.value = "";
               }}
             >

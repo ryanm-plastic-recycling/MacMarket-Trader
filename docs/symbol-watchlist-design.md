@@ -57,8 +57,10 @@ Current symbol entry is intentionally simple:
   watchlist `symbols` snapshots. The `10W8A` preview route can read this
   resolver output for operator preview, and `10W8B` adds a Recommendations
   selector that can preview and explicitly copy resolved symbols into the
-  existing manual input. Recommendation submit behavior and schedule execution
-  remain unchanged.
+  existing manual input. `10W8C` adds the same preview/apply pattern to the
+  schedule form, where resolved symbols become the pending static schedule
+  snapshot only after explicit operator apply. Recommendation submit behavior
+  and schedule execution remain unchanged.
 
 Current scoping:
 
@@ -103,8 +105,10 @@ Current limitations:
 - Universe selection is only partially surfaced: Recommendations can preview a
   resolved universe and copy it into the existing manual symbol field, but the
   queue submit path still uses the current manual `symbols` array. Schedules
-  remain JSON/snapshot-based until a later implementation explicitly wires a
-  schedule selector.
+  can now preview a resolved universe and copy it into the existing schedule
+  symbol field, but schedule create/update still persists the same
+  `payload.symbols` static snapshot and scheduled runs do not dynamically
+  refresh watchlists.
 
 ## 10W2 Current Manual-entry Cleanup
 
@@ -476,7 +480,7 @@ Future implementation should test:
   uses the read-only preview API and only copies resolved symbols into the
   existing manual input when the operator clicks `Use resolved symbols`.
 - `10W8C` Schedule universe source selector / snapshot behavior:
-  frontend selector and optional selector metadata while preserving
+  complete for frontend static-snapshot preview/apply behavior while preserving
   `payload.symbols` as the run snapshot.
 - `10W8D` tests/docs closure:
   prove resolver provenance, user scoping, snapshot semantics, fallback copy,
@@ -564,6 +568,45 @@ Still unchanged by `10W8B`:
 - tags/groups source selection remains deferred
 - live routing, brokerage execution, and provider fetch behavior remain
   unchanged
+
+## 10W8C Schedule Universe Static Snapshot Selector
+
+Status: complete for the current frontend static-snapshot preview/apply scope.
+
+Implemented now:
+
+- compact Schedule universe selector modes for `manual`, `watchlist`,
+  `watchlist_plus_manual`, and `all_active`
+- reuse of the existing read-only `POST /user/symbol-universe/preview`
+  same-origin proxy
+- saved-watchlist selection using the existing watchlist list endpoint
+- optional pinned and excluded symbol fields for preview context
+- read-only preview rendering for resolved symbols, symbol count, duplicate
+  count, applied exclusions, applied pinned symbols, source label, warnings,
+  provider-metadata note, and `preview only` state
+- explicit static-snapshot copy:
+  schedules store the resolved symbols saved at create/update time, later
+  watchlist edits do not automatically change existing schedules, and dynamic
+  watchlist refresh is deferred and not enabled
+- explicit `Use resolved symbols in this schedule` button that copies preview
+  output into the existing schedule `Symbols to evaluate` field
+- existing `Create` / `Update selected` buttons remain the only save path, and
+  they still persist the same parsed `symbols` array as before
+- frontend source tests for selector rendering, static-snapshot copy,
+  preview/apply separation, metadata rendering, and safety copy
+
+Still unchanged by `10W8C`:
+
+- schedule execution reads the existing saved `payload.symbols` snapshot
+- schedule create/update payload shape is unchanged
+- recommendation generation and scoring are unchanged
+- current watchlist JSON persistence remains unchanged
+- provider-backed symbol search and metadata enrichment remain deferred
+- normalized symbol-universe production UI remains deferred
+- tags/groups source selection remains deferred
+- dynamic watchlist refresh remains deferred and not enabled
+- live routing, brokerage execution, schema, migrations, provider probes,
+  lifecycle math, commission math, and equity/options behavior remain unchanged
 
 ## Symbol Discovery Design
 
@@ -1065,6 +1108,12 @@ Recommended slices:
   complete for frontend preview/apply behavior; uses the read-only preview API
   and existing watchlist list endpoint, then copies resolved symbols into the
   existing manual field only when explicitly requested.
+- `10W8C` Schedule universe static snapshot selector:
+  complete for frontend preview/apply behavior; uses the read-only preview API
+  and existing watchlist list endpoint, then copies resolved symbols into the
+  existing schedule symbols field only when explicitly requested. Create/update
+  remains the explicit save step and scheduled runs keep using static
+  `payload.symbols` snapshots.
 - `10W9` provider-backed symbol discovery:
   add provider-backed search only after explicit provider-design approval.
 - `10W10` closure:
@@ -1073,19 +1122,19 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W8B`: Schedule universe source selector / snapshot behavior
-(`10W8C`), if explicitly authorized.
+Next after `10W8C`: tests/docs closure (`10W8D`), if explicitly authorized.
 
 Why:
 
-- the selector design, read-only preview API, and Recommendations preview/apply
-  UI are now documented and implemented
-- the next useful operator slice is a compact Schedules selector that preserves
-  static `payload.symbols` snapshots by default
+- the selector design, read-only preview API, Recommendations preview/apply UI,
+  and Schedule static-snapshot preview/apply UI are now documented and
+  implemented
+- the next useful operator slice is a closure audit that proves selector copy,
+  user scoping, static snapshots, and no schedule/recommendation behavior drift
 - provider-backed search, storage replacement, broad normalized table UI, and
   ranking/schedule behavior changes can remain deferred until explicitly scoped
 
 Do not start the next slice with provider-backed symbol search,
 storage replacement, normalized symbol-universe production UI, or ranking
-changes. The next implementation should keep schedule execution unchanged and
-make any resolved schedule universe explicit before it is saved as a snapshot.
+changes. The next implementation should be a small closure pass, not dynamic
+watchlist refresh.

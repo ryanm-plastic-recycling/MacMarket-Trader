@@ -233,8 +233,10 @@ Future roadmap work is planned for better recommendation-universe management:
   watchlist, watchlist-plus-manual, and all-active sources; use **Use resolved
   symbols** to copy preview output into the existing manual input before
   refreshing the queue
-- a future Schedules universe selector is still planned with static resolved
-  snapshots by default
+- Schedules now has a preview-only universe selector for the same sources; use
+  **Use resolved symbols in this schedule** to copy preview output into the
+  existing schedule symbol field, then save explicitly with Create or Update
+  selected
 - ETF/index substitution guidance such as `SPX` / `NDX` versus `SPY` / `QQQ`
 
 This future work is not trade execution. Provider support labels and options
@@ -251,15 +253,17 @@ Design checkpoint status:
 - the current comma-entry cleanup, current watchlist table polish, and bulk
   duplicate-handling slices are complete; recommendation/schedule
   universe-selection design is documented; the read-only preview API and
-  Recommendations preview/apply selector are complete; provider-backed search,
-  normalized symbol-universe production UI, import audit, and Schedule selector
-  implementation remain future work
+  Recommendations and Schedules preview/apply selectors are complete;
+  provider-backed search, normalized symbol-universe production UI, import
+  audit, and dynamic watchlist refresh remain future work
 - the schema/read-model checkpoint now recommends a future
   `user_symbol_universe` plus `watchlist_symbols` model while preserving
   current watchlist and schedule symbol snapshots for compatibility
 - the universe-selection checkpoint recommends static resolved schedule
   snapshots by default so future schedule runs do not unexpectedly change when
   watchlists change
+- schedule universe preview/apply now follows that rule: later watchlist edits
+  do not automatically change existing schedules
 
 ## 8. Metric glossary and tooltips
 
@@ -534,6 +538,10 @@ Current project status, in operator terms:
   all-active sources and explicitly copy resolved symbols into the existing
   manual queue input without changing recommendation generation or schedule
   behavior
+- Phase 10W8C complete: Schedules now has a preview-only universe selector that
+  can copy resolved symbols into the existing schedule symbol input as a static
+  snapshot without changing schedule execution or enabling dynamic watchlist
+  refresh
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders

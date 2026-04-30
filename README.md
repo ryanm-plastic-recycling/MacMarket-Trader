@@ -553,7 +553,10 @@ The codebase should define typed contracts for:
   providers, or changing runtime behavior. `10W8B` adds a Recommendations
   universe selector that previews manual/watchlist/all-active sources and only
   copies resolved symbols into the existing manual input when explicitly
-  requested, leaving queue submit and schedule behavior unchanged.
+  requested, leaving queue submit behavior unchanged. `10W8C` adds a Schedule
+  universe selector that previews the same sources and only copies resolved
+  symbols into the existing schedule input as a static snapshot when explicitly
+  requested, leaving schedule execution behavior unchanged.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -676,7 +679,10 @@ the backend-only read preview route for manual, watchlist,
 watchlist-plus-manual, all-active, and mixed symbol universes. `10W8B` adds the
 Recommendations selector UI for previewing those sources and explicitly copying
 resolved symbols into the existing manual input while leaving queue submit and
-all schedule behavior unchanged.
+all schedule behavior unchanged. `10W8C` adds the Schedules selector UI for
+previewing those sources and explicitly copying resolved symbols into the
+existing schedule symbol input as a static snapshot while leaving schedule run
+behavior unchanged.
 Current manual entry now shows clearer separator guidance, parsed uppercase
 previews, duplicate feedback, and ETF/index substitute copy, but remains a
 temporary manual universe until richer watchlist management is implemented.
