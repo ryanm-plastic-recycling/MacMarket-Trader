@@ -32,6 +32,8 @@ def _prepare_pre_0007_schema(database_url: str) -> None:
     init_db(engine)
     with engine.begin() as conn:
         for table_name in (
+            "watchlist_symbols",
+            "user_symbol_universe",
             "paper_option_trade_legs",
             "paper_option_trades",
             "paper_option_position_legs",

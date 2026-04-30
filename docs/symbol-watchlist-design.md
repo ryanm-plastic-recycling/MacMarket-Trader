@@ -120,6 +120,34 @@ No schema, migration, backend, frontend, provider, schedule, or
 recommendation-generation behavior is implemented by this section. It defines
 the future read model and compatibility plan only.
 
+## 10W4 Schema / Migration Foundation
+
+Status: complete for the current additive schema foundation.
+
+Implemented now:
+
+- `user_symbol_universe` ORM model and Alembic table for per-user canonical
+  symbol rows
+- `watchlist_symbols` ORM model and Alembic table for future normalized
+  watchlist membership rows
+- nullable provider metadata fields so manual symbols do not require provider
+  lookup
+- `active` defaults, timestamp fields, symbol snapshots, uniqueness
+  constraints, and indexes for later user-scoped reads
+- focused schema/migration tests for upgrade, downgrade, defaults, nullable
+  provider metadata, duplicate constraints, and snapshot-only watchlist
+  membership
+
+Still unchanged by `10W4`:
+
+- existing `watchlists.symbols` JSON/list behavior
+- existing `strategy_report_schedules.payload.symbols` behavior
+- recommendation queue symbol handling
+- schedule execution behavior
+- frontend UI
+- provider-backed symbol search or metadata enrichment
+- live routing or brokerage execution
+
 ## Symbol Discovery Design
 
 Future symbol discovery should provide a research-universe search flow:
@@ -343,7 +371,10 @@ Recommended source-of-truth rule for later implementation:
 
 ## Proposed Future Fields
 
-These are design fields only. They are not implemented in 10W3.
+These began as `10W3` design fields. `10W4` implements the additive schema
+foundation for the core symbol-universe and watchlist-membership fields while
+leaving repository/read-model behavior, backfill, resolver wiring, UI, and
+provider enrichment deferred.
 
 ### `user_symbol_universe`
 
@@ -447,13 +478,16 @@ continue to treat symbols as an input array.
 Recommended staged implementation after this design checkpoint:
 
 1. `10W4` schema/migration foundation:
-   add `user_symbol_universe` and `watchlist_symbols` tables with nullable
-   provider metadata, indexes, and uniqueness constraints. Do not change
-   current routes yet.
+   complete for the current additive table/model/migration slice. It added the
+   new normalized tables, indexes, uniqueness constraints, nullable provider
+   metadata, and schema tests without changing current routes, recommendation
+   generation, or schedule execution.
 2. Backfill helper:
-   create optional, idempotent backfill from existing `watchlists.symbols` into
-   user universe rows and watchlist memberships. Manual symbols should use
-   `metadata_status=manual` or `metadata_unavailable`.
+   deferred. Create an optional, idempotent backfill from existing
+   `watchlists.symbols` into user universe rows and watchlist memberships only
+   in a later explicitly scoped pass. Manual symbols should use
+   `metadata_status=manual` or `metadata_unavailable` if that field is added
+   later.
 3. Repository read model:
    add repository methods to list, upsert, deactivate, and resolve user symbols
    by current user. Keep `WatchlistRepository` compatibility methods intact.
@@ -472,6 +506,12 @@ Recommended staged implementation after this design checkpoint:
 8. Closure:
    audit old compatibility paths before considering removal of
    `watchlists.symbols` reliance.
+
+Original `10W4` target:
+
+   add `user_symbol_universe` and `watchlist_symbols` tables with nullable
+   provider metadata, indexes, and uniqueness constraints. Do not change
+   current routes yet.
 
 Rollback posture:
 
@@ -574,9 +614,10 @@ Recommended slices:
   complete with this section; design normalized universe tables, backfill,
   compatibility, resolver behavior, and rollback before any migration.
 - `10W4` schema/migration foundation:
-  add normalized tables, indexes, uniqueness constraints, and optional
-  idempotent backfill while keeping old `watchlists.symbols` and schedule
-  payload symbol snapshots working.
+  complete; adds normalized tables, indexes, uniqueness constraints, nullable
+  provider metadata, and focused schema tests while keeping old
+  `watchlists.symbols` and schedule payload symbol snapshots untouched. No
+  backfill was run in this slice.
 - `10W5` repository/read-model and resolver:
   add user-symbol repository methods plus resolver functions that emit current
   symbol arrays and provenance without changing ranking/scoring.
@@ -596,18 +637,18 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Start with `10W4`: schema/migration foundation.
+Next after `10W4`: repository/read-model and resolver.
 
 Why:
 
-- it is the narrowest implementation step after the read-model design
-- it can add nullable tables without changing recommendation or schedule
-  execution behavior
-- it preserves existing `watchlists.symbols` compatibility
-- it can be tested independently before UI or resolver rollout
-- it keeps provider-backed search and metadata enrichment deferred
+- it can start reading the new additive tables without replacing existing
+  watchlist JSON behavior
+- it can emit the same symbol arrays current recommendation and schedule paths
+  already accept
+- it keeps provider-backed search, UI replacement, storage replacement, and
+  metadata enrichment deferred
 
-Do not start with provider-backed symbol search, recommendation/schedule
-selector behavior, or storage replacement. The first implementation should be a
-small migration/read-model foundation with rollback notes and compatibility
-tests.
+Do not start the next slice with provider-backed symbol search,
+recommendation/schedule selector behavior, UI replacement, or storage
+replacement. The next implementation should be a small repository/read-model
+and resolver foundation with compatibility tests.

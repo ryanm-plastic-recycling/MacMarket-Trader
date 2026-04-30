@@ -4,7 +4,19 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from macmarket_trader.domain.time import utc_now
@@ -263,6 +275,80 @@ class WatchlistModel(Base):
     name: Mapped[str] = mapped_column(String(128), index=True)
     symbols: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class UserSymbolUniverseModel(Base):
+    __tablename__ = "user_symbol_universe"
+    __table_args__ = (
+        UniqueConstraint(
+            "app_user_id",
+            "normalized_symbol",
+            name="uq_user_symbol_universe_user_symbol",
+        ),
+        Index("ix_user_symbol_universe_user_active", "app_user_id", "active"),
+        Index("ix_user_symbol_universe_user_asset_type", "app_user_id", "asset_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    normalized_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    asset_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    exchange: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_symbol: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", index=True
+    )
+    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, index=True
+    )
+
+
+class WatchlistSymbolModel(Base):
+    __tablename__ = "watchlist_symbols"
+    __table_args__ = (
+        UniqueConstraint(
+            "watchlist_id",
+            "normalized_symbol",
+            name="uq_watchlist_symbols_watchlist_symbol",
+        ),
+        Index(
+            "ix_watchlist_symbols_watchlist_active_sort",
+            "watchlist_id",
+            "active",
+            "sort_order",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    watchlist_id: Mapped[int] = mapped_column(ForeignKey("watchlists.id"), index=True)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id"), index=True)
+    user_symbol_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user_symbol_universe.id"), nullable=True, index=True
+    )
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    normalized_symbol: Mapped[str] = mapped_column(String(32), index=True)
+    active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", index=True
+    )
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, index=True
+    )
 
 
 class StrategyReportScheduleModel(Base):

@@ -424,6 +424,12 @@ Current status:
   Provider Health, Expected Range, Recommendations, Orders, Analysis, and
   Replay, with focused safety tests for provider readiness and replay payoff
   preview wording. Optional glossary/reference-page work remains deferred.
+- `10W4` is complete for the additive symbol-universe schema/migration
+  foundation. Coverage proves Alembic upgrade/downgrade for
+  `user_symbol_universe` and `watchlist_symbols`, ORM metadata/create_all
+  compatibility, active defaults, nullable provider metadata for manual
+  symbols, unique constraints, snapshot-only watchlist membership without a
+  `user_symbol_id`, and continued existing watchlist/schedule compatibility.
 
 ### 10A safe options UX/operator polish
 
@@ -562,6 +568,25 @@ Current status:
   commission-math, live-routing, broker-execution, symbol-discovery, watchlist,
   or probability behavior changes are expected
 - optional glossary/reference-page rollout remains future work
+
+### 10W4 symbol-universe schema foundation
+
+- Alembic upgrade creates `user_symbol_universe` and `watchlist_symbols`
+- Alembic downgrade removes both new additive tables cleanly
+- ORM metadata/create_all includes the new models
+- manual symbol rows can exist without provider metadata
+- `active` defaults to true on user-symbol and watchlist-membership rows
+- unique `(app_user_id, normalized_symbol)` prevents duplicate canonical
+  symbols per user
+- unique `(watchlist_id, normalized_symbol)` prevents duplicate membership
+  snapshots per watchlist
+- `watchlist_symbols.user_symbol_id` remains nullable so future membership rows
+  can store a symbol snapshot before resolver/backfill wiring exists
+- existing `/user/watchlists` JSON/list behavior remains compatible
+- existing strategy report schedule payload symbols still run
+- no frontend UI, provider search, recommendation generation, schedule
+  execution, equity/options lifecycle, commission, live-routing, or
+  broker-execution behavior changes are expected
 
 ### 10D expiration settlement design checkpoint
 

@@ -12,7 +12,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 210, vitest 182, Playwright 31. tsc clean.
+Tests: pytest 213, vitest 182, Playwright 31. tsc clean.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -58,16 +58,19 @@ across equity Orders and durable paper-options rows. `10C4` is complete for
 compact Analysis and Replay metric-label help. `10C5` is complete for the
 closure audit, tiny safety-copy polish, and docs/test alignment, so the
 explainable metric glossary/tooltips rollout is closed for the current
-in-context scope. `10W1` through `10W3` are complete for symbol/watchlist
-design, current comma-entry workflow cleanup, and schema/read-model planning.
+in-context scope. `10W1` through `10W4` are complete for symbol/watchlist
+design, current comma-entry workflow cleanup, schema/read-model planning, and
+the additive symbol-universe schema/migration foundation.
 Remaining Phase 10 slices stay open.
 The track defines safe near-term options polish, medium-risk design
 checkpoints, and explicitly later execution/crypto work without moving backend
 runtime behavior. Future symbol discovery and watchlist management is now
 tracked as a recommendation-universe workflow item, not trade execution or
 broker routing; the design and schema/read-model checkpoints are now captured
-in `docs/symbol-watchlist-design.md` without changing schema, provider
-behavior, or recommendation generation. Future operator glossary and explainable metric
+in `docs/symbol-watchlist-design.md`, and the `10W4` schema foundation adds
+only additive nullable tables without changing current watchlist JSON behavior,
+schedule payload symbols, provider behavior, frontend UI, or recommendation
+generation. Future operator glossary and explainable metric
 tooltips are now tracked as workflow comprehension polish, not changes to
 scoring, probability modeling, provider behavior, or execution semantics.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
@@ -512,9 +515,10 @@ recommendation, or brokerage behavior.
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
   planning started; `10A1`, `10B1`, `10C1` through `10C5`, and `10W1`
-  through `10W3` complete; broader `10A`, broader `10B`, optional
-  glossary/reference-page work, symbol/watchlist schema/read-model/provider
-  search implementation, and later subphases remain open
+  through `10W4` complete; broader `10A`, broader `10B`, optional
+  glossary/reference-page work, symbol/watchlist repository/read-model,
+  resolver, UI, provider search implementation, and later subphases remain
+  open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -551,6 +555,12 @@ Safe near-term:
   user-scoped symbol universe plus watchlist membership model, compatibility
   snapshots, resolver behavior, migration/backfill strategy, and tests; no
   schema or runtime behavior changed
+- completed `10W4`: additive symbol-universe schema/migration foundation with
+  `user_symbol_universe` and `watchlist_symbols` models/tables, nullable
+  provider metadata, duplicate constraints, indexes, and focused
+  schema/migration tests; no frontend UI, provider search, current watchlist
+  JSON behavior, schedule payload symbol behavior, recommendation generation,
+  or schedule execution behavior changed
 - docs/design checkpoint for operator glossary and explainable metric tooltips
   before any shared component or registry work
 - completed `10C1`: central glossary registry and reusable accessible
@@ -588,9 +598,9 @@ Medium-risk:
 - persisted options recommendations design, before implementation, because it
   must avoid `RecommendationService.generate()` drift and equity behavior
   changes
-- symbol discovery and user-scoped watchlist implementation if it requires new
-  symbol metadata tables, provider search calls, schedule/recommendation
-  universe wiring, or import flows
+- symbol discovery and user-scoped watchlist implementation if it requires
+  repository resolvers, provider search calls, schedule/recommendation
+  universe wiring, UI table workflows, or import flows
 - shared glossary registry and tooltip/popover implementation across Analysis,
   Recommendations, Replay, Orders, Settings, and Provider Health because it
   touches common UI primitives and app-wide wording consistency
@@ -796,7 +806,10 @@ First implementation slice:
   comma-entry cleanup is complete for the existing frontend manual-entry
   surfaces. `10W3` schema/read-model checkpoint is complete as docs-only
   planning for future normalized symbol-universe tables, membership records,
-  resolver behavior, migration/backfill, compatibility, and rollback.
+  resolver behavior, migration/backfill, compatibility, and rollback. `10W4`
+  schema/migration foundation is complete for additive ORM models, Alembic
+  tables, nullable provider metadata fields, indexes, uniqueness constraints,
+  and focused backend tests.
   Existing Phase 10 numbering is preserved: `10D` remains the
   expiration-settlement design checkpoint, so symbol/watchlist work uses a
   workflow-polish `10W` lane unless the roadmap is explicitly renumbered later.
@@ -830,8 +843,8 @@ First implementation slice:
   watchlists or groups rather than raw comma lists, while still allowing manual
   symbol entry when metadata is missing or provider lookup is unavailable.
 - Recommended data-model path:
-  use a compatibility-first `user_symbol_universe` plus `watchlist_symbols`
-  model later. Keep current `watchlists.symbols` snapshots and schedule
+  use the compatibility-first `user_symbol_universe` plus `watchlist_symbols`
+  foundation now added in `10W4`. Keep current `watchlists.symbols` snapshots and schedule
   payload symbols working while adding dedicated user-symbol universe /
   membership read models for duplicate handling, active/inactive state,
   tags/groups, notes, provider/source metadata, and schedule/recommendation
@@ -845,24 +858,25 @@ First implementation slice:
   stay out of docs and UI.
 - Suggested implementation order:
   completed `10W1 design checkpoint` -> completed `10W2 current-state cleanup /
-  comma-entry copy` -> completed `10W3 schema/read-model checkpoint` -> `10W4
-  schema/migration foundation` -> `10W5 repository/read-model and resolver` ->
+  comma-entry copy` -> completed `10W3 schema/read-model checkpoint` ->
+  completed `10W4 schema/migration foundation` -> `10W5 repository/read-model and resolver` ->
   `10W6 user-scoped watchlist table UI` -> `10W7 bulk import/duplicate
   handling` -> `10W8 schedule/recommendation universe selection` -> `10W9
   provider-backed discovery only if separately approved` -> `10W10 closure`.
 - Suggested next implementation slice:
-  `10W4` schema/migration foundation only. Keep provider-backed search,
-  storage replacement, recommendation/schedule selector behavior, and ranking
-  changes deferred.
+  `10W5` repository/read-model and resolver only. Keep provider-backed search,
+  frontend table replacement, recommendation/schedule selector behavior, and
+  ranking changes deferred.
 - Explicitly not complete:
-  schema changes, migrations, provider probes, provider search/fetch behavior,
-  live routing, brokerage execution, recommendation generation changes,
-  schedule execution changes, options execution approval, crypto
-  implementation, or automatic strategy scoring changes.
+  repository/read-model behavior, resolver behavior, frontend UI changes,
+  provider probes, provider search/fetch behavior, live routing, brokerage
+  execution, recommendation generation changes, schedule execution changes,
+  options execution approval, crypto implementation, or automatic strategy
+  scoring changes.
 - Must be tested later:
-  migration table creation, nullable provider metadata, user scoping,
-  normalized duplicate handling, active/inactive filters, watchlist membership,
-  resolver dedupe/order, schedule/recommendation compatibility, safe missing
+  repository reads, resolver dedupe/order, active/inactive filters, watchlist
+  membership behavior beyond the schema layer, schedule/recommendation
+  compatibility, safe missing
   metadata rendering, no provider/live-routing implication, and no change to
   `RecommendationService.generate()` behavior.
 - Rollback/risk notes:
@@ -1349,6 +1363,14 @@ diffs. Notable recent inflection points:
   future tests. No application code, backend behavior, frontend behavior,
   schema, migration, provider search/probes, recommendation generation,
   schedule execution behavior, live routing, or brokerage execution changed.
+- 2026-04-30 - Phase 10W4 complete for the additive symbol-universe
+  schema/migration foundation: `user_symbol_universe` and
+  `watchlist_symbols` now exist as ORM models and Alembic tables with nullable
+  provider metadata, `active` defaults, uniqueness constraints, indexes, and
+  focused schema/migration tests. Existing `watchlists.symbols` JSON/list
+  behavior, strategy schedule payload symbols, recommendation generation,
+  schedule execution, frontend UI, provider search/probes, live routing, and
+  brokerage execution remain unchanged.
 - 2026-04-30 - Future operator glossary and explainable metric tooltips
   roadmap item added: a docs-only planning note now tracks concise
   hover/click/tap metric help, formulas and examples where useful, a shared

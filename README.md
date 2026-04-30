@@ -533,8 +533,11 @@ The codebase should define typed contracts for:
   on Recommendations, Schedules, and current watchlist editing without adding
   provider search, schema, or recommendation behavior. `10W3` documents the
   future schema/read-model plan for user-scoped symbol-universe rows,
-  watchlist membership, compatibility snapshots, and resolver behavior without
-  implementing schema or runtime changes.
+  watchlist membership, compatibility snapshots, and resolver behavior. `10W4`
+  adds the additive symbol-universe schema/migration foundation without
+  changing current watchlist JSON behavior, schedule payload symbols,
+  provider search, frontend UI, recommendation generation, or schedule
+  execution.
   Live routing, real brokerage execution, expiration settlement,
   assignment/exercise automation, persisted options recommendations, and
   crypto implementation remain future work and are not active.
@@ -639,8 +642,8 @@ and eventual recommendation-universe selection from watchlists instead of raw
 comma-separated lists. The design checkpoint is captured in
 `docs/symbol-watchlist-design.md`; it recommends a hybrid path that preserves
 current watchlist compatibility while planning dedicated user-symbol universe
-records and watchlist membership records before any schema or runtime
-implementation. Current manual entry now
+records and watchlist membership records. The additive `10W4` schema
+foundation now exists for those future records, while current manual entry now
 shows clearer separator guidance, parsed uppercase previews, duplicate
 feedback, and ETF/index substitute copy, but remains a temporary manual
 universe until richer watchlist management is implemented. This is
