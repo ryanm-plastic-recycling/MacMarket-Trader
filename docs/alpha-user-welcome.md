@@ -212,9 +212,11 @@ Current symbol and watchlist management is still intentionally simple. You may
 need to know the symbols you want to inspect and, in scheduled-report contexts,
 manage symbol lists manually.
 
-Current manual list entry accepts tickers separated by commas, spaces, or new
-lines, then shows a parsed uppercase preview and duplicate feedback before you
-refresh a Recommendations queue or save a schedule/watchlist list. Use
+Current manual list entry accepts tickers separated by commas, spaces, tabs, or
+new lines, then shows a parsed uppercase preview and duplicate feedback before
+you refresh a Recommendations queue or save a schedule/watchlist list. When
+editing a watchlist, you can replace the saved list or add unique pasted
+symbols to the existing list while keeping existing symbols first. Use
 `SPY` / `QQQ` as ETF substitutes when index data for `SPX` / `NDX` is
 unavailable.
 
@@ -222,8 +224,8 @@ Future roadmap work is planned for better recommendation-universe management:
 
 - search by ticker and company/security name
 - user-scoped watchlists with searchable/sortable tables
-- add/delete individual symbols and bulk add/import
-- duplicate handling and active/inactive symbols
+- add/delete individual symbols and richer import audit
+- active/inactive symbols
 - optional groups such as `Core`, `ETFs`, `Tech`, `Options Candidates`, and
   `Watch Only`
 - provider/source support labels when available
@@ -240,9 +242,10 @@ Design checkpoint status:
 - the recommended future path is a hybrid model: keep current watchlist
   compatibility while designing dedicated user-symbol universe / watchlist
   membership records before any migration
-- the current comma-entry cleanup and current watchlist table polish slices are
-  complete; provider-backed search, normalized symbol-universe production UI,
-  bulk import, and recommendation-universe selectors remain future work
+- the current comma-entry cleanup, current watchlist table polish, and bulk
+  duplicate-handling slices are complete; provider-backed search, normalized
+  symbol-universe production UI, import audit, and recommendation-universe
+  selectors remain future work
 - the schema/read-model checkpoint now recommends a future
   `user_symbol_universe` plus `watchlist_symbols` model while preserving
   current watchlist and schedule symbol snapshots for compatibility
@@ -503,6 +506,10 @@ Current project status, in operator terms:
   search/sort, symbol counts, normalized chips, per-list symbol filtering,
   duplicate feedback, and per-symbol removal using the existing watchlist update
   route while preserving current JSON storage and schedule payload behavior
+- Phase 10W7 complete: watchlist edits now make replace versus add-to-existing
+  explicit for pasted symbols, preserve existing symbols first when merging,
+  append new unique symbols in pasted order, and report duplicates before
+  saving the same current symbol-array shape
 - Future workflow polish added: operator glossary and explainable metric
   tooltips are now started with the `10C1` shared glossary foundation,
   `10C2` Recommendations score/risk-label rollout, `10C3` Orders

@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
+import { mergeManualSymbols, parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
 
 describe("manual symbol entry helpers", () => {
   it("normalizes comma, space, and newline separated symbols", () => {
-    const parsed = parseManualSymbolEntry(" spy, qqq\nAAPL msft ");
+    const parsed = parseManualSymbolEntry(" spy, qqq\nAAPL\tmsft ");
 
     expect(parsed.symbols).toEqual(["SPY", "QQQ", "AAPL", "MSFT"]);
     expect(parsed.duplicateCount).toBe(0);
+  });
+
+  it("merges parsed bulk symbols after existing symbols in deterministic order", () => {
+    const incoming = parseManualSymbolEntry("spy, aapl\naapl\tmsft qqq");
+    const merged = mergeManualSymbols(["SPY", "QQQ"], incoming);
+
+    expect(merged.symbols).toEqual(["SPY", "QQQ", "AAPL", "MSFT"]);
+    expect(merged.addedSymbols).toEqual(["AAPL", "MSFT"]);
+    expect(merged.duplicates).toEqual(["AAPL", "SPY", "QQQ"]);
+    expect(merged.duplicateCount).toBe(3);
   });
 
   it("deduplicates preview symbols while tracking ignored duplicates", () => {
@@ -21,9 +31,10 @@ describe("manual symbol entry helpers", () => {
   it("keeps operator guidance manual and non-executional", () => {
     const copy = JSON.stringify(SYMBOL_ENTRY_HELP_COPY).toLowerCase();
 
-    expect(SYMBOL_ENTRY_HELP_COPY.separators).toContain("commas, spaces, or new lines");
+    expect(SYMBOL_ENTRY_HELP_COPY.separators).toContain("commas, spaces, tabs, or new lines");
     expect(SYMBOL_ENTRY_HELP_COPY.substitutes).toContain("SPY/QQQ");
     expect(SYMBOL_ENTRY_HELP_COPY.temporaryUniverse).toContain("temporary manual universe");
+    expect(SYMBOL_ENTRY_HELP_COPY.providerDiscoveryDeferred).toContain("deferred");
     expect(copy).not.toContain("live trading");
     expect(copy).not.toContain("broker routing");
     expect(copy).not.toContain("execution approval");

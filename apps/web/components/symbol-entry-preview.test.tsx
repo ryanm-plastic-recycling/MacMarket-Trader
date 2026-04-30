@@ -19,6 +19,7 @@ describe("SymbolEntryPreview", () => {
     expect(html).toContain("Parsed symbols:");
     expect(html).toContain("SPY, QQQ");
     expect(html).toContain("2 symbols - 1 duplicate ignored");
+    expect(html).toContain("Blank separators ignored.");
     expect(html).toContain("Duplicate ignored: SPY");
     expect(html).not.toContain("null");
     expect(html).not.toContain("undefined");

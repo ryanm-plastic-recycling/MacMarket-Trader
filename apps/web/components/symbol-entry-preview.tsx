@@ -15,6 +15,7 @@ export function SymbolEntryPreview({ parsed }: SymbolEntryPreviewProps) {
     >
       <div><strong>Parsed symbols:</strong> {formatParsedSymbols(parsed)}</div>
       <div>{formatParsedSymbolCount(parsed)}</div>
+      <div>Blank separators ignored.</div>
       {parsed.duplicateCount ? (
         <div>Duplicate ignored: {parsed.duplicates.join(", ")}</div>
       ) : null}

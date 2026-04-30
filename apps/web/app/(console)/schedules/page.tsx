@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { SymbolEntryPreview } from "@/components/symbol-entry-preview";
 import { fetchWorkflowApi } from "@/lib/api-client";
-import { parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
+import { mergeManualSymbols, parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
 import type { MarketMode } from "@/lib/strategy-registry";
 
 function toRelativeTime(dateStr: string | undefined | null): string {
@@ -149,6 +149,7 @@ type RunDetail = {
 
 type Watchlist = { id: number; name: string; symbols: string[]; created_at: string };
 type WatchlistSort = "name" | "symbol_count";
+type WatchlistSaveMode = "replace" | "merge";
 
 function formatDateOrDash(value: string | undefined | null): string {
   if (!value) return "—";
@@ -213,6 +214,7 @@ export default function SchedulesPage() {
   const [wlName, setWlName] = useState("My Watchlist");
   const [wlSymbols, setWlSymbols] = useState("");
   const [editingWlId, setEditingWlId] = useState<number | null>(null);
+  const [watchlistSaveMode, setWatchlistSaveMode] = useState<WatchlistSaveMode>("replace");
   const [wlFeedback, setWlFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [watchlistQuery, setWatchlistQuery] = useState("");
   const [watchlistSort, setWatchlistSort] = useState<WatchlistSort>("name");
@@ -224,6 +226,17 @@ export default function SchedulesPage() {
   const [runDetailFeedback, setRunDetailFeedback] = useState<{ state: "idle" | "loading" | "error"; message: string }>({ state: "idle", message: "" });
   const parsedScheduleSymbols = useMemo(() => parseManualSymbolEntry(symbols), [symbols]);
   const parsedWatchlistSymbols = useMemo(() => parseManualSymbolEntry(wlSymbols), [wlSymbols]);
+  const editingWatchlist = useMemo(
+    () => watchlists.find((wl) => wl.id === editingWlId) ?? null,
+    [editingWlId, watchlists],
+  );
+  const mergedWatchlistSymbols = useMemo(
+    () => editingWatchlist ? mergeManualSymbols(editingWatchlist.symbols, parsedWatchlistSymbols) : null,
+    [editingWatchlist, parsedWatchlistSymbols],
+  );
+  const watchlistSubmitSymbols = editingWatchlist && watchlistSaveMode === "merge" && mergedWatchlistSymbols
+    ? mergedWatchlistSymbols.symbols
+    : parsedWatchlistSymbols.symbols;
   const visibleWatchlists = useMemo(() => {
     const query = watchlistQuery.trim().toUpperCase();
     const rowsWithSymbols = watchlists.map((wl) => {
@@ -269,7 +282,7 @@ export default function SchedulesPage() {
     setWlFeedback({ state: "loading", message: "Saving..." });
     const body = {
       name: wlName.trim() || "My Watchlist",
-      symbols: parsedWatchlistSymbols.symbols,
+      symbols: watchlistSubmitSymbols,
     };
     const url = editingWlId ? `/api/user/watchlists/${editingWlId}` : "/api/user/watchlists";
     const result = await fetchWorkflowApi(url, {
@@ -280,6 +293,7 @@ export default function SchedulesPage() {
     if (!result.ok) { setWlFeedback({ state: "error", message: result.error ?? "Save failed" }); return; }
     setWlFeedback({ state: "success", message: editingWlId ? "Watchlist updated" : "Watchlist created" });
     setEditingWlId(null);
+    setWatchlistSaveMode("replace");
     setWlName("My Watchlist");
     setWlSymbols("");
     await loadWatchlists();
@@ -319,6 +333,7 @@ export default function SchedulesPage() {
 
   function startEditWatchlist(wl: Watchlist) {
     setEditingWlId(wl.id);
+    setWatchlistSaveMode("replace");
     setWlName(wl.name);
     setWlSymbols(wl.symbols.join(","));
   }
@@ -540,15 +555,57 @@ export default function SchedulesPage() {
           </label>
           <button onClick={() => void saveWatchlist()}>{editingWlId ? "Update" : "Create"}</button>
           {editingWlId && (
-            <button onClick={() => { setEditingWlId(null); setWlName("My Watchlist"); setWlSymbols(""); }}>
+            <button onClick={() => { setEditingWlId(null); setWatchlistSaveMode("replace"); setWlName("My Watchlist"); setWlSymbols(""); }}>
               Cancel
             </button>
           )}
         </div>
+        {editingWlId ? (
+          <div style={{ marginTop: 8 }}>
+            <div className="op-row" role="radiogroup" aria-label="Watchlist save mode" style={{ flexWrap: "wrap" }}>
+              <label>
+                <input
+                  type="radio"
+                  name="watchlist-save-mode"
+                  value="replace"
+                  checked={watchlistSaveMode === "replace"}
+                  onChange={() => setWatchlistSaveMode("replace")}
+                />
+                &nbsp;Replace current symbols
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="watchlist-save-mode"
+                  value="merge"
+                  checked={watchlistSaveMode === "merge"}
+                  onChange={() => setWatchlistSaveMode("merge")}
+                />
+                &nbsp;Add to existing symbols
+              </label>
+            </div>
+            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem", lineHeight: 1.45 }}>
+              {watchlistSaveMode === "merge" && mergedWatchlistSymbols ? (
+                <>
+                  <div><strong>Merged preview:</strong> {mergedWatchlistSymbols.symbols.length ? mergedWatchlistSymbols.symbols.join(", ") : "—"}</div>
+                  <div>
+                    {mergedWatchlistSymbols.symbols.length} symbols · {mergedWatchlistSymbols.addedSymbols.length} new · {mergedWatchlistSymbols.duplicateCount} duplicate{mergedWatchlistSymbols.duplicateCount === 1 ? "" : "s"} ignored
+                  </div>
+                  {mergedWatchlistSymbols.duplicates.length ? (
+                    <div>Merge duplicates ignored: {mergedWatchlistSymbols.duplicates.join(", ")}</div>
+                  ) : null}
+                </>
+              ) : (
+                <div>Replace mode: saving overwrites the saved symbol array with the parsed preview below.</div>
+              )}
+            </div>
+          </div>
+        ) : null}
         <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
           <div>{SYMBOL_ENTRY_HELP_COPY.separators}</div>
           <div>{SYMBOL_ENTRY_HELP_COPY.example}</div>
           <div>{SYMBOL_ENTRY_HELP_COPY.substitutes}</div>
+          <div>{SYMBOL_ENTRY_HELP_COPY.providerDiscoveryDeferred}</div>
           <div>Research universe only; watchlists organize symbols for scans and do not send orders.</div>
           <div>Provider metadata may be unavailable; manual symbols can still be saved.</div>
           <div>{SYMBOL_ENTRY_HELP_COPY.futureWatchlists}</div>

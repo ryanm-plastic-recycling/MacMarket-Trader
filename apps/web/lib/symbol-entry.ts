@@ -5,12 +5,20 @@ export type ParsedManualSymbols = {
   duplicateCount: number;
 };
 
+export type MergedManualSymbols = {
+  symbols: string[];
+  addedSymbols: string[];
+  duplicates: string[];
+  duplicateCount: number;
+};
+
 export const SYMBOL_ENTRY_HELP_COPY = {
-  separators: "Enter tickers separated by commas, spaces, or new lines.",
+  separators: "Enter tickers separated by commas, spaces, tabs, or new lines.",
   example: "Example: SPY, QQQ, AAPL, MSFT",
   substitutes: "Use SPY/QQQ as ETF substitutes when index data for SPX/NDX is unavailable.",
   temporaryUniverse: "This is a temporary manual universe until watchlist management is implemented.",
-  futureWatchlists: "Future watchlist management will add search, filters, active/inactive symbols, tags, and bulk import.",
+  futureWatchlists: "Future watchlist management will add provider-backed discovery, active/inactive symbols, tags, and recommendation-universe selectors.",
+  providerDiscoveryDeferred: "Future provider-backed discovery remains deferred.",
   singleSymbolHint: "Use ticker symbols such as SPY, QQQ, AAPL. Index symbols such as SPX may require index data access.",
 } as const;
 
@@ -50,4 +58,31 @@ export function formatParsedSymbolCount(parsed: ParsedManualSymbols): string {
   if (!parsed.duplicateCount) return symbolLabel;
   const duplicateLabel = `${parsed.duplicateCount} duplicate${parsed.duplicateCount === 1 ? "" : "s"} ignored`;
   return `${symbolLabel} - ${duplicateLabel}`;
+}
+
+export function mergeManualSymbols(existingSymbols: string[], incoming: ParsedManualSymbols): MergedManualSymbols {
+  const existing = parseManualSymbolEntry(existingSymbols.join(",")).symbols;
+  const symbols = [...existing];
+  const seen = new Set(existing);
+  const duplicateSet = new Set<string>(incoming.duplicates);
+  let duplicateCount = incoming.duplicateCount;
+  const addedSymbols: string[] = [];
+
+  for (const symbol of incoming.symbols) {
+    if (seen.has(symbol)) {
+      duplicateSet.add(symbol);
+      duplicateCount += 1;
+      continue;
+    }
+    seen.add(symbol);
+    symbols.push(symbol);
+    addedSymbols.push(symbol);
+  }
+
+  return {
+    symbols,
+    addedSymbols,
+    duplicates: Array.from(duplicateSet),
+    duplicateCount,
+  };
 }

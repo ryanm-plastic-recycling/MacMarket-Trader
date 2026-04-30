@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 describe("schedules manual symbol entry cleanup", () => {
   it("adds helper copy and parsed previews to schedule and watchlist symbol entry", () => {
     expect(source).toContain('import { SymbolEntryPreview } from "@/components/symbol-entry-preview";');
-    expect(source).toContain('import { parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";');
+    expect(source).toContain('import { mergeManualSymbols, parseManualSymbolEntry, SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";');
     expect(source).toContain("const parsedScheduleSymbols = useMemo(() => parseManualSymbolEntry(symbols), [symbols]);");
     expect(source).toContain("const parsedWatchlistSymbols = useMemo(() => parseManualSymbolEntry(wlSymbols), [wlSymbols]);");
     expect(source).toContain("<span>Symbols to evaluate</span>");
@@ -15,7 +15,7 @@ describe("schedules manual symbol entry cleanup", () => {
     expect(source).toContain("<SymbolEntryPreview parsed={parsedScheduleSymbols} />");
     expect(source).toContain("<SymbolEntryPreview parsed={parsedWatchlistSymbols} />");
     expect(source).toContain("symbols: parsedScheduleSymbols.symbols");
-    expect(source).toContain("symbols: parsedWatchlistSymbols.symbols");
+    expect(source).toContain("symbols: watchlistSubmitSymbols");
   });
 
   it("does not add provider search or execution language to schedules", () => {
@@ -23,6 +23,36 @@ describe("schedules manual symbol entry cleanup", () => {
     expect(source).not.toContain("broker routing");
     expect(source).not.toContain("live trading");
     expect(source).not.toContain("execution approval");
+  });
+});
+
+describe("watchlist bulk import and duplicate handling", () => {
+  it("adds explicit replace and merge modes for editing existing watchlists", () => {
+    expect(source).toContain('type WatchlistSaveMode = "replace" | "merge";');
+    expect(source).toContain('const [watchlistSaveMode, setWatchlistSaveMode] = useState<WatchlistSaveMode>("replace");');
+    expect(source).toContain('role="radiogroup" aria-label="Watchlist save mode"');
+    expect(source).toContain("Replace current symbols");
+    expect(source).toContain("Add to existing symbols");
+    expect(source).toContain("Replace mode: saving overwrites the saved symbol array with the parsed preview below.");
+  });
+
+  it("merges bulk pasted symbols client-side while preserving existing order", () => {
+    expect(source).toContain("const editingWatchlist = useMemo(");
+    expect(source).toContain("mergeManualSymbols(editingWatchlist.symbols, parsedWatchlistSymbols)");
+    expect(source).toContain("const watchlistSubmitSymbols = editingWatchlist && watchlistSaveMode === \"merge\" && mergedWatchlistSymbols");
+    expect(source).toContain("? mergedWatchlistSymbols.symbols");
+    expect(source).toContain(": parsedWatchlistSymbols.symbols");
+    expect(source).toContain("<strong>Merged preview:</strong>");
+    expect(source).toContain("Merge duplicates ignored:");
+  });
+
+  it("keeps bulk import guidance provider-free and compatible with existing updates", () => {
+    expect(source).toContain("SYMBOL_ENTRY_HELP_COPY.providerDiscoveryDeferred");
+    expect(source).toContain("SYMBOL_ENTRY_HELP_COPY.substitutes");
+    expect(source).toContain("body: JSON.stringify(body)");
+    expect(source).not.toContain("provider-backed symbol search");
+    expect(source).not.toContain("broker execution");
+    expect(source).not.toContain("live trading");
   });
 });
 

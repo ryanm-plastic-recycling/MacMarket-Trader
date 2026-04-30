@@ -7,7 +7,7 @@ Last updated: 2026-04-30
 This document started as a design checkpoint for better user-scoped symbol
 discovery, watchlist management, and recommendation-universe selection. It now
 also tracks the completed additive schema, internal repository/resolver
-foundation, and current watchlist UI polish slices.
+foundation, current watchlist UI polish, and bulk symbol handling slices.
 
 It does not implement symbol search, change recommendation generation, add
 provider probes, change current schedule execution, or imply live trading /
@@ -39,8 +39,9 @@ Current symbol entry is intentionally simple:
   shows a Watchlists card where users enter a watchlist name plus a manual
   symbol list, review the same parsed preview, search/sort saved lists, inspect
   normalized symbol chips/counts, filter symbols inside a list, remove an
-  individual chip through the existing update route, then apply the saved list
-  back into the schedule symbol field.
+  individual chip through the existing update route, choose replace versus
+  add-to-existing behavior when editing, review a merged preview with duplicate
+  feedback, then apply the saved list back into the schedule symbol field.
 - Scheduled runs:
   `StrategyReportService.run_schedule()` reads `symbols` from the schedule
   payload, fetches bars per symbol, and passes a `bars_by_symbol` map into
@@ -63,7 +64,7 @@ Current scoping:
 - The current frontend Watchlists card edits one name plus one manual symbol
   field, then saves the parsed `symbols` array, can apply a saved list back into
   the schedule form, and now has a small management table around the same
-  compatibility data.
+  compatibility data plus client-side merge/replace handling for pasted symbols.
 - Schedule payload symbols are copied into each schedule payload rather than
   linked to a watchlist row.
 - `strategy_report_schedules.payload.symbols` is the execution-time symbol
@@ -82,8 +83,9 @@ Current limitations:
 - Users must already know symbols.
 - Names, asset types, exchanges, provider support, options eligibility, and
   index/ETF substitution guidance are not first-class watchlist fields.
-- Duplicate handling has a parser-preview warning in current manual-entry and
-  watchlist editing flows; richer bulk import and audit remain deferred.
+- Duplicate handling has parser-preview and merge-preview warnings in current
+  manual-entry and watchlist editing flows; richer import audit remains
+  deferred.
 - There is no active/inactive symbol status.
 - There are no tags/groups, notes, import audit, or per-symbol update
   timestamps.
@@ -214,6 +216,40 @@ Still unchanged by `10W6`:
 - schedule execution behavior
 - provider-backed symbol search or metadata enrichment
 - bulk import / import audit
+- active/inactive symbol state, tags/groups, and notes in production UI
+- live routing or brokerage execution
+
+## 10W7 Bulk Import and Duplicate-handling Polish
+
+Status: complete for the current frontend-only compatibility scope.
+
+Implemented now:
+
+- manual symbol entry copy explicitly supports commas, spaces, tabs, and new
+  lines
+- parsed previews continue to show normalized uppercase symbols, symbol counts,
+  duplicate counts, duplicate symbols, and safe blank-separator handling before
+  save/update
+- editing an existing watchlist now has explicit `Replace current symbols` and
+  `Add to existing symbols` modes
+- replace mode saves the parsed preview as the replacement `symbols` array
+- merge mode keeps existing symbols first, appends newly pasted unique symbols
+  in pasted order, and reports duplicates ignored from both the pasted text and
+  existing list
+- the merge/replace logic remains client-side and still submits the same
+  `symbols` array through the existing watchlist `PUT` route
+- provider-backed discovery remains explicitly deferred, and current copy keeps
+  SPX/NDX versus SPY/QQQ guidance visible
+
+Still unchanged by `10W7`:
+
+- existing `watchlists.symbols` JSON/list persistence
+- normalized `user_symbol_universe` / `watchlist_symbols` production UI usage
+- existing `strategy_report_schedules.payload.symbols` behavior
+- recommendation queue symbol handling
+- schedule execution behavior
+- provider-backed symbol search or metadata enrichment
+- import files, CSV parsing, or import audit trails
 - active/inactive symbol state, tags/groups, and notes in production UI
 - live routing or brokerage execution
 
@@ -698,7 +734,9 @@ Recommended slices:
   normalized chips, per-list symbol filtering, duplicate feedback, and
   per-symbol removal while keeping existing `watchlists.symbols` JSON behavior.
 - `10W7` bulk import and duplicate handling:
-  paste/import workflow with deterministic duplicate feedback.
+  complete for current compatibility UI; adds tab/new-line bulk paste clarity,
+  merge/replace edit modes, merged preview, deterministic existing-first order,
+  and duplicate feedback while preserving existing watchlist JSON behavior.
 - `10W8` recommendation/schedule universe selection:
   resolve watchlists, tags/groups, exclusions, pinned symbols, and temporary
   manual symbols into current symbol arrays.
@@ -710,18 +748,22 @@ Recommended slices:
 
 ## Suggested Next Implementation Slice
 
-Next after `10W6`: bulk import and duplicate handling, if explicitly
-authorized.
+Next after `10W7`: recommendation/schedule universe selection design or
+implementation, if explicitly authorized.
 
 Why:
 
-- current manual entry and saved-list management are easier to inspect
-- bulk paste/import can build on the existing parser preview without provider
-  search or recommendation/schedule selector behavior
-- it keeps provider-backed search, storage replacement, normalized table
-  production UI, and ranking/schedule behavior changes deferred
+- current manual entry, saved-list management, and merge/replace bulk paste are
+  easier to inspect
+- the next useful operator step is choosing watchlists or temporary manual
+  symbols as a recommendation/schedule universe while still resolving to the
+  current symbol-array shape
+- provider-backed search, storage replacement, normalized table production UI,
+  and ranking/schedule behavior changes can remain deferred until explicitly
+  scoped
 
 Do not start the next slice with provider-backed symbol search,
-recommendation/schedule selector behavior, storage replacement, normalized
-symbol-universe production UI, or ranking changes. The next implementation
-should be a small import/dedupe UX slice around the current manual parser.
+storage replacement, normalized symbol-universe production UI, or ranking
+changes. The next implementation should be a small universe-selection slice
+that resolves into the current symbol arrays without changing recommendation
+generation or schedule execution.
