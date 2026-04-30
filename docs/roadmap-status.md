@@ -41,14 +41,15 @@ visibility. Phase 9C is complete for the current provider/source/as-of parity
 scope across Analysis, Recommendations, Orders durable paper-options rows,
 Provider Health, and operator guidance using existing payload fields only.
 Phase 9D is complete for the current Recommendations Expected Range
-visualization scope. Analysis integration, future provider-depth, live
-routing, expiration settlement, assignment/exercise, and probability modeling
-remain deferred. Phase 9 is closed for the current options operator parity,
-source/as-of, and Expected Range visualization scope.
-Phase 10 planning is now open as a documentation-first deferred-work
-sequencing track. It defines safe near-term options polish, medium-risk
-design checkpoints, and explicitly later execution/crypto work without moving
-any runtime behavior.
+visualization scope. Analysis integration later landed in `10A1`; future
+provider-depth, live routing, expiration settlement, assignment/exercise, and
+probability modeling remain deferred. Phase 9 is closed for the current
+options operator parity, source/as-of, and Expected Range visualization scope.
+Phase 10 planning is now open as a deferred-work sequencing track. `10A1` is
+complete for the frontend-only Analysis Expected Range visualization reuse;
+remaining Phase 10 slices stay open. The track defines safe near-term options
+polish, medium-risk design checkpoints, and explicitly later execution/crypto
+work without moving backend runtime behavior.
 Phase 8 options hardening micro-pass preserved the scoped paper-only options
 boundary and recorded that CLAUDE.md test context is now aligned to the
 current vitest 160 count,
@@ -490,7 +491,8 @@ recommendation, or brokerage behavior.
 
 ### Phase 10 - Deferred-work planning and safe options polish
 - Status:
-  planning started; implementation not started
+  planning started; `10A1` complete; broader `10A` and later subphases remain
+  open
 - Theme:
   organize remaining options/provider/crypto work into explicit risk bands and
   safe future slices before any higher-risk lifecycle, persistence, brokerage,
@@ -506,8 +508,8 @@ recommendation, or brokerage behavior.
 
 Safe near-term:
 
-- optional Analysis Expected Range visualization using the existing reusable
-  component and existing setup payload fields only
+- completed `10A1`: optional Analysis Expected Range visualization using the
+  existing reusable component and existing setup payload fields only
 - replay payoff visualization polish that remains read-only/non-persisted and
   does not change payoff math
 - Orders dashboard polish for existing durable option positions/trades using
@@ -569,13 +571,19 @@ Explicitly later / not now:
   hide or remove the frontend component/copy; no data migration or backend
   rollback should be required
 
-Recommended first implementation slice:
+First implementation slice:
 
 - `10A1` optional Analysis Expected Range visualization. Reuse
   `ExpectedRangeVisualization` in Analysis options mode with existing
   `expected_range`, structure breakeven, expiration/DTE, source/as-of, and
   risk fields only. Keep it compact, read-only, and explicitly labeled as
   research context that does not change payoff math or approve execution.
+- `10A1` status:
+  complete for the current frontend-only slice. Analysis now reuses the
+  existing Expected Range visualization component in options mode, including
+  computed and unavailable expected-range states, without adding backend
+  behavior, schema changes, provider probes, lifecycle actions, or payoff/math
+  changes.
 
 #### 10B - Orders dashboard parity for durable options rows
 
@@ -975,13 +983,21 @@ diffs. Notable recent inflection points:
 - 2026-04-30 - Phase 10 planning move complete: roadmap now treats Phase 10 as
   a documentation-first sequencing and safe-polish track for deferred options,
   provider-depth, replay/history, settlement-design, and crypto-architecture
-  work. The recommended first implementation slice is `10A1`, an optional
+  work. The initially recommended first implementation slice was `10A1`, an optional
   Analysis Expected Range visualization using existing payload fields and the
   existing reusable component only. Live routing, real brokerage execution,
   expiration settlement implementation, assignment/exercise automation, naked
   shorts, persisted options recommendations, options replay persistence,
   probability/margin modeling, and crypto implementation remain explicitly
   later/not-now.
+- 2026-04-30 - Phase 10A1 complete: Analysis options setup now reuses the
+  existing Expected Range visualization component with current setup payload
+  fields only. The slice stayed frontend-only and keeps Expected Range as
+  research context that does not change payoff math or approve execution.
+  Backend behavior, schema, provider probes, lifecycle math, commission math,
+  equity behavior, recommendation generation, live routing, settlement,
+  assignment/exercise, naked-short support, probability modeling, and crypto
+  implementation remain unchanged.
 - 2026-04-29 — Phase 7A/7B complete for current equity/paper scope:
   commission-aware gross/net realized paper P&L, per-user commission
   settings, replay/order/open-position fee previews, orders/settings UI

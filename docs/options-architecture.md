@@ -36,8 +36,10 @@ Current planning state:
   capability
 - Phase 9 is also closed for the current options operator parity,
   provider/source/as-of, and Recommendations Expected Range visualization
-  scope; remaining provider-depth, Analysis visualization, replay placement,
-  settlement, assignment/exercise, and live routing work stays deferred
+  scope; Phase 10A1 later added the same reusable Expected Range
+  visualization to Analysis using existing fields only, while remaining
+  provider-depth, replay placement, settlement, assignment/exercise, and live
+  routing work stays deferred
 
 ## Current repo anchors
 
@@ -312,6 +314,8 @@ Current implementation note:
   Phase 9 adds durable Orders visibility, source/as-of parity, and a compact
   Recommendations Expected Range visualization without changing backend,
   provider, lifecycle, commission, equity, payoff, or recommendation math
+- Phase 10A1 reuses that Expected Range visualization on Analysis in options
+  mode with current setup payload fields only
 - Phase 10 now organizes the remaining deferred work into safe near-term
   polish, medium-risk design checkpoints, and explicitly later implementation
   tracks before any settlement, assignment/exercise, routing, probability,
@@ -328,7 +332,7 @@ Current implementation note:
 - covered calls that require inventory/assignment modeling
 - mark-to-market parity and Greek-driven valuation
 - live routing or brokerage execution
-- optional Analysis Expected Range visualization and richer replay placement
+- richer replay placement and broader options UX polish beyond 10A1
 - future provider-depth or live-probe work
 
 ## Companion documents

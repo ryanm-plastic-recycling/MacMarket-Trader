@@ -410,6 +410,8 @@ Current project status, in operator terms:
 - Phase 10 planning started: remaining options/provider/crypto work is being
   organized into safe polish, design checkpoints, and explicitly later
   implementation tracks
+- Phase 10A1 complete: Analysis now includes the compact Expected Range
+  visualization for options research setups using existing setup fields only
 
 Current options boundary:
 
@@ -421,11 +423,9 @@ Current options boundary:
 - current scoped Phase 8 paper-first options capability is complete
 - current scoped Phase 9 operator parity and Expected Range visualization
   capability is complete
-- Phase 10 does not enable new runtime behavior yet; its safest first
-  recommended slice is optional Analysis Expected Range visualization using
-  existing fields only
+- Phase 10 does not enable backend runtime behavior; `10A1` adds the optional
+  Analysis Expected Range visualization using existing fields only
 - expiration settlement is still deferred
-- Analysis Expected Range visualization integration is still optional/future
 - richer options dashboard depth is still deferred
 - persisted options recommendations, options replay persistence,
   assignment/exercise automation, naked shorts, probability/margin modeling,

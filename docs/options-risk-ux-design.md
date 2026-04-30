@@ -65,12 +65,12 @@ Current implementation note:
   inside Recommendations `Structure risk`, using existing payload fields only
   and keeping Expected Range explicitly research-only
 - `9D` is now closed for the current Recommendations Expected Range
-  visualization scope; optional Analysis integration and deeper provider/visual
-  depth remain future work
+  visualization scope; Analysis integration later landed in `10A1`, while
+  deeper provider/visual depth remains future work
 - Phase 9 is now closed for the current options operator parity,
   provider/source/as-of, and Recommendations Expected Range visualization
   scope
-- Phase 10 is the next planning/polish track. The safest UX-first slice is
+- Phase 10 is the current planning/polish track. `10A1` is complete for the
   optional Analysis Expected Range visualization using existing payload fields
   and the current reusable component only. Orders polish and replay/payoff
   visualization polish remain safe only while they stay read-only, paper-only,
@@ -245,15 +245,15 @@ Recommended implementation slices:
 - `9D2` reusable Expected Range visualization component using existing fields
   only, with first Recommendations `Structure risk` integration: complete
 - `9D` closure audit for current Recommendations scope: complete
-- optional Analysis integration, richer replay placement, and provider-depth
-  polish remain future work only if explicitly reopened
+- Analysis integration moved to `10A1`; richer replay placement and
+  provider-depth polish remain future work only if explicitly reopened
 
 Phase 10 UX planning:
 
-- `10A1` should be the first safe implementation slice if Phase 10 moves from
-  planning to code: reuse `ExpectedRangeVisualization` on Analysis in options
-  mode with existing `expected_range`, expiration/DTE, breakeven, source/as-of,
-  and risk fields only
+- `10A1` is complete for the current frontend-only slice:
+  `ExpectedRangeVisualization` is reused on Analysis in options mode with
+  existing `expected_range`, expiration/DTE, breakeven, source/as-of, and risk
+  fields only
 - keep the Analysis placement compact and below existing expected-range/source
   context so it reads as research context, not as a new signal or approval
 - do not add probability-of-profit, settlement, assignment/exercise,
@@ -472,10 +472,8 @@ Current closure status:
   provider/source/as-of, and Recommendations Expected Range visualization
   scope
 - Phase 10 is open for planning and safe polish only; `10A1` optional Analysis
-  Expected Range visualization is the recommended first implementation slice
-  if explicitly requested later
-- optional Analysis integration and deeper replay/provider visualization remain
-  deferred
+  Expected Range visualization is complete for the current frontend-only slice
+- deeper replay/provider visualization remains deferred
 - `8F` is now complete for the current scoped paper-first options capability
 - full live-routing, settlement, assignment/exercise, and broader Orders
   parity remain explicitly outside this scope

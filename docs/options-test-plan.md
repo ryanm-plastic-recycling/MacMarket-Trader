@@ -325,8 +325,8 @@ Planning note:
 - Phase 9 is now closed for the current options operator parity,
   provider/source/as-of, and Recommendations Expected Range visualization
   scope
-- optional Analysis integration, richer replay placement, and provider-depth
-  polish remain future work only if explicitly reopened
+- Analysis integration moved to `10A1`; richer replay placement and
+  provider-depth polish remain future work only if explicitly reopened
 
 ### 9B current tests — durable operator visibility
 
@@ -379,15 +379,21 @@ Planning note:
   routing, and trade-signal claims
 - closure coverage confirms derived range-midpoint copy does not imply an
   actual current/reference price when the payload does not carry one
-- remaining future coverage should follow optional Analysis integration,
-  richer replay placement, or provider-depth work only if those scopes are
-  explicitly reopened
+- remaining future coverage should follow richer replay placement or
+  provider-depth work only if those scopes are explicitly reopened
 
 ## Phase 10 planned test areas
 
 Phase 10 is planning/polish first. Tests should scale to the risk of the
 specific slice and continue to prove equity behavior and current options
 lifecycle behavior did not move.
+
+Current status:
+
+- `10A1` is complete for the frontend-only Analysis Expected Range
+  visualization reuse. Coverage stays focused on Analysis wiring/copy plus the
+  reusable component's existing computed, blocked, missing, invalid-number, and
+  safety-copy render tests.
 
 ### 10A safe options UX/operator polish
 

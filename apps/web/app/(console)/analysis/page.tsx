@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge } from "@/components/operator-ui";
 import { WorkflowChart } from "@/components/charts/workflow-chart";
+import { ExpectedRangeVisualization } from "@/components/options/expected-range-visualization";
 import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { isE2EAuthBypassEnabled } from "@/lib/e2e-auth";
@@ -296,6 +297,11 @@ export default function Page() {
     expectedRange && (expectedRange.horizon_value != null || expectedRange.horizon_unit)
       ? `${formatResearchValue(expectedRange.horizon_value)} ${formatResearchValue(expectedRange.horizon_unit)}`.trim()
       : "Unavailable";
+  const optionStructureBreakevens = optionStructure
+    ? [optionStructure.breakeven_low, optionStructure.breakeven_high].filter(
+      (value): value is number => typeof value === "number" && Number.isFinite(value),
+    )
+    : [];
 
   return <section className="op-stack">
     <PageHeader title="Trade Setup" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
@@ -419,15 +425,38 @@ export default function Page() {
             {expectedRange.reason ? <div><strong>Reason:</strong> {expectedRange.reason}</div> : null}
             <div>{formatExpectedMoveSummary(expectedRange)}</div>
             {appliedMarketMode === "options" ? (
-              <div style={{ marginTop: 6, fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>
-                Expected range is research context only. It does not change expiration payoff math or enable execution.
+              <div style={{ marginTop: 10 }}>
+                <ExpectedRangeVisualization
+                  expectedRange={expectedRange}
+                  breakevens={optionStructureBreakevens}
+                  expiration={optionStructure?.expiration ?? null}
+                  dte={optionStructure?.dte ?? null}
+                  maxProfit={optionStructure?.max_profit ?? null}
+                  maxLoss={optionStructure?.max_loss ?? null}
+                  workflowSource={setup?.workflow_source ?? source}
+                />
               </div>
             ) : null}
           </>
         ) : (
-          <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
-            Expected move data unavailable for this setup. Source unavailable. As-of unavailable.
-          </div>
+          <>
+            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
+              Expected move data unavailable for this setup. Source unavailable. As-of unavailable.
+            </div>
+            {appliedMarketMode === "options" ? (
+              <div style={{ marginTop: 10 }}>
+                <ExpectedRangeVisualization
+                  expectedRange={null}
+                  breakevens={optionStructureBreakevens}
+                  expiration={optionStructure?.expiration ?? null}
+                  dte={optionStructure?.dte ?? null}
+                  maxProfit={optionStructure?.max_profit ?? null}
+                  maxLoss={optionStructure?.max_loss ?? null}
+                  workflowSource={setup?.workflow_source ?? source}
+                />
+              </div>
+            ) : null}
+          </>
         )}
       </Card>
     </div>

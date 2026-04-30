@@ -177,7 +177,7 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 
 ## Current Phase Status
 
-**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; live/broker execution is not active.**
+**CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; 10A1 is complete for Analysis Expected Range visualization reuse; live/broker execution is not active.**
 
 Tests (2026-04-30): pytest 210, vitest 160, Playwright 31 (all passing, 0 skipped). tsc clean.
 
@@ -190,7 +190,7 @@ Phase 6 + Pass 4 ships the full Analyze → Recommendation → Replay → Paper 
 ## Open Items (Phase 10 planning/polish is next)
 
 ### Phase 10 — Deferred-work planning and safe options polish (NEXT)
-Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. Recommended first implementation slice is frontend-only `10A1`: optional Analysis Expected Range visualization using existing payload fields and the existing reusable component.
+Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. `10A1` is complete for frontend-only Analysis Expected Range visualization using existing payload fields and the existing reusable component; broader `10A` work remains open.
 
 ### Later execution phase — Alpaca paper integration (NOT ACTIVE)
 Wire `BROKER_PROVIDER=alpaca` only after a later explicit execution phase. Keys are configured in deployed `.env`, and scaffold exists in `src/macmarket_trader/execution/`, but real brokerage routing/execution remains disabled. Fill polling via CLI `poll-alpaca-fills` is not active.
@@ -202,7 +202,7 @@ Closed for the current equity paper-readiness scope. `gross_pnl` / `net_pnl`, pe
 Closed for the current scoped paper-first options capability: research preview, read-only/non-persisted payoff preview, supported defined-risk paper open/manual-close lifecycle, contract-commission net P&L, and Recommendations operator risk UX. Expiration settlement, assignment/exercise automation, persisted options recommendations, and live routing remain deferred.
 
 ### Phase 9 — Options operator parity and data-quality hardening
-Closed for the current scope: durable paper-options Orders visibility, provider/source/as-of parity across the current options surfaces, and the Recommendations Expected Range visualization. Optional Analysis visualization, richer replay placement, provider-depth probes, and live routing remain future work only if explicitly reopened.
+Closed for the current scope: durable paper-options Orders visibility, provider/source/as-of parity across the current options surfaces, and the Recommendations Expected Range visualization. Analysis visualization later landed in `10A1`; richer replay placement, provider-depth probes, and live routing remain future work only if explicitly reopened.
 
 ### Future crypto implementation
 Phase 10F may plan crypto architecture only. Crypto implementation, crypto paper execution, and crypto-specific provider wiring remain later work.
