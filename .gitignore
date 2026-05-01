@@ -87,3 +87,6 @@ macmarket_trader.db-journal
 .pytest_cache/
 __pycache__/
 *.pyc
+
+# Claude Code worktrees
+.claude/worktrees/
