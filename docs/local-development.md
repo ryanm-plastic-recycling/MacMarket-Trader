@@ -30,8 +30,9 @@ Polygon is the recommended path for real bar data. The free Starter tier provide
 2. In your `.env` file set:
    ```
    POLYGON_ENABLED=true
-   POLYGON_API_KEY=your_key_here
+   POLYGON_API_KEY=
    ```
+   Paste your key only into your local `.env`; do not commit it.
 3. Restart the backend: `python -m uvicorn macmarket_trader.api.main:app --reload --port 9510`
 
 **What changes in the UI when live data is active:**
@@ -77,7 +78,7 @@ To enable OpenAI-backed explanation and Opportunity Intelligence memos, set:
 LLM_ENABLED=true
 LLM_PROVIDER=openai
 LLM_MODEL=gpt-5.1
-OPENAI_API_KEY=your_openai_key_here
+OPENAI_API_KEY=
 LLM_TIMEOUT_SECONDS=20
 LLM_MAX_OUTPUT_TOKENS=1200
 LLM_TEMPERATURE=0.2

@@ -139,8 +139,8 @@ Open `C:\Dashboard\MacMarket-Trader\apps\web\.env.local` and update:
 
 ```
 # Switch to production Clerk keys
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_YOUR_KEY_HERE
-CLERK_SECRET_KEY=sk_live_YOUR_SECRET_HERE
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
 
 # Keep this pointing to backend on localhost
 BACKEND_API_ORIGIN=http://127.0.0.1:9510
@@ -155,16 +155,16 @@ AUTH_PROVIDER=clerk
 # Get these from your production Clerk dashboard → API Keys → JWKS URL
 CLERK_JWT_ISSUER=https://clerk.macmarket.io
 CLERK_JWKS_URL=https://clerk.macmarket.io/.well-known/jwks.json
-CLERK_SECRET_KEY=sk_live_YOUR_SECRET_HERE
+CLERK_SECRET_KEY=
 
 # Add your domain to CORS
 CORS_ALLOWED_ORIGINS=https://macmarket.io
 
 # Keep existing settings
 EMAIL_PROVIDER=resend
-RESEND_API_KEY=re_YOUR_KEY
+RESEND_API_KEY=
 POLYGON_ENABLED=true
-POLYGON_API_KEY=YOUR_POLYGON_KEY
+POLYGON_API_KEY=
 ```
 
 > The CLERK_JWT_ISSUER URL format for production instances is different from dev.

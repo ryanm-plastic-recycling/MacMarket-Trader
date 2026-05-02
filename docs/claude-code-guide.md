@@ -120,8 +120,9 @@ MARKET_DATA_ENABLED=false
 
 **`C:\Dashboard\MacMarket-Trader\apps\web\.env.local` (minimum for local testing):**
 ```
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...   ← your Clerk key
-CLERK_SECRET_KEY=sk_test_...                     ← your Clerk secret
+# Paste your Clerk key and secret locally; do not commit real values.
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
 BACKEND_API_ORIGIN=http://127.0.0.1:9510
 ```
 
