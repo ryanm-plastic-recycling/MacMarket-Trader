@@ -118,6 +118,18 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("Risk calendar requires explicit handling before promotion");
   });
 
+  it("renders already-open paper position awareness without auto scale-in language", () => {
+    expect(source).toContain("Already open");
+    expect(source).toContain("Review position");
+    expect(source).toContain("Review existing paper position");
+    expect(source).toContain("Additional paper order would increase exposure");
+    expect(source).toContain("management candidate for an existing paper position");
+    expect(source).toContain("active_review_action_classification");
+    expect(source).toContain("open_position_quantity");
+    expect(source).not.toContain("Scale in now");
+    expect(source).not.toContain("Auto close");
+  });
+
   it("keeps score and confidence glossary copy away from probability or execution claims", () => {
     const confidenceCopy = JSON.stringify(GLOSSARY_TERMS.confidence).toLowerCase();
     const scoreCopy = JSON.stringify(GLOSSARY_TERMS.score).toLowerCase();

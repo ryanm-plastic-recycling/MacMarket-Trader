@@ -768,6 +768,12 @@ def risk_calendar_today(symbol: str = "SPY", timeframe: str = "1D", _user=Depend
 @user_router.get("/recommendations")
 def list_recommendations(_user=Depends(require_approved_user)):
     rows = recommendation_repo.list_recent(app_user_id=_user.id)
+    already_open_by_symbol = _open_paper_position_context_by_symbol(
+        app_user_id=_user.id,
+        user=_user,
+        recent_rows=rows,
+        include_review=True,
+    )
     return [
         {
             "id": row.id,
@@ -778,6 +784,7 @@ def list_recommendations(_user=Depends(require_approved_user)):
             "payload": row.payload,
             "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
             "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
+            **_already_open_context(row.symbol, already_open_by_symbol),
         }
         for row in rows
     ]
@@ -992,6 +999,11 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
         timeframe=timeframe,
         top_n=int(req.get("top_n") or 10),
     )
+    already_open_by_symbol = _open_paper_position_context_by_symbol(
+        app_user_id=_user.id,
+        user=_user,
+        include_review=True,
+    )
     for item in ranking["queue"]:
         item_metadata = session_metadata_by_symbol.get(str(item.get("symbol") or "").upper(), {})
         if item_metadata:
@@ -1017,6 +1029,7 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
                 item["status"] = risk.decision.decision_state
                 item["rejection_reason"] = risk.decision.block_reason or risk.decision.warning_summary
         item["recommendation_id"] = _queue_candidate_id(item)
+        item.update(_already_open_context(symbol, already_open_by_symbol))
     return {
         "market_mode": market_mode.value,
         "timeframe": timeframe,
@@ -1106,6 +1119,11 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
 
     persisted = recommendation_repo.get_by_recommendation_uid(rec.recommendation_id)
     workflow = (persisted.payload or {}).get("workflow", {}) if persisted else {}
+    already_open_by_symbol = _open_paper_position_context_by_symbol(
+        app_user_id=_user.id,
+        user=_user,
+        include_review=True,
+    )
     return {
         "id": persisted.id if persisted else None,
         "recommendation_id": rec.recommendation_id,
@@ -1117,6 +1135,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         "fallback_mode": bool(workflow.get("fallback_mode", fallback_mode)),
         "ranking_provenance": workflow.get("ranking_provenance", ranking_provenance),
         "approved": rec.approved,
+        **_already_open_context(rec.symbol, already_open_by_symbol),
     }
 
 
@@ -1171,6 +1190,11 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
             },
         },
     )
+    already_open_by_symbol = _open_paper_position_context_by_symbol(
+        app_user_id=_user.id,
+        user=_user,
+        include_review=True,
+    )
     return {
         "id": rec.recommendation_id,
         "recommendation_id": rec.recommendation_id,
@@ -1181,6 +1205,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         "market_data_source": source,
         "fallback_mode": fallback_mode,
         "session_policy": session_metadata.get("session_policy"),
+        **_already_open_context(rec.symbol, already_open_by_symbol),
     }
 
 
@@ -1189,6 +1214,11 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
     row = recommendation_repo.get_by_id(recommendation_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    already_open_by_symbol = _open_paper_position_context_by_symbol(
+        app_user_id=_user.id,
+        user=_user,
+        include_review=True,
+    )
     return {
         "id": row.id,
         "created_at": row.created_at,
@@ -1198,6 +1228,7 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
         "payload": row.payload,
         "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
         "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
+        **_already_open_context(row.symbol, already_open_by_symbol),
     }
 
 
@@ -2153,6 +2184,74 @@ def _build_position_review(position, *, app_user_id: int, user, recent_rows: lis
             "reviewed_at": _iso_or_none(now),
         },
     }
+
+
+def _already_open_default_context() -> dict[str, object]:
+    return {
+        "already_open": False,
+        "open_position_id": None,
+        "open_position_quantity": None,
+        "open_position_average_entry": None,
+        "active_review_action_classification": None,
+        "active_review_summary": None,
+        "open_position_review_path": "/orders#active-position-review",
+    }
+
+
+def _already_open_context(symbol: object, open_context_by_symbol: dict[str, dict[str, object]]) -> dict[str, object]:
+    normalized = str(symbol or "").upper()
+    context = open_context_by_symbol.get(normalized)
+    if context is None:
+        return _already_open_default_context()
+    return {**_already_open_default_context(), **context}
+
+
+def _open_paper_position_context_by_symbol(
+    *,
+    app_user_id: int,
+    user,
+    recent_rows: list | None = None,
+    include_review: bool = True,
+) -> dict[str, dict[str, object]]:
+    rows = paper_portfolio_repo.list_positions(app_user_id=app_user_id, status="open", limit=100)
+    if not rows:
+        return {}
+
+    review_rows = recent_rows
+    if include_review and review_rows is None:
+        review_rows = recommendation_repo.list_recent(limit=100, app_user_id=app_user_id)
+    now = utc_now()
+    context_by_symbol: dict[str, dict[str, object]] = {}
+    for position in rows:
+        symbol = str(position.symbol or "").upper()
+        if not symbol or symbol in context_by_symbol:
+            continue
+        quantity = _finite_float(position.remaining_qty if position.remaining_qty is not None else position.quantity)
+        average_entry = _finite_float(position.average_price)
+        context: dict[str, object] = {
+            "already_open": True,
+            "open_position_id": position.id,
+            "open_position_quantity": quantity,
+            "open_position_average_entry": average_entry,
+            "active_review_action_classification": None,
+            "active_review_summary": None,
+            "open_position_review_path": "/orders#active-position-review",
+        }
+        if include_review:
+            try:
+                review = _build_position_review(
+                    position,
+                    app_user_id=app_user_id,
+                    user=user,
+                    recent_rows=review_rows or [],
+                    now=now,
+                )
+            except Exception:
+                review = {}
+            context["active_review_action_classification"] = review.get("action_classification")
+            context["active_review_summary"] = review.get("action_summary")
+        context_by_symbol[symbol] = context
+    return context_by_symbol
 
 
 @user_router.get("/paper-positions/review")

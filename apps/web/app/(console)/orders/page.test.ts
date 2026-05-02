@@ -35,6 +35,13 @@ describe("orders metric help rollout", () => {
     expect(source).toContain("stop / targets");
     expect(source).toContain("risk calendar");
     expect(source).toContain("Already open");
+    expect(source).toContain("Review existing paper position");
+    expect(source).toContain("Additional paper order would increase exposure");
+    expect(source).toContain("Existing quantity");
+    expect(source).toContain("New order quantity");
+    expect(source).toContain("Combined quantity");
+    expect(source).toContain("Combined estimated notional");
+    expect(source).toContain('id="active-position-review"');
     expect(source).toContain("review_unavailable");
     expect(source).toContain("Close position");
     expect(source).not.toContain("Auto close");

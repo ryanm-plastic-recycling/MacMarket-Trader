@@ -2,6 +2,24 @@
 
 Last updated: 2026-05-02
 
+## 2026-05-02 Update - Already-Open Recommendation Awareness
+Phase 7E active paper position management now extends into Recommendations and
+the ranked queue. User-scoped recommendation list/detail responses, ranked
+queue candidates, queue promotion responses, and generation responses attach
+open equity paper position context when the same symbol is already open:
+`already_open`, open position id/quantity/average entry, optional active review
+classification/summary, and a review path back to Orders. This is response
+decoration only; recommendation ranking, entry/stop/target/sizing math,
+promotion, approval, replay, and paper-order creation behavior are unchanged.
+
+Recommendations now badges already-held queue and persisted rows as `Already
+open`, links to Active Position Review, and warns that additional paper orders
+would increase exposure. Orders shows the same warning in guided paper-order
+staging when a selected recommendation is already open, including existing/new
+quantity and combined estimated notional when available. This remains
+equity-only, review-only, paper-only, with no live trading, broker routing,
+automatic close, automatic scale-in, or automatic order creation.
+
 ## 2026-05-02 Update - Provider Health Semantics
 Provider Health now separates provider configuration from live probe results
 with explicit `config_state` and `probe_state` fields. The operator UI no
@@ -341,9 +359,13 @@ route orders.
   `scale_in_candidate`, `invalidated`, and `review_unavailable`, with stable
   precedence documented in the design file.
 - Recommendation handling:
-  if a ranked recommendation symbol is already held in an open paper position,
-  the operator surface should show `Already open` / `Active position review`
-  state instead of presenting the setup as a totally new trade by default.
+  implemented for current Recommendations and ranked queue surfaces. If a
+  ranked recommendation or persisted recommendation symbol is already held in
+  an open equity paper position, the backend attaches `already_open`,
+  open-position id/quantity/average entry, optional active-review
+  classification/summary, and an Orders review path. The operator surface shows
+  `Already open` / `Review position` state instead of presenting the setup as a
+  totally new trade by default.
 - Scale-in guardrail:
   scale-in may be recommended only through explicit deterministic risk rules
   and must never silently average into a position without clear UI messaging

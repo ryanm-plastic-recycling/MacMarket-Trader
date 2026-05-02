@@ -38,6 +38,13 @@ export type QueueCandidate = {
     };
   } | null;
   rejection_reason?: string | null;
+  already_open?: boolean;
+  open_position_id?: number | null;
+  open_position_quantity?: number | null;
+  open_position_average_entry?: number | null;
+  active_review_action_classification?: string | null;
+  active_review_summary?: string | null;
+  open_position_review_path?: string | null;
 };
 
 export type StoredRecommendation = {
@@ -53,6 +60,13 @@ export type StoredRecommendation = {
   payload: Record<string, unknown>;
   market_data_source?: string;
   fallback_mode?: boolean;
+  already_open?: boolean;
+  open_position_id?: number | null;
+  open_position_quantity?: number | null;
+  open_position_average_entry?: number | null;
+  active_review_action_classification?: string | null;
+  active_review_summary?: string | null;
+  open_position_review_path?: string | null;
 };
 
 export type RecommendationSearchPrefill = {

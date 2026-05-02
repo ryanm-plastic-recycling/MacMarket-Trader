@@ -146,6 +146,13 @@ type RecommendationRow = {
     invalidation?: { price?: number };
     risk_calendar?: RiskCalendarPayload | null;
   };
+  already_open?: boolean;
+  open_position_id?: number | null;
+  open_position_quantity?: number | null;
+  open_position_average_entry?: number | null;
+  active_review_action_classification?: string | null;
+  active_review_summary?: string | null;
+  open_position_review_path?: string | null;
 };
 type RiskCalendarPayload = {
   decision?: {
@@ -172,6 +179,17 @@ type OrderSizingPreview = {
   notionalCapShares: number;
   capReduced: boolean;
 };
+
+type RecommendationOpenContext = Pick<
+  RecommendationRow,
+  | "already_open"
+  | "open_position_id"
+  | "open_position_quantity"
+  | "open_position_average_entry"
+  | "active_review_action_classification"
+  | "active_review_summary"
+  | "open_position_review_path"
+>;
 
 const CLOSE_REASONS = ["Target hit", "Stop hit", "Manual exit", "Time exit", "Other"] as const;
 
@@ -294,6 +312,7 @@ export default function Page() {
   const [trades, setTrades] = useState<PaperTrade[]>([]);
   const [paperSettings, setPaperSettings] = useState<UserPaperSettings | null>(null);
   const [recommendationPayloadMap, setRecommendationPayloadMap] = useState<Record<string, RecommendationRow["payload"]>>({});
+  const [recommendationOpenContextMap, setRecommendationOpenContextMap] = useState<Record<string, RecommendationOpenContext>>({});
   const [orderSharesInput, setOrderSharesInput] = useState("");
   const [riskCalendarConfirmed, setRiskCalendarConfirmed] = useState(false);
   const [riskCalendarOverrideReason, setRiskCalendarOverrideReason] = useState("");
@@ -352,6 +371,25 @@ export default function Page() {
   const activeRiskCalendar = activeRecommendationId
     ? recommendationPayloadMap[activeRecommendationId]?.risk_calendar ?? null
     : selected?.risk_calendar ?? null;
+  const activeOpenContext = activeRecommendationId
+    ? recommendationOpenContextMap[activeRecommendationId] ?? null
+    : null;
+  const activeExposurePreview = activeOpenContext?.already_open && orderSizingPreview
+      ? {
+        existingQuantity: activeOpenContext.open_position_quantity ?? null,
+        newQuantity: orderSizingPreview.finalOrderShares,
+        newNotional: orderSizingPreview.finalOrderShares * orderSizingPreview.limitPrice,
+        combinedQuantity:
+          activeOpenContext.open_position_quantity != null
+            ? activeOpenContext.open_position_quantity + orderSizingPreview.finalOrderShares
+            : null,
+        combinedEstimatedNotional:
+          activeOpenContext.open_position_quantity != null && activeOpenContext.open_position_average_entry != null
+            ? activeOpenContext.open_position_quantity * activeOpenContext.open_position_average_entry
+              + orderSizingPreview.finalOrderShares * orderSizingPreview.limitPrice
+            : null,
+      }
+    : null;
 
   // Phase 6 close-out follow-up — Section 4: in guided mode only, pulse the
   // Stage CTA when no order exists for the active rec/replay; calm
@@ -737,10 +775,23 @@ export default function Page() {
       }
       setDisplayIdMap(map);
       const payloads: Record<string, RecommendationRow["payload"]> = {};
+      const openContexts: Record<string, RecommendationOpenContext> = {};
       for (const item of r.items as RecommendationRow[]) {
         if (item.recommendation_id) payloads[item.recommendation_id] = item.payload;
+        if (item.recommendation_id) {
+          openContexts[item.recommendation_id] = {
+            already_open: item.already_open,
+            open_position_id: item.open_position_id,
+            open_position_quantity: item.open_position_quantity,
+            open_position_average_entry: item.open_position_average_entry,
+            active_review_action_classification: item.active_review_action_classification,
+            active_review_summary: item.active_review_summary,
+            open_position_review_path: item.open_position_review_path,
+          };
+        }
       }
       setRecommendationPayloadMap(payloads);
+      setRecommendationOpenContextMap(openContexts);
     });
   }, [authReady]);
 
@@ -935,6 +986,28 @@ export default function Page() {
                 ) : null}
               </div>
             ) : null}
+            {activeOpenContext?.already_open ? (
+              <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-warn, #f2a03f)", borderRadius: 8, color: "var(--op-warn, #f2a03f)" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <StatusBadge tone="warn">Already open</StatusBadge>
+                  <Link href={activeOpenContext.open_position_review_path || "/orders#active-position-review"}>Review existing paper position</Link>
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  Additional paper order would increase exposure.
+                </div>
+                {activeExposurePreview ? (
+                  <div className="op-grid-4" style={{ marginTop: 6 }}>
+                    <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Existing quantity</div><strong>{activeExposurePreview.existingQuantity ?? "Unavailable"}</strong></div>
+                    <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>New order quantity</div><strong>{activeExposurePreview.newQuantity}</strong></div>
+                    <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Combined quantity</div><strong>{activeExposurePreview.combinedQuantity ?? "Unavailable"}</strong></div>
+                    <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Combined estimated notional</div><strong>{activeExposurePreview.combinedEstimatedNotional != null ? formatDollars(activeExposurePreview.combinedEstimatedNotional) : "Unavailable"}</strong></div>
+                  </div>
+                ) : null}
+                {activeOpenContext.active_review_summary ? (
+                  <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)" }}>{activeOpenContext.active_review_summary}</div>
+                ) : null}
+              </div>
+            ) : null}
             {replayOutcome ? (
               <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
                 <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only round trip (entry + exit)</div>
@@ -1015,6 +1088,7 @@ export default function Page() {
     <Card><div className="op-row"><button className={orderDoneForRec ? "op-btn op-btn-secondary" : "op-btn-primary-cta op-btn-pulse"} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : orderDoneForRec ? "Stage another →" : "Stage paper order now →"}</button><button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh order history"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} /></Card>
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
 
+    <div id="active-position-review">
     <Card title="Active Position Review">
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
         <StatusBadge tone="neutral">Review only</StatusBadge>
@@ -1101,6 +1175,7 @@ export default function Page() {
         </div>
       )}
     </Card>
+    </div>
 
     <Card title="Open paper positions">
       {positions.length === 0 ? (

@@ -116,6 +116,56 @@ function riskTone(risk?: RiskCalendarPayload | null): "good" | "warn" | "bad" | 
   return decision.allow_new_entries ? "warn" : "bad";
 }
 
+type AlreadyOpenContext = {
+  already_open?: boolean;
+  open_position_id?: number | null;
+  open_position_quantity?: number | null;
+  open_position_average_entry?: number | null;
+  active_review_action_classification?: string | null;
+  active_review_summary?: string | null;
+  open_position_review_path?: string | null;
+};
+
+function reviewPath(item: AlreadyOpenContext): string {
+  return item.open_position_review_path || "/orders#active-position-review";
+}
+
+function AlreadyOpenBadge({ item }: { item: AlreadyOpenContext }) {
+  if (!item.already_open) return null;
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 3 }}>
+      <StatusBadge tone="warn">Already open</StatusBadge>
+      <Link href={reviewPath(item)} onClick={(event) => event.stopPropagation()} style={{ fontSize: "0.78rem" }}>
+        Review position
+      </Link>
+      {item.active_review_action_classification ? (
+        <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+          {item.active_review_action_classification.replace(/_/g, " ")}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function AlreadyOpenNotice({ item }: { item: AlreadyOpenContext }) {
+  if (!item.already_open) return null;
+  return (
+    <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-warn, #f2a03f)", borderRadius: 8, color: "var(--op-warn, #f2a03f)" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <StatusBadge tone="warn">Already open</StatusBadge>
+        <Link href={reviewPath(item)}>Review existing paper position</Link>
+      </div>
+      <div style={{ marginTop: 6 }}>
+        Additional paper order would increase exposure
+        {item.open_position_quantity != null ? ` from ${item.open_position_quantity} current shares` : ""}.
+      </div>
+      {item.active_review_summary ? (
+        <div style={{ marginTop: 4, color: "var(--op-muted, #7a8999)" }}>{item.active_review_summary}</div>
+      ) : null}
+    </div>
+  );
+}
+
 type RecLevels = { entryLow: number | null; entryHigh: number | null; stop: number | null; target1: number | null; target2: number | null };
 type AIExplanationPayload = {
   summary?: string;
@@ -1167,7 +1217,10 @@ export default function RecommendationsPage() {
                         />
                       </td>
                       <td>{row.rank}</td>
-                      <td>{row.symbol}</td>
+                      <td>
+                        <strong>{row.symbol}</strong>
+                        <AlreadyOpenBadge item={row} />
+                      </td>
                       <td>{row.strategy}</td>
                       <td><StatusBadge tone={statusTone}>{row.status.replace(/_/g, " ")}</StatusBadge></td>
                       <td>
@@ -1226,7 +1279,10 @@ export default function RecommendationsPage() {
                         />
                       </td>
                       <td>{formatDate(row.created_at)}</td>
-                      <td>{row.symbol}</td>
+                      <td>
+                        <strong>{row.symbol}</strong>
+                        <AlreadyOpenBadge item={row} />
+                      </td>
                       <td>{strategy}</td>
                       <td>{rank}</td>
                       <td>{approved == null ? "-" : approved ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>}</td>
@@ -1249,6 +1305,7 @@ export default function RecommendationsPage() {
             <div className="op-detail-list">
               <div><strong>rank:</strong> {selectedQueue.rank}</div>
               <div><strong>symbol:</strong> {selectedQueue.symbol}</div>
+              <AlreadyOpenNotice item={selectedQueue} />
               <div><strong>strategy:</strong> {selectedQueue.strategy}</div>
               <div><strong>timeframe:</strong> {selectedQueue.timeframe}</div>
               <div><strong>market_mode:</strong> {selectedQueue.market_mode ?? "equities"}</div>
@@ -1300,6 +1357,11 @@ export default function RecommendationsPage() {
                     Risk calendar requires explicit handling before promotion: {selectedQueueRiskDecision?.block_reason ?? selectedQueueRiskDecision?.warning_summary ?? "new entries are blocked."}
                   </div>
                 ) : null}
+                {selectedQueue.already_open ? (
+                  <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)" }}>
+                    Promote stays available for review, but this is a management candidate for an existing paper position, not a brand-new entry.
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
@@ -1324,6 +1386,7 @@ export default function RecommendationsPage() {
               <div className="op-detail-list">
                 {/* Header */}
                 <div><strong>symbol:</strong> {selectedRecommendation.symbol} &nbsp; <strong>created:</strong> {formatDate(selectedRecommendation.created_at)}</div>
+                <AlreadyOpenNotice item={selectedRecommendation} />
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <strong>approved:</strong>
                   {p.approved == null ? <span style={{ color: "var(--op-muted, #7a8999)" }}>—</span> : p.approved ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>}

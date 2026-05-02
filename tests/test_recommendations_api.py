@@ -8,6 +8,7 @@ from macmarket_trader.api.routes import admin as admin_routes
 from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
 from macmarket_trader.domain.models import AppUserModel
 from macmarket_trader.storage.db import SessionLocal, init_db
+from macmarket_trader.storage.repositories import PaperPortfolioRepository
 
 
 def _bars() -> list[dict[str, object]]:
@@ -30,12 +31,26 @@ def setup_module() -> None:
     init_db()
 
 
-def _approve_default_user(client: TestClient) -> None:
+def _approve_default_user(client: TestClient) -> int:
     client.get('/user/me', headers={'Authorization': 'Bearer user-token'})
     with SessionLocal() as session:
         user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
         user.approval_status = 'approved'
         session.commit()
+        return user.id
+
+
+def _seed_open_position(app_user_id: int, *, symbol: str, quantity: float = 12, entry: float = 101.25) -> int:
+    position = PaperPortfolioRepository(SessionLocal).create_position(
+        app_user_id=app_user_id,
+        symbol=symbol,
+        side="long",
+        quantity=quantity,
+        average_price=entry,
+        recommendation_id=None,
+        order_id=f"test-{symbol.lower()}-open",
+    )
+    return position.id
 
 
 def test_recommendations_generate_contract() -> None:
@@ -175,6 +190,8 @@ def test_user_ranked_recommendation_queue_contract() -> None:
     ]:
         assert key in first
     assert first["recommendation_id"].startswith("queue:")
+    assert first["already_open"] is False
+    assert first["open_position_id"] is None
     assert first["risk_calendar"]["decision"]["decision_state"] in {
         "normal",
         "caution",
@@ -208,6 +225,40 @@ def test_user_ranked_recommendation_queue_uses_requested_timeframe(monkeypatch) 
     assert response.json()["queue"][0]["session_policy"] == "regular_hours"
     assert response.json()["queue"][0]["data_quality"]["source_timeframe"] == "1H"
     assert calls == [("GOOG", "1H", 120)]
+
+
+def test_user_ranked_queue_marks_already_open_symbol_without_changing_rank_or_score() -> None:
+    client = TestClient(app)
+    user_id = _approve_default_user(client)
+    baseline = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["GOOG", "MSFT"], "timeframe": "1D", "market_mode": "equities", "top_n": 10},
+    )
+    assert baseline.status_code == 200
+    baseline_goog = next(item for item in baseline.json()["queue"] if item["symbol"] == "GOOG")
+
+    position_id = _seed_open_position(user_id, symbol="GOOG", quantity=14, entry=102.5)
+    response = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["GOOG", "MSFT"], "timeframe": "1D", "market_mode": "equities", "top_n": 10},
+    )
+
+    assert response.status_code == 200
+    queue = response.json()["queue"]
+    goog = next(item for item in queue if item["symbol"] == "GOOG" and item["strategy"] == baseline_goog["strategy"])
+    msft = next(item for item in queue if item["symbol"] == "MSFT")
+    assert goog["already_open"] is True
+    assert goog["open_position_id"] == position_id
+    assert goog["open_position_quantity"] == 14
+    assert goog["open_position_average_entry"] == 102.5
+    assert goog["open_position_review_path"] == "/orders#active-position-review"
+    assert goog["rank"] == baseline_goog["rank"]
+    assert goog["score"] == baseline_goog["score"]
+    assert goog["status"] == baseline_goog["status"]
+    assert msft["already_open"] is False
+    assert msft["open_position_id"] is None
 
 
 def test_user_ranked_queue_candidate_can_be_promoted() -> None:
@@ -247,6 +298,49 @@ def test_user_ranked_queue_candidate_can_be_promoted() -> None:
     assert listing.status_code == 200
     match = next(row for row in listing.json() if row["id"] == promoted["id"])
     assert match["payload"]["workflow"]["ranking_provenance"]["reason_text"] == candidate["reason_text"]
+
+
+def test_stored_recommendation_marks_already_open_symbol_in_list_detail_and_promote() -> None:
+    client = TestClient(app)
+    user_id = _approve_default_user(client)
+    create = client.post(
+        "/user/recommendations/generate",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbol": "GOOG", "event_text": "Operator trigger"},
+    )
+    assert create.status_code == 200
+    rec_id = create.json()["recommendation_id"]
+    position_id = _seed_open_position(user_id, symbol="GOOG", quantity=9, entry=100.0)
+
+    listing = client.get("/user/recommendations", headers={"Authorization": "Bearer user-token"})
+    assert listing.status_code == 200
+    row = next(item for item in listing.json() if item["recommendation_id"] == rec_id)
+    assert row["already_open"] is True
+    assert row["open_position_id"] == position_id
+    assert row["open_position_quantity"] == 9
+    assert row["open_position_average_entry"] == 100.0
+
+    detail = client.get(f"/user/recommendations/{row['id']}", headers={"Authorization": "Bearer user-token"})
+    assert detail.status_code == 200
+    assert detail.json()["already_open"] is True
+    assert detail.json()["open_position_id"] == position_id
+
+    queue = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["GOOG"], "market_mode": "equities", "top_n": 1},
+    )
+    assert queue.status_code == 200
+    promote = client.post(
+        "/user/recommendations/queue/promote",
+        headers={"Authorization": "Bearer user-token"},
+        json=queue.json()["queue"][0],
+    )
+    assert promote.status_code == 200
+    promoted = promote.json()
+    assert promoted["already_open"] is True
+    assert promoted["open_position_id"] == position_id
+    assert "order_id" not in promoted
 
 
 def test_promoted_recommendation_provenance_timeframe_matches_bars_used(monkeypatch) -> None:

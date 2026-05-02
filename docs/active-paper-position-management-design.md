@@ -9,6 +9,17 @@ per open equity paper position, and the Next.js proxy
 Review section. This first implementation remains review-only and does not
 create, close, stage, route, or scale any position automatically.
 
+Follow-up implementation note, 2026-05-02:
+Recommendations and ranked queue payloads now include already-open awareness
+for current-user open equity paper positions. Ranked queue candidates,
+persisted recommendation list/detail rows, queue promotion responses, and
+generation responses attach `already_open`, `open_position_id`,
+`open_position_quantity`, `open_position_average_entry`, optional
+`active_review_action_classification`, optional `active_review_summary`, and
+`open_position_review_path` when the symbol is already open. This is response
+decoration only; ranking, entry/stop/target/sizing math, approval, replay, and
+paper-order creation are unchanged.
+
 This design covers the gap between manual paper position close/reopen support
 and a full operator-grade review loop for open paper equity positions. The
 current system can stage/fill paper orders, create open paper positions, close
@@ -139,6 +150,23 @@ setup as a totally new trade by default.
 The operator can still inspect the setup, but the primary action should route
 to position review. A new order or scale-in path should require explicit
 confirmation and risk-rule approval.
+
+Current implementation:
+
+- `GET /user/recommendations`, `GET /user/recommendations/{id}`,
+  `POST /user/recommendations/queue`,
+  `POST /user/recommendations/queue/promote`, and
+  `POST /user/recommendations/generate` attach already-open fields for matching
+  open equity paper position symbols.
+- The ranked queue and persisted recommendation rows show an `Already open`
+  badge plus `Review position` link to `/orders#active-position-review`.
+- Queue and persisted detail panels describe the candidate as an existing paper
+  position review context when already open.
+- The guided Orders paper ticket warns that additional paper order staging would
+  increase exposure and shows existing/new/combined quantity and combined
+  estimated notional when available.
+- No automatic scale-in, automatic close, broker routing, live trading,
+  recommendation scoring change, or paper-order sizing change is introduced.
 
 ## Scale-In Guardrails
 
@@ -272,6 +300,8 @@ Classification precedence is:
   and provenance.
 - Current ranking context uses recent persisted recommendation/ranking
   provenance; a richer durable "current queue" snapshot remains future work.
+- Already-open awareness uses current open equity paper positions by symbol and
+  does not alter ranking, approval, sizing, promotion, or staging behavior.
 - LLM position-review copy is deferred. Deterministic logic owns the action
   classification.
 - Options position review is deferred to a separate options-aware shape.
