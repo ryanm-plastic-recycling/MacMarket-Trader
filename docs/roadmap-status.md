@@ -125,6 +125,14 @@ workflow bars now honor the selected timeframe. This remains paper-only and
 does not add broker routing, live trading, or day-trading automation. Future
 regular-hours-only filtering for provider intraday aggregate bars remains a
 separate market-data policy hardening item.
+Paper equity order sizing usability hardening is complete for the current
+paper-only sandbox: recommendation sizing continues to use risk-at-stop, paper
+order staging now applies an explicit per-user max-notional cap, optional
+operator share overrides are bounded by deterministic recommendation size and
+the notional cap, and current-user paper sandbox reset controls delete only
+equity paper orders/fills/positions/trades while preserving recommendations,
+replay runs, settings, watchlists, provider config, options-paper rows, and
+paper-only/no-live-trading boundaries.
 
 ## Completed Phases
 
@@ -292,6 +300,34 @@ separate market-data policy hardening item.
   live trading support, brokerage routing, real broker execution, automated
   close orders, schema changes, equity behavior changes, options behavior
   changes, or frontend UI in this docs-only pass.
+
+### Phase 7F - Paper equity order sizing usability + sandbox cleanup
+- Complete for current equity/paper sandbox scope:
+  `risk_dollars_per_trade` is clarified as risk budget at stop / max loss at
+  invalidation, not a generic trade amount or max order notional.
+- Complete for current equity/paper sandbox scope:
+  per-user `paper_max_order_notional` is stored on `app_users`, exposed through
+  `/user/me` and `/user/settings`, and defaults to `$1000` for private-alpha
+  demo safety.
+- Complete for current equity/paper sandbox scope:
+  paper equity order staging preserves the original recommendation sizing while
+  persisting/filling final shares after `risk_and_notional_capped` sizing.
+- Complete for current equity/paper sandbox scope:
+  optional `override_shares` may reduce the staged order but cannot exceed the
+  deterministic recommendation shares, the max-notional cap, or existing
+  recommendation/risk constraints.
+- Complete for current equity/paper sandbox scope:
+  Orders surfaces show recommended shares, editable order shares, estimated
+  notional, risk at stop, max paper order notional, cap-reduction warnings, and
+  practical notional values on paper order/position/trade rows.
+- Complete for current equity/paper sandbox scope:
+  `POST /user/paper/reset` and the Orders testing tool reset only the current
+  approved user's equity paper orders, fills, positions, and trades, with an
+  audit log count summary.
+- Explicitly not included:
+  live trading support, broker routing, Alpaca implementation, Active Paper
+  Position Management, deterministic entry/stop/target changes, recommendation
+  sizing changes, options-paper deletion, or non-paper records cleanup.
 
 ### Phase 7 Closure Note
 - Phase 7A through 7D are complete for the current equity/paper-readiness

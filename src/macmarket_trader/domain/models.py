@@ -225,6 +225,7 @@ class AppUserModel(Base):
     # Pass 4 — Per-user risk-dollars override. NULL means fall back to
     # settings.risk_dollars_per_trade (env RISK_DOLLARS_PER_TRADE).
     risk_dollars_per_trade: Mapped[float | None] = mapped_column(Float, nullable=True)
+    paper_max_order_notional: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Phase 7 — Per-user commission overrides. NULL means fall back to env
     # defaults in settings.commission_per_trade / commission_per_contract.
     commission_per_trade: Mapped[float | None] = mapped_column(Float, nullable=True)

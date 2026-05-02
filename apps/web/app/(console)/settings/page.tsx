@@ -21,6 +21,8 @@ type UserMe = {
   mfa_enabled: boolean | null;
   risk_dollars_per_trade: number | null;
   risk_dollars_per_trade_default: number | null;
+  paper_max_order_notional: number | null;
+  paper_max_order_notional_default: number | null;
   commission_per_trade: number | null;
   commission_per_trade_default: number | null;
   commission_per_contract: number | null;
@@ -29,6 +31,8 @@ type UserMe = {
 
 const RISK_MIN = 1;
 const RISK_MAX = 50000;
+const PAPER_MAX_NOTIONAL_MIN = 1;
+const PAPER_MAX_NOTIONAL_MAX = 1000000;
 const COMMISSION_PER_TRADE_MIN = 0;
 const COMMISSION_PER_TRADE_MAX = 1000;
 const COMMISSION_PER_CONTRACT_MIN = 0;
@@ -38,6 +42,7 @@ export default function SettingsPage() {
   const [user, setUser] = useState<UserMe | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [riskInput, setRiskInput] = useState<string>("");
+  const [paperMaxNotionalInput, setPaperMaxNotionalInput] = useState<string>("");
   const [commissionPerTradeInput, setCommissionPerTradeInput] = useState<string>("");
   const [commissionPerContractInput, setCommissionPerContractInput] = useState<string>("");
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({
@@ -57,6 +62,8 @@ export default function SettingsPage() {
     setUser(r.data);
     const effective = r.data?.risk_dollars_per_trade ?? r.data?.risk_dollars_per_trade_default ?? 1000;
     setRiskInput(String(Math.round(Number(effective))));
+    const effectivePaperMaxNotional = r.data?.paper_max_order_notional ?? r.data?.paper_max_order_notional_default ?? 1000;
+    setPaperMaxNotionalInput(String(Math.round(Number(effectivePaperMaxNotional))));
     const effectiveCommissionPerTrade = r.data?.commission_per_trade ?? r.data?.commission_per_trade_default ?? 0;
     setCommissionPerTradeInput(String(Number(effectiveCommissionPerTrade).toFixed(2)));
     const effectiveCommissionPerContract = r.data?.commission_per_contract ?? r.data?.commission_per_contract_default ?? 0.65;
@@ -70,10 +77,22 @@ export default function SettingsPage() {
 
   async function saveTradeSettings() {
     const riskValue = Number(riskInput);
+    const paperMaxNotionalValue = Number(paperMaxNotionalInput);
     const commissionPerTradeValue = Number(commissionPerTradeInput);
     const commissionPerContractValue = Number(commissionPerContractInput);
     if (!Number.isFinite(riskValue) || riskValue < RISK_MIN || riskValue > RISK_MAX) {
-      setFeedback({ state: "error", message: `Risk per trade must be between $${RISK_MIN} and $${RISK_MAX}.` });
+      setFeedback({ state: "error", message: `Risk budget at stop must be between $${RISK_MIN} and $${RISK_MAX}.` });
+      return;
+    }
+    if (
+      !Number.isFinite(paperMaxNotionalValue)
+      || paperMaxNotionalValue < PAPER_MAX_NOTIONAL_MIN
+      || paperMaxNotionalValue > PAPER_MAX_NOTIONAL_MAX
+    ) {
+      setFeedback({
+        state: "error",
+        message: `Max paper order notional must be between $${PAPER_MAX_NOTIONAL_MIN} and $${PAPER_MAX_NOTIONAL_MAX}.`,
+      });
       return;
     }
     if (
@@ -102,6 +121,8 @@ export default function SettingsPage() {
     const r = await fetchWorkflowApi<{
       risk_dollars_per_trade: number | null;
       risk_dollars_per_trade_default: number | null;
+      paper_max_order_notional: number | null;
+      paper_max_order_notional_default: number | null;
       commission_per_trade: number | null;
       commission_per_trade_default: number | null;
       commission_per_contract: number | null;
@@ -113,6 +134,7 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           risk_dollars_per_trade: riskValue,
+          paper_max_order_notional: paperMaxNotionalValue,
           commission_per_trade: commissionPerTradeValue,
           commission_per_contract: commissionPerContractValue,
         }),
@@ -129,6 +151,8 @@ export default function SettingsPage() {
 
   const effectiveRisk = user?.risk_dollars_per_trade ?? user?.risk_dollars_per_trade_default ?? null;
   const usingDefaultRisk = user?.risk_dollars_per_trade == null;
+  const effectivePaperMaxNotional = user?.paper_max_order_notional ?? user?.paper_max_order_notional_default ?? null;
+  const usingDefaultPaperMaxNotional = user?.paper_max_order_notional == null;
   const effectiveCommissionPerTrade = user?.commission_per_trade ?? user?.commission_per_trade_default ?? null;
   const usingDefaultCommissionPerTrade = user?.commission_per_trade == null;
   const effectiveCommissionPerContract = user?.commission_per_contract ?? user?.commission_per_contract_default ?? null;
@@ -145,7 +169,7 @@ export default function SettingsPage() {
       <Card title="Trade sizing + fees">
         <div className="op-row">
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>Risk per trade ($)</span>
+            <span>Risk budget at stop ($)</span>
             <input
               type="number"
               min={RISK_MIN}
@@ -153,6 +177,18 @@ export default function SettingsPage() {
               step={1}
               value={riskInput}
               onChange={(e) => setRiskInput(e.target.value)}
+              style={{ width: 140 }}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span>Max paper order notional ($)</span>
+            <input
+              type="number"
+              min={PAPER_MAX_NOTIONAL_MIN}
+              max={PAPER_MAX_NOTIONAL_MAX}
+              step={1}
+              value={paperMaxNotionalInput}
+              onChange={(e) => setPaperMaxNotionalInput(e.target.value)}
               style={{ width: 140 }}
             />
           </label>
@@ -191,7 +227,7 @@ export default function SettingsPage() {
           </button>
         </div>
         <div style={{ marginTop: 8, fontSize: "0.82rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
-          Risk per trade applies to new recommendations only. Equity commission per trade applies to the current equity paper close workflow only.
+          Risk budget at stop is the max loss at invalidation used for recommendation sizing, not a generic trade amount. Max paper order notional caps equity paper staging so demo fills do not silently become oversized positions.
         </div>
         <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--op-border, #1e2d3d)", background: "rgba(18, 28, 40, 0.35)" }}>
           <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>Options commission guardrails</div>
@@ -208,7 +244,12 @@ export default function SettingsPage() {
         <div style={{ marginTop: 10, display: "grid", gap: 4, fontSize: "0.82rem", color: "var(--op-muted, #7a8999)" }}>
           {effectiveRisk != null ? (
             <div>
-              Risk per trade: {usingDefaultRisk ? "default" : "override"} <strong>${Number(effectiveRisk).toFixed(0)}</strong>
+              Risk budget at stop: {usingDefaultRisk ? "default" : "override"} <strong>${Number(effectiveRisk).toFixed(0)}</strong>
+            </div>
+          ) : null}
+          {effectivePaperMaxNotional != null ? (
+            <div>
+              Max paper order notional: {usingDefaultPaperMaxNotional ? "default" : "override"} <strong>${Number(effectivePaperMaxNotional).toFixed(0)}</strong>
             </div>
           ) : null}
           {effectiveCommissionPerTrade != null ? (

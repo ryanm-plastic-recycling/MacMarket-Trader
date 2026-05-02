@@ -13,6 +13,13 @@ describe("orders metric help rollout", () => {
     expect(source).toContain('<MetricLabel label="gross P&L" term="gross_pnl" />');
     expect(source).toContain('<MetricLabel label="fees" term="equity_commission_per_trade" />');
     expect(source).toContain('<MetricLabel label="net P&L" term="net_pnl" />');
+    expect(source).toContain("Recommended shares");
+    expect(source).toContain("Order shares");
+    expect(source).toContain("Estimated notional");
+    expect(source).toContain("Max paper order notional");
+    expect(source).toContain("Notional cap reduced");
+    expect(source).toContain("Reset my paper portfolio");
+    expect(source).toContain("Type RESET");
     expect(source).toContain("Close position");
     expect(source).not.toContain("live trading");
     expect(source).not.toContain("broker execution");

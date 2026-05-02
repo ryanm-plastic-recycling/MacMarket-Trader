@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import math
 from uuid import uuid4
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from macmarket_trader.domain.enums import AppRole, ApprovalStatus
@@ -362,6 +362,36 @@ class OrderRepository:
             session.refresh(row)
             return row
 
+    @staticmethod
+    def _parse_notes(notes: str | None) -> dict[str, str]:
+        if not notes:
+            return {}
+        return {
+            segment.split("=", 1)[0]: segment.split("=", 1)[1]
+            for segment in notes.split("|")
+            if "=" in segment
+        }
+
+    @staticmethod
+    def _note_int(parts: dict[str, str], key: str) -> int | None:
+        raw = parts.get(key)
+        if raw is None or raw == "":
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _note_float(parts: dict[str, str], key: str) -> float | None:
+        raw = parts.get(key)
+        if raw is None or raw == "":
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+
     def list_with_fills(self, limit: int = 200, *, app_user_id: int | None = None) -> list[dict[str, object]]:
         with self.session_factory() as session:
             stmt = select(OrderModel)
@@ -381,13 +411,15 @@ class OrderRepository:
                 source = None
                 fallback_mode = None
                 replay_run_id = order.replay_run_id
-                if order.notes and "|source=" in order.notes:
-                    parts = {segment.split("=", 1)[0]: segment.split("=", 1)[1] for segment in order.notes.split("|") if "=" in segment}
-                    source = parts.get("source")
-                    fallback_mode = parts.get("fallback") == "true"
-                    raw_run_id = parts.get("replay_run_id")
+                note_parts = self._parse_notes(order.notes)
+                if note_parts:
+                    source = note_parts.get("source")
+                    fallback_mode = note_parts.get("fallback") == "true"
+                    raw_run_id = note_parts.get("replay_run_id")
                     if replay_run_id is None and raw_run_id and raw_run_id.isdigit():
                         replay_run_id = int(raw_run_id)
+                else:
+                    note_parts = {}
                 if source is None and order.recommendation_id:
                     rec = session.execute(
                         select(RecommendationModel).where(RecommendationModel.recommendation_id == order.recommendation_id)
@@ -410,6 +442,15 @@ class OrderRepository:
                         "canceled_at": order.canceled_at.isoformat() if order.canceled_at else None,
                         "market_data_source": source,
                         "fallback_mode": fallback_mode,
+                        "recommended_shares": self._note_int(note_parts, "recommended_shares"),
+                        "final_order_shares": self._note_int(note_parts, "final_order_shares"),
+                        "operator_override_shares": self._note_int(note_parts, "operator_override_shares"),
+                        "notional_cap_shares": self._note_int(note_parts, "notional_cap_shares"),
+                        "max_paper_order_notional": self._note_float(note_parts, "max_paper_order_notional"),
+                        "estimated_notional": self._note_float(note_parts, "estimated_notional"),
+                        "risk_at_stop": self._note_float(note_parts, "risk_at_stop"),
+                        "sizing_mode": note_parts.get("sizing_mode"),
+                        "notional_cap_reduced": note_parts.get("notional_cap_reduced") == "true",
                         "fills": [
                             {"fill_price": fill.fill_price, "filled_shares": fill.filled_shares, "timestamp": fill.timestamp}
                             for fill in order_fills
@@ -817,6 +858,33 @@ class PaperPortfolioRepository:
             session.commit()
             session.refresh(row)
             return row
+
+    def reset_equity_paper_for_user(self, *, app_user_id: int) -> dict[str, int]:
+        """Delete current user's equity paper sandbox rows only.
+
+        Recommendations, replay runs, settings, watchlists, provider config,
+        audit logs, and durable options-paper rows are intentionally untouched.
+        """
+        with self.session_factory() as session:
+            order_ids = list(
+                session.execute(
+                    select(OrderModel.order_id).where(OrderModel.app_user_id == app_user_id)
+                ).scalars()
+            )
+            fill_count = 0
+            if order_ids:
+                fill_result = session.execute(delete(FillModel).where(FillModel.order_id.in_(order_ids)))
+                fill_count = int(fill_result.rowcount or 0)
+            trade_result = session.execute(delete(PaperTradeModel).where(PaperTradeModel.app_user_id == app_user_id))
+            position_result = session.execute(delete(PaperPositionModel).where(PaperPositionModel.app_user_id == app_user_id))
+            order_result = session.execute(delete(OrderModel).where(OrderModel.app_user_id == app_user_id))
+            session.commit()
+            return {
+                "orders": int(order_result.rowcount or 0),
+                "fills": fill_count,
+                "paper_positions": int(position_result.rowcount or 0),
+                "paper_trades": int(trade_result.rowcount or 0),
+            }
 
 
 class OptionPaperRepository:
@@ -1977,6 +2045,16 @@ class UserRepository:
             if user is None:
                 raise ValueError("User not found")
             user.risk_dollars_per_trade = value
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def set_paper_max_order_notional(self, user_id: int, *, value: float | None) -> AppUserModel:
+        with self.session_factory() as session:
+            user = session.get(AppUserModel, user_id)
+            if user is None:
+                raise ValueError("User not found")
+            user.paper_max_order_notional = value
             session.commit()
             session.refresh(user)
             return user

@@ -60,6 +60,16 @@ def _effective_risk_dollars(user) -> float:
         return float(settings.risk_dollars_per_trade)
 
 
+def _effective_paper_max_order_notional(user) -> float:
+    override = getattr(user, "paper_max_order_notional", None)
+    if override is None:
+        return float(settings.paper_max_order_notional)
+    try:
+        return float(override)
+    except (TypeError, ValueError):
+        return float(settings.paper_max_order_notional)
+
+
 def _effective_commission_per_trade(user) -> float:
     override = getattr(user, "commission_per_trade", None)
     if override is None:
@@ -179,6 +189,70 @@ def _recommendation_fee_preview_from_uid(
     except Exception:
         return _recommendation_fee_preview(None, commission_per_trade=commission_per_trade)
     return _recommendation_fee_preview(rec, commission_per_trade=commission_per_trade)
+
+
+def _paper_order_sizing_plan(
+    rec: TradeRecommendation,
+    *,
+    user,
+    override_shares: object | None = None,
+) -> dict[str, object]:
+    try:
+        recommended_shares = int(rec.sizing.shares)
+        limit_price = (float(rec.entry.zone_low) + float(rec.entry.zone_high)) / 2.0
+        stop_price = float(rec.invalidation.price)
+    except (AttributeError, TypeError, ValueError):
+        raise HTTPException(status_code=409, detail="Recommendation sizing is not usable for paper order staging.")
+    if recommended_shares <= 0:
+        raise HTTPException(status_code=409, detail="Recommendation has no positive share size for paper order staging.")
+    if not math.isfinite(limit_price) or limit_price <= 0:
+        raise HTTPException(status_code=409, detail="Recommendation entry price is not usable for paper order staging.")
+
+    max_notional = _effective_paper_max_order_notional(user)
+    if not math.isfinite(max_notional) or max_notional <= 0:
+        raise HTTPException(status_code=409, detail="paper_max_order_notional must be positive before staging paper orders.")
+    notional_cap_shares = max(0, math.floor(max_notional / limit_price))
+    if notional_cap_shares <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="paper_max_order_notional is below the recommendation entry price; increase the paper cap or choose a smaller setup.",
+        )
+
+    final_shares = min(recommended_shares, notional_cap_shares)
+    operator_override: int | None = None
+    if override_shares is not None:
+        if isinstance(override_shares, float) and not override_shares.is_integer():
+            raise HTTPException(status_code=400, detail="override_shares must be a positive integer.")
+        if isinstance(override_shares, str) and not override_shares.strip().isdigit():
+            raise HTTPException(status_code=400, detail="override_shares must be a positive integer.")
+        try:
+            operator_override = int(override_shares)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="override_shares must be a positive integer.")
+        if operator_override <= 0:
+            raise HTTPException(status_code=400, detail="override_shares must be a positive integer.")
+        if operator_override > recommended_shares:
+            raise HTTPException(status_code=409, detail="override_shares cannot exceed deterministic recommended shares.")
+        if operator_override > notional_cap_shares:
+            raise HTTPException(status_code=409, detail="override_shares cannot exceed paper_max_order_notional cap.")
+        final_shares = operator_override
+
+    stop_distance = abs(limit_price - stop_price)
+    if not math.isfinite(stop_distance):
+        stop_distance = 0.0
+    risk_at_stop = final_shares * stop_distance
+    estimated_notional = final_shares * limit_price
+    return {
+        "recommended_shares": recommended_shares,
+        "final_order_shares": final_shares,
+        "operator_override_shares": operator_override,
+        "max_paper_order_notional": _round_money(max_notional),
+        "notional_cap_shares": notional_cap_shares,
+        "estimated_notional": _round_money(estimated_notional),
+        "risk_at_stop": _round_money(risk_at_stop),
+        "sizing_mode": "risk_and_notional_capped",
+        "notional_cap_reduced": final_shares < recommended_shares,
+    }
 
 
 def _record_audit_event(*, recommendation_id: str, payload: dict[str, object]) -> None:
@@ -390,6 +464,8 @@ def me(user=Depends(current_user)):
         # so the UI can render "1000 (default)" vs an explicit user override.
         "risk_dollars_per_trade": user.risk_dollars_per_trade,
         "risk_dollars_per_trade_default": settings.risk_dollars_per_trade,
+        "paper_max_order_notional": user.paper_max_order_notional,
+        "paper_max_order_notional_default": settings.paper_max_order_notional,
         "commission_per_trade": user.commission_per_trade,
         "commission_per_trade_default": settings.commission_per_trade,
         "commission_per_contract": user.commission_per_contract,
@@ -397,11 +473,30 @@ def me(user=Depends(current_user)):
     }
 
 
-@user_router.patch("/settings")
-def update_user_settings(req: dict[str, object], user=Depends(require_approved_user)):
+def _serialize_user_settings(user) -> dict[str, object]:
+    return {
+        "id": user.id,
+        "risk_dollars_per_trade": user.risk_dollars_per_trade,
+        "risk_dollars_per_trade_default": settings.risk_dollars_per_trade,
+        "paper_max_order_notional": user.paper_max_order_notional,
+        "paper_max_order_notional_default": settings.paper_max_order_notional,
+        "commission_per_trade": user.commission_per_trade,
+        "commission_per_trade_default": settings.commission_per_trade,
+        "commission_per_contract": user.commission_per_contract,
+        "commission_per_contract_default": settings.commission_per_contract,
+    }
+
+
+@user_router.get("/settings")
+def get_user_settings(user=Depends(require_approved_user)):
+    return _serialize_user_settings(user)
+
+
+def _update_user_settings(req: dict[str, object], user) -> dict[str, object]:
     """Update operator-controlled settings for sizing and commission defaults."""
     allowed_keys = {
         "risk_dollars_per_trade",
+        "paper_max_order_notional",
         "commission_per_trade",
         "commission_per_contract",
     }
@@ -409,7 +504,7 @@ def update_user_settings(req: dict[str, object], user=Depends(require_approved_u
     if not provided_keys:
         raise HTTPException(
             status_code=400,
-            detail="At least one of risk_dollars_per_trade, commission_per_trade, or commission_per_contract is required.",
+            detail="At least one of risk_dollars_per_trade, paper_max_order_notional, commission_per_trade, or commission_per_contract is required.",
         )
 
     if "risk_dollars_per_trade" in req:
@@ -427,6 +522,22 @@ def update_user_settings(req: dict[str, object], user=Depends(require_approved_u
                     detail="risk_dollars_per_trade must be > 0 and <= 50000.",
                 )
             user_repo.set_risk_dollars_per_trade(user.id, value=value)
+
+    if "paper_max_order_notional" in req:
+        raw = req.get("paper_max_order_notional")
+        try:
+            value = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="paper_max_order_notional must be numeric.")
+        if value is None:
+            user_repo.set_paper_max_order_notional(user.id, value=None)
+        else:
+            if value <= 0 or value > 1000000:
+                raise HTTPException(
+                    status_code=400,
+                    detail="paper_max_order_notional must be > 0 and <= 1000000.",
+                )
+            user_repo.set_paper_max_order_notional(user.id, value=value)
 
     if "commission_per_trade" in req:
         raw = req.get("commission_per_trade")
@@ -461,15 +572,17 @@ def update_user_settings(req: dict[str, object], user=Depends(require_approved_u
             user_repo.set_commission_per_contract(user.id, value=value)
 
     refreshed = user_repo.get_by_id(user.id)
-    return {
-        "id": refreshed.id,
-        "risk_dollars_per_trade": refreshed.risk_dollars_per_trade,
-        "risk_dollars_per_trade_default": settings.risk_dollars_per_trade,
-        "commission_per_trade": refreshed.commission_per_trade,
-        "commission_per_trade_default": settings.commission_per_trade,
-        "commission_per_contract": refreshed.commission_per_contract,
-        "commission_per_contract_default": settings.commission_per_contract,
-    }
+    return _serialize_user_settings(refreshed)
+
+
+@user_router.patch("/settings")
+def update_user_settings(req: dict[str, object], user=Depends(require_approved_user)):
+    return _update_user_settings(req, user)
+
+
+@user_router.post("/settings")
+def post_user_settings(req: dict[str, object], user=Depends(require_approved_user)):
+    return _update_user_settings(req, user)
 
 
 @user_router.get("/onboarding-status")
@@ -1231,11 +1344,33 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
 
     if not rec.approved:
         raise HTTPException(status_code=409, detail=rec.rejection_reason or "Recommendation was no-trade; order not staged.")
-    intent = recommendation_service.to_order_intent(rec)
+    sizing_plan = _paper_order_sizing_plan(
+        rec,
+        user=_user,
+        override_shares=req.get("override_shares") if "override_shares" in req else None,
+    )
+    intent = recommendation_service.to_order_intent(rec).model_copy(
+        update={"shares": int(sizing_plan["final_order_shares"])}
+    )
     order, fill = paper_broker.execute(intent)
+    sizing_note_parts = [
+        "sizing_mode=risk_and_notional_capped",
+        f"recommended_shares={sizing_plan['recommended_shares']}",
+        f"final_order_shares={sizing_plan['final_order_shares']}",
+        f"operator_override_shares={sizing_plan['operator_override_shares'] or ''}",
+        f"max_paper_order_notional={sizing_plan['max_paper_order_notional']}",
+        f"notional_cap_shares={sizing_plan['notional_cap_shares']}",
+        f"estimated_notional={sizing_plan['estimated_notional']}",
+        f"risk_at_stop={sizing_plan['risk_at_stop']}",
+        f"notional_cap_reduced={str(bool(sizing_plan['notional_cap_reduced'])).lower()}",
+    ]
     recommendation_service.persist_order(
         order,
-        notes=f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}|replay_run_id={replay_run_id or ''}|stageable_reason={stageable_reason or ''}",
+        notes=(
+            f"operator_staged_order|source={source}|fallback={str(fallback_mode).lower()}"
+            f"|replay_run_id={replay_run_id or ''}|stageable_reason={stageable_reason or ''}"
+            f"|{'|'.join(sizing_note_parts)}"
+        ),
         app_user_id=_user.id,
     )
     recommendation_service.persist_fill(fill)
@@ -1268,6 +1403,7 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         "source": source,
         "market_data_source": source,
         "fallback_mode": fallback_mode,
+        **sizing_plan,
         **fee_preview,
     }
 
@@ -1302,6 +1438,8 @@ def _serialize_trade(row) -> dict[str, object]:
         "qty": float(row.quantity),
         "entry_price": float(row.entry_price),
         "exit_price": float(row.exit_price) if row.exit_price is not None else None,
+        "entry_notional": _round_money(float(row.quantity) * float(row.entry_price)),
+        "exit_notional": _round_money(float(row.quantity) * float(row.exit_price)) if row.exit_price is not None else None,
         "gross_pnl": gross_pnl,
         "net_pnl": net_pnl,
         "commission_paid": commission_paid,
@@ -1334,6 +1472,24 @@ def list_paper_positions(
 def list_paper_trades(limit: int = 50, _user=Depends(require_approved_user)):
     rows = paper_portfolio_repo.list_trades(app_user_id=_user.id, limit=limit)
     return [_serialize_trade(row) for row in rows]
+
+
+@user_router.post("/paper/reset")
+def reset_paper_sandbox(req: dict[str, object], _user=Depends(require_approved_user)):
+    if str(req.get("confirmation") or "").strip() != "RESET":
+        raise HTTPException(status_code=400, detail="Type RESET to confirm paper sandbox reset.")
+    counts = paper_portfolio_repo.reset_equity_paper_for_user(app_user_id=_user.id)
+    _record_audit_event(
+        recommendation_id="",
+        payload={
+            "event": "paper_sandbox_reset",
+            "paper_only": True,
+            "scope": "equity_paper_current_user",
+            "app_user_id": _user.id,
+            "counts": counts,
+        },
+    )
+    return {"status": "reset", "counts": counts}
 
 
 @user_router.post("/paper-positions/{position_id}/close")

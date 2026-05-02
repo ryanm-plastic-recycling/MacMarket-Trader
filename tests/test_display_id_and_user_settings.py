@@ -173,6 +173,8 @@ def test_user_me_and_patch_settings_support_commission_fields() -> None:
     me = client.get("/user/me", headers=_USER_AUTH)
     assert me.status_code == 200, me.text
     me_body = me.json()
+    assert me_body["paper_max_order_notional"] is None
+    assert me_body["paper_max_order_notional_default"] == settings.paper_max_order_notional
     assert me_body["commission_per_trade"] is None
     assert me_body["commission_per_trade_default"] == settings.commission_per_trade
     assert me_body["commission_per_contract"] is None
@@ -181,18 +183,38 @@ def test_user_me_and_patch_settings_support_commission_fields() -> None:
     resp = client.patch(
         "/user/settings",
         headers=_USER_AUTH,
-        json={"commission_per_trade": 1.25, "commission_per_contract": 0.95},
+        json={"paper_max_order_notional": 1500.0, "commission_per_trade": 1.25, "commission_per_contract": 0.95},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
+    assert body["paper_max_order_notional"] == 1500.0
+    assert body["paper_max_order_notional_default"] == settings.paper_max_order_notional
     assert body["commission_per_trade"] == 1.25
     assert body["commission_per_trade_default"] == settings.commission_per_trade
     assert body["commission_per_contract"] == 0.95
     assert body["commission_per_contract_default"] == settings.commission_per_contract
 
     me = client.get("/user/me", headers=_USER_AUTH).json()
+    assert me["paper_max_order_notional"] == 1500.0
     assert me["commission_per_trade"] == 1.25
     assert me["commission_per_contract"] == 0.95
+
+
+def test_get_and_post_user_settings_support_paper_max_order_notional() -> None:
+    _seed_approved_user()
+
+    initial = client.get("/user/settings", headers=_USER_AUTH)
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["paper_max_order_notional"] is None
+    assert initial.json()["paper_max_order_notional_default"] == settings.paper_max_order_notional
+
+    resp = client.post(
+        "/user/settings",
+        headers=_USER_AUTH,
+        json={"paper_max_order_notional": 2000.0},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["paper_max_order_notional"] == 2000.0
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +259,18 @@ def test_patch_user_settings_rejects_invalid_commission_per_trade() -> None:
         {"commission_per_trade": -0.01},
         {"commission_per_trade": 1000.01},
         {"commission_per_trade": "fees"},
+    ):
+        resp = client.patch("/user/settings", headers=_USER_AUTH, json=payload)
+        assert resp.status_code == 400, resp.text
+
+
+def test_patch_user_settings_rejects_invalid_paper_max_order_notional() -> None:
+    _seed_approved_user()
+    for payload in (
+        {"paper_max_order_notional": 0},
+        {"paper_max_order_notional": -1},
+        {"paper_max_order_notional": 1000000.01},
+        {"paper_max_order_notional": "wide"},
     ):
         resp = client.patch("/user/settings", headers=_USER_AUTH, json=payload)
         assert resp.status_code == 400, resp.text

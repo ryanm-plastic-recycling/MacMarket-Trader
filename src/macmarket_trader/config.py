@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./macmarket_trader.db"
     log_level: str = "INFO"
     risk_dollars_per_trade: float = 1000.0
+    paper_max_order_notional: float = 1000.0
     commission_per_trade: float = 0.0
     commission_per_contract: float = 0.65
     max_portfolio_heat: float = 0.06

@@ -44,6 +44,15 @@ type Order = {
   projected_gross_pnl?: number | null;
   projected_net_pnl?: number | null;
   fee_model?: string | null;
+  recommended_shares?: number | null;
+  final_order_shares?: number | null;
+  operator_override_shares?: number | null;
+  notional_cap_shares?: number | null;
+  max_paper_order_notional?: number | null;
+  estimated_notional?: number | null;
+  risk_at_stop?: number | null;
+  sizing_mode?: string | null;
+  notional_cap_reduced?: boolean | null;
   fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }>;
 };
 type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; gross_realized_pnl: number; net_realized_pnl: number; total_commission_paid: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
@@ -74,6 +83,8 @@ type PaperTrade = {
   qty: number;
   entry_price: number;
   exit_price: number | null;
+  entry_notional?: number | null;
+  exit_notional?: number | null;
   gross_pnl: number;
   net_pnl: number;
   commission_paid: number;
@@ -88,10 +99,40 @@ type PaperTrade = {
   close_reason: string | null;
 };
 
+type UserPaperSettings = {
+  paper_max_order_notional: number | null;
+  paper_max_order_notional_default: number | null;
+};
+
+type RecommendationRow = {
+  recommendation_id: string;
+  payload?: {
+    sizing?: { shares?: number; risk_dollars?: number; stop_distance?: number };
+    entry?: { zone_low?: number; zone_high?: number };
+    invalidation?: { price?: number };
+  };
+};
+
+type OrderSizingPreview = {
+  recommendedShares: number;
+  finalOrderShares: number;
+  enteredShares: number;
+  limitPrice: number;
+  estimatedNotional: number;
+  riskAtStop: number;
+  maxPaperOrderNotional: number;
+  notionalCapShares: number;
+  capReduced: boolean;
+};
+
 const CLOSE_REASONS = ["Target hit", "Stop hit", "Manual exit", "Time exit", "Other"] as const;
 
 function formatSignedDollars(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function formatDollars(value: number): string {
+  return `$${value.toFixed(2)}`;
 }
 
 function tradeDirectionMultiplier(side: string | null | undefined): number {
@@ -116,6 +157,38 @@ function estimateClosePnl(params: {
   if (values.some((value) => !Number.isFinite(value))) return null;
   const gross = (exitPrice - entryPrice) * quantity * tradeDirectionMultiplier(side);
   return { gross, net: gross - estimatedCloseFee };
+}
+
+function buildSizingPreview(
+  payload: RecommendationRow["payload"] | null,
+  maxPaperOrderNotional: number | null,
+  orderSharesInput: string,
+): OrderSizingPreview | null {
+  const recommendedShares = Number(payload?.sizing?.shares);
+  const zoneLow = Number(payload?.entry?.zone_low);
+  const zoneHigh = Number(payload?.entry?.zone_high);
+  const stop = Number(payload?.invalidation?.price);
+  const cap = Number(maxPaperOrderNotional);
+  if (![recommendedShares, zoneLow, zoneHigh, stop, cap].every(Number.isFinite)) return null;
+  if (recommendedShares <= 0 || cap <= 0) return null;
+  const limitPrice = (zoneLow + zoneHigh) / 2;
+  if (!Number.isFinite(limitPrice) || limitPrice <= 0) return null;
+  const notionalCapShares = Math.floor(cap / limitPrice);
+  const defaultShares = Math.max(0, Math.min(recommendedShares, notionalCapShares));
+  const parsedInput = Number.parseInt(orderSharesInput, 10);
+  const enteredShares = Number.isFinite(parsedInput) && parsedInput > 0 ? parsedInput : defaultShares;
+  const stopDistance = Math.abs(limitPrice - stop);
+  return {
+    recommendedShares,
+    finalOrderShares: Math.min(enteredShares, defaultShares),
+    enteredShares,
+    limitPrice,
+    estimatedNotional: enteredShares * limitPrice,
+    riskAtStop: enteredShares * stopDistance,
+    maxPaperOrderNotional: cap,
+    notionalCapShares,
+    capReduced: notionalCapShares < recommendedShares,
+  };
 }
 
 export default function Page() {
@@ -148,6 +221,11 @@ export default function Page() {
   const [closeResults, setCloseResults] = useState<Record<string, CloseResult>>({});
   const [positions, setPositions] = useState<PaperPosition[]>([]);
   const [trades, setTrades] = useState<PaperTrade[]>([]);
+  const [paperSettings, setPaperSettings] = useState<UserPaperSettings | null>(null);
+  const [recommendationPayloadMap, setRecommendationPayloadMap] = useState<Record<string, RecommendationRow["payload"]>>({});
+  const [orderSharesInput, setOrderSharesInput] = useState("");
+  const [showSandboxTools, setShowSandboxTools] = useState(false);
+  const [resetConfirmInput, setResetConfirmInput] = useState("");
   const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
   const [closeMarkInput, setCloseMarkInput] = useState("");
   const [closeReasonInput, setCloseReasonInput] = useState<string>(CLOSE_REASONS[0]);
@@ -188,6 +266,16 @@ export default function Page() {
   }, [closeInputVisible, closePriceInput, selected, selectedOpenPosition]);
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
   const detailRef = useRef<HTMLDivElement | null>(null);
+  const activeRecommendationId = selected?.recommendation_id ?? guidedState.recommendationId ?? new URLSearchParams(searchKey).get("recommendation");
+  const effectivePaperMaxNotional = paperSettings?.paper_max_order_notional ?? paperSettings?.paper_max_order_notional_default ?? null;
+  const orderSizingPreview = useMemo(
+    () => buildSizingPreview(
+      activeRecommendationId ? recommendationPayloadMap[activeRecommendationId] ?? null : null,
+      effectivePaperMaxNotional,
+      orderSharesInput,
+    ),
+    [activeRecommendationId, effectivePaperMaxNotional, orderSharesInput, recommendationPayloadMap],
+  );
 
   // Phase 6 close-out follow-up — Section 4: in guided mode only, pulse the
   // Stage CTA when no order exists for the active rec/replay; calm
@@ -261,6 +349,15 @@ export default function Page() {
       setBusy(false);
       return;
     }
+    if (orderSharesInput.trim()) {
+      const overrideShares = Number.parseInt(orderSharesInput, 10);
+      if (!Number.isFinite(overrideShares) || overrideShares <= 0 || String(overrideShares) !== orderSharesInput.trim()) {
+        setFeedback({ state: "error", message: "Order shares must be a positive whole number." });
+        setBusy(false);
+        return;
+      }
+      body.override_shares = overrideShares;
+    }
 
     body.market_mode = guidedState.marketMode ?? "equities";
     if (guidedState.guided) {
@@ -285,6 +382,15 @@ export default function Page() {
       projected_gross_pnl?: number | null;
       projected_net_pnl?: number | null;
       fee_model?: string | null;
+      recommended_shares?: number | null;
+      final_order_shares?: number | null;
+      operator_override_shares?: number | null;
+      notional_cap_shares?: number | null;
+      max_paper_order_notional?: number | null;
+      estimated_notional?: number | null;
+      risk_at_stop?: number | null;
+      sizing_mode?: string | null;
+      notional_cap_reduced?: boolean | null;
     }>(
       "/api/user/orders",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
@@ -323,6 +429,15 @@ export default function Page() {
         projected_gross_pnl: result.data.projected_gross_pnl ?? null,
         projected_net_pnl: result.data.projected_net_pnl ?? null,
         fee_model: result.data.fee_model ?? null,
+        recommended_shares: result.data.recommended_shares ?? null,
+        final_order_shares: result.data.final_order_shares ?? result.data.shares ?? null,
+        operator_override_shares: result.data.operator_override_shares ?? null,
+        notional_cap_shares: result.data.notional_cap_shares ?? null,
+        max_paper_order_notional: result.data.max_paper_order_notional ?? null,
+        estimated_notional: result.data.estimated_notional ?? null,
+        risk_at_stop: result.data.risk_at_stop ?? null,
+        sizing_mode: result.data.sizing_mode ?? null,
+        notional_cap_reduced: result.data.notional_cap_reduced ?? null,
         fills: [],
       };
       setOrders((prev) => [hydrated, ...prev.filter((item) => item.order_id !== hydrated.order_id)]);
@@ -388,6 +503,12 @@ export default function Page() {
     if (!authReady) return;
     const summary = await fetchWorkflowApi<PortfolioSummary>("/api/user/orders/portfolio-summary");
     if (summary.ok) setPortfolioSummary(summary.data ?? null);
+  }
+
+  async function loadPaperSettings() {
+    if (!authReady) return;
+    const result = await fetchWorkflowApi<UserPaperSettings>("/api/user/settings");
+    if (result.ok) setPaperSettings(result.data ?? null);
   }
 
   function beginClosePosition(position: PaperPosition) {
@@ -470,11 +591,42 @@ export default function Page() {
     setBusy(false);
   }
 
+  async function resetPaperSandbox() {
+    if (resetConfirmInput !== "RESET") {
+      setFeedback({ state: "error", message: "Type RESET to confirm paper sandbox reset." });
+      return;
+    }
+    setBusy(true);
+    setFeedback({ state: "loading", message: "Resetting paper sandbox..." });
+    const result = await fetchWorkflowApi<{ status: string; counts: Record<string, number> }>(
+      "/api/user/paper/reset",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: resetConfirmInput }),
+      },
+    );
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Paper sandbox reset failed." });
+      setBusy(false);
+      return;
+    }
+    setOrders([]);
+    setPositions([]);
+    setTrades([]);
+    setSelectedOrderId(null);
+    setResetConfirmInput("");
+    setFeedback({ state: "success", message: "Paper sandbox reset complete." });
+    await Promise.all([load(), loadPositions(), loadTrades(), loadPortfolioSummary()]);
+    setBusy(false);
+  }
+
   useEffect(() => {
     if (!authReady) return;
     void load();
     void loadPositions();
     void loadTrades();
+    void loadPaperSettings();
   }, [searchKey, authReady]);
 
   // Refresh the reopen-window countdown every 30 seconds so closed-trade rows
@@ -494,8 +646,18 @@ export default function Page() {
         if (item.recommendation_id && item.display_id) map[item.recommendation_id] = item.display_id;
       }
       setDisplayIdMap(map);
+      const payloads: Record<string, RecommendationRow["payload"]> = {};
+      for (const item of r.items as RecommendationRow[]) {
+        if (item.recommendation_id) payloads[item.recommendation_id] = item.payload;
+      }
+      setRecommendationPayloadMap(payloads);
     });
   }, [authReady]);
+
+  useEffect(() => {
+    if (selected || !orderSizingPreview || orderSharesInput.trim()) return;
+    setOrderSharesInput(String(orderSizingPreview.finalOrderShares));
+  }, [orderSharesInput, orderSizingPreview, selected]);
 
   useEffect(() => {
     if (!authReady || !guidedState.replayRunId) return;
@@ -576,6 +738,35 @@ export default function Page() {
       </Card>
     ) : null}
 
+    <Card title="Paper sandbox tools">
+      <button className="op-btn op-btn-secondary" onClick={() => setShowSandboxTools((prev) => !prev)}>
+        {showSandboxTools ? "Hide testing tools" : "Show testing tools"}
+      </button>
+      {showSandboxTools ? (
+        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+          <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.88rem", lineHeight: 1.5 }}>
+            Reset deletes only your current equity paper orders, fills, positions, and closed paper trades. Recommendations, replay runs, settings, watchlists, provider config, and options-paper rows stay intact.
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>Type RESET</span>
+            <input
+              value={resetConfirmInput}
+              onChange={(e) => setResetConfirmInput(e.target.value)}
+              placeholder="RESET"
+              style={{ width: 140 }}
+            />
+          </label>
+          <button
+            className="op-btn op-btn-destructive"
+            onClick={() => void resetPaperSandbox()}
+            disabled={busy || resetConfirmInput !== "RESET"}
+          >
+            Reset my paper portfolio
+          </button>
+        </div>
+      ) : null}
+    </Card>
+
     <Card title="What orders are for">
       Stage a paper order from replay-backed recommendation context before any live-route discussion.
       <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)" }}>Arriving here does not stage an order.</div>
@@ -623,6 +814,37 @@ export default function Page() {
             <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.recommendationId ?? "—"}</span></div>
             <div><strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.replayRunId ?? "—"}</span></div>
             <div><strong>symbol:</strong> {guidedState.symbol ?? "—"} · <strong>strategy:</strong> {guidedState.strategy ?? "—"}</div>
+            {orderSizingPreview ? (
+              <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Paper-only sizing</div>
+                <div className="op-grid-4" style={{ marginTop: 6 }}>
+                  <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Recommended shares</div><strong>{orderSizingPreview.recommendedShares}</strong></div>
+                  <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Estimated notional</div><strong>{formatDollars(orderSizingPreview.estimatedNotional)}</strong></div>
+                  <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Risk at stop</div><strong>{formatDollars(orderSizingPreview.riskAtStop)}</strong></div>
+                  <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Max paper order notional</div><strong>{formatDollars(orderSizingPreview.maxPaperOrderNotional)}</strong></div>
+                </div>
+                <label style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span>Order shares</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.min(orderSizingPreview.recommendedShares, orderSizingPreview.notionalCapShares)}
+                    step={1}
+                    value={orderSharesInput}
+                    onChange={(e) => setOrderSharesInput(e.target.value)}
+                    style={{ width: 110 }}
+                  />
+                  <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                    cap allows up to {orderSizingPreview.notionalCapShares} shares at {formatDollars(orderSizingPreview.limitPrice)}
+                  </span>
+                </label>
+                {orderSizingPreview.capReduced ? (
+                  <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)", fontSize: "0.86rem" }}>
+                    Notional cap reduced the default paper order from {orderSizingPreview.recommendedShares} to {Math.min(orderSizingPreview.recommendedShares, orderSizingPreview.notionalCapShares)} shares.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {replayOutcome ? (
               <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
                 <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only round trip (entry + exit)</div>
@@ -654,6 +876,10 @@ export default function Page() {
             <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{selected.recommendation_id}</span> · <strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{selected.replay_run_id ?? "—"}</span></div>
             <div><strong>source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)} · <strong>status:</strong> {selected.status}</div>
             <div style={{ color: "var(--op-muted, #7a8999)" }}>
+              Recommended {selected.recommended_shares ?? selected.shares} shares · final paper order {selected.final_order_shares ?? selected.shares} shares · estimated notional {selected.estimated_notional != null ? formatDollars(selected.estimated_notional) : formatDollars(selected.shares * selected.limit_price)}
+              {selected.notional_cap_reduced ? " · notional cap reduced size" : ""}
+            </div>
+            <div style={{ color: "var(--op-muted, #7a8999)" }}>
               Estimated round-trip fees (entry + exit) ${selected.estimated_total_fees?.toFixed(2) ?? "0.00"} · paper-only preview
             </div>
           </>
@@ -676,6 +902,7 @@ export default function Page() {
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>remaining qty</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>avg entry</th>
+                <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>notional</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>opened</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>recommendation</th>
                 <th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}></th>
@@ -689,6 +916,7 @@ export default function Page() {
                     <td><span className={`op-side-badge is-${p.side.toLowerCase()}`}>{p.side}</span></td>
                     <td>{p.remaining_qty}</td>
                     <td>{p.avg_entry_price.toFixed(2)}</td>
+                    <td>{formatDollars(p.open_notional)}</td>
                     <td>{formatRelativeTime(p.opened_at)}</td>
                     <td>
                       {p.recommendation_id ? (
@@ -721,7 +949,7 @@ export default function Page() {
                   })();
                   rows.push(
                     <tr key={`${p.id}-ticket`}>
-                      <td colSpan={7} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
+                      <td colSpan={8} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                           <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <span style={{ fontSize: "0.85rem", color: "var(--op-muted, #7a8999)" }}>Mark price</span>
@@ -771,9 +999,9 @@ export default function Page() {
         {guidedState.guided ? <div style={{ marginBottom: 6, color: "var(--op-muted, #7a8999)" }}>Secondary panel: full order history</div> : null}
         <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
         <table className="op-table" style={{ marginTop: guidedState.guided ? 8 : 0 }}>
-          <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>shares</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>limit/fill</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>broker status</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fill count</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}></th></tr></thead>
+          <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>shares</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>notional</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>limit/fill</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>broker status</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fill count</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}></th></tr></thead>
           <tbody>
-            {orders.length === 0 && !busy ? <tr><td colSpan={8} style={{ color: "#9fb0c3", textAlign: "center", padding: "16px 8px" }}>No paper orders yet. Click "Stage paper order now" above to create your first order.</td></tr> : null}
+            {orders.length === 0 && !busy ? <tr><td colSpan={9} style={{ color: "#9fb0c3", textAlign: "center", padding: "16px 8px" }}>No paper orders yet. Click "Stage paper order now" above to create your first order.</td></tr> : null}
             {orders.flatMap((o) => {
               const cancelable = o.status === "staged" && (o.fills?.length ?? 0) === 0;
               const rowEls: React.ReactNode[] = [
@@ -782,6 +1010,7 @@ export default function Page() {
                   <td>{o.symbol}</td>
                   <td><span className={`op-side-badge is-${o.side.toLowerCase()}`}>{o.side}</span></td>
                   <td>{o.shares}</td>
+                  <td>{formatDollars(o.estimated_notional ?? (o.shares * o.limit_price))}</td>
                   <td>{o.limit_price} / {o.fills[0]?.fill_price ?? "-"}</td>
                   <td><StatusBadge tone={o.status.includes("fill") ? "good" : "warn"}>{o.status}</StatusBadge></td>
                   <td>{o.fills.length}</td>
@@ -799,7 +1028,7 @@ export default function Page() {
               if (cancelable && cancelingOrderId === o.order_id) {
                 rowEls.push(
                   <tr key={`${o.order_id}-confirm`}>
-                    <td colSpan={8} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
+                    <td colSpan={9} style={{ background: "var(--card-bg-alt, #0e1822)", padding: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                         <span style={{ fontSize: "0.9rem" }}>Are you sure? This cannot be undone.</span>
                         <button
@@ -831,6 +1060,9 @@ export default function Page() {
             <div><strong>Replay run:</strong> {selected.replay_run_id ?? "—"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}><strong>Symbol/side:</strong> {selected.symbol} <StatusBadge tone={selected.side?.toLowerCase() === "buy" ? "good" : "warn"}>{selected.side}</StatusBadge></div>
             <div><strong>Shares:</strong> {selected.shares}</div>
+            <div><strong>Recommended shares:</strong> {selected.recommended_shares ?? selected.shares}</div>
+            <div><strong>Estimated notional:</strong> {selected.estimated_notional != null ? formatDollars(selected.estimated_notional) : formatDollars(selected.shares * selected.limit_price)}</div>
+            <div><strong>Risk at stop:</strong> {selected.risk_at_stop != null ? formatDollars(selected.risk_at_stop) : "—"}</div>
             <div><strong>Limit:</strong> {selected.limit_price}</div>
             <div><strong>Status:</strong> {selected.status}</div>
             <div><strong>Workflow source:</strong> {selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? dataSource)}</div>
@@ -914,7 +1146,12 @@ export default function Page() {
                     <td>{t.symbol}</td>
                     <td><span className={`op-side-badge is-${t.side.toLowerCase()}`}>{t.side}</span></td>
                     <td>{t.qty}</td>
-                    <td>{t.entry_price.toFixed(2)} → {t.exit_price != null ? t.exit_price.toFixed(2) : "—"}</td>
+                    <td>
+                      {t.entry_price.toFixed(2)} → {t.exit_price != null ? t.exit_price.toFixed(2) : "—"}
+                      <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>
+                        {t.entry_notional != null ? formatDollars(t.entry_notional) : formatDollars(t.qty * t.entry_price)}
+                      </div>
+                    </td>
                     <td style={{ color: pnlColor(t.gross_pnl), fontWeight: 600 }}>
                       {formatSignedDollars(t.gross_pnl)}
                     </td>
