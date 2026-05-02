@@ -162,6 +162,10 @@ class MockLLMClient(LLMClient):
             missing_data.append("fresh event/news summary")
         if any(candidate.deterministic_score is None for candidate in candidates):
             missing_data.append("deterministic queue score")
+        for candidate in candidates:
+            risk = candidate.risk_calendar.decision if candidate.risk_calendar else None
+            if risk and risk.missing_evidence:
+                missing_data.extend(risk.missing_evidence)
         return OpportunityComparisonMemo(
             best_deterministic_candidate_id=best.recommendation_id if best else None,
             best_deterministic_symbol=best.symbol if best else None,
@@ -186,10 +190,19 @@ class MockLLMClient(LLMClient):
             }
         )
         regime_text = f" Regime context: {', '.join(regimes)}." if regimes else ""
+        risk_text = ""
+        risky = [
+            f"{candidate.symbol}:{candidate.risk_calendar.decision.decision_state}"
+            for candidate in candidates
+            if candidate.risk_calendar
+            and candidate.risk_calendar.decision.decision_state != "normal"
+        ]
+        if risky:
+            risk_text = f" Risk calendar context: {', '.join(risky)}; deterministic gate owns restrictions."
         return (
             f"Desk memo for {symbols}: compare only the backend-supplied deterministic candidates. "
             f"{approved_count} of {len(candidates)} selected candidates are approved by deterministic gates."
-            f"{regime_text}"
+            f"{regime_text}{risk_text}"
         )
 
     def generate_better_elsewhere_memo(
@@ -206,6 +219,11 @@ class MockLLMClient(LLMClient):
 
     @staticmethod
     def _candidate_read(candidate: OpportunityCandidateSummary) -> str:
+        if candidate.risk_calendar and candidate.risk_calendar.decision.decision_state != "normal":
+            return (
+                f"Calendar risk is {candidate.risk_calendar.decision.decision_state}; "
+                "deterministic risk gate owns any warning or block."
+            )
         if not candidate.approved:
             return candidate.rejection_reason or "No-trade by deterministic gates."
         if (candidate.risk_score or 0.0) > 0.65:

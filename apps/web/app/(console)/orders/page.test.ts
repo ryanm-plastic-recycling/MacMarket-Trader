@@ -20,6 +20,11 @@ describe("orders metric help rollout", () => {
     expect(source).toContain("Notional cap reduced");
     expect(source).toContain("Reset my paper portfolio");
     expect(source).toContain("Type RESET");
+    expect(source).toContain("Calendar risk");
+    expect(source).toContain("risk_calendar_confirmed");
+    expect(source).toContain("risk_calendar_override_reason");
+    expect(source).toContain("Confirmation reason");
+    expect(source).toContain("Sit this one out");
     expect(source).toContain("Close position");
     expect(source).not.toContain("live trading");
     expect(source).not.toContain("broker execution");

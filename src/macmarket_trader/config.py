@@ -1,6 +1,6 @@
 """Application configuration models."""
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +21,26 @@ class Settings(BaseSettings):
     llm_enabled: bool = False
     llm_provider: str = "mock"
     llm_model: str = ""
+    openai_api_key: str = ""
     llm_api_key: str = ""
+    llm_timeout_seconds: float = 12.0
+    llm_max_output_tokens: int = 1200
+    llm_temperature: float = 0.2
+    risk_calendar_enabled: bool = True
+    risk_calendar_provider: str = "static"
+    risk_calendar_mode: str = "warn"
+    risk_calendar_default_block_high_impact: bool = True
+    earnings_avoidance_enabled: bool = True
+    earnings_block_days_before: int = 1
+    earnings_block_days_after: int = 1
+    macro_event_block_before_minutes: int = 60
+    macro_event_block_after_minutes: int = 60
+    high_vol_block_enabled: bool = True
+    high_vol_intraday_range_threshold: float = 0.04
+    high_vol_gap_threshold: float = 0.03
+    vix_high_threshold: float = 30.0
+    intraday_rth_session_required: bool = True
+    intraday_rth_violation_mode: str = "caution"
 
     # auth/email/provider config
     auth_provider: str = "mock"
@@ -87,6 +106,14 @@ class Settings(BaseSettings):
     min_catalyst_source_quality_score: float = 0.0
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+
+    @model_validator(mode="after")
+    def prefer_openai_api_key(self) -> "Settings":
+        """Prefer OPENAI_API_KEY while preserving LLM_API_KEY as a legacy fallback."""
+
+        if self.openai_api_key.strip():
+            self.llm_api_key = self.openai_api_key
+        return self
 
     @property
     def console_url(self) -> str:

@@ -17,7 +17,13 @@ def build_llm_client() -> LLMClient:
         return MockLLMClient(model=model)
     if provider == "openai":
         try:
-            return OpenAICompatibleLLMClient(api_key=settings.llm_api_key, model=model)
+            return OpenAICompatibleLLMClient(
+                api_key=settings.llm_api_key,
+                model=model,
+                timeout_seconds=settings.llm_timeout_seconds,
+                max_output_tokens=settings.llm_max_output_tokens,
+                temperature=settings.llm_temperature,
+            )
         except LLMProviderUnavailable:
             return MockLLMClient(model=model)
     return MockLLMClient(model=model)

@@ -53,6 +53,7 @@ type Order = {
   risk_at_stop?: number | null;
   sizing_mode?: string | null;
   notional_cap_reduced?: boolean | null;
+  risk_calendar?: RiskCalendarPayload | null;
   fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }>;
 };
 type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number | null; realized_pnl: number; gross_realized_pnl: number; net_realized_pnl: number; total_commission_paid: number; closed_trade_count: number; win_rate: number | null; lifecycle_status?: string; notes?: string };
@@ -110,6 +111,20 @@ type RecommendationRow = {
     sizing?: { shares?: number; risk_dollars?: number; stop_distance?: number };
     entry?: { zone_low?: number; zone_high?: number };
     invalidation?: { price?: number };
+    risk_calendar?: RiskCalendarPayload | null;
+  };
+};
+type RiskCalendarPayload = {
+  decision?: {
+    decision_state?: string;
+    risk_level?: string;
+    recommended_action?: string;
+    warning_summary?: string;
+    block_reason?: string | null;
+    allow_new_entries?: boolean;
+    requires_confirmation?: boolean;
+    missing_evidence?: string[];
+    active_events?: Array<{ title?: string; event_type?: string; impact?: string }>;
   };
 };
 
@@ -133,6 +148,13 @@ function formatSignedDollars(value: number): string {
 
 function formatDollars(value: number): string {
   return `$${value.toFixed(2)}`;
+}
+
+function riskTone(risk?: RiskCalendarPayload | null): "good" | "warn" | "bad" | "neutral" {
+  const decision = risk?.decision;
+  if (!decision) return "neutral";
+  if (decision.decision_state === "normal") return "good";
+  return decision.allow_new_entries ? "warn" : "bad";
 }
 
 function tradeDirectionMultiplier(side: string | null | undefined): number {
@@ -224,6 +246,8 @@ export default function Page() {
   const [paperSettings, setPaperSettings] = useState<UserPaperSettings | null>(null);
   const [recommendationPayloadMap, setRecommendationPayloadMap] = useState<Record<string, RecommendationRow["payload"]>>({});
   const [orderSharesInput, setOrderSharesInput] = useState("");
+  const [riskCalendarConfirmed, setRiskCalendarConfirmed] = useState(false);
+  const [riskCalendarOverrideReason, setRiskCalendarOverrideReason] = useState("");
   const [showSandboxTools, setShowSandboxTools] = useState(false);
   const [resetConfirmInput, setResetConfirmInput] = useState("");
   const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
@@ -276,6 +300,9 @@ export default function Page() {
     ),
     [activeRecommendationId, effectivePaperMaxNotional, orderSharesInput, recommendationPayloadMap],
   );
+  const activeRiskCalendar = activeRecommendationId
+    ? recommendationPayloadMap[activeRecommendationId]?.risk_calendar ?? null
+    : selected?.risk_calendar ?? null;
 
   // Phase 6 close-out follow-up — Section 4: in guided mode only, pulse the
   // Stage CTA when no order exists for the active rec/replay; calm
@@ -364,6 +391,8 @@ export default function Page() {
       body.guided = true;
       if (guidedState.replayRunId) body.replay_run_id = Number(guidedState.replayRunId);
     }
+    if (riskCalendarConfirmed) body.risk_calendar_confirmed = true;
+    if (riskCalendarOverrideReason.trim()) body.risk_calendar_override_reason = riskCalendarOverrideReason.trim();
 
     const result = await fetchWorkflowApi<{
       order_id: string;
@@ -391,6 +420,7 @@ export default function Page() {
       risk_at_stop?: number | null;
       sizing_mode?: string | null;
       notional_cap_reduced?: boolean | null;
+      risk_calendar?: RiskCalendarPayload | null;
     }>(
       "/api/user/orders",
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
@@ -438,6 +468,7 @@ export default function Page() {
         risk_at_stop: result.data.risk_at_stop ?? null,
         sizing_mode: result.data.sizing_mode ?? null,
         notional_cap_reduced: result.data.notional_cap_reduced ?? null,
+        risk_calendar: result.data.risk_calendar ?? null,
         fills: [],
       };
       setOrders((prev) => [hydrated, ...prev.filter((item) => item.order_id !== hydrated.order_id)]);
@@ -456,6 +487,8 @@ export default function Page() {
 
     setStatus("paper order staged");
     setFeedback({ state: "success", message: "Paper order staged." });
+    setRiskCalendarConfirmed(false);
+    setRiskCalendarOverrideReason("");
     await load();
     await Promise.all([loadPositions(), loadTrades()]);
     detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -868,6 +901,41 @@ export default function Page() {
               </div>
             ) : null}
             <button className="op-btn-primary-cta op-btn-pulse" style={{ marginTop: 8, width: "100%" }} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now →"}</button>
+            <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+              <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Calendar risk</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+                <StatusBadge tone={riskTone(activeRiskCalendar)}>
+                  {activeRiskCalendar?.decision?.decision_state ?? "normal"}
+                </StatusBadge>
+                <StatusBadge tone="neutral">{activeRiskCalendar?.decision?.risk_level ?? "normal"}</StatusBadge>
+                <span style={{ color: "var(--op-muted, #7a8999)" }}>Action: {activeRiskCalendar?.decision?.recommended_action ?? "trade_normally"}</span>
+              </div>
+              <div style={{ marginTop: 6, color: activeRiskCalendar?.decision?.allow_new_entries === false ? "var(--op-warn, #f2a03f)" : "var(--op-muted, #7a8999)" }}>
+                {activeRiskCalendar?.decision?.allow_new_entries === false
+                  ? "Sit this one out unless the deterministic risk gate clears."
+                  : activeRiskCalendar?.decision?.warning_summary ?? "No active calendar block on the selected recommendation."}
+              </div>
+              {activeRiskCalendar?.decision?.requires_confirmation ? (
+                <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={riskCalendarConfirmed}
+                      onChange={(event) => setRiskCalendarConfirmed(event.target.checked)}
+                    />
+                    I reviewed the calendar risk for this paper-only order
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span>Confirmation reason</span>
+                    <input
+                      value={riskCalendarOverrideReason}
+                      onChange={(event) => setRiskCalendarOverrideReason(event.target.value)}
+                      placeholder="Why staging is still appropriate in paper mode"
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </div>
             {replayOutcome?.has_stageable_candidate === false ? <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)" }}>No paper order can be staged from this replay. {replayOutcome.stageable_reason ?? ""}</div> : null}
           </div>
         ) : (

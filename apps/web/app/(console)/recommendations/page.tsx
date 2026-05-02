@@ -95,6 +95,27 @@ function formatUniverseWarning(value: string): string {
   }
 }
 
+type RiskCalendarPayload = {
+  decision?: {
+    decision_state?: string;
+    risk_level?: string;
+    recommended_action?: string;
+    warning_summary?: string;
+    block_reason?: string | null;
+    allow_new_entries?: boolean;
+    requires_confirmation?: boolean;
+    missing_evidence?: string[];
+    active_events?: Array<{ title?: string; event_type?: string; impact?: string }>;
+  };
+};
+
+function riskTone(risk?: RiskCalendarPayload | null): "good" | "warn" | "bad" | "neutral" {
+  const decision = risk?.decision;
+  if (!decision) return "neutral";
+  if (decision.decision_state === "normal") return "good";
+  return decision.allow_new_entries ? "warn" : "bad";
+}
+
 type RecLevels = { entryLow: number | null; entryHigh: number | null; stop: number | null; target1: number | null; target2: number | null };
 type AIExplanationPayload = {
   summary?: string;
@@ -126,6 +147,7 @@ type OpportunityCandidateSummary = {
   current_recommendation_rank?: number | null;
   reasons?: string[];
   rejection_reason?: string | null;
+  risk_calendar?: RiskCalendarPayload | null;
 };
 type BetterElsewhereCandidate = {
   recommendation_id?: string | null;
@@ -1084,13 +1106,14 @@ export default function RecommendationsPage() {
           {rows.length > 0 ? (
             <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
             <table className="op-table">
-              <thead><tr><th>compare</th><th>date</th><th>symbol</th><th>strategy</th><th>queue rank</th><th>approved</th><th>source</th></tr></thead>
+              <thead><tr><th>compare</th><th>date</th><th>symbol</th><th>strategy</th><th>queue rank</th><th>approved</th><th>risk calendar</th><th>source</th></tr></thead>
               <tbody>
                 {filteredRows.map((row) => {
                   const prov = getRankingProvenance(row.payload as Record<string, unknown>);
                   const strategy = typeof prov?.strategy === "string" ? prov.strategy : (typeof (row.payload.workflow as Record<string, unknown> | undefined)?.source_strategy === "string" ? String((row.payload.workflow as Record<string, unknown>).source_strategy) : "-");
                   const rank = prov?.rank != null ? `#${String(prov.rank)}` : "-";
                   const approved = (row.payload as Record<string, unknown>)?.approved;
+                  const riskCalendar = (row.payload as Record<string, unknown>)?.risk_calendar as RiskCalendarPayload | undefined;
                   return (
                     <tr key={row.id} className={`is-selectable ${selectedRecommendationId === row.id ? "is-active" : ""}`} onClick={() => { setSelectedRecommendationId(row.id); setSelectedQueueKey(null); }}>
                       <td>
@@ -1107,6 +1130,7 @@ export default function RecommendationsPage() {
                       <td>{strategy}</td>
                       <td>{rank}</td>
                       <td>{approved == null ? "-" : approved ? <StatusBadge tone="good">approved</StatusBadge> : <StatusBadge tone="warn">rejected</StatusBadge>}</td>
+                      <td><StatusBadge tone={riskTone(riskCalendar)}>{riskCalendar?.decision?.decision_state ?? "normal"}</StatusBadge></td>
                       <td>{row.market_data_source ?? asText((row.payload.workflow as Record<string, unknown> | undefined)?.market_data_source)}</td>
                     </tr>
                   );
@@ -1179,6 +1203,7 @@ export default function RecommendationsPage() {
             const quality = p.quality as Record<string, unknown> | undefined;
             const aiExplanation = p.ai_explanation as AIExplanationPayload | undefined;
             const llmProvenance = p.llm_provenance as LLMProvenancePayload | undefined;
+            const riskCalendar = p.risk_calendar as RiskCalendarPayload | undefined;
             const sep = { marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--op-border, #1e2d3d)" } as const;
             const label = { fontSize: "0.78rem", color: "var(--op-muted, #7a8999)", marginBottom: 2 } as const;
             return (
@@ -1196,6 +1221,33 @@ export default function RecommendationsPage() {
                 {/* Thesis */}
                 {p.thesis ? <div style={{ paddingTop: 4 }}><strong>thesis:</strong> {asText(p.thesis)}</div> : null}
                 {p.rejection_reason ? <div style={{ color: "var(--op-warn, #f2a03f)" }}><strong>rejection reason:</strong> {asText(p.rejection_reason)}</div> : null}
+
+                {riskCalendar?.decision ? (
+                  <div style={sep}>
+                    <div style={label}>RISK CALENDAR</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <StatusBadge tone={riskTone(riskCalendar)}>{riskCalendar.decision.decision_state ?? "normal"}</StatusBadge>
+                      <StatusBadge tone="neutral">{riskCalendar.decision.risk_level ?? "normal"}</StatusBadge>
+                      <span style={{ color: "var(--op-muted, #7a8999)" }}>Action: {riskCalendar.decision.recommended_action ?? "-"}</span>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                      {riskCalendar.decision.block_reason ?? riskCalendar.decision.warning_summary ?? "No active calendar risk block."}
+                    </div>
+                    <div style={{ marginTop: 4, color: "var(--op-muted, #7a8999)", fontSize: "0.84rem" }}>
+                      The deterministic risk gate owns warning, restriction, and block state.
+                    </div>
+                    {riskCalendar.decision.active_events?.length ? (
+                      <div style={{ marginTop: 4, color: "var(--op-muted, #7a8999)" }}>
+                        Active events: {riskCalendar.decision.active_events.map((event) => event.title ?? event.event_type).join(", ")}
+                      </div>
+                    ) : null}
+                    {riskCalendar.decision.missing_evidence?.length ? (
+                      <div style={{ marginTop: 4, color: "var(--op-warn, #f2a03f)" }}>
+                        Missing evidence: {riskCalendar.decision.missing_evidence.join("; ")}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {aiExplanation ? (
                   <div style={sep}>

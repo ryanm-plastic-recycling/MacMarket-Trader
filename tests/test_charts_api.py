@@ -212,12 +212,68 @@ def test_haco_intraday_resolve_does_not_use_persisted_daily_bars(monkeypatch) ->
 
     monkeypatch.setattr(charts_routes, "market_data_service", StubMarketDataService())
 
-    bars, source, fallback = charts_routes._resolve_bars("AAPL", "1H", [])
+    bars, source, fallback, metadata = charts_routes._resolve_bars("AAPL", "1H", [])
 
     assert source == "provider-intraday"
     assert fallback is False
     assert bars[0].timestamp is not None
+    assert metadata["output_timeframe"] == "1H"
     assert len(calls) == 2
+
+
+def test_haco_chart_payload_exposes_regular_hours_metadata() -> None:
+    service = HacoChartService()
+    bars = [
+        Bar(
+            date=date(2026, 4, 1),
+            timestamp=datetime(2026, 4, 1, 13, 30, tzinfo=UTC),
+            open=100,
+            high=101,
+            low=99,
+            close=100.5,
+            volume=1000,
+            session_policy="regular_hours",
+            source_session_policy="provider_session",
+            source_timeframe="30M",
+            provider="polygon",
+        ),
+        Bar(
+            date=date(2026, 4, 1),
+            timestamp=datetime(2026, 4, 1, 14, 30, tzinfo=UTC),
+            open=101,
+            high=102,
+            low=100,
+            close=101.5,
+            volume=1100,
+            session_policy="regular_hours",
+            source_session_policy="provider_session",
+            source_timeframe="30M",
+            provider="polygon",
+        ),
+    ]
+
+    payload = service.build_payload(
+        "AAPL",
+        "1H",
+        bars,
+        data_source="polygon",
+        metadata={
+            "session_policy": "regular_hours",
+            "source_session_policy": "provider_session",
+            "source_timeframe": "30M",
+            "output_timeframe": "1H",
+            "filtered_extended_hours_count": 3,
+            "rth_bucket_count": 2,
+        },
+    )
+
+    assert payload.session_policy == "regular_hours"
+    assert payload.source_session_policy == "provider_session"
+    assert payload.source_timeframe == "30M"
+    assert payload.output_timeframe == "1H"
+    assert payload.filtered_extended_hours_count == 3
+    assert payload.rth_bucket_count == 2
+    assert [candle.time for candle in payload.candles] == sorted(candle.time for candle in payload.candles)
 
 
 def test_haco_chart_requires_auth() -> None:

@@ -66,6 +66,12 @@ function legendValueKind(pane: IndicatorPane): "price" | "volume" | "momentum" {
   return "price";
 }
 
+function formatSessionPolicy(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (value === "regular_hours") return "Regular hours";
+  return value.replaceAll("_", " ");
+}
+
 const PRICE_PANEL_HEIGHT = 288;
 const LOWER_PANEL_HEIGHT = 74;
 
@@ -367,6 +373,9 @@ export function WorkflowChart({
           {chartPayload.fallback_mode ? "Fallback bars" : "Provider-backed bars"}
         </StatusBadge>
         <StatusBadge tone="neutral">Source: {sourceLabel ?? chartPayload.data_source}</StatusBadge>
+        {formatSessionPolicy(chartPayload.session_policy) ? (
+          <StatusBadge tone="neutral">Session: {formatSessionPolicy(chartPayload.session_policy)}</StatusBadge>
+        ) : null}
         <StatusBadge tone="neutral">As of: {formatChartTimestamp(latestBarTime)}</StatusBadge>
       </div>
 

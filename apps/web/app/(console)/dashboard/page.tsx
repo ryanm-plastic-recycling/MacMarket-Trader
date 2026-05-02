@@ -11,11 +11,25 @@ import { WorkflowBanner } from "@/components/workflow-banner";
 
 type Recommendation = { id: number; symbol: string; created_at: string; payload: any };
 type AuditEvent = { event_type: string; timestamp: string | null; detail: string; status: string };
+type RiskCalendarDecision = {
+  decision?: {
+    decision_state?: string;
+    risk_level?: string;
+    recommended_action?: string;
+    warning_summary?: string;
+    block_reason?: string | null;
+    allow_new_entries?: boolean;
+    requires_confirmation?: boolean;
+    active_events?: Array<{ title?: string; event_type?: string; impact?: string }>;
+    missing_evidence?: string[];
+  };
+};
 type DashboardPayload = {
   market_regime: string;
   last_refresh: string;
   account: { app_role: string; approval_status: string };
   provider_health: { summary: string; auth: string; email: string; market_data: string; configured_provider: string; effective_read_mode: string; workflow_execution_mode: string; failure_reason?: string };
+  risk_calendar?: RiskCalendarDecision;
   latest_market_snapshot?: { symbol: string; as_of: string; close: number; source: string; fallback_mode: boolean };
   active_recommendations: Recommendation[];
   recent_replay_runs: Array<{ id: number; symbol: string; recommendation_count: number; approved_count: number; created_at: string }>;
@@ -67,6 +81,7 @@ export default function Page() {
   }, []);
 
   const latest = useMemo(() => data?.active_recommendations[0] ?? null, [data]);
+  const riskDecision = data?.risk_calendar?.decision;
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
@@ -136,6 +151,29 @@ export default function Page() {
         </Card>
         <Card title="Last refresh">{data?.last_refresh ?? (loading ? "Loading..." : "-")}</Card>
       </div>
+
+      <Card title="Market Risk Today">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <StatusBadge tone={riskDecision?.decision_state === "normal" ? "good" : riskDecision?.allow_new_entries ? "warn" : "bad"}>
+            {riskDecision?.decision_state ?? (loading ? "Loading..." : "-")}
+          </StatusBadge>
+          <StatusBadge tone="neutral">{riskDecision?.risk_level ?? "-"}</StatusBadge>
+          <span style={{ color: "#9fb0c3" }}>Action: {riskDecision?.recommended_action ?? "-"}</span>
+        </div>
+        <div style={{ color: "#c7d2df" }}>
+          {riskDecision?.block_reason ?? riskDecision?.warning_summary ?? "Calendar risk assessment pending."}
+        </div>
+        {riskDecision?.active_events?.length ? (
+          <div style={{ marginTop: 8, color: "#9fb0c3" }}>
+            Active events: {riskDecision.active_events.map((event) => event.title ?? event.event_type).join(", ")}
+          </div>
+        ) : null}
+        {riskDecision?.missing_evidence?.length ? (
+          <div style={{ marginTop: 8, color: "#f7b267" }}>
+            Missing evidence: {riskDecision.missing_evidence.join("; ")}
+          </div>
+        ) : null}
+      </Card>
 
       <div className="op-grid-2">
         <Card title="Actionable recommendations">

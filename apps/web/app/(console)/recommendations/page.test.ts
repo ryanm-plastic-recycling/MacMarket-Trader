@@ -102,6 +102,15 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("These symbols come from deterministic scan/stored recommendation data, not LLM browsing.");
   });
 
+  it("renders deterministic risk-calendar badges and recommendation detail context", () => {
+    expect(source).toContain("type RiskCalendarPayload");
+    expect(source).toContain("risk_calendar");
+    expect(source).toContain("risk calendar");
+    expect(source).toContain("RISK CALENDAR");
+    expect(source).toContain("Missing evidence");
+    expect(source).toContain("deterministic risk gate");
+  });
+
   it("keeps score and confidence glossary copy away from probability or execution claims", () => {
     const confidenceCopy = JSON.stringify(GLOSSARY_TERMS.confidence).toLowerCase();
     const scoreCopy = JSON.stringify(GLOSSARY_TERMS.score).toLowerCase();

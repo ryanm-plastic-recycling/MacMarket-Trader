@@ -2,6 +2,37 @@
 
 Last updated: 2026-05-02
 
+## 2026-05-02 Update - Regular-Hours Intraday Normalization
+Phase 3 market-data policy hardening now has an equity-only RTH normalization
+path for provider-backed 1H/4H workflows. Polygon/Massive intraday requests use
+30-minute source aggregates, filter bars outside 9:30 AM-4:00 PM America/New_York,
+and locally re-aggregate canonical 1H and 4H regular-session buckets before
+charting, Analysis, Recommendations, Opportunity Intelligence inputs, and
+Market Risk Calendar data-quality checks consume the series.
+
+The scope remains research/paper-only and does not add day trading, live
+trading, broker routing, active paper position management, or LLM control over
+entries/stops/targets/sizing/approval. Market Risk Calendar now treats
+provider-session intraday bars in an RTH-required equity workflow as a
+deterministic data-quality concern. See
+`docs/rth-intraday-normalization-design.md`.
+
+## 2026-05-01 Update - Phase 10R Started Early
+Market Risk Calendar & Sit-Out Guardrails now have a deterministic,
+paper-only risk gate with static/mock provider support, structured schemas for
+scheduled events/evidence/decisions, config flags, macro/earnings/volatility
+assessment tests, recommendation payload integration, paper-order staging
+blocks/confirmation checks, Dashboard "Market Risk Today" context,
+Recommendations risk badges, Orders calendar-risk confirmation UI, and
+Opportunity Intelligence risk-context input.
+
+LLMs may explain the risk context but cannot override the deterministic gate,
+create unscanned candidates, alter sizing/levels/approval fields, route orders,
+or enable live trading. Live macro calendars, earnings calendars, options
+expected-move feeds, verified alternative-data sources, and full exchange
+calendar integrations remain future provider work. See
+`docs/market-risk-calendar-design.md`.
+
 ## Positioning
 MacMarket-Trader is positioned as an invite-only, operator-grade trading
 intelligence console — not "another charting page." The defensible edge is
@@ -12,7 +43,7 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 290 collected, vitest 203, Playwright 31, and tsc clean from
+Tests: pytest 311 collected, vitest 206, Playwright 31, and tsc clean from
 latest validation.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
@@ -124,10 +155,10 @@ workflow bars now honor the selected timeframe. This remains paper-only and
 does not add broker routing, live trading, or day-trading automation. Intraday
 Polygon/Massive aggregate fetches now request newest bars first and locally
 return the latest ascending provider window rather than the oldest slice of a
-wide range. Future regular-hours-only filtering for provider intraday
-aggregate bars remains a separate market-data policy hardening item; true RTH
-1H/4H bars may require fetching smaller bars and re-aggregating only the
-9:30-16:00 ET session.
+wide range. The follow-on RTH policy hardening is now started early and
+implemented for equity 1H/4H workflows by fetching 30-minute source aggregates,
+filtering provider-session bars to 9:30-16:00 ET, and re-aggregating local
+regular-hours buckets.
 Paper equity order sizing usability hardening is complete for the current
 paper-only sandbox: recommendation sizing continues to use risk-at-stop, paper
 order staging now applies an explicit per-user max-notional cap, optional

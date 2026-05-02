@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from time import monotonic
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -31,6 +31,14 @@ class DataNotEntitledError(Exception):
 # Polygon uses the I: prefix for index tickers.
 INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP", "OEX"}
 POLYGON_AGGREGATE_MAX_LIMIT = 50_000
+US_EQUITY_TIMEZONE = ZoneInfo("America/New_York")
+RTH_SOURCE_TIMEFRAME = "30M"
+RTH_SOURCE_MULTIPLIER = 30
+RTH_SOURCE_TIMESPAN = "minute"
+RTH_BUCKETS_BY_TIMEFRAME = {
+    "1H": [(570, 630), (630, 690), (690, 750), (750, 810), (810, 870), (870, 930), (930, 960)],
+    "4H": [(570, 810), (810, 960)],
+}
 
 
 def normalize_polygon_ticker(symbol: str) -> str:
@@ -39,6 +47,89 @@ def normalize_polygon_ticker(symbol: str) -> str:
     if upper in INDEX_SYMBOLS:
         return f"I:{upper}"
     return upper
+
+
+def _minute_of_day(value: datetime) -> int:
+    local = value.astimezone(US_EQUITY_TIMEZONE)
+    return local.hour * 60 + local.minute
+
+
+def _session_timestamp(session_day: date, minute_of_day: int) -> datetime:
+    local = datetime.combine(
+        session_day,
+        time(hour=minute_of_day // 60, minute=minute_of_day % 60),
+        tzinfo=US_EQUITY_TIMEZONE,
+    )
+    return local.astimezone(UTC)
+
+
+def _rth_bucket_for(timestamp: datetime, timeframe: str) -> tuple[date, int, int] | None:
+    local = timestamp.astimezone(US_EQUITY_TIMEZONE)
+    minute = local.hour * 60 + local.minute
+    for start_minute, end_minute in RTH_BUCKETS_BY_TIMEFRAME.get(timeframe.upper(), []):
+        if start_minute <= minute < end_minute:
+            return local.date(), start_minute, end_minute
+    return None
+
+
+def _aggregate_regular_hours_intraday_bars(
+    bars: list[Bar],
+    *,
+    output_timeframe: str,
+    limit: int,
+    provider: str,
+    source_timeframe: str = RTH_SOURCE_TIMEFRAME,
+    source_session_policy: str = "provider_session",
+) -> tuple[list[Bar], dict[str, object]]:
+    ordered = sorted(
+        (bar for bar in bars if bar.timestamp is not None),
+        key=lambda bar: bar.timestamp or datetime.combine(bar.date, datetime.min.time(), tzinfo=UTC),
+    )
+    filtered_extended_hours_count = 0
+    buckets: dict[tuple[date, int, int], list[Bar]] = {}
+    for bar in ordered:
+        if bar.timestamp is None:
+            continue
+        bucket_key = _rth_bucket_for(bar.timestamp, output_timeframe)
+        if bucket_key is None:
+            filtered_extended_hours_count += 1
+            continue
+        buckets.setdefault(bucket_key, []).append(bar)
+
+    aggregated: list[Bar] = []
+    for (session_day, start_minute, _end_minute), bucket_bars in sorted(buckets.items()):
+        if not bucket_bars:
+            continue
+        aggregated.append(
+            Bar(
+                date=session_day,
+                timestamp=_session_timestamp(session_day, start_minute),
+                open=bucket_bars[0].open,
+                high=max(bar.high for bar in bucket_bars),
+                low=min(bar.low for bar in bucket_bars),
+                close=bucket_bars[-1].close,
+                volume=sum(bar.volume for bar in bucket_bars),
+                rel_volume=None,
+                session_policy="regular_hours",
+                source_session_policy=source_session_policy,
+                source_timeframe=source_timeframe,
+                provider=provider,
+            )
+        )
+
+    selected = aggregated[-limit:] if limit > 0 else aggregated
+    metadata = {
+        "provider": provider,
+        "source_timeframe": source_timeframe,
+        "output_timeframe": output_timeframe.upper(),
+        "session_policy": "regular_hours",
+        "source_session_policy": source_session_policy,
+        "filtered_extended_hours_count": filtered_extended_hours_count,
+        "rth_bucket_count": len(selected),
+        "first_bar_timestamp": selected[0].timestamp.isoformat() if selected and selected[0].timestamp else None,
+        "last_bar_timestamp": selected[-1].timestamp.isoformat() if selected and selected[-1].timestamp else None,
+    }
+    return selected, metadata
 
 
 @dataclass
@@ -107,24 +198,37 @@ class DeterministicFallbackMarketDataProvider(MarketDataProvider):
         del symbol
         tf = timeframe.upper()
         if tf in {"1H", "4H"}:
-            step = timedelta(hours=4 if tf == "4H" else 1)
-            base_ts = datetime(2025, 1, 1, 14, 30, tzinfo=UTC)
+            bucket_starts = [start for start, _end in RTH_BUCKETS_BY_TIMEFRAME[tf]]
+            base_day = date(2025, 1, 1)
             bars: list[Bar] = []
-            for idx in range(max(10, limit)):
-                ts = base_ts + idx * step
-                price = 100 + idx * 0.25
-                bars.append(
-                    Bar(
-                        date=ts.astimezone(ZoneInfo("America/New_York")).date(),
-                        timestamp=ts,
-                        open=price,
-                        high=price + 1.2,
-                        low=price - 1.0,
-                        close=price + 0.35,
-                        volume=1_000_000 + idx * 5000,
-                        rel_volume=1.0,
+            idx = 0
+            day_offset = 0
+            target_count = max(10, limit)
+            while len(bars) < target_count:
+                session_day = base_day + timedelta(days=day_offset)
+                day_offset += 1
+                if session_day.weekday() >= 5:
+                    continue
+                for start_minute in bucket_starts:
+                    price = 100 + idx * 0.25
+                    ts = _session_timestamp(session_day, start_minute)
+                    bars.append(
+                        Bar(
+                            date=session_day,
+                            timestamp=ts,
+                            open=price,
+                            high=price + 1.2,
+                            low=price - 1.0,
+                            close=price + 0.35,
+                            volume=1_000_000 + idx * 5000,
+                            rel_volume=1.0,
+                            session_policy="regular_hours",
+                            source_session_policy="regular_hours",
+                            source_timeframe=tf,
+                            provider="fallback",
+                        )
                     )
-                )
+                    idx += 1
             return bars[-limit:]
 
         base = date(2025, 1, 1)
@@ -348,13 +452,13 @@ class PolygonMarketDataProvider(MarketDataProvider):
         tf = timeframe.upper()
         now = datetime.now(tz=UTC)
         if tf == "1H":
-            calendar_days = max(10, int(limit / 6) * 3 + 5)
+            calendar_days = max(20, int((limit / 7) * 1.8) + 10)
             start = now - timedelta(days=calendar_days)
-            return 1, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), POLYGON_AGGREGATE_MAX_LIMIT
+            return RTH_SOURCE_MULTIPLIER, RTH_SOURCE_TIMESPAN, str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), POLYGON_AGGREGATE_MAX_LIMIT
         if tf == "4H":
-            calendar_days = max(20, int(limit / 2) * 3 + 8)
+            calendar_days = max(40, int((limit / 2) * 1.8) + 10)
             start = now - timedelta(days=calendar_days)
-            return 4, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), POLYGON_AGGREGATE_MAX_LIMIT
+            return RTH_SOURCE_MULTIPLIER, RTH_SOURCE_TIMESPAN, str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), POLYGON_AGGREGATE_MAX_LIMIT
         if tf == "1M":
             start = now - timedelta(minutes=max(limit, 1) + 5)
             return 1, "minute", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), limit
@@ -384,7 +488,8 @@ class PolygonMarketDataProvider(MarketDataProvider):
         multiplier, timespan, from_ts, to_ts, request_limit = self._map_polygon_range(timeframe=timeframe, limit=limit)
         is_intraday = self._is_intraday_timeframe(timeframe)
         sort_direction = "desc" if is_intraday else "asc"
-        target_result_count = min(limit, request_limit) if is_intraday else request_limit
+        needs_rth_normalization = timeframe.upper() in RTH_BUCKETS_BY_TIMEFRAME
+        target_result_count = request_limit if needs_rth_normalization else (min(limit, request_limit) if is_intraday else request_limit)
         payload = self._request_json(
             f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_ts}/{to_ts}",
             {"adjusted": "true", "sort": sort_direction, "limit": str(request_limit)},
@@ -412,7 +517,18 @@ class PolygonMarketDataProvider(MarketDataProvider):
             raise SymbolNotFoundError(f"No bar data returned for symbol {symbol}")
         normalized = [self._normalize_polygon_bar(item) for item in results]
         normalized.sort(key=lambda bar: bar.timestamp or datetime.combine(bar.date, datetime.min.time(), tzinfo=UTC))
-        selected = normalized[-limit:]
+        if needs_rth_normalization:
+            selected, rth_metadata = _aggregate_regular_hours_intraday_bars(
+                normalized,
+                output_timeframe=timeframe,
+                limit=limit,
+                provider=self.name,
+                source_timeframe=RTH_SOURCE_TIMEFRAME,
+                source_session_policy="provider_session",
+            )
+        else:
+            selected = normalized[-limit:]
+            rth_metadata = {}
         if self.last_aggregate_request_metadata is not None:
             self.last_aggregate_request_metadata.update(
                 {
@@ -420,8 +536,9 @@ class PolygonMarketDataProvider(MarketDataProvider):
                     "results_count": len(results),
                     "response_first_timestamp": normalized[0].timestamp.isoformat() if normalized[0].timestamp else None,
                     "response_last_timestamp": normalized[-1].timestamp.isoformat() if normalized[-1].timestamp else None,
-                    "returned_first_timestamp": selected[0].timestamp.isoformat() if selected[0].timestamp else None,
-                    "returned_last_timestamp": selected[-1].timestamp.isoformat() if selected[-1].timestamp else None,
+                    "returned_first_timestamp": selected[0].timestamp.isoformat() if selected and selected[0].timestamp else None,
+                    "returned_last_timestamp": selected[-1].timestamp.isoformat() if selected and selected[-1].timestamp else None,
+                    **rth_metadata,
                 }
             )
         return selected
@@ -584,6 +701,7 @@ class MarketDataService:
         self._latest_cache = TTLCache()
         self._provider = self._build_provider()
         self._fallback_provider = DeterministicFallbackMarketDataProvider()
+        self.last_historical_metadata: dict[str, object] | None = None
 
     def _build_provider(self) -> MarketDataProvider:
         if settings.polygon_enabled:
@@ -594,15 +712,50 @@ class MarketDataService:
             return AlpacaMarketDataProvider()
         return DeterministicFallbackMarketDataProvider()
 
-    def _fallback_result(self, symbol: str, timeframe: str, limit: int) -> tuple[list[Bar], str, bool]:
+    def _metadata_from_bars(
+        self,
+        bars: list[Bar],
+        *,
+        symbol: str,
+        timeframe: str,
+        provider: str,
+        fallback_mode: bool,
+    ) -> dict[str, object]:
+        first = bars[0] if bars else None
+        last = bars[-1] if bars else None
+        return {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe,
+            "provider": provider,
+            "fallback_mode": fallback_mode,
+            "session_policy": first.session_policy if first else None,
+            "source_session_policy": first.source_session_policy if first else None,
+            "source_timeframe": first.source_timeframe if first else None,
+            "output_timeframe": timeframe.upper(),
+            "filtered_extended_hours_count": 0 if first and first.session_policy == "regular_hours" else None,
+            "rth_bucket_count": len(bars) if first and first.session_policy == "regular_hours" else None,
+            "first_bar_timestamp": first.timestamp.isoformat() if first and first.timestamp else None,
+            "last_bar_timestamp": last.timestamp.isoformat() if last and last.timestamp else None,
+        }
+
+    def _fallback_result(self, symbol: str, timeframe: str, limit: int) -> tuple[list[Bar], str, bool, dict[str, object]]:
         bars = self._fallback_provider.fetch_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
-        return bars, "fallback", True
+        metadata = self._metadata_from_bars(
+            bars,
+            symbol=symbol,
+            timeframe=timeframe,
+            provider="fallback",
+            fallback_mode=True,
+        )
+        return bars, "fallback", True, metadata
 
     def historical_bars(self, symbol: str, timeframe: str = "1D", limit: int = 120) -> tuple[list[Bar], str, bool]:
         cache_key = f"hist::{symbol.upper()}::{timeframe}::{limit}"
         cached = self._historical_cache.get(cache_key)
         if cached is not None:
-            return cached
+            bars, source, fallback_mode, metadata = cached
+            self.last_historical_metadata = metadata
+            return bars, source, fallback_mode
 
         try:
             bars = self._provider.fetch_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
@@ -610,14 +763,32 @@ class MarketDataService:
                 result = self._fallback_result(symbol=symbol, timeframe=timeframe, limit=limit)
             else:
                 source = self._provider.name if self._provider.name != "fallback" else "fallback"
-                result = (bars, source, self._provider.name == "fallback")
+                provider_metadata = getattr(self._provider, "last_aggregate_request_metadata", None)
+                metadata = (
+                    dict(provider_metadata)
+                    if isinstance(provider_metadata, dict)
+                    else self._metadata_from_bars(
+                        bars,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        provider=source,
+                        fallback_mode=self._provider.name == "fallback",
+                    )
+                )
+                metadata.setdefault("symbol", symbol.upper())
+                metadata.setdefault("timeframe", timeframe)
+                metadata.setdefault("provider", source)
+                metadata.setdefault("fallback_mode", self._provider.name == "fallback")
+                result = (bars, source, self._provider.name == "fallback", metadata)
         except (SymbolNotFoundError, DataNotEntitledError):
             raise
         except Exception:
             result = self._fallback_result(symbol=symbol, timeframe=timeframe, limit=limit)
 
         self._historical_cache.set(cache_key, result, settings.market_data_historical_cache_ttl_seconds)
-        return result
+        bars, source, fallback_mode, metadata = result
+        self.last_historical_metadata = metadata
+        return bars, source, fallback_mode
 
     def latest_snapshot(self, symbol: str, timeframe: str = "1D") -> MarketSnapshot:
         cache_key = f"latest::{symbol.upper()}::{timeframe}"

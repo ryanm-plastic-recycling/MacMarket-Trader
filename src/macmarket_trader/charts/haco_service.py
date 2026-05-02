@@ -52,8 +52,10 @@ class HacoChartService:
         include_heikin_ashi: bool = True,
         data_source: str = "request_bars",
         fallback_mode: bool = False,
+        metadata: dict[str, object] | None = None,
     ) -> HacoChartPayload:
         canonical_bars = self._dedupe_canonical_bars(self._canonical_bars(bars), timeframe)
+        metadata = metadata or {}
         chart_times = [self._chart_time(bar, timeframe) for bar in canonical_bars]
         opens = [bar.open for bar in canonical_bars]
         highs = [bar.high for bar in canonical_bars]
@@ -92,6 +94,8 @@ class HacoChartService:
 
         current_haco_state = haco_states[-1].state if haco_states else "neutral"
         current_hacolt_direction = hacolt_states[-1].direction if hacolt_states else "flat"
+        first_bar = canonical_bars[0] if canonical_bars else None
+        last_bar = canonical_bars[-1] if canonical_bars else None
 
         return HacoChartPayload(
             symbol=symbol,
@@ -133,4 +137,20 @@ class HacoChartService:
             ),
             data_source=data_source,
             fallback_mode=fallback_mode,
+            session_policy=metadata.get("session_policy") or (first_bar.session_policy if first_bar else None),
+            source_session_policy=metadata.get("source_session_policy") or (first_bar.source_session_policy if first_bar else None),
+            source_timeframe=metadata.get("source_timeframe") or (first_bar.source_timeframe if first_bar else None),
+            output_timeframe=metadata.get("output_timeframe") or timeframe.upper(),
+            filtered_extended_hours_count=metadata.get("filtered_extended_hours_count"),  # type: ignore[arg-type]
+            rth_bucket_count=metadata.get("rth_bucket_count") if metadata.get("rth_bucket_count") is not None else len(canonical_bars),
+            first_bar_timestamp=(
+                str(metadata.get("first_bar_timestamp"))
+                if metadata.get("first_bar_timestamp") is not None
+                else (first_bar.timestamp.isoformat() if first_bar and first_bar.timestamp else None)
+            ),
+            last_bar_timestamp=(
+                str(metadata.get("last_bar_timestamp"))
+                if metadata.get("last_bar_timestamp") is not None
+                else (last_bar.timestamp.isoformat() if last_bar and last_bar.timestamp else None)
+            ),
         )

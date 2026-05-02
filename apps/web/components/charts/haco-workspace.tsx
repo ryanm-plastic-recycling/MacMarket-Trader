@@ -12,6 +12,12 @@ import { fetchHacoChart, type HacoChartPayload } from "@/lib/haco-api";
 const STORAGE_KEY = "macmarket-indicators-haco";
 const HACO_WORKSPACE_SUPPORTED_INDICATORS: IndicatorId[] = [...FIRST_CLASS_WORKFLOW_INDICATORS, ...HACO_CONTEXT_SUPPORTED_INDICATORS];
 
+function formatSessionPolicy(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (value === "regular_hours") return "Regular hours";
+  return value.replaceAll("_", " ");
+}
+
 export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
   const [symbol, setSymbol] = useState("AAPL");
   const [timeframe, setTimeframe] = useState("1D");
@@ -117,13 +123,16 @@ export function HacoWorkspace({ embedded = false }: { embedded?: boolean }) {
   }, [data, embedded, selectedIndicators]);
 
   const summary = useMemo(() => data?.explanation, [data]);
+  const sessionLabel = formatSessionPolicy(data?.session_policy);
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
       {!embedded ? <Card>
         <h2 style={{ margin: 0 }}>HACO operator workspace</h2>
         <p style={{ marginBottom: 0, color: "#9fb0c3" }}>
-          Source: <StatusBadge tone={data?.fallback_mode ? "warn" : "good"}>{data?.data_source ?? "not loaded"}</StatusBadge> · shared canonical time index active.
+          Source: <StatusBadge tone={data?.fallback_mode ? "warn" : "good"}>{data?.data_source ?? "not loaded"}</StatusBadge>
+          {sessionLabel ? <> · <StatusBadge tone="neutral">Session: {sessionLabel}</StatusBadge></> : null}
+          {" "}· shared canonical time index active.
         </p>
       </Card> : null}
 

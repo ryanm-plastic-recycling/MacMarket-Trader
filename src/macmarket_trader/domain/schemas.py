@@ -21,6 +21,10 @@ class Bar(BaseModel):
     close: float
     volume: int
     rel_volume: float | None = None
+    session_policy: str | None = None
+    source_session_policy: str | None = None
+    source_timeframe: str | None = None
+    provider: str | None = None
 
 
 class BaseEvent(BaseModel):
@@ -135,6 +139,14 @@ class HacoChartPayload(BaseModel):
     explanation: HacoChartExplanation
     data_source: str = "request_bars"
     fallback_mode: bool = False
+    session_policy: str | None = None
+    source_session_policy: str | None = None
+    source_timeframe: str | None = None
+    output_timeframe: str | None = None
+    filtered_extended_hours_count: int | None = None
+    rth_bucket_count: int | None = None
+    first_bar_timestamp: str | None = None
+    last_bar_timestamp: str | None = None
 
 
 class TradeSetup(BaseModel):
@@ -273,6 +285,127 @@ class OpportunityIntelligenceRequest(BaseModel):
     max_candidates: int = Field(default=5, ge=2, le=12)
 
 
+RiskEventType = Literal[
+    "cpi",
+    "pce",
+    "fomc_decision",
+    "fomc_press_conference",
+    "nonfarm_payrolls",
+    "gdp",
+    "retail_sales",
+    "treasury_auction",
+    "market_holiday",
+    "market_half_day",
+    "monthly_opex",
+    "quarterly_opex",
+    "quad_witching",
+    "index_rebalance",
+    "earnings",
+    "earnings_call",
+    "investor_day",
+    "product_event",
+    "regulatory_event",
+    "unscheduled_news_shock",
+    "provider_data_issue",
+]
+RiskEventScope = Literal["market", "sector", "symbol", "portfolio"]
+RiskDecisionState = Literal[
+    "normal",
+    "caution",
+    "restricted",
+    "no_trade",
+    "requires_event_evidence",
+    "data_quality_block",
+]
+RiskLevel = Literal["normal", "elevated", "high", "extreme"]
+RiskRecommendedAction = Literal[
+    "trade_normally",
+    "caution",
+    "reduce_size",
+    "wait",
+    "sit_out",
+    "event_trade_review",
+]
+RiskEventImpact = Literal["low", "medium", "high", "extreme"]
+
+
+class MarketRiskEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(default_factory=lambda: f"risk_evt_{uuid4().hex[:12]}")
+    event_type: RiskEventType
+    scope: RiskEventScope = "market"
+    title: str
+    starts_at: datetime
+    ends_at: datetime | None = None
+    impact: RiskEventImpact = "medium"
+    symbols: list[str] = Field(default_factory=list)
+    sectors: list[str] = Field(default_factory=list)
+    source: str = "static"
+    is_confirmed: bool = True
+
+
+class SymbolRiskEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(default_factory=lambda: f"risk_evt_{uuid4().hex[:12]}")
+    event_type: RiskEventType
+    scope: Literal["symbol"] = "symbol"
+    symbol: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime | None = None
+    impact: RiskEventImpact = "medium"
+    source: str = "static"
+    is_confirmed: bool = True
+
+
+class EventEvidenceBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    as_of: datetime
+    event_type: RiskEventType
+    symbol: str | None = None
+    summary: str
+    metrics: dict[str, object] = Field(default_factory=dict)
+    confidence: float = Field(ge=0.0, le=1.0)
+    provenance: dict[str, object] = Field(default_factory=dict)
+    stale: bool = False
+
+
+class RiskGateDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision_state: RiskDecisionState = "normal"
+    allow_new_entries: bool = True
+    requires_confirmation: bool = False
+    recommended_action: RiskRecommendedAction = "trade_normally"
+    risk_level: RiskLevel = "normal"
+    block_reason: str | None = None
+    warning_summary: str = "No active market-risk calendar blocks."
+    active_events: list[MarketRiskEvent | SymbolRiskEvent] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    override_allowed: bool = False
+    override_reason_required: bool = False
+    assessed_at: datetime = Field(default_factory=utc_now)
+    paper_only: bool = True
+    regular_hours_only: bool = True
+
+
+class RiskCalendarAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str | None = None
+    timeframe: str = "1D"
+    decision: RiskGateDecision
+    market_events: list[MarketRiskEvent] = Field(default_factory=list)
+    symbol_events: list[SymbolRiskEvent] = Field(default_factory=list)
+    evidence: list[EventEvidenceBundle] = Field(default_factory=list)
+    volatility_flags: list[str] = Field(default_factory=list)
+    data_quality_flags: list[str] = Field(default_factory=list)
+
+
 class OpportunityCandidateSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -299,6 +432,9 @@ class OpportunityCandidateSummary(BaseModel):
     market_regime: dict[str, object] | None = None
     event_summary: str | None = None
     workflow_source: str | None = None
+    session_policy: str | None = None
+    data_quality: dict[str, object] | None = None
+    risk_calendar: RiskCalendarAssessment | None = None
 
 
 class BetterElsewhereCandidate(BaseModel):
@@ -401,6 +537,7 @@ class TradeRecommendation(BaseModel):
     evidence: EvidenceBundle
     ai_explanation: LLMRecommendationExplanation | None = None
     llm_provenance: LLMProvenance | None = None
+    risk_calendar: RiskCalendarAssessment | None = None
 
 
 class OrderIntent(BaseModel):

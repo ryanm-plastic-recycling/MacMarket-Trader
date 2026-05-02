@@ -282,6 +282,7 @@ class RecommendationRepository:
         fallback_mode: bool,
         market_mode: str | None = None,
         source_strategy: str | None = None,
+        session_metadata: dict[str, object] | None = None,
     ) -> None:
         with self.session_factory() as session:
             row = session.execute(
@@ -292,6 +293,8 @@ class RecommendationRepository:
             payload = dict(row.payload or {})
             workflow = dict(payload.get("workflow") or {})
             workflow.update({"market_data_source": market_data_source, "fallback_mode": fallback_mode})
+            if session_metadata:
+                workflow.update(session_metadata)
             if market_mode:
                 workflow["market_mode"] = market_mode
             if source_strategy:

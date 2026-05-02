@@ -80,8 +80,16 @@ describe("workflow chart presets", () => {
       },
       data_source: "polygon",
       fallback_mode: false,
+      session_policy: "regular_hours",
+      source_session_policy: "provider_session",
+      source_timeframe: "30M",
+      output_timeframe: "1H",
+      filtered_extended_hours_count: 4,
+      rth_bucket_count: 1,
     };
 
     expect(payload.candles[0].time).toBe(1775053800);
+    expect(payload.session_policy).toBe("regular_hours");
+    expect(payload.filtered_extended_hours_count).toBe(4);
   });
 });

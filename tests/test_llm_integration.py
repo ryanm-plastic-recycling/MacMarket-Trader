@@ -5,8 +5,10 @@ from datetime import date, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+import macmarket_trader.llm.registry as llm_registry
 from macmarket_trader.api.main import app
 from macmarket_trader.api.routes import admin as admin_routes
+from macmarket_trader.config import Settings
 from macmarket_trader.domain.models import AppUserModel
 from macmarket_trader.domain.schemas import (
     Bar,
@@ -153,6 +155,76 @@ def _seed_two_recommendations(monkeypatch) -> tuple[str, str]:
     )
     assert second.status_code == 200, second.text
     return first.json()["recommendation_id"], second.json()["recommendation_id"]
+
+
+def test_llm_settings_mock_defaults_require_no_key(monkeypatch) -> None:
+    for key in (
+        "LLM_ENABLED",
+        "LLM_PROVIDER",
+        "LLM_MODEL",
+        "OPENAI_API_KEY",
+        "LLM_API_KEY",
+        "LLM_TIMEOUT_SECONDS",
+        "LLM_MAX_OUTPUT_TOKENS",
+        "LLM_TEMPERATURE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    cfg = Settings(_env_file=None)
+
+    assert cfg.llm_enabled is False
+    assert cfg.llm_provider == "mock"
+    assert cfg.llm_model == ""
+    assert cfg.llm_api_key == ""
+
+
+def test_llm_settings_prefers_openai_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-legacy-test")
+
+    cfg = Settings(_env_file=None)
+
+    assert cfg.llm_api_key == "sk-openai-test"
+
+
+def test_llm_settings_uses_legacy_key_when_openai_key_is_blank(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("LLM_API_KEY", "sk-legacy-test")
+
+    cfg = Settings(_env_file=None)
+
+    assert cfg.llm_api_key == "sk-legacy-test"
+
+
+def test_llm_disabled_openai_provider_does_not_require_key(monkeypatch) -> None:
+    monkeypatch.setattr(llm_registry.settings, "llm_enabled", False)
+    monkeypatch.setattr(llm_registry.settings, "llm_provider", "openai")
+    monkeypatch.setattr(llm_registry.settings, "llm_model", "gpt-5.1")
+    monkeypatch.setattr(llm_registry.settings, "llm_api_key", "")
+
+    client = llm_registry.build_llm_client()
+
+    assert isinstance(client, MockLLMClient)
+    assert client.model == "gpt-5.1"
+
+
+def test_openai_llm_client_reads_configured_env_values(monkeypatch) -> None:
+    monkeypatch.setattr(llm_registry.settings, "llm_enabled", True)
+    monkeypatch.setattr(llm_registry.settings, "llm_provider", "openai")
+    monkeypatch.setattr(llm_registry.settings, "llm_model", "gpt-5.1")
+    monkeypatch.setattr(llm_registry.settings, "llm_api_key", "sk-openai-test")
+    monkeypatch.setattr(llm_registry.settings, "llm_timeout_seconds", 20.0)
+    monkeypatch.setattr(llm_registry.settings, "llm_max_output_tokens", 1200)
+    monkeypatch.setattr(llm_registry.settings, "llm_temperature", 0.2)
+
+    client = llm_registry.build_llm_client()
+
+    assert client.provider_name == "openai"
+    assert client.model == "gpt-5.1"
+    assert getattr(client, "api_key") == "sk-openai-test"
+    assert getattr(client, "timeout_seconds") == 20.0
+    assert getattr(client, "max_output_tokens") == 1200
+    assert getattr(client, "temperature") == 0.2
 
 
 def test_mock_llm_provider_returns_structured_explanation_and_event_fields() -> None:

@@ -39,6 +39,8 @@ from macmarket_trader.llm.registry import build_llm_client
 from macmarket_trader.indicators import compute_haco_states, compute_hacolt_direction
 from macmarket_trader.regime.engine import RegimeEngine
 from macmarket_trader.risk.engine import RiskEngine
+from macmarket_trader.risk_calendar.registry import build_risk_calendar_service
+from macmarket_trader.risk_calendar.service import MarketRiskCalendarService
 from macmarket_trader.setups.engine import SetupEngine
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import FillRepository, OrderRepository, RecommendationRepository
@@ -54,10 +56,12 @@ class RecommendationService:
         order_repository: OrderRepository | None = None,
         fill_repository: FillRepository | None = None,
         llm_client: LLMClient | None = None,
+        risk_calendar_service: MarketRiskCalendarService | None = None,
     ) -> None:
         self.provider = MockMarketDataProvider()
         self.extractor = MockEventExtractor()
         self.llm_client = llm_client or build_llm_client()
+        self.risk_calendar_service = risk_calendar_service or build_risk_calendar_service()
         self.regime_engine = RegimeEngine()
         self.setup_engine = SetupEngine()
         self.risk_engine = RiskEngine()
@@ -78,6 +82,7 @@ class RecommendationService:
         user_is_approved: bool = False,
         app_user_id: int | None = None,
         risk_dollars: float | None = None,
+        timeframe: str = "1D",
     ) -> TradeRecommendation:
         # Pass 4 — `risk_dollars` overrides settings.risk_dollars_per_trade
         # when the caller (route handler) has resolved the per-user override.
@@ -209,11 +214,35 @@ class RecommendationService:
                 historical_analog_refs=[],
             ),
         )
+        rec = self._apply_risk_calendar(rec, bars=bars, timeframe=timeframe)
         rec.ai_explanation, rec.llm_provenance = self._build_ai_explanation(rec)
         self.audit_engine.record(rec)
         if self.persist_audit:
             self.recommendation_repository.create(rec, app_user_id=app_user_id)
         return rec
+
+    def _apply_risk_calendar(self, rec: TradeRecommendation, *, bars: list, timeframe: str = "1D") -> TradeRecommendation:
+        assessment = self.risk_calendar_service.assess(
+            symbol=rec.symbol,
+            timeframe=timeframe,
+            bars=bars,
+        )
+        decision = assessment.decision
+        if decision.decision_state in {"no_trade", "requires_event_evidence", "data_quality_block"}:
+            rejection = decision.block_reason or decision.warning_summary
+            return TradeRecommendation.model_validate(
+                rec.model_copy(
+                    update={
+                        "approved": False,
+                        "outcome": "calendar_blocked",
+                        "rejection_reason": rejection,
+                        "risk_calendar": assessment,
+                    }
+                )
+            )
+        return TradeRecommendation.model_validate(
+            rec.model_copy(update={"risk_calendar": assessment})
+        )
 
     def to_order_intent(self, rec: TradeRecommendation) -> OrderIntent:
         limit_price = (rec.entry.zone_low + rec.entry.zone_high) / 2

@@ -33,6 +33,7 @@ from macmarket_trader.domain.schemas import (
     OpportunityComparisonMemo,
     OpportunityIntelligenceRequest,
     PortfolioSnapshot,
+    RiskCalendarAssessment,
     ReplayRunRequest,
     TradeRecommendation,
 )
@@ -43,6 +44,8 @@ from macmarket_trader.options.paper_open import open_paper_option_structure
 from macmarket_trader.options.replay_preview import build_options_replay_preview
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
+from macmarket_trader.risk_calendar.registry import build_risk_calendar_service
+from macmarket_trader.risk_calendar.service import RiskCalendarBlocked, RiskCalendarRestricted
 from macmarket_trader.service import RecommendationService
 from macmarket_trader.email_templates import render_approval_html, render_invite_html, render_rejection_html
 from macmarket_trader.strategy_reports import StrategyReportService
@@ -286,6 +289,7 @@ strategy_report_repo = StrategyReportRepository(SessionLocal)
 email_provider = build_email_provider()
 market_data_service = build_market_data_service()
 recommendation_service = RecommendationService()
+risk_calendar_service = build_risk_calendar_service()
 replay_engine = ReplayEngine(service=recommendation_service)
 paper_broker = PaperBroker()
 strategy_report_service = StrategyReportService(
@@ -446,6 +450,34 @@ def _workflow_bars(symbol: str, limit: int = 60, timeframe: str = "1D") -> tuple
         )
 
     return bars, source, fallback_mode
+
+
+def _workflow_bar_metadata() -> dict[str, object]:
+    metadata = getattr(market_data_service, "last_historical_metadata", None)
+    return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _session_metadata_from_bars(bars: list[Bar], *, timeframe: str) -> dict[str, object]:
+    first = bars[0] if bars else None
+    last = bars[-1] if bars else None
+    return {
+        "timeframe": timeframe,
+        "session_policy": first.session_policy if first else None,
+        "source_session_policy": first.source_session_policy if first else None,
+        "source_timeframe": first.source_timeframe if first else None,
+        "output_timeframe": timeframe.upper(),
+        "rth_bucket_count": len(bars) if first and first.session_policy == "regular_hours" else None,
+        "first_bar_timestamp": first.timestamp.isoformat() if first and first.timestamp else None,
+        "last_bar_timestamp": last.timestamp.isoformat() if last and last.timestamp else None,
+    }
+
+
+def _workflow_session_metadata(bars: list[Bar], *, timeframe: str) -> dict[str, object]:
+    metadata = _workflow_bar_metadata()
+    fallback = _session_metadata_from_bars(bars, timeframe=timeframe)
+    for key, value in fallback.items():
+        metadata.setdefault(key, value)
+    return {key: value for key, value in metadata.items() if value is not None}
 
 
 @user_router.get("/me")
@@ -614,6 +646,7 @@ def dashboard(user=Depends(require_approved_user)):
     pending_users = user_repo.list_by_status(ApprovalStatus.PENDING)
     provider_health = provider_health_summary()
     latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
+    risk_calendar = risk_calendar_service.assess(symbol="SPY", timeframe="1D")
 
     # Operational audit events — combine email logs, approval events, and schedule runs
     email_events = [
@@ -656,6 +689,7 @@ def dashboard(user=Depends(require_approved_user)):
             "app_role": user.app_role,
         },
         "market_regime": "event-driven / deterministic-eval",
+        "risk_calendar": risk_calendar.model_dump(mode="json"),
         "provider_health": provider_health,
         "latest_market_snapshot": {
             "symbol": latest_snapshot.symbol,
@@ -714,6 +748,12 @@ def dashboard(user=Depends(require_approved_user)):
     }
 
 
+@user_router.get("/risk-calendar/today")
+def risk_calendar_today(symbol: str = "SPY", timeframe: str = "1D", _user=Depends(require_approved_user)):
+    assessment = risk_calendar_service.assess(symbol=symbol, timeframe=timeframe)
+    return assessment.model_dump(mode="json")
+
+
 @user_router.get("/recommendations")
 def list_recommendations(_user=Depends(require_approved_user)):
     rows = recommendation_repo.list_recent(app_user_id=_user.id)
@@ -752,6 +792,16 @@ def _opportunity_candidate_from_row(row) -> OpportunityCandidateSummary:
     payload = dict(row.payload or {})
     workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
     ranking = workflow.get("ranking_provenance") if isinstance(workflow.get("ranking_provenance"), dict) else {}
+    data_quality = ranking.get("data_quality") if isinstance(ranking.get("data_quality"), dict) else {}
+    if not data_quality:
+        data_quality = {
+            "session_policy": workflow.get("session_policy"),
+            "source_session_policy": workflow.get("source_session_policy"),
+            "source_timeframe": workflow.get("source_timeframe"),
+            "output_timeframe": workflow.get("output_timeframe"),
+            "filtered_extended_hours_count": workflow.get("filtered_extended_hours_count"),
+            "rth_bucket_count": workflow.get("rth_bucket_count"),
+        }
     quality = payload.get("quality") if isinstance(payload.get("quality"), dict) else {}
     sizing = payload.get("sizing") if isinstance(payload.get("sizing"), dict) else {}
     event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
@@ -759,6 +809,12 @@ def _opportunity_candidate_from_row(row) -> OpportunityCandidateSummary:
     entry = payload.get("entry") if isinstance(payload.get("entry"), dict) else None
     invalidation = payload.get("invalidation") if isinstance(payload.get("invalidation"), dict) else None
     targets = payload.get("targets") if isinstance(payload.get("targets"), dict) else None
+    risk_calendar = None
+    if isinstance(payload.get("risk_calendar"), dict):
+        try:
+            risk_calendar = RiskCalendarAssessment.model_validate(payload["risk_calendar"])
+        except Exception:
+            risk_calendar = None
     reasons: list[str] = []
     if isinstance(ranking.get("reason_text"), str) and ranking.get("reason_text"):
         reasons.append(str(ranking["reason_text"]))
@@ -791,6 +847,9 @@ def _opportunity_candidate_from_row(row) -> OpportunityCandidateSummary:
         market_regime=regime if isinstance(regime, dict) else None,
         event_summary=str(event.get("summary")) if isinstance(event.get("summary"), str) else None,
         workflow_source=str(workflow.get("market_data_source") or ranking.get("workflow_source") or ranking.get("source") or ""),
+        session_policy=str(workflow.get("session_policy") or ranking.get("session_policy") or "") or None,
+        data_quality={key: value for key, value in data_quality.items() if value is not None},
+        risk_calendar=risk_calendar,
     )
 
 
@@ -862,7 +921,12 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
     selected_strategies = [str(item) for item in (req.get("strategies") or []) if str(item).strip()]
     if not selected_strategies:
         selected_strategies = [entry.display_name for entry in list_strategies(market_mode)[:3]]
-    bars_by_symbol = {symbol: _workflow_bars(symbol, limit=120, timeframe=timeframe) for symbol in symbols}
+    bars_by_symbol: dict[str, tuple[list[Bar], str, bool]] = {}
+    session_metadata_by_symbol: dict[str, dict[str, object]] = {}
+    for symbol in symbols:
+        bars_tuple = _workflow_bars(symbol, limit=120, timeframe=timeframe)
+        bars_by_symbol[symbol] = bars_tuple
+        session_metadata_by_symbol[symbol] = _workflow_session_metadata(bars_tuple[0], timeframe=timeframe)
     ranking = ranking_engine.rank_candidates(
         bars_by_symbol=bars_by_symbol,
         strategies=selected_strategies,
@@ -870,6 +934,18 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
         timeframe=timeframe,
         top_n=int(req.get("top_n") or 10),
     )
+    for item in ranking["queue"]:
+        item_metadata = session_metadata_by_symbol.get(str(item.get("symbol") or "").upper(), {})
+        if item_metadata:
+            item["session_policy"] = item_metadata.get("session_policy")
+            item["data_quality"] = {
+                "session_policy": item_metadata.get("session_policy"),
+                "source_session_policy": item_metadata.get("source_session_policy"),
+                "source_timeframe": item_metadata.get("source_timeframe"),
+                "output_timeframe": item_metadata.get("output_timeframe"),
+                "filtered_extended_hours_count": item_metadata.get("filtered_extended_hours_count"),
+                "rth_bucket_count": item_metadata.get("rth_bucket_count"),
+            }
     return {
         "market_mode": market_mode.value,
         "timeframe": timeframe,
@@ -889,6 +965,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
 
     timeframe = str(req.get("timeframe") or "1D")
     bars, source, fallback_mode = _workflow_bars(symbol, timeframe=timeframe)
+    session_metadata = _workflow_session_metadata(bars, timeframe=timeframe)
     event_text = str(req.get("thesis") or f"Queue promotion for {strategy}")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
@@ -903,6 +980,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         user_is_approved=user_is_approved,
         app_user_id=_user.id,
         risk_dollars=_effective_risk_dollars(_user),
+        timeframe=timeframe,
     )
 
     ranking_provenance = {
@@ -927,6 +1005,15 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         "invalidation": req.get("invalidation") or {},
         "targets": req.get("targets") or [],
         "reason_text": req.get("reason_text") or "",
+        "session_policy": session_metadata.get("session_policy"),
+        "data_quality": {
+            "session_policy": session_metadata.get("session_policy"),
+            "source_session_policy": session_metadata.get("source_session_policy"),
+            "source_timeframe": session_metadata.get("source_timeframe"),
+            "output_timeframe": session_metadata.get("output_timeframe"),
+            "filtered_extended_hours_count": session_metadata.get("filtered_extended_hours_count"),
+            "rth_bucket_count": session_metadata.get("rth_bucket_count"),
+        },
     }
 
     recommendation_repo.attach_workflow_metadata(
@@ -935,6 +1022,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         fallback_mode=fallback_mode,
         market_mode=promote_market_mode.value,
         source_strategy=strategy,
+        session_metadata=session_metadata,
     )
     recommendation_repo.attach_ranking_provenance(
         rec.recommendation_id,
@@ -972,6 +1060,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     bars, source, fallback_mode = _workflow_bars(symbol, timeframe=timeframe)
+    session_metadata = _workflow_session_metadata(bars, timeframe=timeframe)
     rec = recommendation_service.generate(
         symbol=symbol,
         bars=bars,
@@ -982,6 +1071,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         user_is_approved=user_is_approved,
         app_user_id=_user.id,
         risk_dollars=_effective_risk_dollars(_user),
+        timeframe=timeframe,
     )
     recommendation_repo.attach_workflow_metadata(
         rec.recommendation_id,
@@ -989,6 +1079,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         fallback_mode=fallback_mode,
         market_mode=market_mode.value,
         source_strategy=strategy,
+        session_metadata=session_metadata,
     )
     recommendation_repo.attach_ranking_provenance(
         rec.recommendation_id,
@@ -998,6 +1089,15 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
             "timeframe": timeframe,
             "workflow_source": workflow_source or source,
             "source": workflow_source or source,
+            "session_policy": session_metadata.get("session_policy"),
+            "data_quality": {
+                "session_policy": session_metadata.get("session_policy"),
+                "source_session_policy": session_metadata.get("source_session_policy"),
+                "source_timeframe": session_metadata.get("source_timeframe"),
+                "output_timeframe": session_metadata.get("output_timeframe"),
+                "filtered_extended_hours_count": session_metadata.get("filtered_extended_hours_count"),
+                "rth_bucket_count": session_metadata.get("rth_bucket_count"),
+            },
         },
     )
     return {
@@ -1009,6 +1109,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         "market_mode": rec.market_mode.value,
         "market_data_source": source,
         "fallback_mode": fallback_mode,
+        "session_policy": session_metadata.get("session_policy"),
     }
 
 
@@ -1466,10 +1567,24 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
             portfolio=PortfolioSnapshot(),
             app_user_id=_user.id,
             risk_dollars=_effective_risk_dollars(_user),
+            timeframe="1D",
         )
 
     if not rec.approved:
         raise HTTPException(status_code=409, detail=rec.rejection_reason or "Recommendation was no-trade; order not staged.")
+    order_risk_calendar = risk_calendar_service.assess(symbol=rec.symbol, timeframe="1D")
+    risk_confirmed = bool(req.get("risk_calendar_confirmed"))
+    risk_override_reason = str(req.get("risk_calendar_override_reason") or "").strip()
+    try:
+        risk_calendar_service.assert_order_allowed(
+            order_risk_calendar,
+            confirmed=risk_confirmed,
+            reason=risk_override_reason,
+        )
+    except RiskCalendarBlocked as exc:
+        raise HTTPException(status_code=409, detail=f"risk_calendar_blocked:{exc}") from exc
+    except RiskCalendarRestricted as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     sizing_plan = _paper_order_sizing_plan(
         rec,
         user=_user,
@@ -1489,6 +1604,10 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         f"estimated_notional={sizing_plan['estimated_notional']}",
         f"risk_at_stop={sizing_plan['risk_at_stop']}",
         f"notional_cap_reduced={str(bool(sizing_plan['notional_cap_reduced'])).lower()}",
+        f"risk_calendar_state={order_risk_calendar.decision.decision_state}",
+        f"risk_calendar_level={order_risk_calendar.decision.risk_level}",
+        f"risk_calendar_confirmed={str(risk_confirmed).lower()}",
+        f"risk_calendar_override_reason={risk_override_reason}",
     ]
     recommendation_service.persist_order(
         order,
@@ -1529,6 +1648,7 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
         "source": source,
         "market_data_source": source,
         "fallback_mode": fallback_mode,
+        "risk_calendar": order_risk_calendar.model_dump(mode="json"),
         **sizing_plan,
         **fee_preview,
     }
@@ -1819,6 +1939,7 @@ def analysis_setup(
         raise HTTPException(status_code=400, detail="No strategies configured for selected market mode")
 
     bars, source, fallback_mode = _workflow_bars(symbol, limit=120, timeframe=timeframe)
+    session_metadata = _workflow_session_metadata(bars, timeframe=timeframe)
 
     latest = bars[-1]
     prior = bars[-2] if len(bars) > 1 else bars[-1]
@@ -1909,6 +2030,15 @@ def analysis_setup(
         "strategy": strategy_entry.display_name,
         "strategy_metadata": strategy_entry.model_dump(mode="json"),
         "workflow_source": f"fallback ({source})" if fallback_mode else source,
+        "session_policy": session_metadata.get("session_policy"),
+        "data_quality": {
+            "session_policy": session_metadata.get("session_policy"),
+            "source_session_policy": session_metadata.get("source_session_policy"),
+            "source_timeframe": session_metadata.get("source_timeframe"),
+            "output_timeframe": session_metadata.get("output_timeframe"),
+            "filtered_extended_hours_count": session_metadata.get("filtered_extended_hours_count"),
+            "rth_bucket_count": session_metadata.get("rth_bucket_count"),
+        },
         "active": latest.close >= prior.close,
         "active_reason": active_reason,
         "trigger": trigger,

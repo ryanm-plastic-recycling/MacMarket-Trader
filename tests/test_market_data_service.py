@@ -65,14 +65,16 @@ def test_polygon_intraday_bars_preserve_timestamp_and_return_latest_ascending(mo
     monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
     provider = PolygonMarketDataProvider()
     stamps = [
+        datetime(2026, 4, 1, 12, 30, tzinfo=UTC),  # premarket, excluded
         datetime(2026, 4, 1, 13, 30, tzinfo=UTC),
+        datetime(2026, 4, 1, 14, 0, tzinfo=UTC),
         datetime(2026, 4, 1, 14, 30, tzinfo=UTC),
-        datetime(2026, 4, 1, 15, 30, tzinfo=UTC),
-        datetime(2026, 4, 1, 16, 30, tzinfo=UTC),
+        datetime(2026, 4, 1, 15, 0, tzinfo=UTC),
+        datetime(2026, 4, 1, 20, 0, tzinfo=UTC),  # 16:00 ET, excluded
     ]
 
     def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
-        assert path.startswith("/v2/aggs/ticker/GOOG/range/1/hour/")
+        assert path.startswith("/v2/aggs/ticker/GOOG/range/30/minute/")
         assert query["sort"] == "desc"
         assert query["limit"] == "50000"
         return {
@@ -86,13 +88,18 @@ def test_polygon_intraday_bars_preserve_timestamp_and_return_latest_ascending(mo
 
     bars = provider.fetch_historical_bars(symbol="GOOG", timeframe="1H", limit=2)
 
-    assert [bar.timestamp for bar in bars] == stamps[-2:]
-    assert [bar.close for bar in bars] == [102.5, 103.5]
+    assert [bar.timestamp for bar in bars] == [datetime(2026, 4, 1, 13, 30, tzinfo=UTC), datetime(2026, 4, 1, 14, 30, tzinfo=UTC)]
+    assert [bar.close for bar in bars] == [102.5, 104.5]
+    assert [bar.volume for bar in bars] == [2003, 2007]
+    assert all(bar.session_policy == "regular_hours" for bar in bars)
     assert all(bar.date.isoformat() == "2026-04-01" for bar in bars)
     assert provider.last_aggregate_request_metadata is not None
     assert provider.last_aggregate_request_metadata["sort"] == "desc"
     assert provider.last_aggregate_request_metadata["limit"] == 50_000
-    assert provider.last_aggregate_request_metadata["returned_last_timestamp"] == "2026-04-01T16:30:00+00:00"
+    assert provider.last_aggregate_request_metadata["source_timeframe"] == "30M"
+    assert provider.last_aggregate_request_metadata["session_policy"] == "regular_hours"
+    assert provider.last_aggregate_request_metadata["filtered_extended_hours_count"] == 2
+    assert provider.last_aggregate_request_metadata["returned_last_timestamp"] == "2026-04-01T14:30:00+00:00"
 
 
 def test_polygon_intraday_wide_range_returns_latest_not_oldest(monkeypatch) -> None:
@@ -103,14 +110,17 @@ def test_polygon_intraday_wide_range_returns_latest_not_oldest(monkeypatch) -> N
         datetime(2025, 10, 13, 15, 0, tzinfo=UTC),
     ]
     latest_stamps = [
+        datetime(2026, 4, 30, 13, 30, tzinfo=UTC),
         datetime(2026, 4, 30, 14, 0, tzinfo=UTC),
+        datetime(2026, 4, 30, 14, 30, tzinfo=UTC),
         datetime(2026, 4, 30, 15, 0, tzinfo=UTC),
+        datetime(2026, 4, 30, 15, 30, tzinfo=UTC),
         datetime(2026, 4, 30, 16, 0, tzinfo=UTC),
     ]
     response_stamps_desc = list(reversed(latest_stamps)) + list(reversed(old_stamps))
 
     def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
-        assert path.startswith("/v2/aggs/ticker/AAPL/range/1/hour/")
+        assert path.startswith("/v2/aggs/ticker/AAPL/range/30/minute/")
         assert query["sort"] == "desc"
         assert query["limit"] == "50000"
         return {
@@ -124,12 +134,16 @@ def test_polygon_intraday_wide_range_returns_latest_not_oldest(monkeypatch) -> N
 
     bars = provider.fetch_historical_bars(symbol="AAPL", timeframe="1H", limit=3)
 
-    assert [bar.timestamp for bar in bars] == latest_stamps
+    assert [bar.timestamp for bar in bars] == [
+        datetime(2026, 4, 30, 13, 30, tzinfo=UTC),
+        datetime(2026, 4, 30, 14, 30, tzinfo=UTC),
+        datetime(2026, 4, 30, 15, 30, tzinfo=UTC),
+    ]
     assert len({bar.timestamp for bar in bars}) == len(bars)
     assert provider.last_aggregate_request_metadata is not None
     assert provider.last_aggregate_request_metadata["response_first_timestamp"] == "2025-10-13T14:00:00+00:00"
-    assert provider.last_aggregate_request_metadata["returned_first_timestamp"] == "2026-04-30T14:00:00+00:00"
-    assert provider.last_aggregate_request_metadata["returned_last_timestamp"] == "2026-04-30T16:00:00+00:00"
+    assert provider.last_aggregate_request_metadata["returned_first_timestamp"] == "2026-04-30T13:30:00+00:00"
+    assert provider.last_aggregate_request_metadata["returned_last_timestamp"] == "2026-04-30T15:30:00+00:00"
 
 
 def test_polygon_4h_intraday_returns_latest_ascending(monkeypatch) -> None:
@@ -140,13 +154,18 @@ def test_polygon_4h_intraday_returns_latest_ascending(monkeypatch) -> None:
         datetime(2025, 10, 13, 18, 0, tzinfo=UTC),
     ]
     latest_stamps = [
+        datetime(2026, 4, 30, 13, 30, tzinfo=UTC),
         datetime(2026, 4, 30, 14, 0, tzinfo=UTC),
+        datetime(2026, 4, 30, 14, 30, tzinfo=UTC),
+        datetime(2026, 4, 30, 15, 0, tzinfo=UTC),
+        datetime(2026, 4, 30, 17, 30, tzinfo=UTC),
         datetime(2026, 4, 30, 18, 0, tzinfo=UTC),
+        datetime(2026, 4, 30, 19, 30, tzinfo=UTC),
     ]
     response_stamps_desc = list(reversed(latest_stamps)) + list(reversed(old_stamps))
 
     def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
-        assert path.startswith("/v2/aggs/ticker/AAPL/range/4/hour/")
+        assert path.startswith("/v2/aggs/ticker/AAPL/range/30/minute/")
         assert query["sort"] == "desc"
         assert query["limit"] == "50000"
         return {
@@ -160,8 +179,42 @@ def test_polygon_4h_intraday_returns_latest_ascending(monkeypatch) -> None:
 
     bars = provider.fetch_historical_bars(symbol="AAPL", timeframe="4H", limit=2)
 
-    assert [bar.timestamp for bar in bars] == latest_stamps
+    assert [bar.timestamp for bar in bars] == [
+        datetime(2026, 4, 30, 13, 30, tzinfo=UTC),
+        datetime(2026, 4, 30, 17, 30, tzinfo=UTC),
+    ]
     assert len({bar.timestamp for bar in bars}) == len(bars)
+
+
+def test_polygon_rth_normalization_uses_new_york_dst_boundaries(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    stamps = [
+        datetime(2026, 7, 1, 13, 30, tzinfo=UTC),  # 09:30 ET during daylight time
+        datetime(2026, 7, 1, 14, 0, tzinfo=UTC),
+        datetime(2026, 12, 1, 14, 30, tzinfo=UTC),  # 09:30 ET during standard time
+        datetime(2026, 12, 1, 15, 0, tzinfo=UTC),
+    ]
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        assert path.startswith("/v2/aggs/ticker/AAPL/range/30/minute/")
+        return {
+            "results": [
+                {"t": int(stamp.timestamp() * 1000), "o": 100 + idx, "h": 101 + idx, "l": 99 + idx, "c": 100.5 + idx, "v": 1000 + idx}
+                for idx, stamp in enumerate(stamps)
+            ]
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+
+    bars = provider.fetch_historical_bars(symbol="AAPL", timeframe="1H", limit=2)
+
+    assert [bar.date.isoformat() for bar in bars] == ["2026-07-01", "2026-12-01"]
+    assert [bar.timestamp for bar in bars] == [
+        datetime(2026, 7, 1, 13, 30, tzinfo=UTC),
+        datetime(2026, 12, 1, 14, 30, tzinfo=UTC),
+    ]
+    assert all(bar.session_policy == "regular_hours" for bar in bars)
 
 
 def test_alpaca_historical_bars_normalization(monkeypatch) -> None:
@@ -545,7 +598,10 @@ def test_analysis_setup_passes_requested_timeframe_to_market_data(monkeypatch) -
     )
 
     assert response.status_code == 200
-    assert response.json()["timeframe"] == "4H"
+    payload = response.json()
+    assert payload["timeframe"] == "4H"
+    assert payload["session_policy"] == "regular_hours"
+    assert payload["data_quality"]["session_policy"] == "regular_hours"
     assert calls == [("GOOG", "4H", 120)]
 
 

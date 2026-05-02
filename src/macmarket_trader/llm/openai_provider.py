@@ -29,12 +29,22 @@ class OpenAICompatibleLLMClient(LLMClient):
     provider_name = "openai"
     prompt_version = LLM_PROMPT_VERSION
 
-    def __init__(self, *, api_key: str, model: str | None = None, timeout_seconds: float = 12.0) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str | None = None,
+        timeout_seconds: float = 12.0,
+        max_output_tokens: int = 1200,
+        temperature: float = 0.2,
+    ) -> None:
         if not api_key.strip():
-            raise LLMProviderUnavailable("LLM_API_KEY is required for the openai provider.")
+            raise LLMProviderUnavailable("OPENAI_API_KEY is required for the openai provider.")
         self.api_key = api_key
         self.model = model or "gpt-4o-mini"
         self.timeout_seconds = timeout_seconds
+        self.max_output_tokens = max_output_tokens
+        self.temperature = temperature
 
     def summarize_event_text(self, *, symbol: str, text: str) -> str:
         payload = self._complete_json(
@@ -143,6 +153,8 @@ class OpenAICompatibleLLMClient(LLMClient):
         request_payload = {
             "model": self.model,
             "response_format": {"type": "json_object"},
+            "max_tokens": self.max_output_tokens,
+            "temperature": self.temperature,
             "messages": [
                 {"role": "system", "content": system},
                 {

@@ -13,6 +13,10 @@ export type HacoChartRequest = {
     close: number;
     volume: number;
     rel_volume?: number;
+    session_policy?: string | null;
+    source_session_policy?: string | null;
+    source_timeframe?: string | null;
+    provider?: string | null;
   }>;
 };
 
@@ -32,6 +36,14 @@ export type HacoChartPayload = {
   };
   data_source: string;
   fallback_mode: boolean;
+  session_policy?: string | null;
+  source_session_policy?: string | null;
+  source_timeframe?: string | null;
+  output_timeframe?: string | null;
+  filtered_extended_hours_count?: number | null;
+  rth_bucket_count?: number | null;
+  first_bar_timestamp?: string | null;
+  last_bar_timestamp?: string | null;
 };
 
 export async function fetchHacoChart(request: HacoChartRequest): Promise<HacoChartPayload> {

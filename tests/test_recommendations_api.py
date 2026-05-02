@@ -135,7 +135,9 @@ def test_user_generation_uses_requested_timeframe(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
+    payload = response.json()
     assert calls == [("GOOG", "1H", 60)]
+    assert payload["session_policy"] == "regular_hours"
 
 
 def test_user_ranked_recommendation_queue_contract() -> None:
@@ -192,6 +194,8 @@ def test_user_ranked_recommendation_queue_uses_requested_timeframe(monkeypatch) 
 
     assert response.status_code == 200
     assert response.json()["timeframe"] == "1H"
+    assert response.json()["queue"][0]["session_policy"] == "regular_hours"
+    assert response.json()["queue"][0]["data_quality"]["source_timeframe"] == "1H"
     assert calls == [("GOOG", "1H", 120)]
 
 
@@ -267,6 +271,8 @@ def test_promoted_recommendation_provenance_timeframe_matches_bars_used(monkeypa
 
     assert calls == [("GOOG", "4H", 120), ("GOOG", "4H", 60)]
     assert workflow["ranking_provenance"]["timeframe"] == "4H"
+    assert workflow["session_policy"] == "regular_hours"
+    assert workflow["ranking_provenance"]["data_quality"]["session_policy"] == "regular_hours"
 
 
 def test_user_ranked_queue_candidate_can_be_saved_as_alternative() -> None:

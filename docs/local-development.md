@@ -61,6 +61,37 @@ Local/dev override (explicit):
 - `WORKFLOW_DEMO_FALLBACK=true` (backend `.env`) allows workflow endpoints to proceed in fallback mode **only** when `ENVIRONMENT` is `dev`, `local`, or `test`.
 - Keep this disabled for production-facing behavior.
 
+## LLM explanation provider (backend `.env`)
+
+The LLM layer is optional and explanation-only. Local/test startup does not
+require an API key because the default is disabled mock mode:
+
+```bash
+LLM_ENABLED=false
+LLM_PROVIDER=mock
+```
+
+To enable OpenAI-backed explanation and Opportunity Intelligence memos, set:
+
+```bash
+LLM_ENABLED=true
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-5.1
+OPENAI_API_KEY=your_openai_key_here
+LLM_TIMEOUT_SECONDS=20
+LLM_MAX_OUTPUT_TOKENS=1200
+LLM_TEMPERATURE=0.2
+```
+
+Never commit real API keys. `OPENAI_API_KEY` is the preferred OpenAI credential
+variable; `LLM_API_KEY` is retained as a backward-compatible fallback.
+
+The provider output is schema-validated and replaced by deterministic mock
+fallback if disabled, unavailable, malformed, or missing credentials. The LLM
+may summarize, extract, compare, and explain, but it cannot choose trades or
+change approval, entry, stop, target, sizing, risk-calendar gate state, or paper
+order creation.
+
 ## Backend (FastAPI)
 
 MacMarket-Trader backend dependencies are managed from `pyproject.toml` (PEP 621).
