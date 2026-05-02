@@ -96,6 +96,66 @@ function formatUniverseWarning(value: string): string {
 }
 
 type RecLevels = { entryLow: number | null; entryHigh: number | null; stop: number | null; target1: number | null; target2: number | null };
+type AIExplanationPayload = {
+  summary?: string;
+  approval_explanation?: string;
+  counter_thesis?: string[];
+  deterministic_engine_owns?: string[];
+  explanation_only?: boolean;
+};
+type LLMProvenancePayload = {
+  provider?: string;
+  model?: string | null;
+  prompt_version?: string;
+  generated_at?: string;
+  fallback_used?: boolean;
+  validation_errors?: string[];
+};
+type OpportunityCandidateSummary = {
+  recommendation_id: string;
+  display_id?: string | null;
+  symbol: string;
+  side: string;
+  timeframe: string;
+  approved: boolean;
+  status: string;
+  deterministic_score?: number | null;
+  confidence?: number | null;
+  risk_score?: number | null;
+  expected_rr?: number | null;
+  current_recommendation_rank?: number | null;
+  reasons?: string[];
+  rejection_reason?: string | null;
+};
+type BetterElsewhereCandidate = {
+  recommendation_id?: string | null;
+  symbol: string;
+  rank?: number | null;
+  deterministic_score?: number | null;
+  expected_rr?: number | null;
+  confidence?: number | null;
+  reason: string;
+  source: "deterministic_scan" | "research_only_unverified";
+  verified_by_scan: boolean;
+};
+type OpportunityComparisonMemo = {
+  best_deterministic_candidate_id?: string | null;
+  best_deterministic_symbol?: string | null;
+  market_desk_memo: string;
+  comparison_rows: Record<string, unknown>[];
+  counter_thesis_by_candidate: Record<string, string[]>;
+  better_elsewhere: BetterElsewhereCandidate[];
+  not_good_enough_warning?: string | null;
+  missing_data: string[];
+  deterministic_engine_owns: string[];
+  explanation_only: boolean;
+  candidates: OpportunityCandidateSummary[];
+  provenance?: LLMProvenancePayload & {
+    candidate_ids?: string[];
+    scanned_symbols?: string[];
+    better_elsewhere_source?: string;
+  };
+};
 
 function extractLevels(rec: StoredRecommendation | null, queue: QueueCandidate | null): RecLevels {
   const empty: RecLevels = { entryLow: null, entryHigh: null, stop: null, target1: null, target2: null };
@@ -140,7 +200,7 @@ export default function RecommendationsPage() {
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<number | null>(null);
   const [symbols, setSymbols] = useState("AAPL,MSFT,NVDA,AMZN");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, saveAlt: false, approve: false });
+  const [loading, setLoading] = useState({ queue: false, recommendations: false, promote: false, saveAlt: false, approve: false, opportunity: false });
   const [chartPayload, setChartPayload] = useState<HacoChartPayload | null>(null);
   const [optionsPreview, setOptionsPreview] = useState<OptionsResearchSetup | null>(null);
   const [optionsPreviewLoading, setOptionsPreviewLoading] = useState(false);
@@ -159,6 +219,10 @@ export default function RecommendationsPage() {
   const [excludedSymbols, setExcludedSymbols] = useState("");
   const [universePreview, setUniversePreview] = useState<SymbolUniversePreviewResponse | null>(null);
   const [universeFeedback, setUniverseFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([]);
+  const [opportunityMemo, setOpportunityMemo] = useState<OpportunityComparisonMemo | null>(null);
+  const [includeBetterElsewhere, setIncludeBetterElsewhere] = useState(true);
+  const [opportunityFeedback, setOpportunityFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
@@ -424,6 +488,41 @@ export default function RecommendationsPage() {
     }
     setFeedback({ state: "success", message: approved ? "Recommendation approved." : "Recommendation rejected." });
     await loadRecommendations({ selectRecommendationUid: selectedRecommendation.recommendation_id });
+  }
+
+  function toggleOpportunitySelection(recommendationId: string) {
+    setSelectedOpportunityIds((prev) => (
+      prev.includes(recommendationId)
+        ? prev.filter((item) => item !== recommendationId)
+        : [...prev, recommendationId]
+    ));
+    setOpportunityFeedback({ state: "idle", message: "" });
+  }
+
+  async function compareSelectedOpportunities() {
+    if (selectedOpportunityIds.length < 2) {
+      setOpportunityFeedback({ state: "error", message: "Select at least two stored recommendations before comparing." });
+      return;
+    }
+    setLoading((prev) => ({ ...prev, opportunity: true }));
+    setOpportunityFeedback({ state: "loading", message: "Building Opportunity Intelligence memo..." });
+    const result = await fetchWorkflowApi<OpportunityComparisonMemo>("/api/user/recommendations/opportunity-intelligence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selected_recommendation_ids: selectedOpportunityIds,
+        include_better_elsewhere: includeBetterElsewhere,
+        max_candidates: 6,
+      }),
+    });
+    setLoading((prev) => ({ ...prev, opportunity: false }));
+    if (!result.ok || !result.data) {
+      setOpportunityMemo(null);
+      setOpportunityFeedback({ state: "error", message: result.error ?? "Unable to generate Opportunity Intelligence." });
+      return;
+    }
+    setOpportunityMemo(result.data);
+    setOpportunityFeedback({ state: "success", message: "Opportunity Intelligence memo generated from stored deterministic candidates." });
   }
 
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
@@ -836,6 +935,93 @@ export default function RecommendationsPage() {
 
       {showExecutionCtas && error ? <ErrorState title="Recommendations workflow unavailable" hint={error} /> : null}
 
+      {showExecutionCtas ? <Card title="Opportunity Intelligence">
+        <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.86rem", lineHeight: 1.5, marginBottom: 10 }}>
+          Explanation and research support only. Deterministic engine owns approval, entry, stop, target, sizing, and paper order creation.
+        </div>
+        <div className="op-row" style={{ flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          <StatusBadge tone="neutral">{selectedOpportunityIds.length} selected</StatusBadge>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={includeBetterElsewhere}
+              onChange={(event) => setIncludeBetterElsewhere(event.target.checked)}
+            />
+            Include deterministic better-elsewhere scan
+          </label>
+          <button
+            className="op-btn op-btn-primary"
+            onClick={() => void compareSelectedOpportunities()}
+            disabled={loading.opportunity || selectedOpportunityIds.length < 2}
+          >
+            {loading.opportunity ? "Comparing..." : "Compare selected"}
+          </button>
+        </div>
+        <InlineFeedback state={opportunityFeedback.state} message={opportunityFeedback.message} />
+        {opportunityMemo ? (
+          <div className="op-stack" style={{ marginTop: 10 }}>
+            <div className="op-row" style={{ flexWrap: "wrap", gap: 6 }}>
+              <StatusBadge tone="good">Best deterministic candidate: {opportunityMemo.best_deterministic_symbol ?? "-"}</StatusBadge>
+              {opportunityMemo.provenance?.fallback_used ? <StatusBadge tone="warn">deterministic fallback used</StatusBadge> : null}
+              <StatusBadge tone="neutral">provider {asText(opportunityMemo.provenance?.provider)}</StatusBadge>
+            </div>
+            <div style={{ lineHeight: 1.55 }}>{opportunityMemo.market_desk_memo}</div>
+            {opportunityMemo.not_good_enough_warning ? (
+              <div style={{ color: "var(--op-warn, #f2a03f)" }}><strong>not good enough today:</strong> {opportunityMemo.not_good_enough_warning}</div>
+            ) : null}
+            {opportunityMemo.comparison_rows.length ? (
+              <table className="op-table">
+                <thead><tr><th>symbol</th><th>rank</th><th>score</th><th>RR</th><th>confidence</th><th>desk read</th></tr></thead>
+                <tbody>
+                  {opportunityMemo.comparison_rows.map((row, idx) => (
+                    <tr key={`${idx}-${asText(row.candidate_id)}`}>
+                      <td>{asText(row.symbol)}</td>
+                      <td>{asText(row.rank)}</td>
+                      <td>{asText(row.score)}</td>
+                      <td>{asText(row.expected_rr)}</td>
+                      <td>{asText(row.confidence)}</td>
+                      <td>{asText(row.desk_read)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+            {Object.keys(opportunityMemo.counter_thesis_by_candidate).length ? (
+              <div>
+                <strong>counter-thesis per candidate</strong>
+                <ul style={{ margin: "4px 0 0 18px" }}>
+                  {Object.entries(opportunityMemo.counter_thesis_by_candidate).map(([candidateId, bullets]) => (
+                    <li key={candidateId}>
+                      <span style={{ fontFamily: "monospace" }}>{candidateId.slice(-8)}</span>: {bullets.join(" · ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {opportunityMemo.better_elsewhere.length ? (
+              <div>
+                <strong>better elsewhere</strong>
+                <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.84rem", marginTop: 2 }}>
+                  These symbols come from deterministic scan/stored recommendation data, not LLM browsing.
+                </div>
+                <ul style={{ margin: "4px 0 0 18px" }}>
+                  {opportunityMemo.better_elsewhere.map((candidate) => (
+                    <li key={`${candidate.symbol}-${candidate.recommendation_id ?? "research"}`}>
+                      {candidate.symbol} {candidate.rank ? `(rank ${candidate.rank})` : ""}: {candidate.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {opportunityMemo.missing_data.length ? (
+              <div style={{ color: "var(--op-muted, #7a8999)" }}><strong>missing data:</strong> {opportunityMemo.missing_data.join(", ")}</div>
+            ) : null}
+          </div>
+        ) : (
+          <EmptyState title="No memo yet" hint="Select two or more stored recommendations below, then compare selected." />
+        )}
+      </Card> : null}
+
       {showExecutionCtas ? <div className="op-grid-2">
         <Card title="Ranked queue candidates">
           {guidedState.guided ? (
@@ -898,7 +1084,7 @@ export default function RecommendationsPage() {
           {rows.length > 0 ? (
             <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
             <table className="op-table">
-              <thead><tr><th>date</th><th>symbol</th><th>strategy</th><th>queue rank</th><th>approved</th><th>source</th></tr></thead>
+              <thead><tr><th>compare</th><th>date</th><th>symbol</th><th>strategy</th><th>queue rank</th><th>approved</th><th>source</th></tr></thead>
               <tbody>
                 {filteredRows.map((row) => {
                   const prov = getRankingProvenance(row.payload as Record<string, unknown>);
@@ -907,6 +1093,15 @@ export default function RecommendationsPage() {
                   const approved = (row.payload as Record<string, unknown>)?.approved;
                   return (
                     <tr key={row.id} className={`is-selectable ${selectedRecommendationId === row.id ? "is-active" : ""}`} onClick={() => { setSelectedRecommendationId(row.id); setSelectedQueueKey(null); }}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedOpportunityIds.includes(row.recommendation_id)}
+                          onChange={() => toggleOpportunitySelection(row.recommendation_id)}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Select ${row.symbol} for Opportunity Intelligence`}
+                        />
+                      </td>
                       <td>{formatDate(row.created_at)}</td>
                       <td>{row.symbol}</td>
                       <td>{strategy}</td>
@@ -982,6 +1177,8 @@ export default function RecommendationsPage() {
             const targets = p.targets as Record<string, unknown> | undefined;
             const sizing = p.sizing as Record<string, unknown> | undefined;
             const quality = p.quality as Record<string, unknown> | undefined;
+            const aiExplanation = p.ai_explanation as AIExplanationPayload | undefined;
+            const llmProvenance = p.llm_provenance as LLMProvenancePayload | undefined;
             const sep = { marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--op-border, #1e2d3d)" } as const;
             const label = { fontSize: "0.78rem", color: "var(--op-muted, #7a8999)", marginBottom: 2 } as const;
             return (
@@ -999,6 +1196,32 @@ export default function RecommendationsPage() {
                 {/* Thesis */}
                 {p.thesis ? <div style={{ paddingTop: 4 }}><strong>thesis:</strong> {asText(p.thesis)}</div> : null}
                 {p.rejection_reason ? <div style={{ color: "var(--op-warn, #f2a03f)" }}><strong>rejection reason:</strong> {asText(p.rejection_reason)}</div> : null}
+
+                {aiExplanation ? (
+                  <div style={sep}>
+                    <div style={label}>AI EXPLANATION</div>
+                    <StatusBadge tone="neutral">explanation only</StatusBadge>
+                    <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.84rem", lineHeight: 1.45 }}>
+                      Deterministic engine owns entry, stop, target, sizing, approval/no-trade status, and order routing.
+                    </div>
+                    {aiExplanation.summary ? <div style={{ marginTop: 6 }}><strong>summary:</strong> {aiExplanation.summary}</div> : null}
+                    {aiExplanation.approval_explanation ? <div><strong>approval/rejection:</strong> {aiExplanation.approval_explanation}</div> : null}
+                    {Array.isArray(aiExplanation.counter_thesis) && aiExplanation.counter_thesis.length ? (
+                      <div>
+                        <strong>counter-thesis / failure modes:</strong>
+                        <ul style={{ margin: "4px 0 0 18px" }}>
+                          {aiExplanation.counter_thesis.map((item, idx) => <li key={`${idx}-${item}`}>{item}</li>)}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {llmProvenance ? (
+                      <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                        provider {asText(llmProvenance.provider)} · model {asText(llmProvenance.model)} · prompt {asText(llmProvenance.prompt_version)}
+                        {llmProvenance.fallback_used ? " · deterministic fallback used" : ""}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {/* Catalyst */}
                 {catalyst ? (

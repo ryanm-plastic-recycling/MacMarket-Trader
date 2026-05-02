@@ -12,9 +12,8 @@ explainable AI layered on top of deterministic logic. **It is paper-only.**
 ## Current Status
 Phases 0–6 and Pass 4 complete. Three alpha users (admin + 2 approved).
 Deployed at https://macmarket.io via Cloudflare Tunnel.
-Tests: pytest 271 collected; targeted 10W8D backend validation plus 10W8B,
-10W8C, and 10W8D frontend validation passed. vitest 199, Playwright 31, and
-tsc clean from latest frontend validation.
+Tests: pytest 290 collected, vitest 203, Playwright 31, and tsc clean from
+latest validation.
 Phase 7 is complete for the current equity/paper-readiness foundation.
 Phase 8C is complete for the current read-only, non-persisted options replay
 preview scope.
@@ -122,9 +121,13 @@ provider-backed chart/workflow path: aggregate-bar timestamps are preserved,
 times, 1D payloads keep daily date values, chart routes no longer substitute
 persisted daily bars for intraday requests, and Analysis / Recommendations
 workflow bars now honor the selected timeframe. This remains paper-only and
-does not add broker routing, live trading, or day-trading automation. Future
-regular-hours-only filtering for provider intraday aggregate bars remains a
-separate market-data policy hardening item.
+does not add broker routing, live trading, or day-trading automation. Intraday
+Polygon/Massive aggregate fetches now request newest bars first and locally
+return the latest ascending provider window rather than the oldest slice of a
+wide range. Future regular-hours-only filtering for provider intraday
+aggregate bars remains a separate market-data policy hardening item; true RTH
+1H/4H bars may require fetching smaller bars and re-aggregating only the
+9:30-16:00 ET session.
 Paper equity order sizing usability hardening is complete for the current
 paper-only sandbox: recommendation sizing continues to use risk-at-stop, paper
 order staging now applies an explicit per-user max-notional cap, optional
@@ -133,6 +136,20 @@ the notional cap, and current-user paper sandbox reset controls delete only
 equity paper orders/fills/positions/trades while preserving recommendations,
 replay runs, settings, watchlists, provider config, options-paper rows, and
 paper-only/no-live-trading boundaries.
+Safe LLM explanation-layer foundation is complete for the current
+recommendation workflow: LLM providers are disabled by default, mock remains
+the local/test default, optional real-provider calls are gated behind
+`LLM_ENABLED`, provider output is schema-validated with deterministic fallback,
+and persisted Recommendations can show an AI Explanation section that is
+explicitly explanation-only. Deterministic engines still own entry, stop,
+target, sizing, approval/no-trade status, and order routing.
+Opportunity Intelligence is now started as a safe extension of that explanation
+layer: selected stored recommendations can be compared in a market desk memo
+using only backend-supplied deterministic candidate summaries, while
+better-elsewhere references are limited to deterministic scan/stored
+recommendation data. This remains research/paper-only and does not let the LLM
+create trades, alter ranking, change approval, entry, stop, target, sizing, or
+route orders.
 
 ## Completed Phases
 
@@ -336,6 +353,52 @@ paper-only/no-live-trading boundaries.
   happen before Alpaca paper integration.
 - Remaining deferred items are intentionally moved to later phases and should
   not block Phase 8 planning.
+
+### Phase 10L - Safe LLM explanation layer
+- Complete for current workflow-comprehension scope:
+  provider-agnostic LLM client contracts now cover event text summarization,
+  event-field extraction, recommendation explanation, and counter-thesis
+  generation.
+- Complete for current workflow-comprehension scope:
+  `LLM_ENABLED=false`, `LLM_PROVIDER=mock`, optional `LLM_MODEL`, and optional
+  `LLM_API_KEY` keep local startup/tests free of required LLM credentials.
+- Complete for current workflow-comprehension scope:
+  malformed or unavailable provider output is rejected by structured schemas
+  and replaced with deterministic mock explanation fallback.
+- Complete for current workflow-comprehension scope:
+  recommendation payloads store LLM provenance including provider, model,
+  prompt version, generated timestamp, fallback status, and validation errors.
+- Complete for current workflow-comprehension scope:
+  Recommendations show an `AI Explanation` section labeled explanation-only,
+  including counter-thesis/failure modes and explicit copy that deterministic
+  engines own entry, stop, target, sizing, approval/no-trade status, and order
+  routing.
+- Explicitly not included:
+  LLM trade selection, LLM entry/stop/target/sizing, LLM approval authority,
+  broker routing, live trading, or brokerage execution.
+
+### Phase 10M - Opportunity Intelligence
+- Started for current workflow-comparison scope:
+  `POST /user/recommendations/opportunity-intelligence` compares selected
+  stored recommendations using structured deterministic candidate summaries
+  and returns an explanation-only market desk memo.
+- Complete for current safety scope:
+  LLM output is schema-validated and rejected if it references candidate ids or
+  symbols that were not supplied by backend-selected recommendation or
+  deterministic better-elsewhere data.
+- Complete for current local/test scope:
+  mock/fallback output remains deterministic when `LLM_ENABLED=false`,
+  provider output is malformed/unavailable, or a real-provider key is missing.
+- Complete for current UI scope:
+  Recommendations now includes an `Opportunity Intelligence` section where the
+  operator selects two or more stored recommendations, requests a comparison,
+  and sees best deterministic candidate, memo, comparison table,
+  counter-thesis, deterministic better-elsewhere references, warnings, and
+  missing-data notes.
+- Explicitly not included:
+  LLM-generated trades, LLM ranking changes, LLM approval changes, generated
+  entries/stops/targets, sizing, order creation, live trading, brokerage
+  routing, MCP server exposure, or browsing for unscanned symbols.
 
 ## Deferred From Phase 7
 

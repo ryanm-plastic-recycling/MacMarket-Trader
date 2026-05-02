@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from macmarket_trader.domain.enums import AppRole, ApprovalStatus, Direction, EventSourceType, InstrumentType, MarketMode, OrderStatus, RegimeType, SetupType, TradingSessionModel
 from macmarket_trader.domain.time import utc_now
@@ -222,6 +222,161 @@ class ConstraintReport(BaseModel):
     final_share_count: int
 
 
+class LLMEventFields(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_type: EventSourceType
+    headline: str = Field(min_length=1, max_length=240)
+    summary: str = Field(min_length=1, max_length=1200)
+    sentiment_score: float = Field(ge=-1.0, le=1.0)
+    tags: list[str] = Field(default_factory=list, max_length=12)
+
+
+class LLMRecommendationExplanation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=1200)
+    approval_explanation: str = Field(min_length=1, max_length=1200)
+    counter_thesis: list[str] = Field(default_factory=list, max_length=8)
+    deterministic_engine_owns: list[str] = Field(
+        default_factory=lambda: ["entry", "stop", "target", "sizing", "approval", "order_routing"]
+    )
+    explanation_only: bool = True
+
+    @model_validator(mode="after")
+    def _guardrail_fields(self) -> "LLMRecommendationExplanation":
+        required = {"entry", "stop", "target", "sizing", "approval", "order_routing"}
+        if set(self.deterministic_engine_owns) != required:
+            raise ValueError("deterministic_engine_owns must name only the deterministic decision fields")
+        if self.explanation_only is not True:
+            raise ValueError("LLM explanation must be labeled explanation_only")
+        return self
+
+
+class LLMProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    model: str | None = None
+    prompt_version: str
+    generated_at: datetime
+    fallback_used: bool = False
+    validation_errors: list[str] = Field(default_factory=list)
+
+
+class OpportunityIntelligenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_recommendation_ids: list[str] = Field(default_factory=list, max_length=12)
+    watchlist_or_universe_name: str | None = Field(default=None, max_length=120)
+    include_better_elsewhere: bool = False
+    max_candidates: int = Field(default=5, ge=2, le=12)
+
+
+class OpportunityCandidateSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommendation_id: str
+    display_id: str | None = None
+    symbol: str
+    side: str
+    timeframe: str = "1D"
+    approved: bool
+    status: str
+    deterministic_score: float | None = None
+    confidence: float | None = None
+    risk_score: float | None = None
+    expected_rr: float | None = None
+    entry: dict[str, object] | None = None
+    invalidation: dict[str, object] | None = None
+    targets: dict[str, object] | None = None
+    risk_dollars: float | None = None
+    final_order_shares: int | None = None
+    final_order_notional: float | None = None
+    current_recommendation_rank: int | None = None
+    reasons: list[str] = Field(default_factory=list, max_length=12)
+    rejection_reason: str | None = None
+    market_regime: dict[str, object] | None = None
+    event_summary: str | None = None
+    workflow_source: str | None = None
+
+
+class BetterElsewhereCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommendation_id: str | None = None
+    symbol: str
+    rank: int | None = None
+    deterministic_score: float | None = None
+    expected_rr: float | None = None
+    confidence: float | None = None
+    reason: str
+    source: Literal["deterministic_scan", "research_only_unverified"] = "deterministic_scan"
+    verified_by_scan: bool = True
+
+
+class OpportunityIntelligenceProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    model: str | None = None
+    prompt_version: str
+    generated_at: datetime
+    fallback_used: bool = False
+    validation_errors: list[str] = Field(default_factory=list)
+    candidate_ids: list[str] = Field(default_factory=list)
+    scanned_symbols: list[str] = Field(default_factory=list)
+    better_elsewhere_source: Literal["deterministic_scan", "omitted"] = "omitted"
+
+
+class OpportunityComparisonMemo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    best_deterministic_candidate_id: str | None = None
+    best_deterministic_symbol: str | None = None
+    market_desk_memo: str = Field(min_length=1, max_length=2400)
+    comparison_rows: list[dict[str, object]] = Field(default_factory=list, max_length=12)
+    counter_thesis_by_candidate: dict[str, list[str]] = Field(default_factory=dict)
+    better_elsewhere: list[BetterElsewhereCandidate] = Field(default_factory=list, max_length=12)
+    not_good_enough_warning: str | None = Field(default=None, max_length=600)
+    missing_data: list[str] = Field(default_factory=list, max_length=12)
+    deterministic_engine_owns: list[str] = Field(
+        default_factory=lambda: [
+            "approved",
+            "side",
+            "entry",
+            "invalidation",
+            "targets",
+            "shares",
+            "sizing",
+            "order_status",
+            "paper_position_status",
+        ]
+    )
+    explanation_only: bool = True
+    candidates: list[OpportunityCandidateSummary] = Field(default_factory=list, max_length=12)
+    provenance: OpportunityIntelligenceProvenance | None = None
+
+    @model_validator(mode="after")
+    def _guardrail_fields(self) -> "OpportunityComparisonMemo":
+        required = {
+            "approved",
+            "side",
+            "entry",
+            "invalidation",
+            "targets",
+            "shares",
+            "sizing",
+            "order_status",
+            "paper_position_status",
+        }
+        if set(self.deterministic_engine_owns) != required:
+            raise ValueError("deterministic_engine_owns must name only deterministic trade fields")
+        if self.explanation_only is not True:
+            raise ValueError("Opportunity Intelligence must be labeled explanation_only")
+        return self
+
+
 class TradeRecommendation(BaseModel):
     outcome: str = "approved"
     market_mode: MarketMode = MarketMode.EQUITIES
@@ -244,6 +399,8 @@ class TradeRecommendation(BaseModel):
     rejection_reason: str | None = None
     constraints: ConstraintReport
     evidence: EvidenceBundle
+    ai_explanation: LLMRecommendationExplanation | None = None
+    llm_provenance: LLMProvenance | None = None
 
 
 class OrderIntent(BaseModel):

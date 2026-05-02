@@ -130,6 +130,38 @@ def test_haco_intraday_4h_sorts_by_timestamp_for_same_market_date() -> None:
     assert [candle.close for candle in payload.candles] == [100.5, 104.5]
 
 
+def test_haco_intraday_1h_final_bar_uses_latest_provider_window() -> None:
+    service = HacoChartService()
+    bars = [
+        Bar(date=date(2025, 10, 13), timestamp=datetime(2025, 10, 13, 14, 0, tzinfo=UTC), open=90, high=91, low=89, close=90.5, volume=1000),
+        Bar(date=date(2026, 4, 30), timestamp=datetime(2026, 4, 30, 14, 0, tzinfo=UTC), open=100, high=101, low=99, close=100.5, volume=1200),
+        Bar(date=date(2026, 4, 30), timestamp=datetime(2026, 4, 30, 15, 0, tzinfo=UTC), open=101, high=102, low=100, close=101.5, volume=1300),
+    ]
+
+    payload = service.build_payload("AAPL", "1H", bars)
+    times = [candle.time for candle in payload.candles]
+
+    assert times == sorted(times)
+    assert len(times) == len(set(times))
+    assert times[-1] == int(datetime(2026, 4, 30, 15, 0, tzinfo=UTC).timestamp())
+
+
+def test_haco_intraday_4h_final_bar_uses_latest_provider_window() -> None:
+    service = HacoChartService()
+    bars = [
+        Bar(date=date(2025, 10, 13), timestamp=datetime(2025, 10, 13, 14, 0, tzinfo=UTC), open=90, high=91, low=89, close=90.5, volume=1000),
+        Bar(date=date(2026, 4, 30), timestamp=datetime(2026, 4, 30, 14, 0, tzinfo=UTC), open=100, high=101, low=99, close=100.5, volume=1200),
+        Bar(date=date(2026, 4, 30), timestamp=datetime(2026, 4, 30, 18, 0, tzinfo=UTC), open=101, high=102, low=100, close=101.5, volume=1300),
+    ]
+
+    payload = service.build_payload("AAPL", "4H", bars)
+    times = [candle.time for candle in payload.candles]
+
+    assert times == sorted(times)
+    assert len(times) == len(set(times))
+    assert times[-1] == int(datetime(2026, 4, 30, 18, 0, tzinfo=UTC).timestamp())
+
+
 def test_haco_daily_payload_keeps_date_time_values() -> None:
     service = HacoChartService()
     payload = service.build_payload(

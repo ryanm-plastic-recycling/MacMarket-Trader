@@ -21,6 +21,7 @@ from macmarket_trader.domain.schemas import (
     Bar,
     ExpectedRange,
     InviteCreateRequest,
+    BetterElsewhereCandidate,
     OptionPaperCloseStructureRequest,
     OptionPaperCloseStructureResponse,
     OptionPaperLifecycleSummaryListResponse,
@@ -28,6 +29,9 @@ from macmarket_trader.domain.schemas import (
     OptionPaperStructureInput,
     OptionReplayPreviewRequest,
     OptionReplayPreviewResponse,
+    OpportunityCandidateSummary,
+    OpportunityComparisonMemo,
+    OpportunityIntelligenceRequest,
     PortfolioSnapshot,
     ReplayRunRequest,
     TradeRecommendation,
@@ -726,6 +730,128 @@ def list_recommendations(_user=Depends(require_approved_user)):
         }
         for row in rows
     ]
+
+
+def _opportunity_float(value: object) -> float | None:
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _opportunity_int(value: object) -> int | None:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed
+
+
+def _opportunity_candidate_from_row(row) -> OpportunityCandidateSummary:
+    payload = dict(row.payload or {})
+    workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+    ranking = workflow.get("ranking_provenance") if isinstance(workflow.get("ranking_provenance"), dict) else {}
+    quality = payload.get("quality") if isinstance(payload.get("quality"), dict) else {}
+    sizing = payload.get("sizing") if isinstance(payload.get("sizing"), dict) else {}
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    regime = payload.get("regime_context") if isinstance(payload.get("regime_context"), dict) else payload.get("regime")
+    entry = payload.get("entry") if isinstance(payload.get("entry"), dict) else None
+    invalidation = payload.get("invalidation") if isinstance(payload.get("invalidation"), dict) else None
+    targets = payload.get("targets") if isinstance(payload.get("targets"), dict) else None
+    reasons: list[str] = []
+    if isinstance(ranking.get("reason_text"), str) and ranking.get("reason_text"):
+        reasons.append(str(ranking["reason_text"]))
+    if isinstance(payload.get("thesis"), str) and payload.get("thesis"):
+        reasons.append(str(payload["thesis"]))
+    side = payload.get("side")
+    if hasattr(side, "value"):
+        side = side.value
+    return OpportunityCandidateSummary(
+        recommendation_id=row.recommendation_id,
+        display_id=display_id_or_fallback(row.display_id, row.recommendation_id),
+        symbol=str(payload.get("symbol") or row.symbol).upper(),
+        side=str(side or "long"),
+        timeframe=str(ranking.get("timeframe") or workflow.get("timeframe") or "1D"),
+        approved=bool(payload.get("approved", False)),
+        status=str(payload.get("outcome") or ranking.get("status") or ("approved" if payload.get("approved") else "no_trade")),
+        deterministic_score=_opportunity_float(ranking.get("score") or quality.get("score")),
+        confidence=_opportunity_float(ranking.get("confidence") or quality.get("confidence")),
+        risk_score=_opportunity_float(quality.get("risk_score")),
+        expected_rr=_opportunity_float(ranking.get("expected_rr") or quality.get("expected_rr")),
+        entry=entry,
+        invalidation=invalidation,
+        targets=targets,
+        risk_dollars=_opportunity_float(sizing.get("risk_dollars")),
+        final_order_shares=None,
+        final_order_notional=None,
+        current_recommendation_rank=_opportunity_int(ranking.get("rank")),
+        reasons=reasons[:12],
+        rejection_reason=str(payload.get("rejection_reason")) if payload.get("rejection_reason") else None,
+        market_regime=regime if isinstance(regime, dict) else None,
+        event_summary=str(event.get("summary")) if isinstance(event.get("summary"), str) else None,
+        workflow_source=str(workflow.get("market_data_source") or ranking.get("workflow_source") or ranking.get("source") or ""),
+    )
+
+
+def _better_elsewhere_from_candidate(candidate: OpportunityCandidateSummary) -> BetterElsewhereCandidate:
+    return BetterElsewhereCandidate(
+        recommendation_id=candidate.recommendation_id,
+        symbol=candidate.symbol,
+        rank=candidate.current_recommendation_rank,
+        deterministic_score=candidate.deterministic_score,
+        expected_rr=candidate.expected_rr,
+        confidence=candidate.confidence,
+        reason=(
+            candidate.reasons[0]
+            if candidate.reasons
+            else "Deterministic stored recommendation has stronger rank/score than the selected set."
+        ),
+        source="deterministic_scan",
+        verified_by_scan=True,
+    )
+
+
+@user_router.post("/recommendations/opportunity-intelligence", response_model=OpportunityComparisonMemo)
+def recommendation_opportunity_intelligence(
+    req: OpportunityIntelligenceRequest,
+    _user=Depends(require_approved_user),
+) -> OpportunityComparisonMemo:
+    selected_ids = [item.strip() for item in req.selected_recommendation_ids if item.strip()]
+    if len(selected_ids) < 2:
+        raise HTTPException(status_code=400, detail="Select at least two stored recommendations to compare.")
+
+    selected_rows = []
+    for recommendation_id in selected_ids:
+        row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+        if row is None or row.app_user_id != _user.id:
+            raise HTTPException(status_code=404, detail=f"Recommendation not found: {recommendation_id}")
+        selected_rows.append(row)
+    candidates = [_opportunity_candidate_from_row(row) for row in selected_rows[: req.max_candidates]]
+
+    better_elsewhere: list[BetterElsewhereCandidate] = []
+    if req.include_better_elsewhere:
+        selected_set = {candidate.recommendation_id for candidate in candidates}
+        recent_rows = recommendation_repo.list_recent(limit=max(20, req.max_candidates * 4), app_user_id=_user.id)
+        pool = [
+            _opportunity_candidate_from_row(row)
+            for row in recent_rows
+            if row.recommendation_id not in selected_set
+        ]
+        pool.sort(
+            key=lambda candidate: (
+                0 if candidate.approved else 1,
+                candidate.current_recommendation_rank if candidate.current_recommendation_rank is not None else 999,
+                -(candidate.deterministic_score or 0.0),
+                -(candidate.expected_rr or 0.0),
+            )
+        )
+        better_elsewhere = [_better_elsewhere_from_candidate(candidate) for candidate in pool[: req.max_candidates]]
+
+    return recommendation_service.generate_opportunity_intelligence(
+        candidates=candidates,
+        better_elsewhere=better_elsewhere,
+    )
 
 
 @user_router.post("/recommendations/queue")

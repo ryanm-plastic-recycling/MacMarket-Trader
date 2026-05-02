@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     max_portfolio_heat: float = 0.06
     max_position_notional: float = 0.20
     audit_persistence_enabled: bool = True
+    llm_enabled: bool = False
+    llm_provider: str = "mock"
+    llm_model: str = ""
+    llm_api_key: str = ""
 
     # auth/email/provider config
     auth_provider: str = "mock"

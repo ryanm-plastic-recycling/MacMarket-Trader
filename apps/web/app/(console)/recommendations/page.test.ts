@@ -5,6 +5,7 @@ import { GLOSSARY_TERMS } from "@/lib/glossary";
 
 const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const previewProxySource = readFileSync(new URL("../../api/user/symbol-universe/preview/route.ts", import.meta.url), "utf8");
+const opportunityProxySource = readFileSync(new URL("../../api/user/recommendations/opportunity-intelligence/route.ts", import.meta.url), "utf8");
 
 describe("recommendations metric help rollout", () => {
   it("adds clearer manual symbol-entry guidance and parsed preview wiring", () => {
@@ -78,6 +79,27 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain('<MetricLabel label="confidence" term="confidence" />');
     expect(source).toContain('<MetricLabel label="risk score" term="score" />');
     expect(source).toContain('<MetricLabel label="queue score" term="score" />');
+  });
+
+  it("renders AI Explanation as explanation-only and leaves deterministic decisions owned by the engine", () => {
+    expect(source).toContain("AI EXPLANATION");
+    expect(source).toContain("explanation only");
+    expect(source).toContain("Deterministic engine owns entry, stop, target, sizing, approval/no-trade status, and order routing.");
+    expect(source).toContain("counter-thesis / failure modes");
+    expect(source).toContain("deterministic fallback used");
+  });
+
+  it("renders Opportunity Intelligence comparison as explanation-only research support", () => {
+    expect(source).toContain("Opportunity Intelligence");
+    expect(source).toContain("Compare selected");
+    expect(source).toContain("selectedOpportunityIds");
+    expect(source).toContain("toggleOpportunitySelection");
+    expect(source).toContain("compareSelectedOpportunities");
+    expect(source).toContain('"/api/user/recommendations/opportunity-intelligence"');
+    expect(opportunityProxySource).toContain('backendPath: "/user/recommendations/opportunity-intelligence"');
+    expect(source).toContain("Explanation and research support only. Deterministic engine owns approval, entry, stop, target, sizing, and paper order creation.");
+    expect(source).toContain("better elsewhere");
+    expect(source).toContain("These symbols come from deterministic scan/stored recommendation data, not LLM browsing.");
   });
 
   it("keeps score and confidence glossary copy away from probability or execution claims", () => {

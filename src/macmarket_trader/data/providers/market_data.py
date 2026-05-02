@@ -30,6 +30,7 @@ class DataNotEntitledError(Exception):
 
 # Polygon uses the I: prefix for index tickers.
 INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP", "OEX"}
+POLYGON_AGGREGATE_MAX_LIMIT = 50_000
 
 
 def normalize_polygon_ticker(symbol: str) -> str:
@@ -312,6 +313,7 @@ class PolygonMarketDataProvider(MarketDataProvider):
         self.api_key = settings.polygon_api_key.strip()
         self.timeout_seconds = settings.polygon_timeout_seconds
         self._last_success_at: datetime | None = None
+        self.last_aggregate_request_metadata: dict[str, object] | None = None
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self.base_url)
@@ -348,16 +350,19 @@ class PolygonMarketDataProvider(MarketDataProvider):
         if tf == "1H":
             calendar_days = max(10, int(limit / 6) * 3 + 5)
             start = now - timedelta(days=calendar_days)
-            return 1, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), max(limit * 8, 500)
+            return 1, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), POLYGON_AGGREGATE_MAX_LIMIT
         if tf == "4H":
             calendar_days = max(20, int(limit / 2) * 3 + 8)
             start = now - timedelta(days=calendar_days)
-            return 4, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), max(limit * 8, 500)
+            return 4, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), POLYGON_AGGREGATE_MAX_LIMIT
         if tf == "1M":
             start = now - timedelta(minutes=max(limit, 1) + 5)
             return 1, "minute", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), limit
         start = (now - timedelta(days=max(limit, 1) + 5)).date().isoformat()
         return 1, "day", start, now.date().isoformat(), limit
+
+    def _is_intraday_timeframe(self, timeframe: str) -> bool:
+        return timeframe.upper() in {"1M", "1H", "4H"}
 
     def _normalize_polygon_bar(self, bar: dict[str, Any]) -> Bar:
         ts_ms = int(bar.get("t") or 0)
@@ -377,14 +382,27 @@ class PolygonMarketDataProvider(MarketDataProvider):
     def get_historical_bars(self, symbol: str, timeframe: str, limit: int = 120) -> list[Bar]:
         ticker = normalize_polygon_ticker(symbol)
         multiplier, timespan, from_ts, to_ts, request_limit = self._map_polygon_range(timeframe=timeframe, limit=limit)
+        is_intraday = self._is_intraday_timeframe(timeframe)
+        sort_direction = "desc" if is_intraday else "asc"
+        target_result_count = min(limit, request_limit) if is_intraday else request_limit
         payload = self._request_json(
             f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_ts}/{to_ts}",
-            {"adjusted": "true", "sort": "asc", "limit": str(request_limit)},
+            {"adjusted": "true", "sort": sort_direction, "limit": str(request_limit)},
         )
         results: list[dict[str, Any]] = list(payload.get("results") or [])
-        # Follow Polygon pagination (next_url) until we have enough bars (max 3 extra pages).
+        self.last_aggregate_request_metadata = {
+            "symbol": ticker,
+            "timeframe": timeframe,
+            "from": from_ts,
+            "to": to_ts,
+            "sort": sort_direction,
+            "limit": request_limit,
+            "requested_bars": limit,
+            "results_count": len(results),
+        }
+        # Follow Polygon pagination only until the requested latest bar window is available.
         page = 0
-        while "next_url" in payload and len(results) < request_limit and page < 3:
+        while "next_url" in payload and len(results) < target_result_count and page < 3:
             page += 1
             next_url = str(payload["next_url"])
             sep = "&" if "?" in next_url else "?"
@@ -394,7 +412,19 @@ class PolygonMarketDataProvider(MarketDataProvider):
             raise SymbolNotFoundError(f"No bar data returned for symbol {symbol}")
         normalized = [self._normalize_polygon_bar(item) for item in results]
         normalized.sort(key=lambda bar: bar.timestamp or datetime.combine(bar.date, datetime.min.time(), tzinfo=UTC))
-        return normalized[-limit:]
+        selected = normalized[-limit:]
+        if self.last_aggregate_request_metadata is not None:
+            self.last_aggregate_request_metadata.update(
+                {
+                    "pages_followed": page,
+                    "results_count": len(results),
+                    "response_first_timestamp": normalized[0].timestamp.isoformat() if normalized[0].timestamp else None,
+                    "response_last_timestamp": normalized[-1].timestamp.isoformat() if normalized[-1].timestamp else None,
+                    "returned_first_timestamp": selected[0].timestamp.isoformat() if selected[0].timestamp else None,
+                    "returned_last_timestamp": selected[-1].timestamp.isoformat() if selected[-1].timestamp else None,
+                }
+            )
+        return selected
 
     def fetch_historical_bars(self, symbol: str, timeframe: str, limit: int) -> list[Bar]:
         return self.get_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)

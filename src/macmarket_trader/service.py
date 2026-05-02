@@ -14,10 +14,16 @@ from macmarket_trader.domain.schemas import (
     FillRecord,
     IndicatorContext,
     InvalidationMetadata,
+    LLMProvenance,
+    LLMRecommendationExplanation,
     MacroEvent,
     NewsEvent,
     OrderIntent,
     OrderRecord,
+    BetterElsewhereCandidate,
+    OpportunityCandidateSummary,
+    OpportunityComparisonMemo,
+    OpportunityIntelligenceProvenance,
     PortfolioSnapshot,
     QualityMetadata,
     RegimeContext,
@@ -26,7 +32,10 @@ from macmarket_trader.domain.schemas import (
     TimeStopMetadata,
     TradeRecommendation,
 )
-from macmarket_trader.llm.mock_extractor import MockEventExtractor
+from macmarket_trader.domain.time import utc_now
+from macmarket_trader.llm.base import LLMClient, LLMProviderUnavailable, LLMValidationError
+from macmarket_trader.llm.mock_extractor import MockEventExtractor, MockLLMClient
+from macmarket_trader.llm.registry import build_llm_client
 from macmarket_trader.indicators import compute_haco_states, compute_hacolt_direction
 from macmarket_trader.regime.engine import RegimeEngine
 from macmarket_trader.risk.engine import RiskEngine
@@ -44,9 +53,11 @@ class RecommendationService:
         recommendation_repository: RecommendationRepository | None = None,
         order_repository: OrderRepository | None = None,
         fill_repository: FillRepository | None = None,
+        llm_client: LLMClient | None = None,
     ) -> None:
         self.provider = MockMarketDataProvider()
         self.extractor = MockEventExtractor()
+        self.llm_client = llm_client or build_llm_client()
         self.regime_engine = RegimeEngine()
         self.setup_engine = SetupEngine()
         self.risk_engine = RiskEngine()
@@ -123,6 +134,7 @@ class RecommendationService:
 
         notes = [
             "LLM constrained to extraction/summarization/explanation only.",
+            "Deterministic setup, risk, approval, and order-intent engines own trade decisions.",
             f"Setup selected: {setup.setup_type.value}",
             f"Regime classified as: {regime.regime.value}",
         ]
@@ -197,6 +209,7 @@ class RecommendationService:
                 historical_analog_refs=[],
             ),
         )
+        rec.ai_explanation, rec.llm_provenance = self._build_ai_explanation(rec)
         self.audit_engine.record(rec)
         if self.persist_audit:
             self.recommendation_repository.create(rec, app_user_id=app_user_id)
@@ -219,6 +232,143 @@ class RecommendationService:
     def persist_fill(self, fill: FillRecord) -> None:
         if self.persist_audit:
             self.fill_repository.create(fill)
+
+    def _build_ai_explanation(self, rec: TradeRecommendation) -> tuple[LLMRecommendationExplanation, LLMProvenance]:
+        validation_errors: list[str] = []
+        provider = getattr(self.llm_client, "provider_name", "mock")
+        model = getattr(self.llm_client, "model", None)
+        prompt_version = getattr(self.llm_client, "prompt_version", "llm-explanation-v1")
+        fallback_used = (
+            not settings.llm_enabled
+            or (settings.llm_provider.strip().lower() != "mock" and provider == "mock")
+        )
+
+        try:
+            raw_explanation = self.llm_client.explain_recommendation(recommendation=rec)
+            explanation = LLMRecommendationExplanation.model_validate(raw_explanation)
+            if not explanation.counter_thesis:
+                counter_thesis = self.llm_client.generate_counter_thesis(recommendation=rec)
+                explanation = explanation.model_copy(update={"counter_thesis": counter_thesis[:8]})
+            explanation = LLMRecommendationExplanation.model_validate(explanation)
+        except (LLMProviderUnavailable, LLMValidationError, ValueError, TypeError) as exc:
+            validation_errors.append(str(exc))
+            fallback_client = MockLLMClient()
+            provider = fallback_client.provider_name
+            model = fallback_client.model
+            prompt_version = fallback_client.prompt_version
+            explanation = fallback_client.explain_recommendation(recommendation=rec)
+            fallback_used = True
+
+        provenance = LLMProvenance(
+            provider=provider,
+            model=model,
+            prompt_version=prompt_version,
+            generated_at=utc_now(),
+            fallback_used=fallback_used,
+            validation_errors=validation_errors,
+        )
+        return explanation, provenance
+
+    def generate_opportunity_intelligence(
+        self,
+        *,
+        candidates: list[OpportunityCandidateSummary],
+        better_elsewhere: list[BetterElsewhereCandidate] | None = None,
+    ) -> OpportunityComparisonMemo:
+        supplied_better_elsewhere = better_elsewhere or []
+        validation_errors: list[str] = []
+        provider = getattr(self.llm_client, "provider_name", "mock")
+        model = getattr(self.llm_client, "model", None)
+        prompt_version = getattr(self.llm_client, "prompt_version", "llm-explanation-v1")
+        fallback_used = (
+            not settings.llm_enabled
+            or (settings.llm_provider.strip().lower() != "mock" and provider == "mock")
+        )
+
+        try:
+            raw_memo = self.llm_client.compare_candidates(
+                candidates=candidates,
+                better_elsewhere=supplied_better_elsewhere,
+            )
+            memo = OpportunityComparisonMemo.model_validate(raw_memo)
+            self._validate_opportunity_memo(
+                memo=memo,
+                candidates=candidates,
+                better_elsewhere=supplied_better_elsewhere,
+            )
+        except (LLMProviderUnavailable, LLMValidationError, ValueError, TypeError) as exc:
+            validation_errors.append(str(exc))
+            fallback_client = MockLLMClient()
+            provider = fallback_client.provider_name
+            model = fallback_client.model
+            prompt_version = fallback_client.prompt_version
+            memo = fallback_client.compare_candidates(
+                candidates=candidates,
+                better_elsewhere=supplied_better_elsewhere,
+            )
+            fallback_used = True
+
+        provenance = OpportunityIntelligenceProvenance(
+            provider=provider,
+            model=model,
+            prompt_version=prompt_version,
+            generated_at=utc_now(),
+            fallback_used=fallback_used,
+            validation_errors=validation_errors,
+            candidate_ids=[candidate.recommendation_id for candidate in candidates],
+            scanned_symbols=sorted(
+                {
+                    candidate.symbol
+                    for candidate in candidates
+                }
+                | {
+                    candidate.symbol
+                    for candidate in supplied_better_elsewhere
+                    if candidate.source == "deterministic_scan"
+                }
+            ),
+            better_elsewhere_source="deterministic_scan" if supplied_better_elsewhere else "omitted",
+        )
+        return OpportunityComparisonMemo.model_validate(
+            memo.model_copy(
+                update={
+                    "candidates": candidates,
+                    "better_elsewhere": supplied_better_elsewhere,
+                    "provenance": provenance,
+                }
+            )
+        )
+
+    @staticmethod
+    def _validate_opportunity_memo(
+        *,
+        memo: OpportunityComparisonMemo,
+        candidates: list[OpportunityCandidateSummary],
+        better_elsewhere: list[BetterElsewhereCandidate],
+    ) -> None:
+        candidate_ids = {candidate.recommendation_id for candidate in candidates}
+        selected_symbols = {candidate.symbol for candidate in candidates}
+        better_symbols = {candidate.symbol for candidate in better_elsewhere}
+        allowed_symbols = selected_symbols | better_symbols
+        if memo.best_deterministic_candidate_id and memo.best_deterministic_candidate_id not in candidate_ids:
+            raise LLMValidationError("best deterministic candidate was not supplied by backend")
+        if memo.best_deterministic_symbol and memo.best_deterministic_symbol not in selected_symbols:
+            raise LLMValidationError("best deterministic symbol was not supplied by backend")
+        for row in memo.comparison_rows:
+            candidate_id = row.get("candidate_id")
+            symbol = row.get("symbol")
+            if candidate_id is not None and str(candidate_id) not in candidate_ids:
+                raise LLMValidationError("comparison row referenced unsupplied candidate")
+            if symbol is not None and str(symbol).upper() not in selected_symbols:
+                raise LLMValidationError("comparison row referenced unsupplied symbol")
+        for candidate_id in memo.counter_thesis_by_candidate:
+            if candidate_id not in candidate_ids:
+                raise LLMValidationError("counter-thesis referenced unsupplied candidate")
+        for item in memo.better_elsewhere:
+            if item.source == "deterministic_scan" and item.symbol not in better_symbols:
+                raise LLMValidationError("better-elsewhere candidate was not supplied by deterministic scan")
+            if item.source == "research_only_unverified" and item.symbol not in allowed_symbols:
+                raise LLMValidationError("research-only better-elsewhere symbol was not supplied by backend")
 
     @staticmethod
     def _source_quality_score(source_quality: str) -> float:
