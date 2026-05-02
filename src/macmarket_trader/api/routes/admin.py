@@ -44,6 +44,7 @@ from macmarket_trader.email_templates import render_approval_html, render_invite
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
+<<<<<<< ours
 from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OptionPaperRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, SymbolUniverseRepository, UserRepository, WatchlistRepository, commission_paid_for_trade, display_id_or_fallback, gross_pnl_or_fallback, net_pnl_or_fallback
 from macmarket_trader.domain.models import AuditLogModel
 
@@ -189,6 +190,9 @@ def _record_audit_event(*, recommendation_id: str, payload: dict[str, object]) -
     with SessionLocal() as session:
         session.add(AuditLogModel(recommendation_id=recommendation_id or "", payload=payload))
         session.commit()
+=======
+from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
+>>>>>>> theirs
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 user_router = APIRouter(prefix="/user", tags=["user"])
@@ -200,7 +204,10 @@ dashboard_repo = DashboardRepository(SessionLocal)
 recommendation_repo = RecommendationRepository(SessionLocal)
 replay_repo = ReplayRepository(SessionLocal)
 order_repo = OrderRepository(SessionLocal)
+<<<<<<< ours
 option_paper_repo = OptionPaperRepository(SessionLocal)
+=======
+>>>>>>> theirs
 paper_portfolio_repo = PaperPortfolioRepository(SessionLocal)
 watchlist_repo = WatchlistRepository(SessionLocal)
 symbol_universe_repo = SymbolUniverseRepository(SessionLocal)
@@ -999,7 +1006,10 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         "has_stageable_candidate": bool(run_row.has_stageable_candidate) if run_row else False,
         "stageable_recommendation_id": run_row.stageable_recommendation_id if run_row else None,
         "stageable_reason": run_row.stageable_reason if run_row else None,
+<<<<<<< ours
         **fee_preview,
+=======
+>>>>>>> theirs
     }
 
 
@@ -1035,7 +1045,10 @@ def replay_run_detail(run_id: int, _user=Depends(require_approved_user)):
         "has_stageable_candidate": run.has_stageable_candidate,
         "stageable_recommendation_id": run.stageable_recommendation_id,
         "stageable_reason": run.stageable_reason,
+<<<<<<< ours
         **fee_preview,
+=======
+>>>>>>> theirs
     }
 
 
@@ -1151,6 +1164,16 @@ def close_order(order_id: str, req: dict[str, object], _user=Depends(require_app
         "entry_price": round(avg_entry, 2),
         "close_price": round(close_price, 2),
         "shares": int(quantity),
+    }
+
+
+@user_router.get("/orders/portfolio-summary")
+def paper_portfolio_summary(_user=Depends(require_approved_user)):
+    summary = paper_portfolio_repo.summary(app_user_id=_user.id)
+    return {
+        **summary,
+        "lifecycle_status": "scaffolded",
+        "notes": "Position/trade lifecycle accounting endpoints are enabled. Realized P&L remains zero until close-trade lifecycle writes are connected.",
     }
 
 

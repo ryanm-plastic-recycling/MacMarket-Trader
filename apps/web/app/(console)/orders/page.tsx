@@ -99,6 +99,7 @@ function tradeDirectionMultiplier(side: string | null | undefined): number {
   return normalized === "short" || normalized === "sell" ? -1 : 1;
 }
 
+<<<<<<< ours
 function parseFiniteNumber(value: string): number | null {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -117,6 +118,10 @@ function estimateClosePnl(params: {
   const gross = (exitPrice - entryPrice) * quantity * tradeDirectionMultiplier(side);
   return { gross, net: gross - estimatedCloseFee };
 }
+=======
+type Order = { order_id: string; recommendation_id: string; replay_run_id?: number | null; symbol: string; status: string; side: string; shares: number; limit_price: number; created_at: string; market_data_source?: string | null; fallback_mode?: boolean | null; fills: Array<{ fill_price: number; filled_shares: number; timestamp: string }> };
+type PortfolioSummary = { open_positions: number; total_open_notional: number; unrealized_pnl: number; realized_pnl: number; closed_trade_count: number; win_rate: number; lifecycle_status?: string; notes?: string };
+>>>>>>> theirs
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -133,6 +138,7 @@ export default function Page() {
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
+<<<<<<< ours
   const [replayOutcome, setReplayOutcome] = useState<{
     has_stageable_candidate: boolean;
     stageable_reason?: string | null;
@@ -161,6 +167,9 @@ export default function Page() {
   // Pass 4 — display_id lookup for the workflow lineage card. Fetched once
   // per page mount; falls back to the auto-shortened "Rec #..." when missing.
   const [displayIdMap, setDisplayIdMap] = useState<Record<string, string>>({});
+=======
+  const [replayOutcome, setReplayOutcome] = useState<{ has_stageable_candidate: boolean; stageable_reason?: string | null } | null>(null);
+>>>>>>> theirs
   const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
   const selectedOpenPosition = useMemo(() => {
@@ -517,6 +526,16 @@ export default function Page() {
   }, [authReady, guidedState.replayRunId]);
 
   useEffect(() => {
+    if (!authReady || !guidedState.replayRunId) return;
+    void (async () => {
+      const result = await fetchWorkflowApi<{ has_stageable_candidate: boolean; stageable_reason?: string | null }>(
+        `/api/user/replay-runs/${guidedState.replayRunId}`,
+      );
+      if (result.ok) setReplayOutcome(result.data ?? null);
+    })();
+  }, [authReady, guidedState.replayRunId]);
+
+  useEffect(() => {
     if (!selectedOrderId) return;
     setCloseInputVisible(false);
     setClosePriceInput("");
@@ -543,6 +562,7 @@ export default function Page() {
     />
     {guidedState.guided ? <Card title="Guided flow progress"><GuidedStepRail current="Paper Order" /></Card> : null}
     {portfolioSummary ? (
+<<<<<<< ours
       <Card title="Paper portfolio">
         <div className="op-grid-4">
           <div><div style={{ fontSize: "0.8rem", color: "var(--text-muted, #8b9cb3)" }}>Open positions</div><strong>{portfolioSummary.open_positions}</strong></div>
@@ -563,6 +583,18 @@ export default function Page() {
             <strong>{portfolioSummary.win_rate != null ? `${(portfolioSummary.win_rate * 100).toFixed(1)}%` : "—"}</strong>
           </div>
         </div>
+=======
+      <Card title="Paper portfolio summary">
+        <div className="op-row" style={{ flexWrap: "wrap", gap: 12 }}>
+          <span>Open positions: <strong>{portfolioSummary.open_positions}</strong></span>
+          <span>Open notional: <strong>{portfolioSummary.total_open_notional.toFixed(2)}</strong></span>
+          <span>Unrealized P&L: <strong>{portfolioSummary.unrealized_pnl.toFixed(2)}</strong></span>
+          <span>Realized P&L: <strong>{portfolioSummary.realized_pnl.toFixed(2)}</strong></span>
+          <span>Closed trades: <strong>{portfolioSummary.closed_trade_count}</strong></span>
+          <span>Win rate: <strong>{(portfolioSummary.win_rate * 100).toFixed(1)}%</strong></span>
+        </div>
+        {portfolioSummary.notes ? <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)" }}>{portfolioSummary.notes}</div> : null}
+>>>>>>> theirs
       </Card>
     ) : null}
 
@@ -613,6 +645,7 @@ export default function Page() {
             <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.recommendationId ?? "—"}</span></div>
             <div><strong>replay run id:</strong> <span style={{ fontFamily: "monospace" }}>{guidedState.replayRunId ?? "—"}</span></div>
             <div><strong>symbol:</strong> {guidedState.symbol ?? "—"} · <strong>strategy:</strong> {guidedState.strategy ?? "—"}</div>
+<<<<<<< ours
             {replayOutcome ? (
               <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
                 <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only round trip (entry + exit)</div>
@@ -636,6 +669,9 @@ export default function Page() {
               </div>
             ) : null}
             <button className="op-btn-primary-cta op-btn-pulse" style={{ marginTop: 8, width: "100%" }} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now →"}</button>
+=======
+            <button style={{ marginTop: 8, width: "100%" }} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now"}</button>
+>>>>>>> theirs
             {replayOutcome?.has_stageable_candidate === false ? <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)" }}>No paper order can be staged from this replay. {replayOutcome.stageable_reason ?? ""}</div> : null}
           </div>
         ) : (
@@ -651,7 +687,11 @@ export default function Page() {
       </Card>
     ) : null}
 
+<<<<<<< ours
     <Card><div className="op-row"><button className={orderDoneForRec ? "op-btn op-btn-secondary" : "op-btn-primary-cta op-btn-pulse"} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : orderDoneForRec ? "Stage another →" : "Stage paper order now →"}</button><button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh order history"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} /></Card>
+=======
+    <Card><div className="op-row"><button onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : "Stage paper order now"}</button><button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh order history"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} /></Card>
+>>>>>>> theirs
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
 
     <Card title="Open paper positions">
@@ -759,7 +799,11 @@ export default function Page() {
     <div className="op-grid-2">
       <Card title={guidedState.guided ? "Order history (secondary)" : "Order history"}>
         {guidedState.guided ? <div style={{ marginBottom: 6, color: "var(--op-muted, #7a8999)" }}>Secondary panel: full order history</div> : null}
+<<<<<<< ours
         <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+=======
+        <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+>>>>>>> theirs
         <table className="op-table" style={{ marginTop: guidedState.guided ? 8 : 0 }}>
           <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>side</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>shares</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>limit/fill</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>broker status</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fill count</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}></th></tr></thead>
           <tbody>

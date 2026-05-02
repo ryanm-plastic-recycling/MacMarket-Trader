@@ -16,7 +16,7 @@ Your project is a **research-first, event-driven trading intelligence console** 
 | Auth | Clerk (external) + local DB approval | Both layers |
 | Database migrations | Alembic | `alembic/` |
 | Tests (backend) | pytest (78 tests) | `tests/` |
-| Tests (frontend) | Vitest (15 tests) | `apps/web/` |
+| Tests (frontend) | Vitest (59 tests) | `apps/web/` |
 | E2E tests | Playwright | `apps/web/tests/e2e/` |
 
 **Your two paths:**

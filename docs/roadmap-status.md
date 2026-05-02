@@ -1,6 +1,6 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-04-30
+Last updated: 2026-05-02
 
 ## Positioning
 MacMarket-Trader is positioned as an invite-only, operator-grade trading
@@ -110,6 +110,12 @@ settlement rejection coverage was added, the `opening_commissions`
 reconstruction limitation was documented, and the dead `opening_commissions`
 branch was removed without adding feature, schema, UI, replay,
 recommendation, or brokerage behavior.
+Active paper position management is now tracked as a planned Phase 7E
+paper-only lifecycle hardening pass before Alpaca paper integration. The design
+checkpoint is captured in
+[`active-paper-position-management-design.md`](active-paper-position-management-design.md)
+and keeps broker routing, live trading, automated exits, schema changes, and
+new frontend behavior out of this documentation-only pass.
 
 ## Completed Phases
 
@@ -230,8 +236,59 @@ recommendation, or brokerage behavior.
 - Complete for current equity/paper-readiness scope:
   Phase 7 test files are tracked and named clearly
 
+### Phase 7E - Active paper position management
+- Status:
+  planned paper-only lifecycle hardening; docs/design checkpoint added in
+  [active-paper-position-management-design.md](active-paper-position-management-design.md)
+- Why before Alpaca paper integration:
+  broker integration should not automate around an incomplete paper lifecycle.
+  Before external paper brokerage plumbing is promoted, open paper equity
+  positions need a deterministic mark-to-market review loop so the operator can
+  manage existing exposure rather than seeing duplicate or confusing new-trade
+  prompts.
+- Current product gap:
+  paper order staging/fill, open paper positions, manual close, realized P&L,
+  and reopen-within-window exist, but open positions are not yet re-evaluated
+  against current marks, recommendation rank, stop/target distance, time stop,
+  or thesis validity.
+- Target review model:
+  one review object per open paper equity position with current mark price,
+  unrealized P&L dollars, unrealized return percent, stop distance, target 1
+  distance, target 2 distance, days held versus max holding days, current
+  recommendation/ranking status for the same symbol, and an active position
+  action classification.
+- Position review statuses:
+  `hold_valid`, `target_reached_hold`, `target_reached_take_profit`,
+  `stop_triggered`, `time_stop_warning`, `time_stop_exit`,
+  `scale_in_candidate`, and `invalidated`.
+- Recommendation handling:
+  if a ranked recommendation symbol is already held in an open paper position,
+  the operator surface should show `Already open` / `Active position review`
+  state instead of presenting the setup as a totally new trade by default.
+- Scale-in guardrail:
+  scale-in may be recommended only through explicit deterministic risk rules
+  and must never silently average into a position without clear UI messaging
+  and risk-limit feedback.
+- Proposed future endpoint:
+  `GET /api/user/paper-positions/review`, returning one review object per open
+  position. The backend route may map to the protected user API namespace as
+  `GET /user/paper-positions/review`.
+- Test expectations:
+  open `GOOG` long returns current mark and unrealized P&L; near-stop positions
+  return `stop_triggered` or warning status; above-target but still highly
+  ranked positions return `target_reached_hold`; existing open symbols in
+  ranked recommendations are flagged `already_open`; and scale-in candidates
+  are blocked when portfolio risk limits are exceeded.
+- Explicitly not included:
+  live trading support, brokerage routing, real broker execution, automated
+  close orders, schema changes, equity behavior changes, options behavior
+  changes, or frontend UI in this docs-only pass.
+
 ### Phase 7 Closure Note
-- Phase 7 is complete for the current equity/paper-readiness foundation.
+- Phase 7A through 7D are complete for the current equity/paper-readiness
+  foundation.
+- Phase 7E is a planned active-position management hardening pass that should
+  happen before Alpaca paper integration.
 - Remaining deferred items are intentionally moved to later phases and should
   not block Phase 8 planning.
 
@@ -248,6 +305,10 @@ recommendation, or brokerage behavior.
   visibility only
 - Alpaca readiness remains paper/provider-readiness only, not live routing or
   brokerage enablement
+- Active paper position management is now the required lifecycle hardening gate
+  before Alpaca paper integration. Broker-paper plumbing should wait until open
+  positions have mark-to-market review, already-open recommendation handling,
+  and explicit scale-in risk guardrails.
 
 ### Phase 8 — Options research → paper parity
 - Status:
@@ -570,6 +631,8 @@ Safe near-term:
   already persisted fields only
 - operator docs/training improvements and paper-only safety copy audits
 - provider-health copy/readiness-only clarifications that do not add probes
+- completed docs/design checkpoint for active paper position management as a
+  paper-only lifecycle hardening gate before Alpaca paper integration
 - docs/design checkpoint for symbol discovery and watchlist management as
   recommendation-universe workflow polish, before any schema or runtime changes
 - completed `10W1`: symbol discovery and watchlist / recommendation-universe
@@ -694,6 +757,9 @@ Medium-risk:
 - symbol discovery and user-scoped watchlist implementation if it requires
   provider search calls, schedule/recommendation universe wiring, UI table
   workflows, or import flows
+- active paper position management implementation because it touches open
+  position marks, recommendation already-open state, stop/target/time-stop
+  review, and scale-in risk guardrails even if it remains paper-only
 - shared glossary registry and tooltip/popover implementation across Analysis,
   Recommendations, Replay, Orders, Settings, and Provider Health because it
   touches common UI primitives and app-wide wording consistency
@@ -1111,7 +1177,9 @@ First implementation slice:
   `BROKER_PROVIDER=alpaca`, real paper order placement, fill polling, account
   reconciliation, and broker execution semantics remain future work. Keys may
   be configured and scaffold may exist, but `BROKER_PROVIDER=mock` remains the
-  current production setting.
+  current production setting. Active paper position management should land
+  first so broker-paper integration does not automate an incomplete open
+  position lifecycle.
 - Crypto implementation:
   crypto-native strategy design and crypto paper execution remain later work
   after `10F` planning and explicit operator strategy decisions.
@@ -1141,6 +1209,11 @@ First implementation slice:
   settings remain deferred beyond the coordinated lower-panel pass
 - Sticky table headers + richer active-context toggles on Replay / Orders
   history tables (beyond current contained-scroll + lineage-first selection)
+- Active paper position management remains planned: open paper equity positions
+  need current mark, unrealized P&L, stop/target/time-stop review,
+  already-open recommendation handling, explicit scale-in risk guardrails, and a
+  future read-only `GET /api/user/paper-positions/review` contract before
+  Alpaca paper integration.
 - Options/crypto live execution semantics — current options support is still
   paper-first only (research preview, read-only payoff preview, and
   paper-only lifecycle plus durable Orders visibility). Current provider and
