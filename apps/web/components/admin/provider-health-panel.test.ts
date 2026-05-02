@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import { OPTIONS_PROVIDER_READINESS_NOTE } from "@/components/admin/provider-health-panel";
+
+const source = readFileSync(new URL("./provider-health-panel.tsx", import.meta.url), "utf8");
 
 describe("provider health readiness copy", () => {
   it("keeps options/index provider guidance readiness-only", () => {
@@ -10,5 +13,16 @@ describe("provider health readiness copy", () => {
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("does not enable execution");
     expect(OPTIONS_PROVIDER_READINESS_NOTE.toLowerCase()).not.toContain("stage real order");
     expect(OPTIONS_PROVIDER_READINESS_NOTE.toLowerCase()).not.toContain("routing");
+  });
+
+  it("shows LLM provider health without exposing secret values", () => {
+    expect(source).toContain("LLM provider");
+    expect(source).toContain("LLM enabled");
+    expect(source).toContain("key present");
+    expect(source).toContain("fallback_reason");
+    expect(source).toContain("last_error");
+    expect(source).toContain("probe_llm=true");
+    expect(source).not.toContain("OPENAI_API_KEY");
+    expect(source).not.toContain("sk-");
   });
 });

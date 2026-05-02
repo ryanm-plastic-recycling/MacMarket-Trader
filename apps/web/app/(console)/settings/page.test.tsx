@@ -42,9 +42,10 @@ describe("SettingsPage", () => {
     expect(html).toContain("Options commission per contract ($)");
     expect(html).toContain("Equity commission per trade");
     expect(html).toContain("Risk budget at stop ($)");
-    expect(html).toContain("Max paper order notional ($)");
+    expect(html).toContain("Max paper order value ($)");
     expect(html).toContain("max loss at invalidation");
     expect(html).toContain("not a generic trade amount");
+    expect(html).toContain("shares x entry price");
     expect(html).toContain("The paper fee applied to each equity paper-trade event.");
     expect(html).toContain("The paper options fee applied per contract, per leg, per open or close event.");
     expect(html).toContain("Not per share. Do not multiply by 100.");

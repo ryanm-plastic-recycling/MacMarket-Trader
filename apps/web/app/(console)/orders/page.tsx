@@ -854,7 +854,7 @@ export default function Page() {
                   <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Recommended shares</div><strong>{orderSizingPreview.recommendedShares}</strong></div>
                   <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Estimated notional</div><strong>{formatDollars(orderSizingPreview.estimatedNotional)}</strong></div>
                   <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Risk at stop</div><strong>{formatDollars(orderSizingPreview.riskAtStop)}</strong></div>
-                  <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Max paper order notional</div><strong>{formatDollars(orderSizingPreview.maxPaperOrderNotional)}</strong></div>
+                  <div><div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Max paper order value</div><strong>{formatDollars(orderSizingPreview.maxPaperOrderNotional)}</strong></div>
                 </div>
                 <label style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span>Order shares</span>
@@ -873,7 +873,7 @@ export default function Page() {
                 </label>
                 {orderSizingPreview.capReduced ? (
                   <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)", fontSize: "0.86rem" }}>
-                    Notional cap reduced the default paper order from {orderSizingPreview.recommendedShares} to {Math.min(orderSizingPreview.recommendedShares, orderSizingPreview.notionalCapShares)} shares.
+                    Max paper order value reduced the default paper order from {orderSizingPreview.recommendedShares} to {Math.min(orderSizingPreview.recommendedShares, orderSizingPreview.notionalCapShares)} shares.
                   </div>
                 ) : null}
               </div>

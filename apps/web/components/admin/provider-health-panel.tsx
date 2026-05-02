@@ -25,6 +25,11 @@ type ProviderHealth = {
     selected_provider?: string;
     probe_status?: string;
     readiness_scope?: string;
+    llm_enabled?: boolean;
+    model?: string | null;
+    key_present?: boolean;
+    fallback_reason?: string | null;
+    last_error?: string | null;
   }>;
   checked_at: string;
 };
@@ -38,10 +43,11 @@ export function ProviderHealthPanel() {
   const [error, setError] = useState<string | null>(null);
   const [reprobing, setReprobing] = useState(false);
 
-  async function load() {
+  async function load(options?: { probeLlm?: boolean }) {
     setLoading(true);
     setError(null);
-    const response = await fetchWorkflowApi<ProviderHealth>("/api/admin/provider-health");
+    const path = options?.probeLlm ? "/api/admin/provider-health?probe_llm=true" : "/api/admin/provider-health";
+    const response = await fetchWorkflowApi<ProviderHealth>(path);
     if (!response.ok) {
       setError(response.error ?? "Failed to load provider readiness.");
     } else {
@@ -52,7 +58,7 @@ export function ProviderHealthPanel() {
 
   async function reprobe() {
     setReprobing(true);
-    await load();
+    await load({ probeLlm: true });
     setReprobing(false);
   }
 
@@ -65,6 +71,7 @@ export function ProviderHealthPanel() {
   const alpacaPaper = data?.providers.find((p) => p.provider === "alpaca_paper");
   const fred = data?.providers.find((p) => p.provider === "fred");
   const news = data?.providers.find((p) => p.provider === "news");
+  const llm = data?.providers.find((p) => p.provider === "llm");
   const workflowBlocked = market?.workflow_execution_mode === "blocked";
   const workflowDemoFallback = market?.workflow_execution_mode === "demo_fallback";
   const healthyProvider = market?.workflow_execution_mode === "provider";
@@ -152,6 +159,7 @@ export function ProviderHealthPanel() {
           {alpacaPaper ? <StatusBadge tone={statusTone(alpacaPaper.status)}>alpaca paper: {formatStatusLabel(alpacaPaper.status)}</StatusBadge> : null}
           {fred ? <StatusBadge tone={statusTone(fred.status)}>fred: {formatStatusLabel(fred.status)}</StatusBadge> : null}
           {news ? <StatusBadge tone={statusTone(news.status)}>news: {formatStatusLabel(news.status)}</StatusBadge> : null}
+          {llm ? <StatusBadge tone={statusTone(llm.status)}>LLM provider: {llm.mode} / {formatStatusLabel(llm.status)}</StatusBadge> : null}
         </div>
         {healthyProvider ? <p style={{ color: "#7ee787", margin: "8px 0 0" }}>Provider-backed market-data mode is active and healthy.</p> : null}
         {workflowBlocked ? <p style={{ color: "#f7b267", margin: "8px 0 0" }}>Configured provider probe failed and workflow demo fallback is disabled. Workflow execution is blocked until provider health recovers.</p> : null}
@@ -195,6 +203,17 @@ export function ProviderHealthPanel() {
                     <span style={muted}>live probe: </span>{probeLabel ?? p.probe_status}
                   </div>
                 ) : null}
+                {p.llm_enabled !== undefined ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>LLM enabled: </span>{p.llm_enabled ? "yes" : "no"}
+                  </div>
+                ) : null}
+                {p.model ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>model: </span>{p.model}</div> : null}
+                {p.key_present !== undefined ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>key present: </span>{p.key_present ? "yes" : "no"}
+                  </div>
+                ) : null}
                 {p.readiness_scope ? (
                   <div style={{ fontSize: "0.8rem" }}>
                     <span style={muted}>scope: </span>{p.readiness_scope}
@@ -204,6 +223,8 @@ export function ProviderHealthPanel() {
                 {p.latency_ms != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>latency: </span>{p.latency_ms} ms</div> : null}
                 {p.last_success_at ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>last success: </span>{p.last_success_at}</div> : null}
                 {p.failure_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>failure: {p.failure_reason}</div> : null}
+                {p.fallback_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>fallback: {p.fallback_reason}</div> : null}
+                {p.last_error ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>last error: {p.last_error}</div> : null}
                 {providerDetailCopy(p) ? <div style={{ ...muted, fontSize: "0.78rem", marginTop: 2 }}>{providerDetailCopy(p)}</div> : null}
                 {p.operational_impact ? <div style={{ ...muted, fontSize: "0.78rem" }}>{p.operational_impact}</div> : null}
               </div>

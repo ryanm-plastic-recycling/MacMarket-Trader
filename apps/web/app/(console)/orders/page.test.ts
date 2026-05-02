@@ -16,8 +16,8 @@ describe("orders metric help rollout", () => {
     expect(source).toContain("Recommended shares");
     expect(source).toContain("Order shares");
     expect(source).toContain("Estimated notional");
-    expect(source).toContain("Max paper order notional");
-    expect(source).toContain("Notional cap reduced");
+    expect(source).toContain("Max paper order value");
+    expect(source).toContain("Max paper order value reduced");
     expect(source).toContain("Reset my paper portfolio");
     expect(source).toContain("Type RESET");
     expect(source).toContain("Calendar risk");

@@ -93,6 +93,12 @@ may summarize, extract, compare, and explain, but it cannot choose trades or
 change approval, entry, stop, target, sizing, risk-calendar gate state, or paper
 order creation.
 
+Windows deployment note: the deployed backend runtime reads
+`C:\Dashboard\MacMarket-Trader\.env`. The deploy script intentionally preserves
+that file and does not overwrite it from source. After changing LLM env values
+there, restart the backend process before checking `/admin/provider-health` or
+AI Explanation / Opportunity Intelligence provenance.
+
 ## Backend (FastAPI)
 
 MacMarket-Trader backend dependencies are managed from `pyproject.toml` (PEP 621).

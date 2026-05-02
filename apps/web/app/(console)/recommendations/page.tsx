@@ -147,6 +147,12 @@ type OpportunityCandidateSummary = {
   current_recommendation_rank?: number | null;
   reasons?: string[];
   rejection_reason?: string | null;
+  entry?: Record<string, unknown> | null;
+  invalidation?: Record<string, unknown> | null;
+  targets?: Record<string, unknown> | null;
+  workflow_source?: string | null;
+  session_policy?: string | null;
+  data_quality?: Record<string, unknown> | null;
   risk_calendar?: RiskCalendarPayload | null;
 };
 type BetterElsewhereCandidate = {
@@ -242,6 +248,7 @@ export default function RecommendationsPage() {
   const [universePreview, setUniversePreview] = useState<SymbolUniversePreviewResponse | null>(null);
   const [universeFeedback, setUniverseFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([]);
+  const [selectedQueueOpportunityIds, setSelectedQueueOpportunityIds] = useState<string[]>([]);
   const [opportunityMemo, setOpportunityMemo] = useState<OpportunityComparisonMemo | null>(null);
   const [includeBetterElsewhere, setIncludeBetterElsewhere] = useState(true);
   const [opportunityFeedback, setOpportunityFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
@@ -266,6 +273,9 @@ export default function RecommendationsPage() {
   const selectedSource = selectedRecommendation
     ? `${selectedRecommendation.market_data_source ?? asText((selectedRecommendation.payload.workflow as Record<string, unknown> | undefined)?.market_data_source)}`
     : selectedQueue?.workflow_source ?? "source pending";
+  const selectedQueueRiskDecision = selectedQueue?.risk_calendar?.decision;
+  const selectedQueuePromotionBlocked = selectedQueueRiskDecision?.allow_new_entries === false;
+  const selectedOpportunityCount = selectedOpportunityIds.length + selectedQueueOpportunityIds.length;
 
   async function loadRecommendations(options?: { selectRecommendationUid?: string }) {
     setLoading((prev) => ({ ...prev, recommendations: true }));
@@ -521,18 +531,75 @@ export default function RecommendationsPage() {
     setOpportunityFeedback({ state: "idle", message: "" });
   }
 
+  function queueOpportunityId(candidate: QueueCandidate): string {
+    return candidate.recommendation_id ?? `queue:${candidate.symbol}:${candidate.strategy}:${candidate.timeframe}:${candidate.rank}`;
+  }
+
+  function toggleQueueOpportunitySelection(recommendationId: string) {
+    setSelectedQueueOpportunityIds((prev) => (
+      prev.includes(recommendationId)
+        ? prev.filter((item) => item !== recommendationId)
+        : [...prev, recommendationId]
+    ));
+    setOpportunityFeedback({ state: "idle", message: "" });
+  }
+
+  function queueToOpportunityCandidate(candidate: QueueCandidate): OpportunityCandidateSummary {
+    const reasons = [candidate.reason_text, candidate.thesis].filter((item): item is string => Boolean(item));
+    const entry = candidate.entry_zone && typeof candidate.entry_zone === "object" && !Array.isArray(candidate.entry_zone)
+      ? candidate.entry_zone
+      : null;
+    const invalidation = candidate.invalidation && typeof candidate.invalidation === "object" && !Array.isArray(candidate.invalidation)
+      ? candidate.invalidation
+      : null;
+    return {
+      recommendation_id: queueOpportunityId(candidate),
+      display_id: `Queue #${candidate.rank} ${candidate.symbol}`,
+      symbol: candidate.symbol,
+      side: candidate.side ?? "long",
+      timeframe: candidate.timeframe,
+      approved: candidate.status === "top_candidate" && candidate.risk_calendar?.decision?.allow_new_entries !== false,
+      status: candidate.status,
+      deterministic_score: candidate.score,
+      confidence: candidate.confidence,
+      expected_rr: candidate.expected_rr,
+      current_recommendation_rank: candidate.rank,
+      reasons,
+      rejection_reason: candidate.rejection_reason ?? null,
+      entry,
+      invalidation,
+      targets: Array.isArray(candidate.targets) ? { targets: candidate.targets } : null,
+      workflow_source: candidate.workflow_source,
+      session_policy: candidate.session_policy ?? null,
+      data_quality: candidate.data_quality ?? null,
+      risk_calendar: candidate.risk_calendar ?? null,
+    };
+  }
+
   async function compareSelectedOpportunities() {
-    if (selectedOpportunityIds.length < 2) {
-      setOpportunityFeedback({ state: "error", message: "Select at least two stored recommendations before comparing." });
+    const selectedQueueCandidates = queue
+      .filter((candidate) => selectedQueueOpportunityIds.includes(queueOpportunityId(candidate)))
+      .map(queueToOpportunityCandidate);
+    const totalSelected = selectedOpportunityIds.length + selectedQueueCandidates.length;
+    if (totalSelected < 2) {
+      setOpportunityFeedback({ state: "error", message: "Select at least two stored recommendations or queue candidates before comparing." });
       return;
     }
     setLoading((prev) => ({ ...prev, opportunity: true }));
     setOpportunityFeedback({ state: "loading", message: "Building Opportunity Intelligence memo..." });
+    const queueBetterElsewhereCandidates = includeBetterElsewhere
+      ? queue
+          .filter((candidate) => !selectedQueueOpportunityIds.includes(queueOpportunityId(candidate)))
+          .slice(0, 8)
+          .map(queueToOpportunityCandidate)
+      : [];
     const result = await fetchWorkflowApi<OpportunityComparisonMemo>("/api/user/recommendations/opportunity-intelligence", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         selected_recommendation_ids: selectedOpportunityIds,
+        selected_queue_candidates: selectedQueueCandidates,
+        queue_better_elsewhere_candidates: queueBetterElsewhereCandidates,
         include_better_elsewhere: includeBetterElsewhere,
         max_candidates: 6,
       }),
@@ -544,7 +611,7 @@ export default function RecommendationsPage() {
       return;
     }
     setOpportunityMemo(result.data);
-    setOpportunityFeedback({ state: "success", message: "Opportunity Intelligence memo generated from stored deterministic candidates." });
+    setOpportunityFeedback({ state: "success", message: "Opportunity Intelligence memo generated from deterministic queue and stored candidates." });
   }
 
   const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
@@ -788,10 +855,10 @@ export default function RecommendationsPage() {
               <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Go to Replay step</button>
             ) : (
               <>
-                <button className="op-btn-primary-cta" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
+                <button className="op-btn-primary-cta" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt || selectedQueuePromotionBlocked} title={loading.promote ? "Promotion in flight…" : undefined}>
                   {loading.promote ? "Promoting…" : "Make active →"}
                 </button>
-                <button className="op-btn op-btn-secondary" onClick={() => void saveAlternative()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.saveAlt ? "Saving alternative…" : undefined}>
+                <button className="op-btn op-btn-secondary" onClick={() => void saveAlternative()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt || selectedQueuePromotionBlocked} title={loading.saveAlt ? "Saving alternative…" : undefined}>
                   {loading.saveAlt ? "Saving…" : "Save as alternative"}
                 </button>
               </>
@@ -938,12 +1005,17 @@ export default function RecommendationsPage() {
           <div className="op-row" style={{ alignItems: "center", flexWrap: "wrap", paddingTop: 22 }}>
             <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
             {!guidedState.guided ? (
-              <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
+              <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote || selectedQueuePromotionBlocked}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
             ) : null}
             <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>
             {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
           </div>
         </div>
+        {selectedQueuePromotionBlocked ? (
+          <div style={{ marginTop: 8, color: "var(--op-warn, #f2a03f)", fontSize: "0.85rem" }}>
+            Promotion blocked by deterministic risk calendar: {selectedQueueRiskDecision?.block_reason ?? selectedQueueRiskDecision?.warning_summary ?? "new entries are not allowed for this candidate."}
+          </div>
+        ) : null}
         <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.85rem", lineHeight: 1.5 }}>
           <div>{SYMBOL_ENTRY_HELP_COPY.separators}</div>
           <div>{SYMBOL_ENTRY_HELP_COPY.example}</div>
@@ -962,7 +1034,7 @@ export default function RecommendationsPage() {
           Explanation and research support only. Deterministic engine owns approval, entry, stop, target, sizing, and paper order creation.
         </div>
         <div className="op-row" style={{ flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-          <StatusBadge tone="neutral">{selectedOpportunityIds.length} selected</StatusBadge>
+          <StatusBadge tone="neutral">{selectedOpportunityCount} selected</StatusBadge>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <input
               type="checkbox"
@@ -974,7 +1046,7 @@ export default function RecommendationsPage() {
           <button
             className="op-btn op-btn-primary"
             onClick={() => void compareSelectedOpportunities()}
-            disabled={loading.opportunity || selectedOpportunityIds.length < 2}
+            disabled={loading.opportunity || selectedOpportunityCount < 2}
           >
             {loading.opportunity ? "Comparing..." : "Compare selected"}
           </button>
@@ -1024,7 +1096,7 @@ export default function RecommendationsPage() {
               <div>
                 <strong>better elsewhere</strong>
                 <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.84rem", marginTop: 2 }}>
-                  These symbols come from deterministic scan/stored recommendation data, not LLM browsing.
+                  These symbols come from deterministic queue/stored recommendation data, not LLM browsing.
                 </div>
                 <ul style={{ margin: "4px 0 0 18px" }}>
                   {opportunityMemo.better_elsewhere.map((candidate) => (
@@ -1040,7 +1112,7 @@ export default function RecommendationsPage() {
             ) : null}
           </div>
         ) : (
-          <EmptyState title="No memo yet" hint="Select two or more stored recommendations below, then compare selected." />
+          <EmptyState title="No memo yet" hint="Select two or more ranked queue candidates or stored recommendations, then compare selected." />
         )}
       </Card> : null}
 
@@ -1060,24 +1132,52 @@ export default function RecommendationsPage() {
               <StatusBadge tone="neutral">{queueSummary.watchlist_count} watchlist</StatusBadge>
               <StatusBadge tone="warn">{queueSummary.no_trade_count} no-trade</StatusBadge>
               <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem", alignSelf: "center" }}>{queueSummary.total} total</span>
+              <button
+                className="op-btn op-btn-secondary"
+                onClick={() => void compareSelectedOpportunities()}
+                disabled={loading.opportunity || selectedQueueOpportunityIds.length < 2}
+              >
+                Compare selected queue candidates
+              </button>
             </div>
           ) : null}
           {loading.queue && queue.length === 0 ? <EmptyState title="Loading queue" hint="Fetching ranked queue candidates." /> : null}
           {!loading.queue && queue.length === 0 ? <EmptyState title="No queue candidates" hint="Refresh queue with at least one symbol." /> : null}
           {queue.length > 0 ? (
             <table className="op-table">
-              <thead><tr><th>rank</th><th>symbol</th><th>strategy</th><th>status</th><th><MetricLabel label="score" term="score" /></th><th><MetricLabel label="rr" term="rr" /></th><th><MetricLabel label="conf" term="confidence" /></th><th></th></tr></thead>
+              <thead><tr><th>compare</th><th>rank</th><th>symbol</th><th>strategy</th><th>status</th><th>risk calendar</th><th><MetricLabel label="score" term="score" /></th><th><MetricLabel label="rr" term="rr" /></th><th><MetricLabel label="conf" term="confidence" /></th><th></th></tr></thead>
               <tbody>
                 {queue.map((row) => {
                   const key = `${row.symbol}-${row.strategy}-${row.rank}`;
+                  const opportunityId = queueOpportunityId(row);
                   const isPromoted = promotedKeys.has(key);
                   const statusTone = row.status === "top_candidate" ? "good" : row.status === "no_trade" ? "warn" : "neutral";
+                  const riskCalendar = row.risk_calendar ?? null;
+                  const riskDecision = riskCalendar?.decision;
+                  const riskReason = riskDecision?.block_reason ?? riskDecision?.warning_summary ?? row.rejection_reason ?? null;
                   return (
                     <tr key={key} className={`is-selectable ${selectedQueueKey === key ? "is-active" : ""}`} onClick={() => { setSelectedQueueKey(key); setSelectedRecommendationId(null); }}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedQueueOpportunityIds.includes(opportunityId)}
+                          onChange={() => toggleQueueOpportunitySelection(opportunityId)}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Select queue candidate ${row.symbol} for Opportunity Intelligence`}
+                        />
+                      </td>
                       <td>{row.rank}</td>
                       <td>{row.symbol}</td>
                       <td>{row.strategy}</td>
                       <td><StatusBadge tone={statusTone}>{row.status.replace(/_/g, " ")}</StatusBadge></td>
+                      <td>
+                        <div style={{ display: "grid", gap: 3 }}>
+                          <StatusBadge tone={riskTone(riskCalendar)}>{riskDecision?.decision_state ?? "normal"}</StatusBadge>
+                          {riskReason && riskDecision?.decision_state !== "normal" ? (
+                            <span style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.74rem" }}>{riskReason}</span>
+                          ) : null}
+                        </div>
+                      </td>
                       <td>{row.score}</td>
                       <td>{row.expected_rr}</td>
                       <td>{row.confidence}</td>
@@ -1156,6 +1256,15 @@ export default function RecommendationsPage() {
                 <>
                   <div><strong>workflow source:</strong> {selectedQueue.workflow_source}{selectedQueue.source && selectedQueue.source !== selectedQueue.workflow_source ? ` (${selectedQueue.source})` : ""}</div>
                   <div><strong>status:</strong> {selectedQueue.status.replace(/_/g, " ")}</div>
+                  <div>
+                    <strong>risk calendar:</strong>{" "}
+                    <StatusBadge tone={riskTone(selectedQueue.risk_calendar)}>{selectedQueueRiskDecision?.decision_state ?? "normal"}</StatusBadge>
+                    {selectedQueueRiskDecision?.decision_state && selectedQueueRiskDecision.decision_state !== "normal" ? (
+                      <span style={{ color: "var(--op-muted, #7a8999)", marginLeft: 8 }}>
+                        {selectedQueueRiskDecision.block_reason ?? selectedQueueRiskDecision.warning_summary ?? "Review risk calendar before promotion."}
+                      </span>
+                    ) : null}
+                  </div>
                   <div><strong><MetricLabel label="score" term="score" />:</strong> {selectedQueue.score}</div>
                   <div><strong><MetricLabel label="expected rr" term="rr" />:</strong> {selectedQueue.expected_rr} &nbsp; <strong><MetricLabel label="confidence" term="confidence" />:</strong> {selectedQueue.confidence}</div>
                   <div><strong>thesis:</strong> {selectedQueue.thesis}</div>
@@ -1178,14 +1287,19 @@ export default function RecommendationsPage() {
                   <StatusBadge tone="good">Already promoted to recommendation</StatusBadge>
                 ) : (
                   <div className="op-row">
-                    <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
+                    <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={loading.promote || loading.saveAlt || selectedQueuePromotionBlocked} title={loading.promote ? "Promotion in flight…" : undefined}>
                       {loading.promote ? "Promoting…" : "Make active"}
                     </button>
-                    <button className="op-btn op-btn-secondary" onClick={() => void saveAlternative()} disabled={loading.promote || loading.saveAlt} title={loading.saveAlt ? "Saving alternative…" : undefined}>
+                    <button className="op-btn op-btn-secondary" onClick={() => void saveAlternative()} disabled={loading.promote || loading.saveAlt || selectedQueuePromotionBlocked} title={loading.saveAlt ? "Saving alternative…" : undefined}>
                       {loading.saveAlt ? "Saving…" : "Save as alternative"}
                     </button>
                   </div>
                 )}
+                {selectedQueuePromotionBlocked ? (
+                  <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)" }}>
+                    Risk calendar requires explicit handling before promotion: {selectedQueueRiskDecision?.block_reason ?? selectedQueueRiskDecision?.warning_summary ?? "new entries are blocked."}
+                  </div>
+                ) : null}
               </div>
             </div>
           )}

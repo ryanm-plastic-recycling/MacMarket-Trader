@@ -93,13 +93,18 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("Opportunity Intelligence");
     expect(source).toContain("Compare selected");
     expect(source).toContain("selectedOpportunityIds");
+    expect(source).toContain("selectedQueueOpportunityIds");
     expect(source).toContain("toggleOpportunitySelection");
+    expect(source).toContain("toggleQueueOpportunitySelection");
+    expect(source).toContain("queueToOpportunityCandidate");
     expect(source).toContain("compareSelectedOpportunities");
+    expect(source).toContain("selected_queue_candidates");
+    expect(source).toContain("Compare selected queue candidates");
     expect(source).toContain('"/api/user/recommendations/opportunity-intelligence"');
     expect(opportunityProxySource).toContain('backendPath: "/user/recommendations/opportunity-intelligence"');
     expect(source).toContain("Explanation and research support only. Deterministic engine owns approval, entry, stop, target, sizing, and paper order creation.");
     expect(source).toContain("better elsewhere");
-    expect(source).toContain("These symbols come from deterministic scan/stored recommendation data, not LLM browsing.");
+    expect(source).toContain("These symbols come from deterministic queue/stored recommendation data, not LLM browsing.");
   });
 
   it("renders deterministic risk-calendar badges and recommendation detail context", () => {
@@ -109,6 +114,8 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("RISK CALENDAR");
     expect(source).toContain("Missing evidence");
     expect(source).toContain("deterministic risk gate");
+    expect(source).toContain("Promotion blocked by deterministic risk calendar");
+    expect(source).toContain("Risk calendar requires explicit handling before promotion");
   });
 
   it("keeps score and confidence glossary copy away from probability or execution claims", () => {

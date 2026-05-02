@@ -366,7 +366,7 @@ route orders.
   recommendation/risk constraints.
 - Complete for current equity/paper sandbox scope:
   Orders surfaces show recommended shares, editable order shares, estimated
-  notional, risk at stop, max paper order notional, cap-reduction warnings, and
+  notional, risk at stop, max paper order value, cap-reduction warnings, and
   practical notional values on paper order/position/trade rows.
 - Complete for current equity/paper sandbox scope:
   `POST /user/paper/reset` and the Orders testing tool reset only the current
@@ -1353,6 +1353,12 @@ First implementation slice:
   already-open recommendation handling, explicit scale-in risk guardrails, and a
   future read-only `GET /api/user/paper-positions/review` contract before
   Alpaca paper integration.
+- Alpha smoke cleanup note:
+  LLM provider health, queue-level Opportunity Intelligence inputs, and ranked
+  queue risk-calendar badges are now the immediate usability hardening layer.
+  Active Paper Position Review remains the next implementation phase; the
+  `GET /api/user/paper-positions/review` contract is still docs-only and should
+  not be linked in the UI until implemented.
 - Options/crypto live execution semantics — current options support is still
   paper-first only (research preview, read-only payoff preview, and
   paper-only lifecycle plus durable Orders visibility). Current provider and

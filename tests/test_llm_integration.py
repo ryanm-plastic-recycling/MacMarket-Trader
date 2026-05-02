@@ -14,6 +14,7 @@ from macmarket_trader.domain.schemas import (
     Bar,
     BetterElsewhereCandidate,
     LLMEventFields,
+    LLMRecommendationExplanation,
     OpportunityCandidateSummary,
     OpportunityComparisonMemo,
     PortfolioSnapshot,
@@ -122,6 +123,72 @@ class MalformedLLMClient(LLMClient):
         return "bad"
 
 
+class SuccessfulOpenAILLMClient(LLMClient):
+    provider_name = "openai"
+    model = "gpt-5.1"
+    prompt_version = LLM_PROMPT_VERSION
+
+    def summarize_event_text(self, *, symbol: str, text: str) -> str:
+        return f"{symbol} event summary"
+
+    def extract_event_fields(self, *, symbol: str, text: str) -> LLMEventFields:
+        return LLMEventFields(
+            source_type="corporate",
+            headline=f"{symbol} structured event",
+            summary=f"{symbol} structured event",
+            sentiment_score=0.2,
+        )
+
+    def explain_recommendation(self, *, recommendation: TradeRecommendation) -> LLMRecommendationExplanation:
+        return LLMRecommendationExplanation(
+            summary=f"{recommendation.symbol} explanation from configured provider.",
+            approval_explanation="Deterministic engine made the approval decision; this text explains it only.",
+            counter_thesis=["Setup can fail if follow-through weakens."],
+        )
+
+    def generate_counter_thesis(self, *, recommendation: TradeRecommendation) -> list[str]:
+        return ["Setup can fail if follow-through weakens."]
+
+    def compare_candidates(
+        self,
+        *,
+        candidates: list[OpportunityCandidateSummary],
+        better_elsewhere: list[BetterElsewhereCandidate],
+    ) -> OpportunityComparisonMemo:
+        best = candidates[0]
+        return OpportunityComparisonMemo(
+            best_deterministic_candidate_id=best.recommendation_id,
+            best_deterministic_symbol=best.symbol,
+            market_desk_memo="Configured OpenAI provider compared backend-supplied deterministic candidates only.",
+            comparison_rows=[
+                {
+                    "candidate_id": candidate.recommendation_id,
+                    "symbol": candidate.symbol,
+                    "rank": candidate.current_recommendation_rank,
+                    "score": candidate.deterministic_score,
+                    "expected_rr": candidate.expected_rr,
+                    "confidence": candidate.confidence,
+                    "desk_read": "Explanation only.",
+                }
+                for candidate in candidates
+            ],
+            counter_thesis_by_candidate={candidate.recommendation_id: ["No LLM trade-field changes."] for candidate in candidates},
+            better_elsewhere=better_elsewhere,
+            missing_data=[],
+        )
+
+    def generate_market_context_memo(self, *, candidates: list[OpportunityCandidateSummary]) -> str:
+        return "Market memo from configured provider."
+
+    def generate_better_elsewhere_memo(
+        self,
+        *,
+        candidates: list[OpportunityCandidateSummary],
+        better_elsewhere: list[BetterElsewhereCandidate],
+    ) -> str:
+        return "Better-elsewhere memo from configured provider."
+
+
 def _decision_snapshot(payload: dict[str, object]) -> dict[str, object]:
     return {
         "entry": payload["entry"],
@@ -227,6 +294,63 @@ def test_openai_llm_client_reads_configured_env_values(monkeypatch) -> None:
     assert getattr(client, "temperature") == 0.2
 
 
+def test_llm_health_reports_mock_default_without_key(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes.settings, "llm_enabled", False)
+    monkeypatch.setattr(admin_routes.settings, "llm_provider", "mock")
+    monkeypatch.setattr(admin_routes.settings, "llm_model", "")
+    monkeypatch.setattr(admin_routes.settings, "llm_api_key", "")
+    monkeypatch.setattr(admin_routes.settings, "openai_api_key", "")
+
+    health = admin_routes._llm_readiness()
+
+    assert health["provider"] == "llm"
+    assert health["mode"] == "mock"
+    assert health["llm_enabled"] is False
+    assert health["key_present"] is False
+    assert health["probe_status"] == "disabled"
+    assert "fallback" in str(health["fallback_reason"]).lower()
+
+
+def test_llm_health_reports_openai_configured_without_key_disclosure(monkeypatch) -> None:
+    secret = "sk-test-secret"
+    monkeypatch.setattr(admin_routes.settings, "llm_enabled", True)
+    monkeypatch.setattr(admin_routes.settings, "llm_provider", "openai")
+    monkeypatch.setattr(admin_routes.settings, "llm_model", "gpt-5.1")
+    monkeypatch.setattr(admin_routes.settings, "llm_api_key", secret)
+    monkeypatch.setattr(admin_routes.settings, "openai_api_key", "")
+
+    health = admin_routes._llm_readiness()
+
+    assert health["status"] == "configured"
+    assert health["mode"] == "openai"
+    assert health["model"] == "gpt-5.1"
+    assert health["key_present"] is True
+    assert secret not in str(health)
+
+
+def test_llm_health_probe_failure_sanitizes_secret(monkeypatch) -> None:
+    secret = "sk-test-secret"
+    monkeypatch.setattr(admin_routes.settings, "llm_enabled", True)
+    monkeypatch.setattr(admin_routes.settings, "llm_provider", "openai")
+    monkeypatch.setattr(admin_routes.settings, "llm_model", "gpt-5.1")
+    monkeypatch.setattr(admin_routes.settings, "llm_api_key", secret)
+    monkeypatch.setattr(admin_routes.settings, "openai_api_key", "")
+
+    def fail_probe(self, *, symbol: str, text: str) -> str:
+        del self, symbol, text
+        raise admin_routes.LLMProviderUnavailable(f"401 invalid key {secret} Authorization Bearer {secret}")
+
+    monkeypatch.setattr(admin_routes.OpenAICompatibleLLMClient, "summarize_event_text", fail_probe)
+
+    health = admin_routes._llm_readiness(probe=True)
+
+    assert health["status"] == "degraded"
+    assert health["probe_status"] == "failed"
+    assert health["fallback_reason"]
+    assert secret not in str(health["last_error"])
+    assert "Authorization" not in str(health["last_error"])
+
+
 def test_mock_llm_provider_returns_structured_explanation_and_event_fields() -> None:
     llm = MockLLMClient()
     event_fields = llm.extract_event_fields(symbol="AAPL", text="AAPL earnings beat with strong guidance")
@@ -254,6 +378,28 @@ def test_mock_llm_provider_returns_structured_explanation_and_event_fields() -> 
     }
     assert rec.llm_provenance is not None
     assert rec.llm_provenance.provider == "mock"
+
+
+def test_successful_openai_provider_sets_non_fallback_provenance(monkeypatch) -> None:
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", True)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_provider", "openai")
+    service = RecommendationService(persist_audit=False, llm_client=SuccessfulOpenAILLMClient())
+
+    rec = service.generate(
+        symbol="AAPL",
+        bars=_bars(),
+        event_text="AAPL earnings beat with strong guidance",
+        event=None,
+        portfolio=PortfolioSnapshot(),
+        user_is_approved=True,
+    )
+
+    assert rec.llm_provenance is not None
+    assert rec.llm_provenance.provider == "openai"
+    assert rec.llm_provenance.model == "gpt-5.1"
+    assert rec.llm_provenance.fallback_used is False
+    assert rec.ai_explanation is not None
+    assert rec.entry.zone_low > 0
 
 
 def test_malformed_llm_output_falls_back_to_deterministic_mock_explanation(monkeypatch) -> None:
@@ -393,5 +539,115 @@ def test_opportunity_intelligence_rejects_unscanned_llm_symbols(monkeypatch) -> 
     assert payload["provenance"]["provider"] == "mock"
     assert payload["provenance"]["fallback_used"] is True
     assert payload["provenance"]["validation_errors"]
+    assert "ZZZZ" not in {candidate["symbol"] for candidate in payload["better_elsewhere"]}
+    assert payload["best_deterministic_symbol"] in {"AAPL", "MSFT"}
+
+
+def test_opportunity_intelligence_accepts_ranked_queue_candidates(monkeypatch) -> None:
+    _seed_approved_user()
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", False)
+    monkeypatch.setattr(
+        admin_routes,
+        "recommendation_service",
+        RecommendationService(llm_client=MockLLMClient()),
+    )
+    queue = client.post(
+        "/user/recommendations/queue",
+        headers=_USER_AUTH,
+        json={"symbols": ["AAPL", "MSFT"], "timeframe": "1D", "market_mode": "equities", "top_n": 2},
+    )
+    assert queue.status_code == 200, queue.text
+    rows = queue.json()["queue"][:2]
+    candidates = [
+        {
+            "recommendation_id": row["recommendation_id"],
+            "display_id": f"Queue #{row['rank']} {row['symbol']}",
+            "symbol": row["symbol"],
+            "side": row.get("side") or "long",
+            "timeframe": row["timeframe"],
+            "approved": row["status"] == "top_candidate" and row["risk_calendar"]["decision"]["allow_new_entries"],
+            "status": row["status"],
+            "deterministic_score": row["score"],
+            "confidence": row["confidence"],
+            "expected_rr": row["expected_rr"],
+            "entry": row["entry_zone"] if isinstance(row["entry_zone"], dict) else None,
+            "invalidation": row["invalidation"] if isinstance(row["invalidation"], dict) else None,
+            "targets": {"targets": row["targets"]},
+            "current_recommendation_rank": row["rank"],
+            "reasons": [row["reason_text"]],
+            "workflow_source": row["workflow_source"],
+            "session_policy": row.get("session_policy"),
+            "data_quality": row.get("data_quality"),
+            "risk_calendar": row.get("risk_calendar"),
+        }
+        for row in rows
+    ]
+
+    response = client.post(
+        "/user/recommendations/opportunity-intelligence",
+        headers=_USER_AUTH,
+        json={
+            "selected_queue_candidates": candidates,
+            "queue_better_elsewhere_candidates": [],
+            "include_better_elsewhere": False,
+            "max_candidates": 4,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["explanation_only"] is True
+    assert set(payload["provenance"]["candidate_ids"]) == {candidate["recommendation_id"] for candidate in candidates}
+    assert all(candidate["recommendation_id"].startswith("queue:") for candidate in payload["candidates"])
+
+
+def test_opportunity_intelligence_rejects_unscanned_queue_symbols(monkeypatch) -> None:
+    _seed_approved_user()
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", True)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_provider", "openai")
+    monkeypatch.setattr(
+        admin_routes,
+        "recommendation_service",
+        RecommendationService(llm_client=MalformedLLMClient()),
+    )
+    candidates = [
+        OpportunityCandidateSummary(
+            recommendation_id="queue:AAPL:event:1D:1",
+            symbol="AAPL",
+            side="long",
+            timeframe="1D",
+            approved=True,
+            status="top_candidate",
+            deterministic_score=82,
+            confidence=0.72,
+            expected_rr=2.1,
+            current_recommendation_rank=1,
+            reasons=["Deterministic queue candidate."],
+        ).model_dump(mode="json"),
+        OpportunityCandidateSummary(
+            recommendation_id="queue:MSFT:event:1D:2",
+            symbol="MSFT",
+            side="long",
+            timeframe="1D",
+            approved=True,
+            status="top_candidate",
+            deterministic_score=79,
+            confidence=0.68,
+            expected_rr=1.9,
+            current_recommendation_rank=2,
+            reasons=["Deterministic queue candidate."],
+        ).model_dump(mode="json"),
+    ]
+
+    response = client.post(
+        "/user/recommendations/opportunity-intelligence",
+        headers=_USER_AUTH,
+        json={"selected_queue_candidates": candidates, "include_better_elsewhere": False},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provenance"]["provider"] == "mock"
+    assert payload["provenance"]["fallback_used"] is True
     assert "ZZZZ" not in {candidate["symbol"] for candidate in payload["better_elsewhere"]}
     assert payload["best_deterministic_symbol"] in {"AAPL", "MSFT"}

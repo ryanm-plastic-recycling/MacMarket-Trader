@@ -276,15 +276,6 @@ class LLMProvenance(BaseModel):
     validation_errors: list[str] = Field(default_factory=list)
 
 
-class OpportunityIntelligenceRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    selected_recommendation_ids: list[str] = Field(default_factory=list, max_length=12)
-    watchlist_or_universe_name: str | None = Field(default=None, max_length=120)
-    include_better_elsewhere: bool = False
-    max_candidates: int = Field(default=5, ge=2, le=12)
-
-
 RiskEventType = Literal[
     "cpi",
     "pce",
@@ -449,6 +440,17 @@ class BetterElsewhereCandidate(BaseModel):
     reason: str
     source: Literal["deterministic_scan", "research_only_unverified"] = "deterministic_scan"
     verified_by_scan: bool = True
+
+
+class OpportunityIntelligenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_recommendation_ids: list[str] = Field(default_factory=list, max_length=12)
+    selected_queue_candidates: list[OpportunityCandidateSummary] = Field(default_factory=list, max_length=12)
+    queue_better_elsewhere_candidates: list[OpportunityCandidateSummary] = Field(default_factory=list, max_length=12)
+    watchlist_or_universe_name: str | None = Field(default=None, max_length=120)
+    include_better_elsewhere: bool = False
+    max_candidates: int = Field(default=5, ge=2, le=12)
 
 
 class OpportunityIntelligenceProvenance(BaseModel):

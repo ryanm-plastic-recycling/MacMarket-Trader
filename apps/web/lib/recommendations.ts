@@ -1,8 +1,10 @@
 import { fetchWorkflowApi, type NormalizedApiResult } from "@/lib/api-client";
 
 export type QueueCandidate = {
+  recommendation_id?: string;
   rank: number;
   symbol: string;
+  side?: string;
   strategy: string;
   strategy_id?: string;
   strategy_status?: string;
@@ -18,9 +20,24 @@ export type QueueCandidate = {
   reason_text: string;
   thesis: string;
   trigger?: string;
-  entry_zone?: Record<string, unknown>;
-  invalidation?: Record<string, unknown>;
+  entry_zone?: Record<string, unknown> | string;
+  invalidation?: Record<string, unknown> | string;
   targets?: unknown[];
+  session_policy?: string | null;
+  data_quality?: Record<string, unknown> | null;
+  risk_calendar?: {
+    decision?: {
+      decision_state?: string;
+      risk_level?: string;
+      recommended_action?: string;
+      warning_summary?: string;
+      block_reason?: string | null;
+      allow_new_entries?: boolean;
+      requires_confirmation?: boolean;
+      missing_evidence?: string[];
+    };
+  } | null;
+  rejection_reason?: string | null;
 };
 
 export type StoredRecommendation = {

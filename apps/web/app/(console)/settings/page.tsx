@@ -91,7 +91,7 @@ export default function SettingsPage() {
     ) {
       setFeedback({
         state: "error",
-        message: `Max paper order notional must be between $${PAPER_MAX_NOTIONAL_MIN} and $${PAPER_MAX_NOTIONAL_MAX}.`,
+        message: `Max paper order value must be between $${PAPER_MAX_NOTIONAL_MIN} and $${PAPER_MAX_NOTIONAL_MAX}.`,
       });
       return;
     }
@@ -181,7 +181,7 @@ export default function SettingsPage() {
             />
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span>Max paper order notional ($)</span>
+            <span>Max paper order value ($)</span>
             <input
               type="number"
               min={PAPER_MAX_NOTIONAL_MIN}
@@ -227,7 +227,7 @@ export default function SettingsPage() {
           </button>
         </div>
         <div style={{ marginTop: 8, fontSize: "0.82rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
-          Risk budget at stop is the max loss at invalidation used for recommendation sizing, not a generic trade amount. Max paper order notional caps equity paper staging so demo fills do not silently become oversized positions.
+          Risk budget at stop is the max loss at invalidation used for recommendation sizing, not a generic trade amount. Max paper order value caps equity paper staging by total paper order dollars: shares x entry price.
         </div>
         <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--op-border, #1e2d3d)", background: "rgba(18, 28, 40, 0.35)" }}>
           <div style={{ fontSize: "0.82rem", fontWeight: 600, marginBottom: 4 }}>Options commission guardrails</div>
@@ -249,7 +249,7 @@ export default function SettingsPage() {
           ) : null}
           {effectivePaperMaxNotional != null ? (
             <div>
-              Max paper order notional: {usingDefaultPaperMaxNotional ? "default" : "override"} <strong>${Number(effectivePaperMaxNotional).toFixed(0)}</strong>
+              Max paper order value: {usingDefaultPaperMaxNotional ? "default" : "override"} <strong>${Number(effectivePaperMaxNotional).toFixed(0)}</strong>
             </div>
           ) : null}
           {effectiveCommissionPerTrade != null ? (

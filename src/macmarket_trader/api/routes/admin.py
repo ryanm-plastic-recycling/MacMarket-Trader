@@ -38,6 +38,8 @@ from macmarket_trader.domain.schemas import (
     TradeRecommendation,
 )
 from macmarket_trader.execution.paper_broker import PaperBroker
+from macmarket_trader.llm.base import LLMProviderUnavailable, LLMValidationError
+from macmarket_trader.llm.openai_provider import OpenAICompatibleLLMClient
 from macmarket_trader.options.paper_close import OptionPaperCloseError, close_paper_option_structure
 from macmarket_trader.options.paper_contracts import OptionPaperContractError
 from macmarket_trader.options.paper_open import open_paper_option_structure
@@ -871,22 +873,33 @@ def _better_elsewhere_from_candidate(candidate: OpportunityCandidateSummary) -> 
     )
 
 
+def _queue_candidate_id(item: dict[str, object]) -> str:
+    symbol = str(item.get("symbol") or "").upper()
+    strategy = str(item.get("strategy") or "strategy").replace(" ", "_").lower()
+    rank = item.get("rank") if item.get("rank") is not None else "unranked"
+    timeframe = str(item.get("timeframe") or "1D").upper()
+    return f"queue:{symbol}:{strategy}:{timeframe}:{rank}"
+
+
 @user_router.post("/recommendations/opportunity-intelligence", response_model=OpportunityComparisonMemo)
 def recommendation_opportunity_intelligence(
     req: OpportunityIntelligenceRequest,
     _user=Depends(require_approved_user),
 ) -> OpportunityComparisonMemo:
     selected_ids = [item.strip() for item in req.selected_recommendation_ids if item.strip()]
-    if len(selected_ids) < 2:
-        raise HTTPException(status_code=400, detail="Select at least two stored recommendations to compare.")
-
     selected_rows = []
     for recommendation_id in selected_ids:
         row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
         if row is None or row.app_user_id != _user.id:
             raise HTTPException(status_code=404, detail=f"Recommendation not found: {recommendation_id}")
         selected_rows.append(row)
-    candidates = [_opportunity_candidate_from_row(row) for row in selected_rows[: req.max_candidates]]
+    queue_candidates = [
+        OpportunityCandidateSummary.model_validate(candidate)
+        for candidate in req.selected_queue_candidates
+    ]
+    candidates = ([_opportunity_candidate_from_row(row) for row in selected_rows] + queue_candidates)[: req.max_candidates]
+    if len(candidates) < 2:
+        raise HTTPException(status_code=400, detail="Select at least two stored recommendations or queue candidates to compare.")
 
     better_elsewhere: list[BetterElsewhereCandidate] = []
     if req.include_better_elsewhere:
@@ -906,6 +919,12 @@ def recommendation_opportunity_intelligence(
             )
         )
         better_elsewhere = [_better_elsewhere_from_candidate(candidate) for candidate in pool[: req.max_candidates]]
+        for queue_candidate in req.queue_better_elsewhere_candidates:
+            candidate = OpportunityCandidateSummary.model_validate(queue_candidate)
+            if candidate.recommendation_id in selected_set:
+                continue
+            better_elsewhere.append(_better_elsewhere_from_candidate(candidate))
+        better_elsewhere = better_elsewhere[: req.max_candidates]
 
     return recommendation_service.generate_opportunity_intelligence(
         candidates=candidates,
@@ -946,6 +965,19 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
                 "filtered_extended_hours_count": item_metadata.get("filtered_extended_hours_count"),
                 "rth_bucket_count": item_metadata.get("rth_bucket_count"),
             }
+        symbol = str(item.get("symbol") or "").upper()
+        bars_tuple = bars_by_symbol.get(symbol)
+        if bars_tuple:
+            risk = risk_calendar_service.assess(
+                symbol=symbol,
+                timeframe=timeframe,
+                bars=bars_tuple[0],
+            )
+            item["risk_calendar"] = risk.model_dump(mode="json")
+            if not risk.decision.allow_new_entries and item.get("status") == "top_candidate":
+                item["status"] = risk.decision.decision_state
+                item["rejection_reason"] = risk.decision.block_reason or risk.decision.warning_summary
+        item["recommendation_id"] = _queue_candidate_id(item)
     return {
         "market_mode": market_mode.value,
         "timeframe": timeframe,
@@ -2991,8 +3023,91 @@ def _news_readiness() -> dict[str, object]:
     }
 
 
+def _sanitize_provider_error(value: object) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    for secret in (settings.llm_api_key, settings.openai_api_key):
+        if secret and secret.strip():
+            text = text.replace(secret.strip(), "[redacted]")
+    if "Authorization" in text:
+        text = text.split("Authorization", 1)[0].strip()
+    return text[:500]
+
+
+def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
+    provider = settings.llm_provider.strip().lower() or "mock"
+    model = settings.llm_model.strip() or None
+    key_present = bool(settings.llm_api_key.strip() or settings.openai_api_key.strip())
+    enabled = bool(settings.llm_enabled)
+    configured = (not enabled) or provider == "mock" or (provider == "openai" and key_present)
+    status = "configured" if configured else "unconfigured"
+    probe_status = "disabled" if not enabled else "not_configured"
+    fallback_reason = None
+    last_error = None
+
+    if not enabled:
+        fallback_reason = "LLM_ENABLED=false; deterministic mock explanation fallback is active."
+    elif provider == "mock":
+        probe_status = "ok"
+        fallback_reason = "LLM_PROVIDER=mock; deterministic explanation provider selected."
+    elif provider != "openai":
+        status = "unconfigured"
+        fallback_reason = f"Unsupported LLM_PROVIDER={provider}; deterministic mock fallback will be used."
+    elif not key_present:
+        fallback_reason = "OPENAI_API_KEY is not present; deterministic mock fallback will be used."
+    elif not probe:
+        probe_status = "configured"
+    else:
+        try:
+            client = OpenAICompatibleLLMClient(
+                api_key=settings.llm_api_key or settings.openai_api_key,
+                model=model,
+                timeout_seconds=settings.llm_timeout_seconds,
+                max_output_tokens=min(settings.llm_max_output_tokens, 200),
+                temperature=settings.llm_temperature,
+            )
+            summary = client.summarize_event_text(
+                symbol="AAPL",
+                text="Provider readiness probe. Return a short JSON summary only.",
+            )
+            if not summary:
+                raise LLMValidationError("empty LLM probe response")
+            status = "ok"
+            probe_status = "ok"
+        except (LLMProviderUnavailable, LLMValidationError, ValueError, TypeError) as exc:
+            status = "degraded"
+            probe_status = "failed"
+            last_error = _sanitize_provider_error(exc)
+            fallback_reason = "OpenAI probe failed; deterministic mock fallback will be used for explanations."
+
+    return {
+        "provider": "llm",
+        "mode": provider,
+        "status": status,
+        "details": (
+            "LLM provider is explanation/research support only. Deterministic systems own approval, "
+            "entry, stop, target, sizing, risk gates, and paper order creation."
+        ),
+        "configured": configured,
+        "llm_enabled": enabled,
+        "selected_provider": provider,
+        "model": model,
+        "key_present": key_present,
+        "probe_status": probe_status,
+        "fallback_reason": fallback_reason,
+        "last_error": last_error,
+        "readiness_scope": "explanation_research_only",
+        "operational_impact": (
+            "A degraded or disabled LLM never blocks deterministic recommendations; it only falls back "
+            "to deterministic mock explanations."
+        ),
+    }
+
+
 @router.get("/provider-health")
-def provider_health(_admin=Depends(require_admin)):
+def provider_health(
+    _admin=Depends(require_admin),
+    probe_llm: bool = False,
+):
     summary = provider_health_summary()
     market_health = market_data_service.provider_health(sample_symbol="AAPL")
     workflow_mode = summary["workflow_execution_mode"]
@@ -3024,6 +3139,7 @@ def provider_health(_admin=Depends(require_admin)):
             _alpaca_paper_readiness(),
             _fred_readiness(),
             _news_readiness(),
+            _llm_readiness(probe=probe_llm),
             {
                 "provider": "market_data",
                 "mode": summary["market_data"],

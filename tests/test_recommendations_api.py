@@ -170,8 +170,19 @@ def test_user_ranked_recommendation_queue_contract() -> None:
         "invalidation",
         "targets",
         "reason_text",
+        "recommendation_id",
+        "risk_calendar",
     ]:
         assert key in first
+    assert first["recommendation_id"].startswith("queue:")
+    assert first["risk_calendar"]["decision"]["decision_state"] in {
+        "normal",
+        "caution",
+        "restricted",
+        "no_trade",
+        "requires_event_evidence",
+        "data_quality_block",
+    }
 
 
 def test_user_ranked_recommendation_queue_uses_requested_timeframe(monkeypatch) -> None:
