@@ -401,8 +401,19 @@ def test_opportunity_intelligence_cannot_change_risk_decision_or_add_unscanned_c
     memo = service.generate_opportunity_intelligence(candidates=[candidate])
 
     assert memo.candidates[0].risk_calendar is not None
-    assert memo.candidates[0].risk_calendar.decision.decision_state == "requires_event_evidence"
-    assert "deterministic gate owns" in memo.market_desk_memo.lower()
+    decision = memo.candidates[0].risk_calendar.decision
+    original_decision = risk.decision
+    assert decision.decision_state == original_decision.decision_state == "requires_event_evidence"
+    assert decision.allow_new_entries is original_decision.allow_new_entries is False
+    assert decision.recommended_action == original_decision.recommended_action == "event_trade_review"
+    assert decision.override_allowed is original_decision.override_allowed is False
+
+    varied_wording = memo.model_copy(update={"market_desk_memo": "Risk memo wording may vary."})
+    service._validate_opportunity_memo(
+        memo=varied_wording,
+        candidates=[candidate],
+        better_elsewhere=[],
+    )
 
     bad_elsewhere = [
         BetterElsewhereCandidate(
