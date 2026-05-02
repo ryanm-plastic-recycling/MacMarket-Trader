@@ -30,6 +30,15 @@ type ProviderHealth = {
     key_present?: boolean;
     fallback_reason?: string | null;
     last_error?: string | null;
+    last_openai_error?: {
+      endpoint?: string | null;
+      model?: string | null;
+      status_code?: number | null;
+      error_type?: string | null;
+      error_code?: string | null;
+      message?: string | null;
+      request_id?: string | null;
+    } | null;
   }>;
   checked_at: string;
 };
@@ -225,6 +234,15 @@ export function ProviderHealthPanel() {
                 {p.failure_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>failure: {p.failure_reason}</div> : null}
                 {p.fallback_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>fallback: {p.fallback_reason}</div> : null}
                 {p.last_error ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>last error: {p.last_error}</div> : null}
+                {p.last_openai_error ? (
+                  <div style={{ fontSize: "0.8rem", color: "#f7b267", display: "grid", gap: 2 }}>
+                    <div>OpenAI status: {p.last_openai_error.status_code ?? "-"}</div>
+                    <div>OpenAI error: {p.last_openai_error.error_type ?? "-"} / {p.last_openai_error.error_code ?? "-"}</div>
+                    <div>OpenAI request id: {p.last_openai_error.request_id ?? "-"}</div>
+                    <div>OpenAI endpoint: {p.last_openai_error.endpoint ?? "-"}</div>
+                    <div>OpenAI message: {p.last_openai_error.message ?? "-"}</div>
+                  </div>
+                ) : null}
                 {providerDetailCopy(p) ? <div style={{ ...muted, fontSize: "0.78rem", marginTop: 2 }}>{providerDetailCopy(p)}</div> : null}
                 {p.operational_impact ? <div style={{ ...muted, fontSize: "0.78rem" }}>{p.operational_impact}</div> : null}
               </div>

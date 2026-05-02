@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
+import httpx
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -22,6 +24,7 @@ from macmarket_trader.domain.schemas import (
 )
 from macmarket_trader.llm.base import LLMClient, LLM_PROMPT_VERSION
 from macmarket_trader.llm.mock_extractor import MockLLMClient
+from macmarket_trader.llm.openai_provider import OpenAICompatibleLLMClient, get_last_openai_provider_error
 from macmarket_trader.service import RecommendationService
 from macmarket_trader.storage.db import SessionLocal
 
@@ -294,6 +297,244 @@ def test_openai_llm_client_reads_configured_env_values(monkeypatch) -> None:
     assert getattr(client, "temperature") == 0.2
 
 
+def test_openai_provider_uses_responses_api_structured_output(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_post(url: str, *, headers: dict[str, str], json: dict[str, object], timeout: float):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            json={
+                "output": [
+                    {
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": json_module.dumps({"summary": "Tiny OpenAI probe passed."}),
+                            }
+                        ]
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    json_module = json
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider.httpx.post", fake_post)
+
+    client = OpenAICompatibleLLMClient(api_key="sk-test-secret", model="gpt-5.1", max_output_tokens=50)
+    summary = client.summarize_event_text(symbol="AAPL", text="Tiny provider probe.")
+
+    assert summary == "Tiny OpenAI probe passed."
+    assert captured["url"] == "https://api.openai.com/v1/responses"
+    request_json = captured["json"]
+    assert isinstance(request_json, dict)
+    assert request_json["model"] == "gpt-5.1"
+    assert "messages" not in request_json
+    assert "response_format" not in request_json
+    assert "max_tokens" not in request_json
+    assert request_json["max_output_tokens"] == 50
+    assert request_json["reasoning"] == {"effort": "none"}
+    text = request_json["text"]
+    assert isinstance(text, dict)
+    assert text["format"]["type"] == "json_schema"
+
+
+def test_openai_400_error_body_is_captured_and_sanitized(monkeypatch) -> None:
+    secret = "sk-test-secret"
+
+    def fake_post(url: str, *, headers: dict[str, str], json: dict[str, object], timeout: float):
+        del headers, json, timeout
+        request = httpx.Request("POST", url)
+        response = httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": f"Unsupported parameter max_tokens for {secret}",
+                    "type": "invalid_request_error",
+                    "code": "unsupported_parameter",
+                }
+            },
+            headers={"x-request-id": "req_400_test"},
+            request=request,
+        )
+        return response
+
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider.httpx.post", fake_post)
+
+    client = OpenAICompatibleLLMClient(api_key=secret, model="gpt-5.1")
+    try:
+        client.summarize_event_text(symbol="AAPL", text="probe")
+    except Exception as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected provider failure")
+
+    error = get_last_openai_provider_error()
+    assert error is not None
+    assert error["endpoint"] == "https://api.openai.com/v1/responses"
+    assert error["model"] == "gpt-5.1"
+    assert error["status_code"] == 400
+    assert error["error_type"] == "invalid_request_error"
+    assert error["error_code"] == "unsupported_parameter"
+    assert error["request_id"] == "req_400_test"
+    assert "[redacted]" in str(error["message"])
+    assert secret not in str(error)
+    assert secret not in message
+
+
+def test_openai_success_response_maps_to_pydantic_explanation_and_comparison(monkeypatch) -> None:
+    responses = [
+        {
+            "summary": "OpenAI explained the deterministic setup.",
+            "approval_explanation": "Rules approved or rejected the setup; this text explains the result only.",
+            "counter_thesis": ["Follow-through could fade."],
+            "deterministic_engine_owns": ["entry", "stop", "target", "sizing", "approval", "order_routing"],
+            "explanation_only": True,
+        },
+        {
+            "best_deterministic_candidate_id": "queue:AAPL:event:1D:1",
+            "best_deterministic_symbol": "AAPL",
+            "market_desk_memo": "OpenAI compared supplied candidates only.",
+            "comparison_rows": [
+                {
+                    "candidate_id": "queue:AAPL:event:1D:1",
+                    "symbol": "AAPL",
+                    "rank": 1,
+                    "score": 82,
+                    "expected_rr": 2.1,
+                    "confidence": 0.72,
+                    "desk_read": "Stronger deterministic rank.",
+                },
+                {
+                    "candidate_id": "queue:MSFT:event:1D:2",
+                    "symbol": "MSFT",
+                    "rank": 2,
+                    "score": 79,
+                    "expected_rr": 1.9,
+                    "confidence": 0.68,
+                    "desk_read": "Still viable but lower ranked.",
+                },
+            ],
+            "counter_thesis_by_candidate": {
+                "queue:AAPL:event:1D:1": ["Market risk can still invalidate the setup."],
+                "queue:MSFT:event:1D:2": ["Relative strength can fade."],
+            },
+            "better_elsewhere": [],
+            "not_good_enough_warning": None,
+            "missing_data": [],
+            "deterministic_engine_owns": [
+                "approved",
+                "side",
+                "entry",
+                "invalidation",
+                "targets",
+                "shares",
+                "sizing",
+                "order_status",
+                "paper_position_status",
+            ],
+            "explanation_only": True,
+        },
+    ]
+
+    def fake_post(url: str, *, headers: dict[str, str], json: dict[str, object], timeout: float):
+        del headers, json, timeout
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            json={"output_text": json_module.dumps(responses.pop(0))},
+            request=request,
+        )
+
+    json_module = json
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider.httpx.post", fake_post)
+    provider = OpenAICompatibleLLMClient(api_key="sk-test-secret", model="gpt-5.1")
+    rec = RecommendationService(persist_audit=False, llm_client=MockLLMClient()).generate(
+        symbol="AAPL",
+        bars=_bars(),
+        event_text="AAPL earnings beat with strong guidance",
+        event=None,
+        portfolio=PortfolioSnapshot(),
+        user_is_approved=True,
+    )
+
+    explanation = provider.explain_recommendation(recommendation=rec)
+    assert isinstance(explanation, LLMRecommendationExplanation)
+    assert explanation.explanation_only is True
+
+    candidates = [
+        OpportunityCandidateSummary(
+            recommendation_id="queue:AAPL:event:1D:1",
+            symbol="AAPL",
+            side="long",
+            timeframe="1D",
+            approved=True,
+            status="top_candidate",
+            deterministic_score=82,
+            confidence=0.72,
+            expected_rr=2.1,
+            current_recommendation_rank=1,
+        ),
+        OpportunityCandidateSummary(
+            recommendation_id="queue:MSFT:event:1D:2",
+            symbol="MSFT",
+            side="long",
+            timeframe="1D",
+            approved=True,
+            status="top_candidate",
+            deterministic_score=79,
+            confidence=0.68,
+            expected_rr=1.9,
+            current_recommendation_rank=2,
+        ),
+    ]
+    memo = provider.compare_candidates(candidates=candidates, better_elsewhere=[])
+    assert isinstance(memo, OpportunityComparisonMemo)
+    assert memo.best_deterministic_symbol == "AAPL"
+    assert memo.explanation_only is True
+
+
+def test_llm_health_surfaces_latest_openai_failure_without_secret(monkeypatch) -> None:
+    secret = "sk-health-secret"
+
+    def fake_post(url: str, *, headers: dict[str, str], json: dict[str, object], timeout: float):
+        del headers, json, timeout
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": f"Bad request for key {secret}",
+                    "type": "invalid_request_error",
+                    "code": "bad_request",
+                }
+            },
+            headers={"x-request-id": "req_health_test"},
+            request=request,
+        )
+
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider.httpx.post", fake_post)
+    monkeypatch.setattr(admin_routes.settings, "llm_enabled", True)
+    monkeypatch.setattr(admin_routes.settings, "llm_provider", "openai")
+    monkeypatch.setattr(admin_routes.settings, "llm_model", "gpt-5.1")
+    monkeypatch.setattr(admin_routes.settings, "llm_api_key", secret)
+    monkeypatch.setattr(admin_routes.settings, "openai_api_key", "")
+
+    health = admin_routes._llm_readiness(probe=True)
+
+    assert health["status"] == "degraded"
+    assert health["probe_status"] == "failed"
+    assert "last_openai_error" in health
+    assert health["last_openai_error"]["status_code"] == 400
+    assert health["last_openai_error"]["request_id"] == "req_health_test"
+    assert secret not in str(health)
+
+
 def test_llm_health_reports_mock_default_without_key(monkeypatch) -> None:
     monkeypatch.setattr(admin_routes.settings, "llm_enabled", False)
     monkeypatch.setattr(admin_routes.settings, "llm_provider", "mock")
@@ -313,6 +554,7 @@ def test_llm_health_reports_mock_default_without_key(monkeypatch) -> None:
 
 def test_llm_health_reports_openai_configured_without_key_disclosure(monkeypatch) -> None:
     secret = "sk-test-secret"
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider._LAST_OPENAI_PROVIDER_ERROR", None)
     monkeypatch.setattr(admin_routes.settings, "llm_enabled", True)
     monkeypatch.setattr(admin_routes.settings, "llm_provider", "openai")
     monkeypatch.setattr(admin_routes.settings, "llm_model", "gpt-5.1")
@@ -423,6 +665,40 @@ def test_malformed_llm_output_falls_back_to_deterministic_mock_explanation(monke
     assert rec.llm_provenance.validation_errors
     assert rec.entry.zone_low > 0
     assert rec.sizing.shares > 0
+
+
+def test_openai_malformed_schema_response_falls_back_to_mock(monkeypatch) -> None:
+    def fake_post(url: str, *, headers: dict[str, str], json: dict[str, object], timeout: float):
+        del headers, json, timeout
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            json={"output_text": json_module.dumps({"summary": "Missing required explanation fields."})},
+            request=request,
+        )
+
+    json_module = json
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider.httpx.post", fake_post)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", True)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_provider", "openai")
+    service = RecommendationService(
+        persist_audit=False,
+        llm_client=OpenAICompatibleLLMClient(api_key="sk-test-secret", model="gpt-5.1"),
+    )
+
+    rec = service.generate(
+        symbol="AAPL",
+        bars=_bars(),
+        event_text="AAPL earnings beat with strong guidance",
+        event=None,
+        portfolio=PortfolioSnapshot(),
+        user_is_approved=True,
+    )
+
+    assert rec.llm_provenance is not None
+    assert rec.llm_provenance.provider == "mock"
+    assert rec.llm_provenance.fallback_used is True
+    assert rec.llm_provenance.validation_errors
 
 
 def test_api_llm_explanation_does_not_change_deterministic_recommendation_values(monkeypatch) -> None:

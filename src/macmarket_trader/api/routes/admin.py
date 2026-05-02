@@ -39,7 +39,7 @@ from macmarket_trader.domain.schemas import (
 )
 from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.llm.base import LLMProviderUnavailable, LLMValidationError
-from macmarket_trader.llm.openai_provider import OpenAICompatibleLLMClient
+from macmarket_trader.llm.openai_provider import OpenAICompatibleLLMClient, get_last_openai_provider_error
 from macmarket_trader.options.paper_close import OptionPaperCloseError, close_paper_option_structure
 from macmarket_trader.options.paper_contracts import OptionPaperContractError
 from macmarket_trader.options.paper_open import open_paper_option_structure
@@ -3024,6 +3024,8 @@ def _news_readiness() -> dict[str, object]:
 
 
 def _sanitize_provider_error(value: object) -> str:
+    if isinstance(value, dict):
+        return "; ".join(f"{key}={_sanitize_provider_error(val)}" for key, val in value.items())
     text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
     for secret in (settings.llm_api_key, settings.openai_api_key):
         if secret and secret.strip():
@@ -3043,6 +3045,7 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
     probe_status = "disabled" if not enabled else "not_configured"
     fallback_reason = None
     last_error = None
+    last_openai_error = get_last_openai_provider_error() if provider == "openai" else None
 
     if not enabled:
         fallback_reason = "LLM_ENABLED=false; deterministic mock explanation fallback is active."
@@ -3056,6 +3059,11 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
         fallback_reason = "OPENAI_API_KEY is not present; deterministic mock fallback will be used."
     elif not probe:
         probe_status = "configured"
+        if last_openai_error:
+            status = "degraded"
+            probe_status = "failed"
+            last_error = _sanitize_provider_error(last_openai_error)
+            fallback_reason = "Latest OpenAI request failed; deterministic mock fallback is active until the provider succeeds."
     else:
         try:
             client = OpenAICompatibleLLMClient(
@@ -3073,10 +3081,12 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
                 raise LLMValidationError("empty LLM probe response")
             status = "ok"
             probe_status = "ok"
+            last_openai_error = None
         except (LLMProviderUnavailable, LLMValidationError, ValueError, TypeError) as exc:
             status = "degraded"
             probe_status = "failed"
             last_error = _sanitize_provider_error(exc)
+            last_openai_error = get_last_openai_provider_error()
             fallback_reason = "OpenAI probe failed; deterministic mock fallback will be used for explanations."
 
     return {
@@ -3095,6 +3105,7 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
         "probe_status": probe_status,
         "fallback_reason": fallback_reason,
         "last_error": last_error,
+        "last_openai_error": last_openai_error,
         "readiness_scope": "explanation_research_only",
         "operational_impact": (
             "A degraded or disabled LLM never blocks deterministic recommendations; it only falls back "

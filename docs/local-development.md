@@ -93,6 +93,11 @@ may summarize, extract, compare, and explain, but it cannot choose trades or
 change approval, entry, stop, target, sizing, risk-calendar gate state, or paper
 order creation.
 
+For `gpt-5.1`, the OpenAI provider uses the Responses API with structured
+`text.format` output and Pydantic validation. If OpenAI falls back to mock,
+open `/admin/provider-health` and run **Re-probe now** to view the sanitized
+OpenAI status code, error type/code/message, request id, endpoint, and model.
+
 Windows deployment note: the deployed backend runtime reads
 `C:\Dashboard\MacMarket-Trader\.env`. The deploy script intentionally preserves
 that file and does not overwrite it from source. After changing LLM env values
