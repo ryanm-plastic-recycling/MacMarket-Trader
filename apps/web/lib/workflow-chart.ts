@@ -1,5 +1,6 @@
 import type { IndicatorLegendEntry, IndicatorPane } from "@/lib/chart-indicators";
 import { INDICATOR_REGISTRY, type IndicatorId } from "@/lib/indicator-framework";
+import type { Time } from "lightweight-charts";
 
 export type WorkflowIndicatorPresetId = "clean" | "trend" | "momentum" | "volatility" | "all" | "custom";
 export type WorkflowPanelState = {
@@ -19,6 +20,31 @@ export type WorkflowIndicatorPreset = {
   description: string;
   indicators: IndicatorId[];
 };
+
+export function formatChartTimestamp(raw: Time | number | null | undefined): string {
+  if (!raw) return "Unavailable";
+  if (typeof raw === "number") {
+    return new Date(raw * 1000).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  if (typeof raw !== "string") {
+    return `${raw.year}-${String(raw.month).padStart(2, "0")}-${String(raw.day).padStart(2, "0")}`;
+  }
+  const timestamp = new Date(raw);
+  if (Number.isNaN(timestamp.getTime())) return raw;
+  return timestamp.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export const WORKFLOW_INDICATOR_PRESETS: WorkflowIndicatorPreset[] = [
   { id: "clean", label: "Clean", description: "Price + volume only", indicators: ["volume"] },

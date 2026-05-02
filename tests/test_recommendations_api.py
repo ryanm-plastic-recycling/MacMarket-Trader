@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from macmarket_trader.api.main import app
 from macmarket_trader.api.routes import admin as admin_routes
+from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider
 from macmarket_trader.domain.models import AppUserModel
 from macmarket_trader.storage.db import SessionLocal, init_db
 
@@ -115,6 +116,28 @@ def test_user_generation_non_equity_generates_recommendation() -> None:
     assert payload["market_mode"] == "options"
 
 
+def test_user_generation_uses_requested_timeframe(monkeypatch) -> None:
+    calls: list[tuple[str, str, int]] = []
+
+    class StubMarketData:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            calls.append((symbol, timeframe, limit))
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketData())
+
+    client = TestClient(app)
+    _approve_default_user(client)
+    response = client.post(
+        "/user/recommendations/generate",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbol": "GOOG", "timeframe": "1H", "event_text": "Operator trigger"},
+    )
+
+    assert response.status_code == 200
+    assert calls == [("GOOG", "1H", 60)]
+
+
 def test_user_ranked_recommendation_queue_contract() -> None:
     client = TestClient(app)
     _approve_default_user(client)
@@ -147,6 +170,29 @@ def test_user_ranked_recommendation_queue_contract() -> None:
         "reason_text",
     ]:
         assert key in first
+
+
+def test_user_ranked_recommendation_queue_uses_requested_timeframe(monkeypatch) -> None:
+    calls: list[tuple[str, str, int]] = []
+
+    class StubMarketData:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            calls.append((symbol, timeframe, limit))
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketData())
+
+    client = TestClient(app)
+    _approve_default_user(client)
+    response = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["GOOG"], "timeframe": "1H", "market_mode": "equities", "top_n": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["timeframe"] == "1H"
+    assert calls == [("GOOG", "1H", 120)]
 
 
 def test_user_ranked_queue_candidate_can_be_promoted() -> None:
@@ -186,6 +232,41 @@ def test_user_ranked_queue_candidate_can_be_promoted() -> None:
     assert listing.status_code == 200
     match = next(row for row in listing.json() if row["id"] == promoted["id"])
     assert match["payload"]["workflow"]["ranking_provenance"]["reason_text"] == candidate["reason_text"]
+
+
+def test_promoted_recommendation_provenance_timeframe_matches_bars_used(monkeypatch) -> None:
+    calls: list[tuple[str, str, int]] = []
+
+    class StubMarketData:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            calls.append((symbol, timeframe, limit))
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketData())
+
+    client = TestClient(app)
+    _approve_default_user(client)
+    queue = client.post(
+        "/user/recommendations/queue",
+        headers={"Authorization": "Bearer user-token"},
+        json={"symbols": ["GOOG"], "timeframe": "4H", "market_mode": "equities", "top_n": 1},
+    )
+    assert queue.status_code == 200
+    candidate = queue.json()["queue"][0]
+
+    promote = client.post(
+        "/user/recommendations/queue/promote",
+        headers={"Authorization": "Bearer user-token"},
+        json=candidate,
+    )
+    assert promote.status_code == 200
+    promoted = promote.json()
+
+    detail = client.get(f"/user/recommendations/{promoted['id']}", headers={"Authorization": "Bearer user-token"})
+    workflow = detail.json()["payload"]["workflow"]
+
+    assert calls == [("GOOG", "4H", 120), ("GOOG", "4H", 60)]
+    assert workflow["ranking_provenance"]["timeframe"] == "4H"
 
 
 def test_user_ranked_queue_candidate_can_be_saved_as_alternative() -> None:

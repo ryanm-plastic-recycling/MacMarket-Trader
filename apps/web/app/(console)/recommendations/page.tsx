@@ -150,7 +150,6 @@ export default function RecommendationsPage() {
   const [tableSymbolFilter, setTableSymbolFilter] = useState("");
   const [tableStrategyFilter, setTableStrategyFilter] = useState("");
   const [tableStatusFilter, setTableStatusFilter] = useState<"all" | "approved" | "rejected">("all");
-<<<<<<< ours
   const [watchlists, setWatchlists] = useState<RecommendationWatchlist[]>([]);
   const [watchlistsLoading, setWatchlistsLoading] = useState(false);
   const [universeMode, setUniverseMode] = useState<UniverseSourceType>("manual");
@@ -160,8 +159,6 @@ export default function RecommendationsPage() {
   const [excludedSymbols, setExcludedSymbols] = useState("");
   const [universePreview, setUniversePreview] = useState<SymbolUniversePreviewResponse | null>(null);
   const [universeFeedback, setUniverseFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
-=======
->>>>>>> theirs
 
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
@@ -530,7 +527,6 @@ export default function RecommendationsPage() {
     };
   }, [isOptionsPreviewMode, optionsPreview?.symbol, optionsPreview?.timeframe, previewSymbol, previewFallback, selectedQueue?.symbol, selectedQueue?.timeframe, selectedRecommendation?.symbol, selectedRecommendation?.id, selectedQueueKey, fallbackDerived]);
 
-<<<<<<< ours
   const activeRecommendation = useMemo(() => {
     if (selectedRecommendation) return selectedRecommendation;
     if (guidedState.guided) {
@@ -541,16 +537,6 @@ export default function RecommendationsPage() {
     if (guidedState.recommendationId) return rows.find((item) => item.recommendation_id === guidedState.recommendationId) ?? null;
     return rows[0] ?? null;
   }, [guidedState.guided, guidedState.recommendationId, rows, selectedRecommendation]);
-=======
-  const selectedRecProvenance = getRankingProvenance((selectedRecommendation?.payload as Record<string, unknown>) ?? null);
-  const promotedKeys = useMemo(() => getPromotedQueueKeys(rows), [rows]);
-  const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");
-  const activeRecommendation = useMemo(() => {
-    if (selectedRecommendation) return selectedRecommendation;
-    if (guidedState.recommendationId) return rows.find((item) => item.recommendation_id === guidedState.recommendationId) ?? null;
-    return rows[0] ?? null;
-  }, [guidedState.recommendationId, rows, selectedRecommendation]);
->>>>>>> theirs
   const filteredRows = useMemo(
     () =>
       rows
@@ -567,7 +553,6 @@ export default function RecommendationsPage() {
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))),
     [rows, tableStatusFilter, tableStrategyFilter, tableSymbolFilter],
   );
-<<<<<<< ours
   const chartOverlayLevels = useMemo(() => {
     const levels = extractLevels(selectedRecommendation, selectedQueue);
     return [
@@ -578,8 +563,6 @@ export default function RecommendationsPage() {
       { label: "T2", value: levels.target2, color: "#4caf50", lineStyle: 1 },
     ];
   }, [selectedQueue, selectedRecommendation]);
-=======
->>>>>>> theirs
 
   return (
     <section className="op-stack">
@@ -654,28 +637,6 @@ export default function RecommendationsPage() {
           <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)" }}>
             Guided mode carries one active recommendation at a time.
           </div>
-<<<<<<< ours
-=======
-        </Card>
-      ) : null}
-      {guidedState.guided ? (
-        <Card title="Active recommendation">
-          {activeRecommendation ? (
-            <>
-              <div><strong>recommendation id:</strong> <span style={{ fontFamily: "monospace" }}>{activeRecommendation.recommendation_id}</span></div>
-              <div>
-                <strong>symbol:</strong> {activeRecommendation.symbol} · <strong>strategy:</strong>{" "}
-                {String(
-                  getRankingProvenance(activeRecommendation.payload as Record<string, unknown>)?.strategy
-                  ?? ((activeRecommendation.payload.workflow as Record<string, unknown> | undefined)?.source_strategy as string | undefined)
-                  ?? "-",
-                )}
-              </div>
-            </>
-          ) : (
-            <EmptyState title="No active recommendation" hint="Create from Analysis or promote one queue candidate to start guided replay." />
-          )}
->>>>>>> theirs
         </Card>
       ) : null}
       {guidedState.guided && !isPreviewMode ? (
@@ -705,7 +666,6 @@ export default function RecommendationsPage() {
             {selectedRecommendation?.recommendation_id ? (
               <button onClick={openReplayGuidedCta} disabled={unsupportedGuidedMode}>Go to Replay step</button>
             ) : (
-<<<<<<< ours
               <>
                 <button className="op-btn-primary-cta" onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
                   {loading.promote ? "Promoting…" : "Make active →"}
@@ -714,11 +674,6 @@ export default function RecommendationsPage() {
                   {loading.saveAlt ? "Saving…" : "Save as alternative"}
                 </button>
               </>
-=======
-              <button onClick={() => void promoteSelected()} disabled={unsupportedGuidedMode || !selectedQueue || loading.promote}>
-                {loading.promote ? "Promoting…" : "Make active"}
-              </button>
->>>>>>> theirs
             )}
           </div>
         </Card>
@@ -1003,7 +958,6 @@ export default function RecommendationsPage() {
                 {promotedKeys.has(`${selectedQueue.symbol}-${selectedQueue.strategy}-${selectedQueue.rank}`) ? (
                   <StatusBadge tone="good">Already promoted to recommendation</StatusBadge>
                 ) : (
-<<<<<<< ours
                   <div className="op-row">
                     <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={loading.promote || loading.saveAlt} title={loading.promote ? "Promotion in flight…" : undefined}>
                       {loading.promote ? "Promoting…" : "Make active"}
@@ -1012,11 +966,6 @@ export default function RecommendationsPage() {
                       {loading.saveAlt ? "Saving…" : "Save as alternative"}
                     </button>
                   </div>
-=======
-                  <button onClick={() => void promoteSelected()} disabled={loading.promote} style={{ width: "100%" }}>
-                    {loading.promote ? "Promoting…" : guidedState.guided ? "Make active" : "Promote to recommendation"}
-                  </button>
->>>>>>> theirs
                 )}
               </div>
             </div>

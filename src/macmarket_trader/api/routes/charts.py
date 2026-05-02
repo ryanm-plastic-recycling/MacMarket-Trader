@@ -30,7 +30,7 @@ def _resolve_bars(symbol: str, timeframe: str, request_bars: list[Bar]) -> tuple
     if provider_bars:
         return provider_bars, provider_source, provider_fallback
 
-    persisted = bar_repo.list_for_symbol(symbol=symbol)
+    persisted = bar_repo.list_for_symbol(symbol=symbol) if timeframe.upper() == "1D" else []
     if persisted:
         return (
             [

@@ -116,6 +116,15 @@ checkpoint is captured in
 [`active-paper-position-management-design.md`](active-paper-position-management-design.md)
 and keeps broker routing, live trading, automated exits, schema changes, and
 new frontend behavior out of this documentation-only pass.
+Intraday market-data correctness hardening is complete for the current
+provider-backed chart/workflow path: aggregate-bar timestamps are preserved,
+1H/4H HACO and workflow chart payloads emit unique intraday Unix-second chart
+times, 1D payloads keep daily date values, chart routes no longer substitute
+persisted daily bars for intraday requests, and Analysis / Recommendations
+workflow bars now honor the selected timeframe. This remains paper-only and
+does not add broker routing, live trading, or day-trading automation. Future
+regular-hours-only filtering for provider intraday aggregate bars remains a
+separate market-data policy hardening item.
 
 ## Completed Phases
 

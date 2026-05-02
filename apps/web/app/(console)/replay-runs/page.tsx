@@ -15,7 +15,6 @@ import { WorkflowBanner } from "@/components/workflow-banner";
 import { pickReplayRunSelection } from "@/lib/workflow-selection";
 import { formatLineageBreadcrumb } from "@/lib/lineage-format";
 
-<<<<<<< ours
 type Run = {
   id: number;
   symbol: string;
@@ -39,9 +38,6 @@ type Run = {
   projected_net_pnl?: number | null;
   fee_model?: string | null;
 };
-=======
-type Run = { id: number; symbol: string; created_at: string; recommendation_count: number; approved_count: number; fill_count: number; ending_heat: number; ending_open_notional: number; market_data_source?: string; fallback_mode?: boolean | null; source_recommendation_id?: string | null; source_strategy?: string | null; has_stageable_candidate?: boolean; stageable_recommendation_id?: string | null; stageable_reason?: string | null };
->>>>>>> theirs
 type RunDetail = Run & { source_recommendation_id?: string | null; source_strategy?: string | null; source_market_mode?: string | null; thesis?: string | null; key_levels?: { entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null } | null; summary_metrics?: Record<string, number> | null };
 type Step = { id: number; step_index: number; recommendation_id: string; approved: boolean; rejection_reason?: string | null; thesis?: string | null; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; quality?: number | null; confidence?: number | null; pre_step_snapshot: Record<string, unknown>; post_step_snapshot: Record<string, unknown>; timestamp?: string | null; event_text?: string | null };
 type ActiveRecommendation = { recommendation_id: string; display_id?: string; symbol: string; payload?: { thesis?: string; entry?: Record<string, unknown> | null; invalidation?: Record<string, unknown> | null; targets?: Record<string, unknown> | null; workflow?: { source_strategy?: string } } };
@@ -422,18 +418,13 @@ export default function Page() {
       </Card>
     ) : null}
 
-<<<<<<< ours
     <Card><div className="op-row"><button className={replayDoneForRec ? "op-btn op-btn-secondary" : "op-btn-primary-cta op-btn-pulse"} onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : replayDoneForRec ? "Run again →" : "Run replay now →"}</button><button onClick={openOrdersNextAction} disabled={!selected?.has_stageable_candidate || unsupportedGuidedMode}>Go to Paper Order step</button><button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} /></Card>
-=======
-    <Card><div className="op-row"><button onClick={() => void runReplay()} disabled={busy || unsupportedGuidedMode}>{busy ? "Running…" : "Run replay now"}</button><button onClick={openOrdersNextAction} disabled={!selected?.has_stageable_candidate || unsupportedGuidedMode}>Go to Paper Order step</button><button onClick={() => void loadRuns()} disabled={busy}>{busy ? "Refreshing…" : "Refresh runs"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void loadRuns()} /></Card>
->>>>>>> theirs
     {error ? <ErrorState title="Replay unavailable" hint={error} /> : null}
     {stepError ? <ErrorState title="Replay steps unavailable" hint={stepError} /> : null}
 
     <div className="op-grid-2">
       <Card title={guidedState.guided ? "Replay history (secondary)" : "Replay runs"}>
         {guidedState.guided ? <div style={{ marginBottom: 6, color: "var(--op-muted, #7a8999)" }}>Secondary panel: full replay history</div> : null}
-<<<<<<< ours
         <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
         <table className="op-table" style={{ marginTop: guidedState.guided ? 8 : 0 }}>
           <thead><tr><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>created_at</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>symbol</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>paths</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>approved</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>fills</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>stageable</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>ending_heat</th><th style={{ position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)" }}>ending_open_notional</th></tr></thead>
@@ -441,12 +432,6 @@ export default function Page() {
             {runs.length === 0 && !busy ? <tr><td colSpan={8} style={{ color: "#9fb0c3", textAlign: "center", padding: "16px 8px" }}>No replay runs yet. Click "Run replay now" above to run your first replay.</td></tr> : null}
             {runs.map((r) => <tr key={r.id} onClick={() => void loadSteps(r.id)} className={`is-selectable ${r.id === selectedRunId ? "is-active" : ""}`}><td>{r.created_at}</td><td>{r.symbol}</td><td>{r.recommendation_count}</td><td>{r.approved_count}</td><td>{r.fill_count}</td><td>{r.has_stageable_candidate ? "yes" : "no"}</td><td>{r.ending_heat}</td><td>{r.ending_open_notional}</td></tr>)}
           </tbody>
-=======
-        <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
-        <table className="op-table" style={{ marginTop: guidedState.guided ? 8 : 0 }}>
-          <thead><tr><th>created_at</th><th>symbol</th><th>paths</th><th>approved</th><th>fills</th><th>stageable</th><th>ending_heat</th><th>ending_open_notional</th></tr></thead>
-          <tbody>{runs.map((r) => <tr key={r.id} onClick={() => void loadSteps(r.id)} className={`is-selectable ${r.id === selectedRunId ? "is-active" : ""}`}><td>{r.created_at}</td><td>{r.symbol}</td><td>{r.recommendation_count}</td><td>{r.approved_count}</td><td>{r.fill_count}</td><td>{r.has_stageable_candidate ? "yes" : "no"}</td><td>{r.ending_heat}</td><td>{r.ending_open_notional}</td></tr>)}</tbody>
->>>>>>> theirs
         </table>
         </div>
       </Card>
@@ -454,7 +439,6 @@ export default function Page() {
       <Card title="Step timeline detail">
         {!selected ? <EmptyState title="Select a replay run" hint="Choose a row to inspect approved vs rejected path and heat snapshots." /> : <>
           <div style={{ marginBottom: 8 }}><strong>Run #{selected.id}</strong> · {selected.symbol} · source {selectedSource}</div>
-<<<<<<< ours
           {runDetail?.estimated_total_fees != null ? (
             <div className="op-card" style={{ marginBottom: 8, padding: 10 }}>
               <div style={{ fontSize: "0.8rem", color: "var(--op-muted, #7a8999)" }}>Estimated paper-only stageable candidate preview (entry + exit)</div>
@@ -469,9 +453,6 @@ export default function Page() {
               <p>Return to Recommendations to select a different rec, or run a new replay.</p>
             </div>
           ) : null}
-=======
-          {selected.has_stageable_candidate === false ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>Replay completed, but no stageable path was approved.</div> : null}
->>>>>>> theirs
           {selected.approved_count === 0 && selected.fill_count === 0 ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}>Replay completed, but no fills occurred. Portfolio remained unchanged.</div> : null}
           {steps.length > 0 && <div style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9fb0c3", marginBottom: 3 }}><span>approved {approvedCount}</span><span>rejected {rejectedCount}</span><span>fills {selected.fill_count}</span></div></div>}
           {equitySvg ? <div className="op-card" style={{ marginBottom: 8, padding: 8 }}><div style={{ fontSize: 11, color: "#9fb0c3", marginBottom: 2 }}>Equity curve (post-step)</div>{equitySvg}</div> : null}
@@ -504,12 +485,9 @@ export default function Page() {
                 <div><strong>entry zone:</strong> {fmtLevelRange(s.entry)}</div>
                 <div><strong>stop / invalidation:</strong> {fmt((s.invalidation as Record<string, unknown> | null | undefined)?.["price"])} {(s.invalidation as Record<string, unknown> | null | undefined)?.["reason"] ? `(${String((s.invalidation as Record<string, unknown>)["reason"])})` : ""}</div>
                 <div><strong>targets:</strong> T1 {fmt((s.targets as Record<string, unknown> | null | undefined)?.["target_1"])} · T2 {fmt((s.targets as Record<string, unknown> | null | undefined)?.["target_2"])}</div>
-<<<<<<< ours
                 {(s.quality != null || s.confidence != null) ? (
                   <div><strong><MetricLabel label="Score" term="score" />:</strong> {fmt(s.quality)} · <strong><MetricLabel label="Confidence" term="confidence" />:</strong> {fmt(s.confidence)}</div>
                 ) : null}
-=======
->>>>>>> theirs
                 <details style={{ marginTop: 6 }}>
                   <summary>Raw operator detail</summary>
                   <div><strong>entry:</strong> {JSON.stringify(s.entry ?? {})}</div>

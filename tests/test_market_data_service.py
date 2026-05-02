@@ -11,6 +11,7 @@ from macmarket_trader.config import settings
 from macmarket_trader.data.providers.market_data import (
     AlpacaMarketDataProvider,
     DataNotEntitledError,
+    DeterministicFallbackMarketDataProvider,
     INDEX_SYMBOLS,
     MarketDataService,
     MarketProviderHealth,
@@ -53,9 +54,39 @@ def test_polygon_historical_bars_normalization(monkeypatch) -> None:
 
     assert len(bars) == 2
     assert bars[0].date.isoformat() == "2026-04-01"
+    assert bars[0].timestamp == datetime.fromtimestamp(1775088000000 / 1000, tz=UTC)
     assert bars[0].open == 190.1
     assert bars[1].close == 193.0
     assert bars[1].volume == 150000
+
+
+def test_polygon_intraday_bars_preserve_timestamp_and_return_latest_ascending(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    stamps = [
+        datetime(2026, 4, 1, 13, 30, tzinfo=UTC),
+        datetime(2026, 4, 1, 14, 30, tzinfo=UTC),
+        datetime(2026, 4, 1, 15, 30, tzinfo=UTC),
+        datetime(2026, 4, 1, 16, 30, tzinfo=UTC),
+    ]
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        assert path.startswith("/v2/aggs/ticker/GOOG/range/1/hour/")
+        assert int(query["limit"]) > 2
+        return {
+            "results": [
+                {"t": int(stamp.timestamp() * 1000), "o": 100 + idx, "h": 101 + idx, "l": 99 + idx, "c": 100.5 + idx, "v": 1000 + idx}
+                for idx, stamp in enumerate(stamps)
+            ]
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+
+    bars = provider.fetch_historical_bars(symbol="GOOG", timeframe="1H", limit=2)
+
+    assert [bar.timestamp for bar in bars] == stamps[-2:]
+    assert [bar.close for bar in bars] == [102.5, 103.5]
+    assert all(bar.date.isoformat() == "2026-04-01" for bar in bars)
 
 
 def test_alpaca_historical_bars_normalization(monkeypatch) -> None:
@@ -80,6 +111,7 @@ def test_alpaca_historical_bars_normalization(monkeypatch) -> None:
 
     assert len(bars) == 2
     assert bars[0].date.isoformat() == "2026-04-01"
+    assert bars[0].timestamp == datetime(2026, 4, 1, 20, 0, tzinfo=UTC)
     assert bars[0].open == 190.1
     assert bars[1].close == 193.0
     assert bars[1].volume == 150000
@@ -394,6 +426,52 @@ def test_workflow_bars_returns_400_for_unknown_symbol(monkeypatch) -> None:
     payload = resp.json()
     assert payload["detail"]["error"] == "symbol_not_found"
     assert "FAKE" in payload["detail"]["message"]
+
+
+def test_analysis_setup_passes_requested_timeframe_to_market_data(monkeypatch) -> None:
+    calls: list[tuple[str, str, int]] = []
+
+    class StubMarketDataService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):  # type: ignore[override]
+            calls.append((symbol, timeframe, limit))
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):  # type: ignore[override]
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):  # type: ignore[override]
+            return None
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data", mode="polygon", status="ok",
+                details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "workflow_demo_fallback", False)
+    monkeypatch.setattr(settings, "environment", "test")
+
+    client = TestClient(app)
+    client.get("/user/me", headers={"Authorization": "Bearer user-token"})
+    from macmarket_trader.domain.models import AppUserModel
+    from macmarket_trader.storage.db import SessionLocal
+
+    with SessionLocal() as session:
+        user = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == "clerk_user")).scalar_one()
+        user.approval_status = "approved"
+        session.commit()
+
+    response = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "GOOG", "timeframe": "4H"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["timeframe"] == "4H"
+    assert calls == [("GOOG", "4H", 120)]
 
 
 def test_data_not_entitled_raised_on_polygon_403(monkeypatch) -> None:

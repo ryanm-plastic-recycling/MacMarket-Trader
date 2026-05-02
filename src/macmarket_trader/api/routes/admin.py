@@ -44,7 +44,6 @@ from macmarket_trader.email_templates import render_approval_html, render_invite
 from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.strategy_registry import get_strategy_by_display_name, list_strategies
 from macmarket_trader.storage.db import SessionLocal
-<<<<<<< ours
 from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OptionPaperRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, SymbolUniverseRepository, UserRepository, WatchlistRepository, commission_paid_for_trade, display_id_or_fallback, gross_pnl_or_fallback, net_pnl_or_fallback
 from macmarket_trader.domain.models import AuditLogModel
 
@@ -190,9 +189,6 @@ def _record_audit_event(*, recommendation_id: str, payload: dict[str, object]) -
     with SessionLocal() as session:
         session.add(AuditLogModel(recommendation_id=recommendation_id or "", payload=payload))
         session.commit()
-=======
-from macmarket_trader.storage.repositories import DashboardRepository, EmailLogRepository, InviteRepository, OrderRepository, PaperPortfolioRepository, RecommendationRepository, ReplayRepository, StrategyReportRepository, UserRepository, WatchlistRepository
->>>>>>> theirs
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 user_router = APIRouter(prefix="/user", tags=["user"])
@@ -204,10 +200,7 @@ dashboard_repo = DashboardRepository(SessionLocal)
 recommendation_repo = RecommendationRepository(SessionLocal)
 replay_repo = ReplayRepository(SessionLocal)
 order_repo = OrderRepository(SessionLocal)
-<<<<<<< ours
 option_paper_repo = OptionPaperRepository(SessionLocal)
-=======
->>>>>>> theirs
 paper_portfolio_repo = PaperPortfolioRepository(SessionLocal)
 watchlist_repo = WatchlistRepository(SessionLocal)
 symbol_universe_repo = SymbolUniverseRepository(SessionLocal)
@@ -335,9 +328,9 @@ def _safe_identity_value(value: str | None) -> str | None:
     return normalized
 
 
-def _workflow_bars(symbol: str, limit: int = 60) -> tuple[list[Bar], str, bool]:
+def _workflow_bars(symbol: str, limit: int = 60, timeframe: str = "1D") -> tuple[list[Bar], str, bool]:
     try:
-        bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe="1D", limit=limit)
+        bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
     except DataNotEntitledError:
         raise HTTPException(
             status_code=402,
@@ -630,7 +623,7 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
     selected_strategies = [str(item) for item in (req.get("strategies") or []) if str(item).strip()]
     if not selected_strategies:
         selected_strategies = [entry.display_name for entry in list_strategies(market_mode)[:3]]
-    bars_by_symbol = {symbol: _workflow_bars(symbol, limit=120) for symbol in symbols}
+    bars_by_symbol = {symbol: _workflow_bars(symbol, limit=120, timeframe=timeframe) for symbol in symbols}
     ranking = ranking_engine.rank_candidates(
         bars_by_symbol=bars_by_symbol,
         strategies=selected_strategies,
@@ -655,7 +648,8 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
 
     action = str(req.get("action") or "make_active")
 
-    bars, source, fallback_mode = _workflow_bars(symbol)
+    timeframe = str(req.get("timeframe") or "1D")
+    bars, source, fallback_mode = _workflow_bars(symbol, timeframe=timeframe)
     event_text = str(req.get("thesis") or f"Queue promotion for {strategy}")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
@@ -679,7 +673,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         "strategy": strategy,
         "strategy_id": req.get("strategy_id"),
         "strategy_status": req.get("strategy_status") or req.get("status"),
-        "timeframe": req.get("timeframe") or "1D",
+        "timeframe": timeframe,
         "market_mode": req.get("market_mode") or MarketMode.EQUITIES.value,
         "source": req.get("source") or source,
         "workflow_source": req.get("workflow_source") or source,
@@ -738,7 +732,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
     workflow_source = str(req.get("workflow_source") or req.get("source") or "")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
-    bars, source, fallback_mode = _workflow_bars(symbol)
+    bars, source, fallback_mode = _workflow_bars(symbol, timeframe=timeframe)
     rec = recommendation_service.generate(
         symbol=symbol,
         bars=bars,
@@ -1006,10 +1000,7 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
         "has_stageable_candidate": bool(run_row.has_stageable_candidate) if run_row else False,
         "stageable_recommendation_id": run_row.stageable_recommendation_id if run_row else None,
         "stageable_reason": run_row.stageable_reason if run_row else None,
-<<<<<<< ours
         **fee_preview,
-=======
->>>>>>> theirs
     }
 
 
@@ -1045,10 +1036,7 @@ def replay_run_detail(run_id: int, _user=Depends(require_approved_user)):
         "has_stageable_candidate": run.has_stageable_candidate,
         "stageable_recommendation_id": run.stageable_recommendation_id,
         "stageable_reason": run.stageable_reason,
-<<<<<<< ours
         **fee_preview,
-=======
->>>>>>> theirs
     }
 
 
@@ -1548,7 +1536,7 @@ def analysis_setup(
     if strategy_entry is None:
         raise HTTPException(status_code=400, detail="No strategies configured for selected market mode")
 
-    bars, source, fallback_mode = _workflow_bars(symbol, limit=120)
+    bars, source, fallback_mode = _workflow_bars(symbol, limit=120, timeframe=timeframe)
 
     latest = bars[-1]
     prior = bars[-2] if len(bars) > 1 else bars[-1]

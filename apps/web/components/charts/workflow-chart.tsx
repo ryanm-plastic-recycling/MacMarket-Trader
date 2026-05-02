@@ -28,6 +28,7 @@ import {
   WORKFLOW_INDICATOR_PRESETS,
   detectWorkflowIndicatorPreset,
   extractWorkflowHoverLegendValues,
+  formatChartTimestamp,
   getWorkflowPanelState,
   getWorkflowPresetIndicators,
   sanitizeWorkflowIndicatorSelection,
@@ -46,19 +47,6 @@ type VisibleTimeRange = { from: Time; to: Time };
 function timeKey(time: Time): string {
   if (typeof time === "number" || typeof time === "string") return String(time);
   return `${time.year}-${String(time.month).padStart(2, "0")}-${String(time.day).padStart(2, "0")}`;
-}
-
-function formatTimestamp(raw: string | null | undefined): string {
-  if (!raw) return "Unavailable";
-  const timestamp = new Date(raw);
-  if (Number.isNaN(timestamp.getTime())) return raw;
-  return timestamp.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function formatNumber(value: number | null | undefined, kind: "price" | "volume" | "momentum" = "price"): string {
@@ -341,7 +329,7 @@ export function WorkflowChart({
   );
   const priceLegendEntries = hoverLegendEntries.filter((entry) => entry.pane === "price");
   const lowerLegendEntries = hoverLegendEntries.filter((entry) => entry.pane !== "price");
-  const latestBarTime = candles.length > 0 ? String(candles[candles.length - 1].time) : null;
+  const latestBarTime = candles.length > 0 ? candles[candles.length - 1].time : null;
 
   if (!chartPayload || candles.length === 0) {
     return <EmptyState title={emptyTitle} hint={emptyHint} />;
@@ -379,7 +367,7 @@ export function WorkflowChart({
           {chartPayload.fallback_mode ? "Fallback bars" : "Provider-backed bars"}
         </StatusBadge>
         <StatusBadge tone="neutral">Source: {sourceLabel ?? chartPayload.data_source}</StatusBadge>
-        <StatusBadge tone="neutral">As of: {formatTimestamp(latestBarTime)}</StatusBadge>
+        <StatusBadge tone="neutral">As of: {formatChartTimestamp(latestBarTime)}</StatusBadge>
       </div>
 
       {unsupportedIndicators.length > 0 ? (
@@ -394,7 +382,7 @@ export function WorkflowChart({
         <div style={{ minWidth: 0, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 10, padding: "10px 12px", background: "rgba(10, 18, 25, 0.72)" }}>
           <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: 6 }}>Hover snapshot</div>
           <div style={{ display: "grid", gap: 4, fontSize: "0.86rem" }}>
-            <div><strong>Time:</strong> {formatTimestamp(activeCandle ? String(activeCandle.time) : null)}</div>
+            <div><strong>Time:</strong> {formatChartTimestamp(activeCandle?.time ?? null)}</div>
             <div><strong>Close:</strong> {formatNumber(activeCandle?.close ?? null)}</div>
             {panelState.showVolume ? <div><strong>Volume:</strong> {formatNumber(activeCandle?.volume ?? null, "volume")}</div> : null}
           </div>

@@ -14,6 +14,7 @@ from macmarket_trader.domain.time import utc_now
 
 class Bar(BaseModel):
     date: date
+    timestamp: datetime | None = None
     open: float
     high: float
     low: float
@@ -78,7 +79,7 @@ class IndicatorContext(BaseModel):
 
 class ChartCandle(BaseModel):
     index: int
-    time: date
+    time: str | int
     open: float
     high: float
     low: float
@@ -88,7 +89,7 @@ class ChartCandle(BaseModel):
 
 class HacoMarker(BaseModel):
     index: int
-    time: date
+    time: str | int
     marker_type: str
     direction: str
     price: float
@@ -97,14 +98,14 @@ class HacoMarker(BaseModel):
 
 class HacoStatePoint(BaseModel):
     index: int
-    time: date
+    time: str | int
     value: int
     state: str
 
 
 class HacoltStatePoint(BaseModel):
     index: int
-    time: date
+    time: str | int
     value: int
     direction: str
 

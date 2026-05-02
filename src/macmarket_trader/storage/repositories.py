@@ -20,15 +20,12 @@ from macmarket_trader.domain.models import (
     EmailDeliveryLogModel,
     FillModel,
     OrderModel,
-<<<<<<< ours
     PaperOptionOrderLegModel,
     PaperOptionOrderModel,
     PaperOptionPositionLegModel,
     PaperOptionPositionModel,
     PaperOptionTradeLegModel,
     PaperOptionTradeModel,
-=======
->>>>>>> theirs
     PaperPositionModel,
     PaperTradeModel,
     ProviderHealthModel,
@@ -591,32 +588,23 @@ class PaperPortfolioRepository:
                 ).scalars()
             )
             closed_count = len(closed_trades)
-<<<<<<< ours
             wins = sum(1 for trade in closed_trades if net_pnl_or_fallback(trade) > 0)
             gross_realized_pnl = float(sum(gross_pnl_or_fallback(trade) for trade in closed_trades))
             net_realized_pnl = float(sum(net_pnl_or_fallback(trade) for trade in closed_trades))
-=======
-            wins = sum(1 for trade in closed_trades if trade.realized_pnl > 0)
->>>>>>> theirs
             return {
                 "open_positions": len(open_positions),
                 "total_open_notional": float(sum(position.open_notional for position in open_positions)),
                 "unrealized_pnl": float(sum(position.unrealized_pnl for position in open_positions)),
-<<<<<<< ours
                 "gross_realized_pnl": gross_realized_pnl,
                 "net_realized_pnl": net_realized_pnl,
                 "total_commission_paid": float(sum(commission_paid_for_trade(trade) for trade in closed_trades)),
                 # Back-compat alias used by existing UI/tests. From Phase 7
                 # onward this represents net realized P&L after commission.
                 "realized_pnl": net_realized_pnl,
-=======
-                "realized_pnl": float(sum(trade.realized_pnl for trade in closed_trades)),
->>>>>>> theirs
                 "closed_trade_count": closed_count,
                 "win_rate": float((wins / closed_count) if closed_count else 0.0),
             }
 
-<<<<<<< ours
     def get_open_position(self, *, app_user_id: int, symbol: str, side: str | None = None) -> PaperPositionModel | None:
         with self.session_factory() as session:
             stmt = select(PaperPositionModel).where(
@@ -1642,9 +1630,6 @@ class OptionPaperRepository:
             legs=trade_record.legs,
             closed_at=trade_row.closed_at or position_row.closed_at or position_row.opened_at,
         )
-
-=======
->>>>>>> theirs
 
 class UserRepository:
     def __init__(self, session_factory: SessionFactory) -> None:

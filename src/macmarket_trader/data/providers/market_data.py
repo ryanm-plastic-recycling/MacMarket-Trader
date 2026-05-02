@@ -103,7 +103,29 @@ class DeterministicFallbackMarketDataProvider(MarketDataProvider):
     name = "fallback"
 
     def _bars(self, symbol: str, timeframe: str, limit: int) -> list[Bar]:
-        del symbol, timeframe
+        del symbol
+        tf = timeframe.upper()
+        if tf in {"1H", "4H"}:
+            step = timedelta(hours=4 if tf == "4H" else 1)
+            base_ts = datetime(2025, 1, 1, 14, 30, tzinfo=UTC)
+            bars: list[Bar] = []
+            for idx in range(max(10, limit)):
+                ts = base_ts + idx * step
+                price = 100 + idx * 0.25
+                bars.append(
+                    Bar(
+                        date=ts.astimezone(ZoneInfo("America/New_York")).date(),
+                        timestamp=ts,
+                        open=price,
+                        high=price + 1.2,
+                        low=price - 1.0,
+                        close=price + 0.35,
+                        volume=1_000_000 + idx * 5000,
+                        rel_volume=1.0,
+                    )
+                )
+            return bars[-limit:]
+
         base = date(2025, 1, 1)
         bars: list[Bar] = []
         for idx in range(max(10, limit)):
@@ -190,8 +212,10 @@ class AlpacaMarketDataProvider(MarketDataProvider):
 
     def _normalize_bar(self, bar: dict[str, Any]) -> Bar:
         ts = datetime.fromisoformat(str(bar["t"]).replace("Z", "+00:00"))
+        ts_utc = ts.astimezone(UTC)
         return Bar(
-            date=ts.date(),
+            date=ts_utc.astimezone(ZoneInfo("America/New_York")).date(),
+            timestamp=ts_utc,
             open=float(bar["o"]),
             high=float(bar["h"]),
             low=float(bar["l"]),
@@ -318,22 +342,22 @@ class PolygonMarketDataProvider(MarketDataProvider):
         url = f"{self.base_url}{path}?{urlencode(effective_query)}"
         return self._fetch_url(url)
 
-    def _map_polygon_range(self, timeframe: str, limit: int) -> tuple[int, str, str, str]:
+    def _map_polygon_range(self, timeframe: str, limit: int) -> tuple[int, str, str, str, int]:
         tf = timeframe.upper()
         now = datetime.now(tz=UTC)
         if tf == "1H":
-            # add 24h buffer to account for market hours gaps
-            start = now - timedelta(hours=max(limit, 1) + 24)
-            return 1, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))
+            calendar_days = max(10, int(limit / 6) * 3 + 5)
+            start = now - timedelta(days=calendar_days)
+            return 1, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), max(limit * 8, 500)
         if tf == "4H":
-            # 4H bars: each bar = 4 calendar hours; buffer 2 bars
-            start = now - timedelta(hours=max(limit, 1) * 4 + 8)
-            return 4, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))
+            calendar_days = max(20, int(limit / 2) * 3 + 8)
+            start = now - timedelta(days=calendar_days)
+            return 4, "hour", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), max(limit * 8, 500)
         if tf == "1M":
             start = now - timedelta(minutes=max(limit, 1) + 5)
-            return 1, "minute", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000))
+            return 1, "minute", str(int(start.timestamp() * 1000)), str(int(now.timestamp() * 1000)), limit
         start = (now - timedelta(days=max(limit, 1) + 5)).date().isoformat()
-        return 1, "day", start, now.date().isoformat()
+        return 1, "day", start, now.date().isoformat(), limit
 
     def _normalize_polygon_bar(self, bar: dict[str, Any]) -> Bar:
         ts_ms = int(bar.get("t") or 0)
@@ -341,6 +365,7 @@ class PolygonMarketDataProvider(MarketDataProvider):
         market_date = ts.astimezone(ZoneInfo("America/New_York")).date()
         return Bar(
             date=market_date,
+            timestamp=ts,
             open=float(bar["o"]),
             high=float(bar["h"]),
             low=float(bar["l"]),
@@ -351,15 +376,15 @@ class PolygonMarketDataProvider(MarketDataProvider):
 
     def get_historical_bars(self, symbol: str, timeframe: str, limit: int = 120) -> list[Bar]:
         ticker = normalize_polygon_ticker(symbol)
-        multiplier, timespan, from_ts, to_ts = self._map_polygon_range(timeframe=timeframe, limit=limit)
+        multiplier, timespan, from_ts, to_ts, request_limit = self._map_polygon_range(timeframe=timeframe, limit=limit)
         payload = self._request_json(
             f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_ts}/{to_ts}",
-            {"adjusted": "true", "sort": "asc", "limit": str(limit)},
+            {"adjusted": "true", "sort": "asc", "limit": str(request_limit)},
         )
         results: list[dict[str, Any]] = list(payload.get("results") or [])
         # Follow Polygon pagination (next_url) until we have enough bars (max 3 extra pages).
         page = 0
-        while "next_url" in payload and len(results) < limit and page < 3:
+        while "next_url" in payload and len(results) < request_limit and page < 3:
             page += 1
             next_url = str(payload["next_url"])
             sep = "&" if "?" in next_url else "?"
@@ -367,7 +392,9 @@ class PolygonMarketDataProvider(MarketDataProvider):
             results.extend(payload.get("results") or [])
         if not results:
             raise SymbolNotFoundError(f"No bar data returned for symbol {symbol}")
-        return [self._normalize_polygon_bar(item) for item in results][-limit:]
+        normalized = [self._normalize_polygon_bar(item) for item in results]
+        normalized.sort(key=lambda bar: bar.timestamp or datetime.combine(bar.date, datetime.min.time(), tzinfo=UTC))
+        return normalized[-limit:]
 
     def fetch_historical_bars(self, symbol: str, timeframe: str, limit: int) -> list[Bar]:
         return self.get_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
