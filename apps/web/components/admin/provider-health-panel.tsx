@@ -17,6 +17,8 @@ type ProviderHealth = {
     effective_read_mode?: string;
     workflow_execution_mode?: string;
     failure_reason?: string | null;
+    config_state?: "configured" | "missing_config" | "disabled" | string;
+    probe_state?: "ok" | "failed" | "skipped" | "unavailable" | string;
     configured?: boolean;
     feed?: string;
     sample_symbol?: string;
@@ -28,6 +30,7 @@ type ProviderHealth = {
     llm_enabled?: boolean;
     model?: string | null;
     key_present?: boolean;
+    fallback_active?: boolean;
     fallback_reason?: string | null;
     last_error?: string | null;
     last_openai_error?: {
@@ -95,6 +98,8 @@ export function ProviderHealthPanel() {
         return "Configured";
       case "unconfigured":
         return "Unconfigured";
+      case "disabled":
+        return "Disabled";
       default:
         return "Degraded";
     }
@@ -106,6 +111,8 @@ export function ProviderHealthPanel() {
         return "good";
       case "configured":
         return "neutral";
+      case "disabled":
+        return "neutral";
       case "unconfigured":
         return "warn";
       default:
@@ -113,28 +120,64 @@ export function ProviderHealthPanel() {
     }
   }
 
-  function formatProbeLabel(probeStatus: string | undefined): string | null {
-    switch ((probeStatus ?? "").toLowerCase()) {
+  function formatConfigLabel(configState: string | undefined): string {
+    switch ((configState ?? "").toLowerCase()) {
+      case "configured":
+        return "Configured";
+      case "missing_config":
+        return "Missing config";
+      case "disabled":
+        return "Disabled";
+      default:
+        return "Unknown config";
+    }
+  }
+
+  function configTone(configState: string | undefined): "good" | "warn" | "neutral" {
+    switch ((configState ?? "").toLowerCase()) {
+      case "configured":
+        return "neutral";
+      case "missing_config":
+        return "warn";
+      default:
+        return "neutral";
+    }
+  }
+
+  function formatProbeLabel(probeState: string | undefined): string | null {
+    switch ((probeState ?? "").toLowerCase()) {
       case "unavailable":
         return "Probe unavailable";
       case "ok":
         return "Probe OK";
-      case "degraded":
-      case "warning":
-        return "Probe degraded";
+      case "skipped":
+        return "Probe not run";
+      case "failed":
+        return "Probe failed";
       default:
         return null;
     }
   }
 
+  function probeTone(probeState: string | undefined): "good" | "warn" | "neutral" {
+    switch ((probeState ?? "").toLowerCase()) {
+      case "ok":
+        return "good";
+      case "failed":
+        return "warn";
+      default:
+        return "neutral";
+    }
+  }
+
   function providerDetailCopy(provider: ProviderHealth["providers"][number]): string {
-    if (provider.status === "configured" && provider.probe_status === "unavailable") {
+    if (provider.config_state === "configured" && provider.probe_state === "unavailable") {
       if (provider.provider === "alpaca_paper") {
         return "Required config appears present. No safe live probe is currently implemented. Paper-provider readiness only. Order routing is not enabled.";
       }
       return "Required config appears present. No safe live probe is currently implemented.";
     }
-    if (provider.status === "unconfigured") {
+    if (provider.config_state === "missing_config" || provider.status === "unconfigured") {
       return "Required configuration is missing or incomplete.";
     }
     return provider.details;
@@ -165,10 +208,10 @@ export function ProviderHealthPanel() {
           {market?.last_success_at ? <span style={muted}>last success: {market.last_success_at}</span> : null}
         </div>
         <div className="op-row" style={{ flexWrap: "wrap", marginTop: 8 }}>
-          {alpacaPaper ? <StatusBadge tone={statusTone(alpacaPaper.status)}>alpaca paper: {formatStatusLabel(alpacaPaper.status)}</StatusBadge> : null}
-          {fred ? <StatusBadge tone={statusTone(fred.status)}>fred: {formatStatusLabel(fred.status)}</StatusBadge> : null}
-          {news ? <StatusBadge tone={statusTone(news.status)}>news: {formatStatusLabel(news.status)}</StatusBadge> : null}
-          {llm ? <StatusBadge tone={statusTone(llm.status)}>LLM provider: {llm.mode} / {formatStatusLabel(llm.status)}</StatusBadge> : null}
+          {alpacaPaper ? <StatusBadge tone={configTone(alpacaPaper.config_state)}>alpaca paper: {formatConfigLabel(alpacaPaper.config_state)} / {formatProbeLabel(alpacaPaper.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
+          {fred ? <StatusBadge tone="neutral">fred: {formatConfigLabel(fred.config_state)} / {formatProbeLabel(fred.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
+          {news ? <StatusBadge tone="neutral">news: {formatConfigLabel(news.config_state)} / {formatProbeLabel(news.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
+          {llm ? <StatusBadge tone={statusTone(llm.status)}>LLM provider: {llm.mode} / {formatStatusLabel(llm.status)} / {formatProbeLabel(llm.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
         </div>
         {healthyProvider ? <p style={{ color: "#7ee787", margin: "8px 0 0" }}>Provider-backed market-data mode is active and healthy.</p> : null}
         {workflowBlocked ? <p style={{ color: "#f7b267", margin: "8px 0 0" }}>Configured provider probe failed and workflow demo fallback is disabled. Workflow execution is blocked until provider health recovers.</p> : null}
@@ -176,7 +219,8 @@ export function ProviderHealthPanel() {
         {market?.failure_reason ? <p style={{ ...muted, margin: "6px 0 0" }}>Failure reason: {market.failure_reason}</p> : null}
         <p style={{ ...muted, margin: "6px 0 0" }}>{market?.operational_impact ?? "Market-data mode determines whether recommendations, replay, and orders run on provider-backed bars or explicit fallback bars."}</p>
         <p style={{ ...muted, margin: "6px 0 0" }}>
-          Configured means required config appears present. Probe unavailable means no safe live check is currently implemented.
+          Market data is healthy only when the Polygon probe succeeds. Optional providers can be configured while their probe is unavailable; that is readiness context, not health.
+          {llm?.fallback_active ? " LLM fallback is currently active or degraded; deterministic recommendations still run." : ""}
         </p>
         <p style={{ ...muted, margin: "6px 0 0" }}>
           Alpaca readiness on this page is paper-provider readiness only. No live brokerage execution or credential entry is enabled here.
@@ -188,13 +232,14 @@ export function ProviderHealthPanel() {
 
       <div className="op-grid-3">
         {data?.providers.map((p) => {
-          const probeLabel = formatProbeLabel(p.probe_status);
+          const probeLabel = formatProbeLabel(p.probe_state ?? p.probe_status);
           return (
             <Card key={p.provider} title={p.provider}>
               <div style={{ display: "grid", gap: 4 }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <StatusBadge tone={statusTone(p.status)}>{formatStatusLabel(p.status)}</StatusBadge>
-                  {probeLabel ? <StatusBadge tone="neutral">{probeLabel}</StatusBadge> : null}
+                  {p.config_state ? <StatusBadge tone={configTone(p.config_state)}>{formatConfigLabel(p.config_state)}</StatusBadge> : null}
+                  {probeLabel ? <StatusBadge tone={probeTone(p.probe_state ?? p.probe_status)}>{probeLabel}</StatusBadge> : null}
                   <span style={{ fontSize: "0.82rem" }}>{p.mode}</span>
                 </div>
                 {p.configured !== undefined ? (
@@ -209,7 +254,7 @@ export function ProviderHealthPanel() {
                 ) : null}
                 {p.probe_status ? (
                   <div style={{ fontSize: "0.8rem" }}>
-                    <span style={muted}>live probe: </span>{probeLabel ?? p.probe_status}
+                    <span style={muted}>probe state: </span>{probeLabel ?? p.probe_state ?? p.probe_status}
                   </div>
                 ) : null}
                 {p.llm_enabled !== undefined ? (

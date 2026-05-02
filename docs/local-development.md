@@ -97,6 +97,12 @@ For `gpt-5.1`, the OpenAI provider uses the Responses API with structured
 `text.format` output and Pydantic validation. If OpenAI falls back to mock,
 open `/admin/provider-health` and run **Re-probe now** to view the sanitized
 OpenAI status code, error type/code/message, request id, endpoint, and model.
+Provider health distinguishes configuration from execution with separate
+`config_state` and `probe_state` fields. `config_state` is `configured`,
+`missing_config`, or `disabled`; `probe_state` is `ok`, `failed`, `skipped`,
+or `unavailable`. A configured OpenAI provider is not healthy until the live
+probe reports `ok`; optional providers without live probes report
+`probe_state=unavailable` rather than pretending a live probe succeeded.
 
 Windows deployment note: the deployed backend runtime reads
 `C:\Dashboard\MacMarket-Trader\.env`. The deploy script intentionally preserves

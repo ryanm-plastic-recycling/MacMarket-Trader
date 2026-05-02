@@ -790,6 +790,13 @@ def _opportunity_int(value: object) -> int | None:
     return parsed
 
 
+def _opportunity_source_display(prefix: str, display_id: str | None, fallback: str) -> str:
+    label = display_id_or_fallback(display_id, fallback)
+    if label.lower().startswith(prefix.lower()):
+        return label
+    return f"{prefix}: {label}"
+
+
 def _opportunity_candidate_from_row(row) -> OpportunityCandidateSummary:
     payload = dict(row.payload or {})
     workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
@@ -825,9 +832,10 @@ def _opportunity_candidate_from_row(row) -> OpportunityCandidateSummary:
     side = payload.get("side")
     if hasattr(side, "value"):
         side = side.value
+    source_prefix = "Promoted recommendation" if ranking else "Stored recommendation"
     return OpportunityCandidateSummary(
         recommendation_id=row.recommendation_id,
-        display_id=display_id_or_fallback(row.display_id, row.recommendation_id),
+        display_id=_opportunity_source_display(source_prefix, row.display_id, row.recommendation_id),
         symbol=str(payload.get("symbol") or row.symbol).upper(),
         side=str(side or "long"),
         timeframe=str(ranking.get("timeframe") or workflow.get("timeframe") or "1D"),
@@ -873,6 +881,26 @@ def _better_elsewhere_from_candidate(candidate: OpportunityCandidateSummary) -> 
     )
 
 
+def _label_queue_candidate(candidate: OpportunityCandidateSummary) -> OpportunityCandidateSummary:
+    display_id = candidate.display_id or candidate.recommendation_id
+    if not display_id.lower().startswith("queue candidate"):
+        display_id = f"Queue candidate: {display_id}"
+    return OpportunityCandidateSummary.model_validate(candidate.model_copy(update={"display_id": display_id}))
+
+
+def _dedupe_opportunity_candidates(
+    candidates: list[OpportunityCandidateSummary],
+) -> list[OpportunityCandidateSummary]:
+    deduped: list[OpportunityCandidateSummary] = []
+    seen_ids: set[str] = set()
+    for candidate in candidates:
+        if candidate.recommendation_id in seen_ids:
+            continue
+        seen_ids.add(candidate.recommendation_id)
+        deduped.append(candidate)
+    return deduped
+
+
 def _queue_candidate_id(item: dict[str, object]) -> str:
     symbol = str(item.get("symbol") or "").upper()
     strategy = str(item.get("strategy") or "strategy").replace(" ", "_").lower()
@@ -894,10 +922,12 @@ def recommendation_opportunity_intelligence(
             raise HTTPException(status_code=404, detail=f"Recommendation not found: {recommendation_id}")
         selected_rows.append(row)
     queue_candidates = [
-        OpportunityCandidateSummary.model_validate(candidate)
+        _label_queue_candidate(OpportunityCandidateSummary.model_validate(candidate))
         for candidate in req.selected_queue_candidates
     ]
-    candidates = ([_opportunity_candidate_from_row(row) for row in selected_rows] + queue_candidates)[: req.max_candidates]
+    candidates = _dedupe_opportunity_candidates(
+        [_opportunity_candidate_from_row(row) for row in selected_rows] + queue_candidates
+    )[: req.max_candidates]
     if len(candidates) < 2:
         raise HTTPException(status_code=400, detail="Select at least two stored recommendations or queue candidates to compare.")
 
@@ -2918,8 +2948,22 @@ def provider_health_summary() -> dict[str, str]:
     }
 
 
-def _readiness_status(*, configured: bool) -> str:
-    return "configured" if configured else "unconfigured"
+def _config_state(*, enabled: bool = True, configured: bool) -> str:
+    if not enabled:
+        return "disabled"
+    return "configured" if configured else "missing_config"
+
+
+def _readiness_status(*, config_state: str, probe_state: str) -> str:
+    if probe_state == "ok":
+        return "ok"
+    if probe_state == "failed":
+        return "degraded"
+    if config_state == "disabled":
+        return "disabled"
+    if config_state == "missing_config":
+        return "unconfigured"
+    return "configured"
 
 
 def _alpaca_paper_readiness() -> dict[str, object]:
@@ -2928,10 +2972,12 @@ def _alpaca_paper_readiness() -> dict[str, object]:
     api_secret_present = bool(settings.alpaca_api_secret_key.strip())
     base_url_present = bool(settings.alpaca_paper_base_url.strip())
     configured = api_key_present and api_secret_present and base_url_present
+    config_state = _config_state(configured=configured)
+    probe_state = "unavailable"
     selected_note = (
         "BROKER_PROVIDER is currently alpaca paper."
         if broker_mode == "alpaca"
-        else "BROKER_PROVIDER is currently mock; Alpaca remains a readiness gate only."
+        else "Paper routing disabled / mock broker mode. Alpaca credentials may be present, but BROKER_PROVIDER=mock keeps paper routing on the deterministic mock broker."
     )
     details = (
         "Alpaca paper credentials and base URL appear present. "
@@ -2944,15 +2990,18 @@ def _alpaca_paper_readiness() -> dict[str, object]:
     return {
         "provider": "alpaca_paper",
         "mode": broker_mode,
-        "status": _readiness_status(configured=configured),
+        "status": _readiness_status(config_state=config_state, probe_state=probe_state),
         "details": details,
+        "config_state": config_state,
+        "probe_state": probe_state,
         "configured": configured,
         "selected_provider": broker_mode,
-        "probe_status": "unavailable" if configured else "not_configured",
+        "probe_status": probe_state,
         "readiness_scope": "paper_provider",
         "operational_impact": (
-            "Use this as a paper-provider readiness gate before deeper provider expansion. "
-            "It does not activate brokerage execution."
+            "Paper routing disabled / mock broker mode. This is a readiness gate only and does not activate brokerage execution."
+            if broker_mode != "alpaca"
+            else "Use this as a paper-provider readiness gate before deeper provider expansion. It does not activate live brokerage execution."
         ),
     }
 
@@ -2962,6 +3011,8 @@ def _fred_readiness() -> dict[str, object]:
     api_key_present = bool(settings.fred_api_key.strip())
     base_url_present = bool(settings.fred_base_url.strip())
     configured = api_key_present and base_url_present
+    config_state = _config_state(configured=configured)
+    probe_state = "unavailable"
     selected_note = (
         "MACRO_CALENDAR_PROVIDER is currently fred."
         if macro_mode == "fred"
@@ -2977,11 +3028,13 @@ def _fred_readiness() -> dict[str, object]:
     return {
         "provider": "fred",
         "mode": macro_mode,
-        "status": _readiness_status(configured=configured),
+        "status": _readiness_status(config_state=config_state, probe_state=probe_state),
         "details": details,
+        "config_state": config_state,
+        "probe_state": probe_state,
         "configured": configured,
         "selected_provider": macro_mode,
-        "probe_status": "unavailable" if configured else "not_configured",
+        "probe_status": probe_state,
         "readiness_scope": "macro_context",
         "operational_impact": (
             "Use this to verify macro-calendar input readiness before broader provider expansion. "
@@ -2995,6 +3048,8 @@ def _news_readiness() -> dict[str, object]:
     polygon_key_present = bool(settings.polygon_api_key.strip())
     base_url_present = bool(settings.polygon_base_url.strip())
     configured = polygon_key_present and base_url_present
+    config_state = _config_state(configured=configured)
+    probe_state = "unavailable"
     selected_note = (
         "NEWS_PROVIDER is currently polygon."
         if news_mode == "polygon"
@@ -3010,11 +3065,13 @@ def _news_readiness() -> dict[str, object]:
     return {
         "provider": "news",
         "mode": news_mode,
-        "status": _readiness_status(configured=configured),
+        "status": _readiness_status(config_state=config_state, probe_state=probe_state),
         "details": details,
+        "config_state": config_state,
+        "probe_state": probe_state,
         "configured": configured,
         "selected_provider": news_mode,
-        "probe_status": "unavailable" if configured else "not_configured",
+        "probe_status": probe_state,
         "readiness_scope": "news_context",
         "operational_impact": (
             "Use this to verify provider-backed news context readiness before deeper provider expansion. "
@@ -3040,9 +3097,9 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
     model = settings.llm_model.strip() or None
     key_present = bool(settings.llm_api_key.strip() or settings.openai_api_key.strip())
     enabled = bool(settings.llm_enabled)
-    configured = (not enabled) or provider == "mock" or (provider == "openai" and key_present)
-    status = "configured" if configured else "unconfigured"
-    probe_status = "disabled" if not enabled else "not_configured"
+    configured = provider == "mock" or (provider == "openai" and key_present)
+    config_state = _config_state(enabled=enabled, configured=configured)
+    probe_state = "skipped" if not enabled else "unavailable"
     fallback_reason = None
     last_error = None
     last_openai_error = get_last_openai_provider_error() if provider == "openai" else None
@@ -3050,18 +3107,20 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
     if not enabled:
         fallback_reason = "LLM_ENABLED=false; deterministic mock explanation fallback is active."
     elif provider == "mock":
-        probe_status = "ok"
+        probe_state = "unavailable"
         fallback_reason = "LLM_PROVIDER=mock; deterministic explanation provider selected."
     elif provider != "openai":
-        status = "unconfigured"
+        config_state = "missing_config"
+        probe_state = "unavailable"
         fallback_reason = f"Unsupported LLM_PROVIDER={provider}; deterministic mock fallback will be used."
     elif not key_present:
+        config_state = "missing_config"
+        probe_state = "unavailable"
         fallback_reason = "OPENAI_API_KEY is not present; deterministic mock fallback will be used."
     elif not probe:
-        probe_status = "configured"
+        probe_state = "skipped"
         if last_openai_error:
-            status = "degraded"
-            probe_status = "failed"
+            probe_state = "failed"
             last_error = _sanitize_provider_error(last_openai_error)
             fallback_reason = "Latest OpenAI request failed; deterministic mock fallback is active until the provider succeeds."
     else:
@@ -3079,15 +3138,14 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
             )
             if not summary:
                 raise LLMValidationError("empty LLM probe response")
-            status = "ok"
-            probe_status = "ok"
+            probe_state = "ok"
             last_openai_error = None
         except (LLMProviderUnavailable, LLMValidationError, ValueError, TypeError) as exc:
-            status = "degraded"
-            probe_status = "failed"
+            probe_state = "failed"
             last_error = _sanitize_provider_error(exc)
             last_openai_error = get_last_openai_provider_error()
             fallback_reason = "OpenAI probe failed; deterministic mock fallback will be used for explanations."
+    status = _readiness_status(config_state=config_state, probe_state=probe_state)
 
     return {
         "provider": "llm",
@@ -3097,12 +3155,15 @@ def _llm_readiness(*, probe: bool = False) -> dict[str, object]:
             "LLM provider is explanation/research support only. Deterministic systems own approval, "
             "entry, stop, target, sizing, risk gates, and paper order creation."
         ),
+        "config_state": config_state,
+        "probe_state": probe_state,
         "configured": configured,
         "llm_enabled": enabled,
         "selected_provider": provider,
         "model": model,
         "key_present": key_present,
-        "probe_status": probe_status,
+        "probe_status": probe_state,
+        "fallback_active": bool(fallback_reason),
         "fallback_reason": fallback_reason,
         "last_error": last_error,
         "last_openai_error": last_openai_error,
@@ -3121,6 +3182,8 @@ def provider_health(
 ):
     summary = provider_health_summary()
     market_health = market_data_service.provider_health(sample_symbol="AAPL")
+    market_config_state = _config_state(configured=bool(market_health.configured))
+    market_probe_state = "ok" if market_health.status == "ok" else "failed"
     workflow_mode = summary["workflow_execution_mode"]
     operational_impact = "Recommendations, replay, and paper orders are using provider-backed bars."
     if workflow_mode == "blocked":
@@ -3139,12 +3202,16 @@ def provider_health(
                 "provider": "auth",
                 "mode": summary["auth"],
                 "status": "ok",
+                "config_state": "configured",
+                "probe_state": "ok",
                 "details": "Auth provider verifies identity; app_role and approval stay local.",
             },
             {
                 "provider": "email",
                 "mode": summary["email"],
                 "status": "ok",
+                "config_state": "configured",
+                "probe_state": "ok",
                 "details": "Approval notifications are sent through provider boundary with audit logs.",
             },
             _alpaca_paper_readiness(),
@@ -3156,12 +3223,15 @@ def provider_health(
                 "mode": summary["market_data"],
                 "status": market_health.status,
                 "details": market_health.details,
+                "config_state": market_config_state,
+                "probe_state": market_probe_state,
                 "configured_provider": summary["configured_provider"],
                 "effective_read_mode": summary["effective_read_mode"],
                 "workflow_execution_mode": workflow_mode,
                 "failure_reason": summary["failure_reason"] or None,
                 "operational_impact": operational_impact,
                 "configured": market_health.configured,
+                "probe_status": market_probe_state,
                 "feed": market_health.feed,
                 "sample_symbol": market_health.sample_symbol,
                 "latency_ms": market_health.latency_ms,

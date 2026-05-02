@@ -2,6 +2,16 @@
 
 Last updated: 2026-05-02
 
+## 2026-05-02 Update - Provider Health Semantics
+Provider Health now separates provider configuration from live probe results
+with explicit `config_state` and `probe_state` fields. The operator UI no
+longer treats "configured" as a live health signal: Polygon-backed market data
+is healthy only when its probe succeeds, optional providers without live probes
+are shown as configured/probe-unavailable, Alpaca readiness distinguishes
+credentials from mock broker mode, and OpenAI LLM readiness distinguishes
+probe skipped, probe failed, and probe OK without exposing secrets or changing
+deterministic recommendation behavior.
+
 ## 2026-05-02 Update - Regular-Hours Intraday Normalization
 Phase 3 market-data policy hardening now has an equity-only RTH normalization
 path for provider-backed 1H/4H workflows. Polygon/Massive intraday requests use

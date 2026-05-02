@@ -333,6 +333,8 @@ def test_provider_health_result_structure(monkeypatch) -> None:
 
     alpaca_entry = next(item for item in payload["providers"] if item["provider"] == "alpaca_paper")
     assert alpaca_entry["status"] == "configured"
+    assert alpaca_entry["config_state"] == "configured"
+    assert alpaca_entry["probe_state"] == "unavailable"
     assert alpaca_entry["configured"] is True
     assert alpaca_entry["selected_provider"] == "alpaca"
     assert alpaca_entry["probe_status"] == "unavailable"
@@ -340,6 +342,8 @@ def test_provider_health_result_structure(monkeypatch) -> None:
 
     fred_entry = next(item for item in payload["providers"] if item["provider"] == "fred")
     assert fred_entry["status"] == "configured"
+    assert fred_entry["config_state"] == "configured"
+    assert fred_entry["probe_state"] == "unavailable"
     assert fred_entry["configured"] is True
     assert fred_entry["selected_provider"] == "fred"
     assert fred_entry["probe_status"] == "unavailable"
@@ -347,6 +351,8 @@ def test_provider_health_result_structure(monkeypatch) -> None:
 
     news_entry = next(item for item in payload["providers"] if item["provider"] == "news")
     assert news_entry["status"] == "configured"
+    assert news_entry["config_state"] == "configured"
+    assert news_entry["probe_state"] == "unavailable"
     assert news_entry["configured"] is True
     assert news_entry["selected_provider"] == "polygon"
     assert news_entry["probe_status"] == "unavailable"
@@ -358,6 +364,8 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     assert market_entry["workflow_execution_mode"] == "provider"
     assert market_entry["mode"] == "polygon"
     assert market_entry["status"] == "ok"
+    assert market_entry["config_state"] == "configured"
+    assert market_entry["probe_state"] == "ok"
     assert market_entry["feed"] == "stocks"
     assert market_entry["sample_symbol"] == "AAPL"
     assert market_entry["latency_ms"] == 12.4
@@ -390,7 +398,49 @@ def test_provider_health_reports_blocked_workflows_when_probe_fails_and_demo_fal
     payload = admin_routes.provider_health()
     market_entry = next(item for item in payload["providers"] if item["provider"] == "market_data")
     assert market_entry["workflow_execution_mode"] == "blocked"
+    assert market_entry["config_state"] == "configured"
+    assert market_entry["probe_state"] == "failed"
     assert "blocked" in market_entry["operational_impact"].lower()
+
+
+def test_provider_health_separates_config_state_from_probe_state_for_optional_providers(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "broker_provider", "mock")
+    monkeypatch.setattr(settings, "alpaca_api_key_id", "alpaca-key")
+    monkeypatch.setattr(settings, "alpaca_api_secret_key", "alpaca-secret")
+    monkeypatch.setattr(settings, "alpaca_paper_base_url", "https://paper-api.alpaca.markets")
+    monkeypatch.setattr(settings, "macro_calendar_provider", "fred")
+    monkeypatch.setattr(settings, "fred_api_key", "fred-key")
+    monkeypatch.setattr(settings, "fred_base_url", "https://api.stlouisfed.org/fred")
+    monkeypatch.setattr(settings, "news_provider", "polygon")
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    alpaca_entry = admin_routes._alpaca_paper_readiness()
+    fred_entry = admin_routes._fred_readiness()
+    news_entry = admin_routes._news_readiness()
+
+    assert alpaca_entry["config_state"] == "configured"
+    assert alpaca_entry["probe_state"] == "unavailable"
+    assert alpaca_entry["selected_provider"] == "mock"
+    assert "mock broker mode" in str(alpaca_entry["operational_impact"])
+    assert fred_entry["config_state"] == "configured"
+    assert fred_entry["probe_state"] == "unavailable"
+    assert fred_entry["status"] == "configured"
+    assert news_entry["config_state"] == "configured"
+    assert news_entry["probe_state"] == "unavailable"
+    assert news_entry["status"] == "configured"
+
+
+def test_provider_health_reports_missing_config_separately_from_probe(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "macro_calendar_provider", "fred")
+    monkeypatch.setattr(settings, "fred_api_key", "")
+    monkeypatch.setattr(settings, "fred_base_url", "https://api.stlouisfed.org/fred")
+
+    fred_entry = admin_routes._fred_readiness()
+
+    assert fred_entry["status"] == "unconfigured"
+    assert fred_entry["config_state"] == "missing_config"
+    assert fred_entry["probe_state"] == "unavailable"
 
 
 def test_normalize_polygon_ticker_maps_index_symbols() -> None:

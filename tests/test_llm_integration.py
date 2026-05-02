@@ -393,8 +393,8 @@ def test_openai_success_response_maps_to_pydantic_explanation_and_comparison(mon
             "summary": "OpenAI explained the deterministic setup.",
             "approval_explanation": "Rules approved or rejected the setup; this text explains the result only.",
             "counter_thesis": ["Follow-through could fade."],
-            "deterministic_engine_owns": ["entry", "stop", "target", "sizing", "approval", "order_routing"],
-            "explanation_only": True,
+            "deterministic_engine_owns": ["entry"],
+            "explanation_only": False,
         },
         {
             "best_deterministic_candidate_id": "queue:AAPL:event:1D:1",
@@ -428,17 +428,9 @@ def test_openai_success_response_maps_to_pydantic_explanation_and_comparison(mon
             "not_good_enough_warning": None,
             "missing_data": [],
             "deterministic_engine_owns": [
-                "approved",
-                "side",
                 "entry",
-                "invalidation",
-                "targets",
-                "shares",
-                "sizing",
-                "order_status",
-                "paper_position_status",
             ],
-            "explanation_only": True,
+            "explanation_only": False,
         },
     ]
 
@@ -466,6 +458,14 @@ def test_openai_success_response_maps_to_pydantic_explanation_and_comparison(mon
     explanation = provider.explain_recommendation(recommendation=rec)
     assert isinstance(explanation, LLMRecommendationExplanation)
     assert explanation.explanation_only is True
+    assert set(explanation.deterministic_engine_owns) == {
+        "entry",
+        "stop",
+        "target",
+        "sizing",
+        "approval",
+        "order_routing",
+    }
 
     candidates = [
         OpportunityCandidateSummary(
@@ -497,6 +497,17 @@ def test_openai_success_response_maps_to_pydantic_explanation_and_comparison(mon
     assert isinstance(memo, OpportunityComparisonMemo)
     assert memo.best_deterministic_symbol == "AAPL"
     assert memo.explanation_only is True
+    assert set(memo.deterministic_engine_owns) == {
+        "approved",
+        "side",
+        "entry",
+        "invalidation",
+        "targets",
+        "shares",
+        "sizing",
+        "order_status",
+        "paper_position_status",
+    }
 
 
 def test_llm_health_surfaces_latest_openai_failure_without_secret(monkeypatch) -> None:
@@ -528,6 +539,8 @@ def test_llm_health_surfaces_latest_openai_failure_without_secret(monkeypatch) -
     health = admin_routes._llm_readiness(probe=True)
 
     assert health["status"] == "degraded"
+    assert health["config_state"] == "configured"
+    assert health["probe_state"] == "failed"
     assert health["probe_status"] == "failed"
     assert "last_openai_error" in health
     assert health["last_openai_error"]["status_code"] == 400
@@ -548,7 +561,9 @@ def test_llm_health_reports_mock_default_without_key(monkeypatch) -> None:
     assert health["mode"] == "mock"
     assert health["llm_enabled"] is False
     assert health["key_present"] is False
-    assert health["probe_status"] == "disabled"
+    assert health["config_state"] == "disabled"
+    assert health["probe_state"] == "skipped"
+    assert health["probe_status"] == "skipped"
     assert "fallback" in str(health["fallback_reason"]).lower()
 
 
@@ -564,10 +579,63 @@ def test_llm_health_reports_openai_configured_without_key_disclosure(monkeypatch
     health = admin_routes._llm_readiness()
 
     assert health["status"] == "configured"
+    assert health["config_state"] == "configured"
+    assert health["probe_state"] == "skipped"
     assert health["mode"] == "openai"
     assert health["model"] == "gpt-5.1"
     assert health["key_present"] is True
+    assert health["probe_status"] == "skipped"
+    assert health["fallback_active"] is False
     assert secret not in str(health)
+
+
+def test_llm_health_live_probe_reports_probe_ok_when_openai_succeeds(monkeypatch) -> None:
+    secret = "sk-test-secret"
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider._LAST_OPENAI_PROVIDER_ERROR", None)
+    monkeypatch.setattr(admin_routes.settings, "llm_enabled", True)
+    monkeypatch.setattr(admin_routes.settings, "llm_provider", "openai")
+    monkeypatch.setattr(admin_routes.settings, "llm_model", "gpt-4.1-mini")
+    monkeypatch.setattr(admin_routes.settings, "llm_api_key", secret)
+    monkeypatch.setattr(admin_routes.settings, "openai_api_key", "")
+
+    def pass_probe(self, *, symbol: str, text: str) -> str:
+        del self, symbol, text
+        return "OpenAI probe passed."
+
+    monkeypatch.setattr(admin_routes.OpenAICompatibleLLMClient, "summarize_event_text", pass_probe)
+
+    health = admin_routes._llm_readiness(probe=True)
+
+    assert health["status"] == "ok"
+    assert health["config_state"] == "configured"
+    assert health["probe_state"] == "ok"
+    assert health["probe_status"] == "ok"
+    assert health["fallback_active"] is False
+    assert secret not in str(health)
+
+
+def test_llm_health_does_not_treat_configured_as_live_probe(monkeypatch) -> None:
+    secret = "sk-test-secret"
+    monkeypatch.setattr("macmarket_trader.llm.openai_provider._LAST_OPENAI_PROVIDER_ERROR", None)
+    monkeypatch.setattr(admin_routes.settings, "llm_enabled", True)
+    monkeypatch.setattr(admin_routes.settings, "llm_provider", "openai")
+    monkeypatch.setattr(admin_routes.settings, "llm_model", "gpt-4.1-mini")
+    monkeypatch.setattr(admin_routes.settings, "llm_api_key", secret)
+    monkeypatch.setattr(admin_routes.settings, "openai_api_key", "")
+
+    def fail_if_called(self, *, symbol: str, text: str) -> str:
+        del self, symbol, text
+        raise AssertionError("OpenAI probe should not run without probe=True")
+
+    monkeypatch.setattr(admin_routes.OpenAICompatibleLLMClient, "summarize_event_text", fail_if_called)
+
+    health = admin_routes._llm_readiness(probe=False)
+
+    assert health["status"] == "configured"
+    assert health["config_state"] == "configured"
+    assert health["probe_state"] == "skipped"
+    assert health["probe_status"] == "skipped"
+    assert health["fallback_active"] is False
 
 
 def test_llm_health_probe_failure_sanitizes_secret(monkeypatch) -> None:
@@ -587,6 +655,8 @@ def test_llm_health_probe_failure_sanitizes_secret(monkeypatch) -> None:
     health = admin_routes._llm_readiness(probe=True)
 
     assert health["status"] == "degraded"
+    assert health["config_state"] == "configured"
+    assert health["probe_state"] == "failed"
     assert health["probe_status"] == "failed"
     assert health["fallback_reason"]
     assert secret not in str(health["last_error"])
@@ -642,6 +712,82 @@ def test_successful_openai_provider_sets_non_fallback_provenance(monkeypatch) ->
     assert rec.llm_provenance.fallback_used is False
     assert rec.ai_explanation is not None
     assert rec.entry.zone_low > 0
+
+
+def test_service_refreshes_configured_provider_for_ai_explanation(monkeypatch) -> None:
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", False)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_provider", "mock")
+    service = RecommendationService(persist_audit=False)
+    assert service.llm_client.provider_name == "mock"
+
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", True)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_provider", "openai")
+    monkeypatch.setattr(
+        "macmarket_trader.service.build_llm_client",
+        lambda: SuccessfulOpenAILLMClient(),
+    )
+
+    rec = service.generate(
+        symbol="AAPL",
+        bars=_bars(),
+        event_text="AAPL earnings beat with strong guidance",
+        event=None,
+        portfolio=PortfolioSnapshot(),
+        user_is_approved=True,
+    )
+
+    assert rec.llm_provenance is not None
+    assert rec.llm_provenance.provider == "openai"
+    assert rec.llm_provenance.fallback_used is False
+    assert rec.ai_explanation is not None
+    assert "configured provider" in rec.ai_explanation.summary
+
+
+def test_service_refreshes_configured_provider_for_opportunity_intelligence(monkeypatch) -> None:
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", False)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_provider", "mock")
+    service = RecommendationService(persist_audit=False)
+    assert service.llm_client.provider_name == "mock"
+
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", True)
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_provider", "openai")
+    monkeypatch.setattr(
+        "macmarket_trader.service.build_llm_client",
+        lambda: SuccessfulOpenAILLMClient(),
+    )
+    candidates = [
+        OpportunityCandidateSummary(
+            recommendation_id="queue:AAPL:event:1D:1",
+            symbol="AAPL",
+            side="long",
+            timeframe="1D",
+            approved=True,
+            status="top_candidate",
+            deterministic_score=82,
+            confidence=0.72,
+            expected_rr=2.1,
+            current_recommendation_rank=1,
+        ),
+        OpportunityCandidateSummary(
+            recommendation_id="queue:MSFT:event:1D:2",
+            symbol="MSFT",
+            side="long",
+            timeframe="1D",
+            approved=True,
+            status="top_candidate",
+            deterministic_score=79,
+            confidence=0.68,
+            expected_rr=1.9,
+            current_recommendation_rank=2,
+        ),
+    ]
+
+    memo = service.generate_opportunity_intelligence(candidates=candidates)
+
+    assert memo.provenance is not None
+    assert memo.provenance.provider == "openai"
+    assert memo.provenance.fallback_used is False
+    assert memo.best_deterministic_symbol == "AAPL"
 
 
 def test_malformed_llm_output_falls_back_to_deterministic_mock_explanation(monkeypatch) -> None:
@@ -875,6 +1021,55 @@ def test_opportunity_intelligence_accepts_ranked_queue_candidates(monkeypatch) -
     assert payload["explanation_only"] is True
     assert set(payload["provenance"]["candidate_ids"]) == {candidate["recommendation_id"] for candidate in candidates}
     assert all(candidate["recommendation_id"].startswith("queue:") for candidate in payload["candidates"])
+
+
+def test_opportunity_intelligence_dedupes_queue_candidates_and_labels_source(monkeypatch) -> None:
+    _seed_approved_user()
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", False)
+    monkeypatch.setattr(
+        admin_routes,
+        "recommendation_service",
+        RecommendationService(llm_client=MockLLMClient()),
+    )
+    first = OpportunityCandidateSummary(
+        recommendation_id="queue:GLD:event:1D:1",
+        display_id="GLD",
+        symbol="GLD",
+        side="long",
+        timeframe="1D",
+        approved=True,
+        status="top_candidate",
+        deterministic_score=82,
+        confidence=0.72,
+        expected_rr=2.1,
+        current_recommendation_rank=1,
+    ).model_dump(mode="json")
+    duplicate = dict(first)
+    second = OpportunityCandidateSummary(
+        recommendation_id="queue:MSFT:event:1D:2",
+        display_id="MSFT",
+        symbol="MSFT",
+        side="long",
+        timeframe="1D",
+        approved=True,
+        status="top_candidate",
+        deterministic_score=79,
+        confidence=0.68,
+        expected_rr=1.9,
+        current_recommendation_rank=2,
+    ).model_dump(mode="json")
+
+    response = client.post(
+        "/user/recommendations/opportunity-intelligence",
+        headers=_USER_AUTH,
+        json={"selected_queue_candidates": [first, duplicate, second], "include_better_elsewhere": False},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provenance"]["candidate_ids"] == ["queue:GLD:event:1D:1", "queue:MSFT:event:1D:2"]
+    assert [candidate["symbol"] for candidate in payload["candidates"]] == ["GLD", "MSFT"]
+    assert all(candidate["display_id"].startswith("Queue candidate:") for candidate in payload["candidates"])
 
 
 def test_opportunity_intelligence_rejects_unscanned_queue_symbols(monkeypatch) -> None:

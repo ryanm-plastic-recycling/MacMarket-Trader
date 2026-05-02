@@ -27,6 +27,18 @@ from macmarket_trader.llm.base import LLMClient, LLMProviderUnavailable, LLMVali
 
 OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses"
 _LAST_OPENAI_PROVIDER_ERROR: dict[str, object] | None = None
+RECOMMENDATION_GUARDRAIL_FIELDS = ["entry", "stop", "target", "sizing", "approval", "order_routing"]
+OPPORTUNITY_GUARDRAIL_FIELDS = [
+    "approved",
+    "side",
+    "entry",
+    "invalidation",
+    "targets",
+    "shares",
+    "sizing",
+    "order_status",
+    "paper_position_status",
+]
 
 
 def get_last_openai_provider_error() -> dict[str, object] | None:
@@ -250,6 +262,7 @@ class OpenAICompatibleLLMClient(LLMClient):
                 },
             },
         )
+        payload = self._with_static_guardrails(payload, RECOMMENDATION_GUARDRAIL_FIELDS)
         try:
             return LLMRecommendationExplanation.model_validate(payload)
         except ValidationError as exc:
@@ -276,6 +289,7 @@ class OpenAICompatibleLLMClient(LLMClient):
                 ),
             },
         )
+        payload = self._with_static_guardrails(payload, OPPORTUNITY_GUARDRAIL_FIELDS)
         try:
             return OpportunityComparisonMemo.model_validate(payload)
         except ValidationError as exc:
@@ -407,6 +421,13 @@ class OpenAICompatibleLLMClient(LLMClient):
         if not isinstance(decoded, dict):
             raise LLMValidationError("provider returned non-object JSON")
         return decoded
+
+    @staticmethod
+    def _with_static_guardrails(payload: dict[str, Any], fields: list[str]) -> dict[str, Any]:
+        normalized = dict(payload)
+        normalized["deterministic_engine_owns"] = list(fields)
+        normalized["explanation_only"] = True
+        return normalized
 
     def _capture_http_error(self, exc: httpx.HTTPStatusError) -> dict[str, object]:
         global _LAST_OPENAI_PROVIDER_ERROR

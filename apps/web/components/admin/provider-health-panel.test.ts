@@ -24,7 +24,14 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("last_openai_error");
     expect(source).toContain("OpenAI status");
     expect(source).toContain("OpenAI request id");
+    expect(source).toContain("config_state");
+    expect(source).toContain("probe_state");
+    expect(source).toContain("Probe not run");
+    expect(source).toContain("Probe OK");
+    expect(source).toContain("Probe failed");
     expect(source).toContain("probe_llm=true");
+    expect(source).not.toContain("live probe:");
+    expect(source).not.toContain("live probe: configured");
     expect(source).not.toContain("OPENAI_API_KEY");
     expect(source).not.toContain("sk-");
   });

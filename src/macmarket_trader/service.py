@@ -60,6 +60,7 @@ class RecommendationService:
     ) -> None:
         self.provider = MockMarketDataProvider()
         self.extractor = MockEventExtractor()
+        self._explicit_llm_client = llm_client is not None
         self.llm_client = llm_client or build_llm_client()
         self.risk_calendar_service = risk_calendar_service or build_risk_calendar_service()
         self.regime_engine = RegimeEngine()
@@ -262,21 +263,28 @@ class RecommendationService:
         if self.persist_audit:
             self.fill_repository.create(fill)
 
+    def _active_llm_client(self) -> LLMClient:
+        if self._explicit_llm_client:
+            return self.llm_client
+        self.llm_client = build_llm_client()
+        return self.llm_client
+
     def _build_ai_explanation(self, rec: TradeRecommendation) -> tuple[LLMRecommendationExplanation, LLMProvenance]:
         validation_errors: list[str] = []
-        provider = getattr(self.llm_client, "provider_name", "mock")
-        model = getattr(self.llm_client, "model", None)
-        prompt_version = getattr(self.llm_client, "prompt_version", "llm-explanation-v1")
+        llm_client = self._active_llm_client()
+        provider = getattr(llm_client, "provider_name", "mock")
+        model = getattr(llm_client, "model", None)
+        prompt_version = getattr(llm_client, "prompt_version", "llm-explanation-v1")
         fallback_used = (
             not settings.llm_enabled
             or (settings.llm_provider.strip().lower() != "mock" and provider == "mock")
         )
 
         try:
-            raw_explanation = self.llm_client.explain_recommendation(recommendation=rec)
+            raw_explanation = llm_client.explain_recommendation(recommendation=rec)
             explanation = LLMRecommendationExplanation.model_validate(raw_explanation)
             if not explanation.counter_thesis:
-                counter_thesis = self.llm_client.generate_counter_thesis(recommendation=rec)
+                counter_thesis = llm_client.generate_counter_thesis(recommendation=rec)
                 explanation = explanation.model_copy(update={"counter_thesis": counter_thesis[:8]})
             explanation = LLMRecommendationExplanation.model_validate(explanation)
         except (LLMProviderUnavailable, LLMValidationError, ValueError, TypeError) as exc:
@@ -306,16 +314,17 @@ class RecommendationService:
     ) -> OpportunityComparisonMemo:
         supplied_better_elsewhere = better_elsewhere or []
         validation_errors: list[str] = []
-        provider = getattr(self.llm_client, "provider_name", "mock")
-        model = getattr(self.llm_client, "model", None)
-        prompt_version = getattr(self.llm_client, "prompt_version", "llm-explanation-v1")
+        llm_client = self._active_llm_client()
+        provider = getattr(llm_client, "provider_name", "mock")
+        model = getattr(llm_client, "model", None)
+        prompt_version = getattr(llm_client, "prompt_version", "llm-explanation-v1")
         fallback_used = (
             not settings.llm_enabled
             or (settings.llm_provider.strip().lower() != "mock" and provider == "mock")
         )
 
         try:
-            raw_memo = self.llm_client.compare_candidates(
+            raw_memo = llm_client.compare_candidates(
                 candidates=candidates,
                 better_elsewhere=supplied_better_elsewhere,
             )
