@@ -1,6 +1,13 @@
 # Active Paper Position Management Design
 
-Status: planned paper-only lifecycle hardening.
+Status: started for open equity paper positions.
+
+Implementation note, 2026-05-02:
+`GET /user/paper-positions/review` now returns one deterministic review object
+per open equity paper position, and the Next.js proxy
+`GET /api/user/paper-positions/review` feeds the Orders page Active Position
+Review section. This first implementation remains review-only and does not
+create, close, stage, route, or scale any position automatically.
 
 This design covers the gap between manual paper position close/reopen support
 and a full operator-grade review loop for open paper equity positions. The
@@ -151,13 +158,13 @@ position is not automatic.
 
 ## Proposed Endpoint Contract
 
-Future frontend route:
+Frontend route:
 
 ```http
 GET /api/user/paper-positions/review
 ```
 
-Backend route may map to the existing protected user API namespace:
+Backend route maps to the existing protected user API namespace:
 
 ```http
 GET /user/paper-positions/review
@@ -217,6 +224,57 @@ replay, and orders:
 - Include `mark_source`, `mark_as_of`, and `fallback_mode` in the contract.
 - If current recommendation/ranking context is stale or unavailable, surface
   that as a review limitation instead of forcing a confident action.
+
+## Current Implementation Details
+
+- Scope is open equity paper positions from `paper_positions` only. Closed
+  positions are excluded by default, and options-paper lifecycle rows remain
+  deferred to a later options-specific contract.
+- Current marks use the existing market-data service latest snapshot path.
+  If provider-backed market data is configured and the service can only return
+  fallback data outside explicit local/demo fallback policy, the review object
+  is marked `review_unavailable` instead of silently using a fake mark.
+- Stop, target 1, target 2, and max holding days are recovered from the linked
+  recommendation payload when the paper position carries recommendation/order
+  lineage. Missing levels are returned in `missing_data`; they are not
+  fabricated.
+- Current recommendation status is derived from recent persisted
+  recommendations and ranking provenance for the same symbol:
+  `top_candidate`, `still_ranked`, `weakened`, `not_currently_ranked`, or
+  `unavailable`.
+- Market Risk Calendar is evaluated for each position. Restricted/no-trade
+  states warn against new additions/scale-ins but do not become automatic close
+  recommendations solely because new entries are blocked.
+- Scale-in is only classified when the symbol is already open, ranking context
+  is strong, the open position is profitable/thesis-valid, the risk calendar
+  allows additions, and max paper notional/risk-at-stop checks leave room. If
+  those checks block an otherwise attractive addition, the review returns a
+  warning and uses the next lower deterministic action.
+
+Classification precedence is:
+
+1. `review_unavailable`
+2. `stop_triggered`
+3. `invalidated`
+4. `time_stop_exit`
+5. `target_reached_take_profit`
+6. `target_reached_hold`
+7. `scale_in_candidate`
+8. `time_stop_warning`
+9. `hold_valid`
+
+## Remaining Limitations
+
+- Equity-only.
+- No automated exits, no automatic close, no automatic scale-in, no broker
+  routing, and no live trading.
+- Stop/target/time-stop recovery depends on available recommendation lineage
+  and provenance.
+- Current ranking context uses recent persisted recommendation/ranking
+  provenance; a richer durable "current queue" snapshot remains future work.
+- LLM position-review copy is deferred. Deterministic logic owns the action
+  classification.
+- Options position review is deferred to a separate options-aware shape.
 
 ## Test Expectations
 

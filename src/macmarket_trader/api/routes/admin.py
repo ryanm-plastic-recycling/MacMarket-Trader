@@ -3,6 +3,7 @@
 import logging
 import math
 from datetime import datetime, timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -480,6 +481,14 @@ def _workflow_session_metadata(bars: list[Bar], *, timeframe: str) -> dict[str, 
     for key, value in fallback.items():
         metadata.setdefault(key, value)
     return {key: value for key, value in metadata.items() if value is not None}
+
+
+def _workflow_allows_demo_fallback() -> bool:
+    return settings.workflow_demo_fallback and settings.environment.strip().lower() in {"dev", "local", "test"}
+
+
+def _provider_mark_is_required() -> bool:
+    return bool(settings.market_data_enabled or settings.polygon_enabled)
 
 
 @user_router.get("/me")
@@ -1761,6 +1770,400 @@ def _serialize_trade(row) -> dict[str, object]:
         "order_id": row.order_id,
         "close_reason": row.close_reason,
     }
+
+
+def _finite_float(value: object) -> float | None:
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _finite_int(value: object) -> int | None:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed
+
+
+def _iso_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _position_recommendation_row(position, *, app_user_id: int):
+    recommendation_id = str(position.recommendation_id or "").strip()
+    if not recommendation_id and position.order_id:
+        order = order_repo.get_by_order_id(str(position.order_id), app_user_id=app_user_id)
+        recommendation_id = str(order.recommendation_id or "").strip() if order else ""
+    if not recommendation_id:
+        return None
+    row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+    if row is None:
+        return None
+    if row.app_user_id not in {None, app_user_id}:
+        return None
+    return row
+
+
+def _recover_position_levels(position, *, app_user_id: int) -> tuple[dict[str, float | None], str | None, dict[str, Any]]:
+    row = _position_recommendation_row(position, app_user_id=app_user_id)
+    payload: dict[str, Any] = dict(row.payload or {}) if row else {}
+    invalidation = payload.get("invalidation") if isinstance(payload.get("invalidation"), dict) else {}
+    targets = payload.get("targets") if isinstance(payload.get("targets"), dict) else {}
+    levels = {
+        "stop_price": _finite_float(invalidation.get("price")),
+        "target_1": _finite_float(targets.get("target_1")),
+        "target_2": _finite_float(targets.get("target_2")),
+    }
+    return levels, row.recommendation_id if row else None, payload
+
+
+def _max_holding_days_from_payload(payload: dict[str, Any]) -> int | None:
+    time_stop = payload.get("time_stop") if isinstance(payload.get("time_stop"), dict) else {}
+    parsed = _finite_int(time_stop.get("max_holding_days"))
+    return parsed if parsed is not None and parsed > 0 else None
+
+
+def _days_held(opened_at: datetime | None, *, now: datetime) -> int | None:
+    if opened_at is None:
+        return None
+    opened = opened_at if opened_at.tzinfo is not None else opened_at.replace(tzinfo=timezone.utc)
+    return int(max(0.0, (now - opened).total_seconds()) // 86400)
+
+
+def _holding_period_status(days_held: int | None, max_holding_days: int | None) -> str:
+    if days_held is None or max_holding_days is None:
+        return "unavailable"
+    if days_held >= max_holding_days:
+        return "exceeded"
+    if days_held >= max(max_holding_days - 1, 0):
+        return "warning"
+    return "within_window"
+
+
+def _latest_position_mark(symbol: str) -> dict[str, object]:
+    try:
+        snapshot = market_data_service.latest_snapshot(symbol=symbol, timeframe="1D")
+    except DataNotEntitledError:
+        return {
+            "current_mark_price": None,
+            "market_data_source": "provider",
+            "market_data_fallback_mode": False,
+            "mark_as_of": None,
+            "missing_data": ["current_mark_data_not_entitled"],
+            "warnings": [f"Provider plan does not include current mark data for {symbol}."],
+        }
+    except SymbolNotFoundError:
+        return {
+            "current_mark_price": None,
+            "market_data_source": "provider",
+            "market_data_fallback_mode": False,
+            "mark_as_of": None,
+            "missing_data": ["current_mark_symbol_not_found"],
+            "warnings": [f"No provider current mark was found for {symbol}."],
+        }
+    except Exception as exc:
+        return {
+            "current_mark_price": None,
+            "market_data_source": "provider",
+            "market_data_fallback_mode": False,
+            "mark_as_of": None,
+            "missing_data": ["current_mark_unavailable"],
+            "warnings": [f"Current mark unavailable: {exc}"],
+        }
+
+    mark = _finite_float(snapshot.close)
+    source = str(snapshot.source or "provider")
+    fallback_mode = bool(snapshot.fallback_mode)
+    missing_data: list[str] = []
+    warnings: list[str] = []
+    if mark is None or mark <= 0:
+        missing_data.append("current_mark_price")
+        mark = None
+    if _provider_mark_is_required() and fallback_mode and not _workflow_allows_demo_fallback():
+        missing_data.append("provider_backed_current_mark")
+        warnings.append("Provider-backed market data is configured, so fallback current marks are not used for review.")
+        mark = None
+    return {
+        "current_mark_price": mark,
+        "market_data_source": source,
+        "market_data_fallback_mode": fallback_mode,
+        "mark_as_of": snapshot.as_of.isoformat() if snapshot.as_of else None,
+        "missing_data": missing_data,
+        "warnings": warnings,
+    }
+
+
+def _ranked_context_for_symbol(
+    *,
+    symbol: str,
+    recent_rows: list,
+) -> dict[str, object]:
+    symbol_rows = [row for row in recent_rows if str(row.symbol or "").upper() == symbol.upper()]
+    if not recent_rows:
+        return {"current_recommendation_status": "unavailable", "current_rank": None, "current_recommendation_id": None}
+    if not symbol_rows:
+        return {"current_recommendation_status": "not_currently_ranked", "current_rank": None, "current_recommendation_id": None}
+
+    row = symbol_rows[0]
+    payload = dict(row.payload or {})
+    workflow = payload.get("workflow") if isinstance(payload.get("workflow"), dict) else {}
+    ranking = workflow.get("ranking_provenance") if isinstance(workflow.get("ranking_provenance"), dict) else {}
+    rank = _finite_int(ranking.get("rank"))
+    score = _finite_float(ranking.get("score"))
+    status = str(ranking.get("status") or payload.get("outcome") or "").strip().lower()
+    approved = bool(payload.get("approved", False))
+
+    if rank == 1 or status == "top_candidate":
+        recommendation_status = "top_candidate"
+    elif rank is not None and rank <= 5 and status in {"top_candidate", "watchlist", "approved", ""}:
+        recommendation_status = "still_ranked"
+    elif status in {"no_trade", "rejected"} or not approved:
+        recommendation_status = "weakened"
+    elif rank is None:
+        recommendation_status = "unavailable"
+    else:
+        recommendation_status = "weakened"
+
+    return {
+        "current_recommendation_status": recommendation_status,
+        "current_rank": rank,
+        "current_recommendation_id": row.recommendation_id,
+        "current_recommendation_score": score,
+    }
+
+
+def _scale_in_blockers(
+    *,
+    quantity: float,
+    average_entry_price: float,
+    current_mark_price: float | None,
+    stop_price: float | None,
+    user,
+    risk_calendar: RiskCalendarAssessment,
+) -> list[str]:
+    blockers: list[str] = []
+    decision = risk_calendar.decision
+    if not decision.allow_new_entries:
+        blockers.append("risk_calendar_blocks_new_additions")
+    if current_mark_price is None or current_mark_price <= 0:
+        blockers.append("current_mark_unavailable")
+        return blockers
+    max_notional = _effective_paper_max_order_notional(user)
+    current_notional = quantity * current_mark_price
+    if current_notional + current_mark_price > max_notional:
+        blockers.append("max_paper_order_notional_prevents_addition")
+    if stop_price is None:
+        blockers.append("stop_price_missing_for_incremental_risk")
+    else:
+        stop_distance = abs(average_entry_price - stop_price)
+        if stop_distance <= 0:
+            blockers.append("stop_distance_unusable_for_incremental_risk")
+        else:
+            current_risk = quantity * stop_distance
+            if current_risk + stop_distance > _effective_risk_dollars(user):
+                blockers.append("risk_budget_at_stop_prevents_addition")
+    return blockers
+
+
+def _classify_position_review(
+    *,
+    review_unavailable: bool,
+    stop_triggered: bool,
+    invalidated: bool,
+    holding_period_status: str,
+    target_reached: bool,
+    current_recommendation_status: str,
+    scale_in_candidate: bool,
+) -> str:
+    if review_unavailable:
+        return "review_unavailable"
+    if stop_triggered:
+        return "stop_triggered"
+    if invalidated:
+        return "invalidated"
+    if holding_period_status == "exceeded":
+        return "time_stop_exit"
+    if target_reached and current_recommendation_status in {"weakened", "not_currently_ranked", "unavailable"}:
+        return "target_reached_take_profit"
+    if target_reached:
+        return "target_reached_hold"
+    if scale_in_candidate:
+        return "scale_in_candidate"
+    if holding_period_status == "warning":
+        return "time_stop_warning"
+    return "hold_valid"
+
+
+def _position_review_summary(action: str, symbol: str, warnings: list[str]) -> str:
+    summaries = {
+        "review_unavailable": f"{symbol} needs manual review because required mark or position data is missing.",
+        "stop_triggered": f"{symbol} has crossed the recovered stop/invalidation level. Review only; no automatic exit is created.",
+        "invalidated": f"{symbol} has contradictory deterministic context. Review the thesis before adding or holding.",
+        "time_stop_exit": f"{symbol} is beyond the recovered max holding period. Review only; manual close remains operator-controlled.",
+        "target_reached_take_profit": f"{symbol} reached a recovered target while current ranking support has weakened.",
+        "target_reached_hold": f"{symbol} reached a recovered target and current deterministic context still supports holding or trailing.",
+        "scale_in_candidate": f"{symbol} remains strongly ranked and risk/notional/calendar checks leave room for an explicit paper scale-in review.",
+        "time_stop_warning": f"{symbol} is nearing the recovered max holding period.",
+        "hold_valid": f"{symbol} remains inside recovered stop/target/time-stop context.",
+    }
+    base = summaries.get(action, summaries["review_unavailable"])
+    if warnings:
+        return f"{base} {warnings[0]}"
+    return base
+
+
+def _build_position_review(position, *, app_user_id: int, user, recent_rows: list, now: datetime) -> dict[str, object]:
+    quantity = _finite_float(position.remaining_qty if position.remaining_qty is not None else position.quantity)
+    average_entry_price = _finite_float(position.average_price)
+    levels, recommendation_id, rec_payload = _recover_position_levels(position, app_user_id=app_user_id)
+    max_holding_days = _max_holding_days_from_payload(rec_payload)
+    days_held = _days_held(position.opened_at, now=now)
+    holding_status = _holding_period_status(days_held, max_holding_days)
+    mark_payload = _latest_position_mark(position.symbol)
+    mark = _finite_float(mark_payload.get("current_mark_price"))
+    risk_calendar = risk_calendar_service.assess(symbol=position.symbol, timeframe="1D")
+    ranking_context = _ranked_context_for_symbol(symbol=position.symbol, recent_rows=recent_rows)
+
+    warnings = list(mark_payload.get("warnings") or [])
+    missing_data = list(mark_payload.get("missing_data") or [])
+    if quantity is None or quantity <= 0:
+        missing_data.append("quantity")
+    if average_entry_price is None or average_entry_price <= 0:
+        missing_data.append("average_entry_price")
+    for key in ("stop_price", "target_1", "target_2"):
+        if levels[key] is None:
+            missing_data.append(key)
+    if max_holding_days is None:
+        missing_data.append("max_holding_days")
+    if risk_calendar.decision.allow_new_entries is False:
+        warnings.append("Risk calendar blocks or restricts new additions; it does not auto-close existing paper positions.")
+    if risk_calendar.decision.missing_evidence:
+        missing_data.extend(f"risk_calendar:{item}" for item in risk_calendar.decision.missing_evidence)
+        warnings.append("Risk calendar evidence is incomplete for this holding.")
+
+    direction = _trade_direction_multiplier(position.side)
+    unrealized_pnl = None
+    unrealized_return_pct = None
+    estimated_current_notional = None
+    entry_notional = None
+    distance_to_stop_pct = None
+    distance_to_target_1_pct = None
+    distance_to_target_2_pct = None
+    stop_triggered = False
+    target_reached = False
+    if quantity is not None and average_entry_price is not None:
+        entry_notional = _round_money(quantity * average_entry_price)
+    if quantity is not None and mark is not None:
+        estimated_current_notional = _round_money(quantity * mark)
+    if quantity is not None and average_entry_price is not None and mark is not None:
+        unrealized_pnl = _round_money((mark - average_entry_price) * quantity * direction)
+        unrealized_return_pct = round(((mark - average_entry_price) / average_entry_price) * direction * 100, 2) if average_entry_price > 0 else None
+    if mark is not None and mark > 0:
+        stop_price = levels["stop_price"]
+        target_1 = levels["target_1"]
+        target_2 = levels["target_2"]
+        if stop_price is not None:
+            distance_to_stop_pct = round(((mark - stop_price) * direction / mark) * 100, 2)
+            stop_triggered = distance_to_stop_pct <= 0
+        if target_1 is not None:
+            distance_to_target_1_pct = round(((target_1 - mark) * direction / mark) * 100, 2)
+            target_reached = target_reached or distance_to_target_1_pct <= 0
+        if target_2 is not None:
+            distance_to_target_2_pct = round(((target_2 - mark) * direction / mark) * 100, 2)
+            target_reached = target_reached or distance_to_target_2_pct <= 0
+
+    current_status = str(ranking_context["current_recommendation_status"])
+    scale_blockers = _scale_in_blockers(
+        quantity=float(quantity or 0.0),
+        average_entry_price=float(average_entry_price or 0.0),
+        current_mark_price=mark,
+        stop_price=levels["stop_price"],
+        user=user,
+        risk_calendar=risk_calendar,
+    )
+    strong_rank = current_status == "top_candidate" or (
+        current_status == "still_ranked" and isinstance(ranking_context.get("current_rank"), int) and int(ranking_context["current_rank"]) <= 3
+    )
+    profitable_or_valid = unrealized_pnl is not None and unrealized_pnl >= 0 and not stop_triggered
+    scale_candidate = strong_rank and profitable_or_valid and not scale_blockers and not target_reached
+    if strong_rank and profitable_or_valid and scale_blockers:
+        warnings.append(f"Scale-in blocked: {', '.join(scale_blockers)}.")
+
+    review_unavailable = "current_mark_price" in missing_data or "provider_backed_current_mark" in missing_data or quantity is None or average_entry_price is None
+    invalidated = current_status == "weakened" and not target_reached
+    action = _classify_position_review(
+        review_unavailable=review_unavailable,
+        stop_triggered=stop_triggered,
+        invalidated=invalidated,
+        holding_period_status=holding_status,
+        target_reached=target_reached,
+        current_recommendation_status=current_status,
+        scale_in_candidate=scale_candidate,
+    )
+
+    workflow = rec_payload.get("workflow") if isinstance(rec_payload.get("workflow"), dict) else {}
+    market_session_policy = workflow.get("session_policy") or "latest_snapshot"
+    return {
+        "position_id": position.id,
+        "symbol": position.symbol,
+        "side": position.side,
+        "quantity": quantity,
+        "average_entry_price": average_entry_price,
+        "current_mark_price": mark,
+        "market_data_source": mark_payload["market_data_source"],
+        "market_data_fallback_mode": mark_payload["market_data_fallback_mode"],
+        "mark_as_of": mark_payload["mark_as_of"],
+        "market_session_policy": market_session_policy,
+        "unrealized_pnl": unrealized_pnl,
+        "unrealized_return_pct": unrealized_return_pct,
+        "estimated_current_notional": estimated_current_notional,
+        "entry_notional": entry_notional,
+        "stop_price": levels["stop_price"],
+        "target_1": levels["target_1"],
+        "target_2": levels["target_2"],
+        "distance_to_stop_pct": distance_to_stop_pct,
+        "distance_to_target_1_pct": distance_to_target_1_pct,
+        "distance_to_target_2_pct": distance_to_target_2_pct,
+        "days_held": days_held,
+        "max_holding_days": max_holding_days,
+        "holding_period_status": holding_status,
+        "risk_calendar": risk_calendar.model_dump(mode="json"),
+        "current_recommendation_status": current_status,
+        "current_rank": ranking_context.get("current_rank"),
+        "current_recommendation_id": ranking_context.get("current_recommendation_id"),
+        "already_open": True,
+        "action_classification": action,
+        "action_summary": _position_review_summary(action, position.symbol, warnings),
+        "warnings": warnings,
+        "missing_data": sorted(set(missing_data)),
+        "provenance": {
+            "position_source": "paper_positions",
+            "level_source": "linked_recommendation" if recommendation_id else "unavailable",
+            "recommendation_id": recommendation_id,
+            "order_id": position.order_id,
+            "replay_run_id": position.replay_run_id,
+            "paper_only": True,
+            "review_only": True,
+            "no_automatic_exits": True,
+            "no_broker_routing": True,
+            "deterministic_engine_owns": ["action_classification", "risk_calendar", "position_sizing"],
+            "reviewed_at": _iso_or_none(now),
+        },
+    }
+
+
+@user_router.get("/paper-positions/review")
+def review_paper_positions(_user=Depends(require_approved_user)):
+    rows = paper_portfolio_repo.list_positions(app_user_id=_user.id, status="open", limit=100)
+    recent_rows = recommendation_repo.list_recent(limit=100, app_user_id=_user.id)
+    now = utc_now()
+    return [
+        _build_position_review(position, app_user_id=_user.id, user=_user, recent_rows=recent_rows, now=now)
+        for position in rows
+    ]
 
 
 @user_router.get("/paper-positions")

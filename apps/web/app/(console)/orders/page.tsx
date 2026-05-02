@@ -77,6 +77,39 @@ type PaperPosition = {
   fee_model?: string | null;
 };
 
+type PaperPositionReview = {
+  position_id: number;
+  symbol: string;
+  side: string;
+  quantity: number | null;
+  average_entry_price: number | null;
+  current_mark_price: number | null;
+  market_data_source: string | null;
+  market_data_fallback_mode: boolean;
+  mark_as_of: string | null;
+  market_session_policy: string | null;
+  unrealized_pnl: number | null;
+  unrealized_return_pct: number | null;
+  estimated_current_notional: number | null;
+  entry_notional: number | null;
+  stop_price: number | null;
+  target_1: number | null;
+  target_2: number | null;
+  distance_to_stop_pct: number | null;
+  distance_to_target_1_pct: number | null;
+  distance_to_target_2_pct: number | null;
+  days_held: number | null;
+  holding_period_status: string;
+  risk_calendar?: RiskCalendarPayload | null;
+  current_recommendation_status: string;
+  current_rank: number | null;
+  already_open: boolean;
+  action_classification: string;
+  action_summary: string;
+  warnings: string[];
+  missing_data: string[];
+};
+
 type PaperTrade = {
   id: number;
   symbol: string;
@@ -150,11 +183,26 @@ function formatDollars(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+function formatMaybeDollars(value: number | null | undefined): string {
+  return Number.isFinite(Number(value)) ? formatDollars(Number(value)) : "Unavailable";
+}
+
+function formatMaybePercent(value: number | null | undefined): string {
+  return Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)}%` : "Unavailable";
+}
+
 function riskTone(risk?: RiskCalendarPayload | null): "good" | "warn" | "bad" | "neutral" {
   const decision = risk?.decision;
   if (!decision) return "neutral";
   if (decision.decision_state === "normal") return "good";
   return decision.allow_new_entries ? "warn" : "bad";
+}
+
+function actionTone(action: string): "good" | "warn" | "bad" | "neutral" {
+  if (["hold_valid", "target_reached_hold", "scale_in_candidate"].includes(action)) return "good";
+  if (["stop_triggered", "time_stop_exit", "invalidated", "review_unavailable"].includes(action)) return "bad";
+  if (["target_reached_take_profit", "time_stop_warning"].includes(action)) return "warn";
+  return "neutral";
 }
 
 function tradeDirectionMultiplier(side: string | null | undefined): number {
@@ -242,6 +290,7 @@ export default function Page() {
   const [closePriceInput, setClosePriceInput] = useState("");
   const [closeResults, setCloseResults] = useState<Record<string, CloseResult>>({});
   const [positions, setPositions] = useState<PaperPosition[]>([]);
+  const [positionReviews, setPositionReviews] = useState<PaperPositionReview[]>([]);
   const [trades, setTrades] = useState<PaperTrade[]>([]);
   const [paperSettings, setPaperSettings] = useState<UserPaperSettings | null>(null);
   const [recommendationPayloadMap, setRecommendationPayloadMap] = useState<Record<string, RecommendationRow["payload"]>>({});
@@ -490,7 +539,7 @@ export default function Page() {
     setRiskCalendarConfirmed(false);
     setRiskCalendarOverrideReason("");
     await load();
-    await Promise.all([loadPositions(), loadTrades()]);
+    await Promise.all([loadPositions(), loadPositionReviews(), loadTrades()]);
     detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setBusy(false);
   }
@@ -524,6 +573,12 @@ export default function Page() {
     if (!authReady) return;
     const result = await fetchWorkflowApi<PaperPosition>("/api/user/paper-positions?status=open");
     if (result.ok) setPositions(result.items);
+  }
+
+  async function loadPositionReviews() {
+    if (!authReady) return;
+    const result = await fetchWorkflowApi<PaperPositionReview>("/api/user/paper-positions/review");
+    if (result.ok) setPositionReviews(result.items);
   }
 
   async function loadTrades() {
@@ -582,7 +637,7 @@ export default function Page() {
       state: "success",
       message: `Position closed — net P&L ${result.data ? formatSignedDollars(result.data.net_pnl) : "—"}`,
     });
-    await Promise.all([loadPositions(), loadTrades(), loadPortfolioSummary()]);
+    await Promise.all([loadPositions(), loadPositionReviews(), loadTrades(), loadPortfolioSummary()]);
     setBusy(false);
   }
 
@@ -601,7 +656,7 @@ export default function Page() {
     }
     setCancelingOrderId(null);
     setFeedback({ state: "success", message: "Order canceled." });
-    await Promise.all([load(), loadPositions()]);
+    await Promise.all([load(), loadPositions(), loadPositionReviews()]);
     setBusy(false);
   }
 
@@ -620,7 +675,7 @@ export default function Page() {
     }
     setReopeningTradeId(null);
     setFeedback({ state: "success", message: "Position reopened." });
-    await Promise.all([loadPositions(), loadTrades(), loadPortfolioSummary()]);
+    await Promise.all([loadPositions(), loadPositionReviews(), loadTrades(), loadPortfolioSummary()]);
     setBusy(false);
   }
 
@@ -646,11 +701,12 @@ export default function Page() {
     }
     setOrders([]);
     setPositions([]);
+    setPositionReviews([]);
     setTrades([]);
     setSelectedOrderId(null);
     setResetConfirmInput("");
     setFeedback({ state: "success", message: "Paper sandbox reset complete." });
-    await Promise.all([load(), loadPositions(), loadTrades(), loadPortfolioSummary()]);
+    await Promise.all([load(), loadPositions(), loadPositionReviews(), loadTrades(), loadPortfolioSummary()]);
     setBusy(false);
   }
 
@@ -658,6 +714,7 @@ export default function Page() {
     if (!authReady) return;
     void load();
     void loadPositions();
+    void loadPositionReviews();
     void loadTrades();
     void loadPaperSettings();
   }, [searchKey, authReady]);
@@ -957,6 +1014,93 @@ export default function Page() {
 
     <Card><div className="op-row"><button className={orderDoneForRec ? "op-btn op-btn-secondary" : "op-btn-primary-cta op-btn-pulse"} onClick={() => void stagePaperOrder()} disabled={busy || unsupportedGuidedMode || replayOutcome?.has_stageable_candidate === false}>{busy ? "Staging..." : orderDoneForRec ? "Stage another →" : "Stage paper order now →"}</button><button onClick={() => void load()} disabled={busy}>{busy ? "Refreshing..." : "Refresh order history"}</button></div><InlineFeedback state={feedback.state} message={feedback.message} onRetry={() => void load()} /></Card>
     {error ? <ErrorState title="Orders unavailable" hint={error} /> : null}
+
+    <Card title="Active Position Review">
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+        <StatusBadge tone="neutral">Review only</StatusBadge>
+        <StatusBadge tone="neutral">No automatic exits</StatusBadge>
+        <StatusBadge tone="neutral">Paper position management</StatusBadge>
+      </div>
+      {positionReviews.length === 0 ? (
+        <EmptyState title="No active paper positions to review" hint="Open equity paper positions will appear here with mark-to-market context." />
+      ) : (
+        <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+          <table className="op-table">
+            <thead>
+              <tr>
+                <th>symbol</th>
+                <th>qty</th>
+                <th>avg entry</th>
+                <th>current mark</th>
+                <th><MetricLabel label="unrealized P&L" term="net_pnl" /></th>
+                <th>return</th>
+                <th>stop / targets</th>
+                <th>days</th>
+                <th>risk calendar</th>
+                <th>recommendation</th>
+                <th>action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {positionReviews.map((review) => (
+                <tr key={review.position_id}>
+                  <td>
+                    <strong>{review.symbol}</strong>
+                    <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>{review.side} | {review.market_session_policy ?? "latest_snapshot"}</div>
+                  </td>
+                  <td>{review.quantity ?? "Unavailable"}</td>
+                  <td>{formatMaybeDollars(review.average_entry_price)}</td>
+                  <td>
+                    {formatMaybeDollars(review.current_mark_price)}
+                    <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>
+                      {review.market_data_fallback_mode ? `fallback (${review.market_data_source ?? "provider"})` : review.market_data_source ?? "provider"} | {formatRelativeTime(review.mark_as_of)}
+                    </div>
+                  </td>
+                  <td>
+                    <span style={{ color: review.unrealized_pnl != null ? pnlColor(review.unrealized_pnl) : "inherit", fontWeight: 600 }}>
+                      {review.unrealized_pnl != null ? formatSignedDollars(review.unrealized_pnl) : "Unavailable"}
+                    </span>
+                    <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>
+                      notional {formatMaybeDollars(review.estimated_current_notional)}
+                    </div>
+                  </td>
+                  <td>{formatMaybePercent(review.unrealized_return_pct)}</td>
+                  <td>
+                    <div>stop {review.stop_price != null ? `${formatMaybeDollars(review.stop_price)} (${formatMaybePercent(review.distance_to_stop_pct)})` : "missing"}</div>
+                    <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>
+                      T1 {review.target_1 != null ? `${formatMaybeDollars(review.target_1)} (${formatMaybePercent(review.distance_to_target_1_pct)})` : "missing"} | T2 {review.target_2 != null ? `${formatMaybeDollars(review.target_2)} (${formatMaybePercent(review.distance_to_target_2_pct)})` : "missing"}
+                    </div>
+                  </td>
+                  <td>
+                    {review.days_held ?? "Unavailable"}
+                    <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>{review.holding_period_status}</div>
+                  </td>
+                  <td>
+                    <StatusBadge tone={riskTone(review.risk_calendar)}>{review.risk_calendar?.decision?.decision_state ?? "normal"}</StatusBadge>
+                    <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>{review.risk_calendar?.decision?.risk_level ?? "normal"}</div>
+                  </td>
+                  <td>
+                    <StatusBadge tone={review.current_recommendation_status === "top_candidate" ? "good" : review.current_recommendation_status === "weakened" ? "warn" : "neutral"}>{review.current_recommendation_status}</StatusBadge>
+                    <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>
+                      {review.already_open ? "Already open" : "Not open"} | rank {review.current_rank ?? "n/a"}
+                    </div>
+                  </td>
+                  <td>
+                    <StatusBadge tone={actionTone(review.action_classification)}>{review.action_classification}</StatusBadge>
+                    <div style={{ marginTop: 4, maxWidth: 280, color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>{review.action_summary}</div>
+                    {review.missing_data.length ? (
+                      <div style={{ marginTop: 4, color: "var(--op-warn, #f2a03f)", fontSize: "0.78rem" }}>
+                        Missing: {review.missing_data.join(", ")}
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
 
     <Card title="Open paper positions">
       {positions.length === 0 ? (

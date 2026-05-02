@@ -150,12 +150,15 @@ settlement rejection coverage was added, the `opening_commissions`
 reconstruction limitation was documented, and the dead `opening_commissions`
 branch was removed without adding feature, schema, UI, replay,
 recommendation, or brokerage behavior.
-Active paper position management is now tracked as a planned Phase 7E
-paper-only lifecycle hardening pass before Alpaca paper integration. The design
-checkpoint is captured in
-[`active-paper-position-management-design.md`](active-paper-position-management-design.md)
-and keeps broker routing, live trading, automated exits, schema changes, and
-new frontend behavior out of this documentation-only pass.
+Active paper position management has now started as Phase 7E paper-only
+lifecycle hardening before Alpaca paper integration. `GET
+/user/paper-positions/review` and the frontend proxy `GET
+/api/user/paper-positions/review` return one deterministic review object per
+open equity paper position, and Orders now shows an Active Position Review
+surface. This pass remains review-only: no live trading, broker routing,
+automated exits, automatic closes, automatic scale-ins, options review, or
+schema changes were added. The implementation follows
+[`active-paper-position-management-design.md`](active-paper-position-management-design.md).
 Intraday market-data correctness hardening is complete for the current
 provider-backed chart/workflow path: aggregate-bar timestamps are preserved,
 1H/4H HACO and workflow chart payloads emit unique intraday Unix-second chart
@@ -313,19 +316,19 @@ route orders.
 
 ### Phase 7E - Active paper position management
 - Status:
-  planned paper-only lifecycle hardening; docs/design checkpoint added in
-  [active-paper-position-management-design.md](active-paper-position-management-design.md)
+  started for current equity paper lifecycle hardening. The backend review
+  endpoint and Orders review surface are implemented for open equity paper
+  positions only; options review remains deferred.
 - Why before Alpaca paper integration:
   broker integration should not automate around an incomplete paper lifecycle.
   Before external paper brokerage plumbing is promoted, open paper equity
   positions need a deterministic mark-to-market review loop so the operator can
   manage existing exposure rather than seeing duplicate or confusing new-trade
   prompts.
-- Current product gap:
-  paper order staging/fill, open paper positions, manual close, realized P&L,
-  and reopen-within-window exist, but open positions are not yet re-evaluated
-  against current marks, recommendation rank, stop/target distance, time stop,
-  or thesis validity.
+- Completed in this pass:
+  open equity paper positions are re-evaluated against current marks,
+  recommendation/ranking lineage, stop/target distance, time stop, and market
+  risk calendar state through `GET /user/paper-positions/review`.
 - Target review model:
   one review object per open paper equity position with current mark price,
   unrealized P&L dollars, unrealized return percent, stop distance, target 1
@@ -335,7 +338,8 @@ route orders.
 - Position review statuses:
   `hold_valid`, `target_reached_hold`, `target_reached_take_profit`,
   `stop_triggered`, `time_stop_warning`, `time_stop_exit`,
-  `scale_in_candidate`, and `invalidated`.
+  `scale_in_candidate`, `invalidated`, and `review_unavailable`, with stable
+  precedence documented in the design file.
 - Recommendation handling:
   if a ranked recommendation symbol is already held in an open paper position,
   the operator surface should show `Already open` / `Active position review`
@@ -344,10 +348,10 @@ route orders.
   scale-in may be recommended only through explicit deterministic risk rules
   and must never silently average into a position without clear UI messaging
   and risk-limit feedback.
-- Proposed future endpoint:
+- Endpoint:
   `GET /api/user/paper-positions/review`, returning one review object per open
-  position. The backend route may map to the protected user API namespace as
-  `GET /user/paper-positions/review`.
+  equity paper position through protected frontend proxy to `GET
+  /user/paper-positions/review`.
 - Test expectations:
   open `GOOG` long returns current mark and unrealized P&L; near-stop positions
   return `stop_triggered` or warning status; above-target but still highly
@@ -356,8 +360,9 @@ route orders.
   are blocked when portfolio risk limits are exceeded.
 - Explicitly not included:
   live trading support, brokerage routing, real broker execution, automated
-  close orders, schema changes, equity behavior changes, options behavior
-  changes, or frontend UI in this docs-only pass.
+  close orders, automatic scale-in orders, schema changes, options position
+  review, LLM position-review copy, or changes to existing paper order/replay
+  behavior.
 
 ### Phase 7F - Paper equity order sizing usability + sandbox cleanup
 - Complete for current equity/paper sandbox scope:
@@ -390,8 +395,8 @@ route orders.
 ### Phase 7 Closure Note
 - Phase 7A through 7D are complete for the current equity/paper-readiness
   foundation.
-- Phase 7E is a planned active-position management hardening pass that should
-  happen before Alpaca paper integration.
+- Phase 7E active-position management is started for open equity paper
+  positions and remains the hardening gate before Alpaca paper integration.
 - Remaining deferred items are intentionally moved to later phases and should
   not block Phase 8 planning.
 
