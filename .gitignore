@@ -6,6 +6,7 @@ __pycache__/
 *.so
 *.egg-info/
 .pytest_cache/
+.pytest-tmp/
 .mypy_cache/
 .ruff_cache/
 .venv/
@@ -26,6 +27,7 @@ node_modules/
 out/
 dist/
 coverage/
+*.tsbuildinfo
 
 # Lockfile (KEEP THIS — DO NOT IGNORE)
 # package-lock.json  <-- DO NOT ADD
@@ -87,6 +89,7 @@ macmarket_trader.db-journal
 
 .deps/
 .pytest_cache/
+.tmp/
 __pycache__/
 *.pyc
 

@@ -44,6 +44,11 @@ Deploy mirror excludes runtime state from destructive replacement, including:
 - sqlite files (`*.sqlite`, `*.sqlite3`)
 - data/storage/upload directories (`data`, `storage`, `uploads`)
 
+The mirror also excludes local development/test noise so deploys do not copy
+AI worktrees, pytest scratch folders, or generated TypeScript incremental
+state into the runtime folder. Current Robocopy exclusions include `.claude/`,
+`.pytest-tmp/`, `.tmp/`, and `*.tsbuildinfo`.
+
 ## Fail-fast behavior
 
 Critical commands are guarded with `|| goto :fail` and deployment stops immediately on failure.
