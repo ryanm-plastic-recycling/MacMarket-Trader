@@ -2,6 +2,26 @@
 
 Last updated: 2026-05-02
 
+## 2026-05-03 Update - Browser Smoke Audit Fixes
+A Playwright-driven local smoke audit ran against a disposable mock-auth
+database with provider-backed Polygon reads enabled. The pass covered
+Dashboard, HACO Context, Analysis, Recommendations, Orders, Settings, and
+Provider Health across desktop, tablet, and mobile widths. It verified the
+Recommendations symbol-input/workflow-button layout, ranked queue refresh,
+risk-calendar badges, already-open paper-position badges, Opportunity
+Intelligence comparison, Orders Active Position Review, paper sizing labels,
+provider-health config/probe separation, and paper-only/no-live-routing copy.
+
+Three small UI/testability fixes landed from the audit: HACO no longer crashes
+when RSI is enabled because the RSI price scale is configured after the RSI
+series creates that scale, the local E2E auth bypass no longer waits for
+Clerk JS before protected workflow pages fetch data, and Active Position
+Review no longer returns Unix-epoch mark timestamps as if they were real mark
+times. This pass does not change recommendation ranking, strategy math,
+market-data pricing logic, risk-calendar logic, LLM decision boundaries, paper
+order lifecycle behavior, broker routing, live trading, automated exits, or
+automatic scale-in.
+
 ## 2026-05-02 Update - Recommendations Layout And Mark-Age Cleanup
 The Recommendations universe card now keeps the symbols input visually
 dominant and moves workflow actions into a wrapping button row below it:

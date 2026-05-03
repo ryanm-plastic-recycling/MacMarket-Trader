@@ -105,7 +105,8 @@ export default function Page() {
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
   const [workbenchState, setWorkbenchState] = useState<WorkbenchState>("auth_initializing");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
-  const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
+  const e2eBypass = isE2EAuthBypassEnabled();
+  const authReady = e2eBypass || (isLoaded && isSignedIn);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
   const guidedMode = guidedState.guided;
 

@@ -269,7 +269,8 @@ export default function RecommendationsPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
+  const e2eBypass = isE2EAuthBypassEnabled();
+  const authReady = e2eBypass || (isLoaded && isSignedIn);
 
   const [rows, setRows] = useState<StoredRecommendation[]>([]);
   const [queue, setQueue] = useState<QueueCandidate[]>([]);

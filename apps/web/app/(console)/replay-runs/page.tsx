@@ -101,7 +101,8 @@ export default function Page() {
   const [expandedStepId, setExpandedStepId] = useState<number | null>(null);
   const [showOperatorDetail, setShowOperatorDetail] = useState(false);
   const [feedback, setFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
-  const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
+  const e2eBypass = isE2EAuthBypassEnabled();
+  const authReady = e2eBypass || (isLoaded && isSignedIn);
   const selected = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
   const selectedSource = selected ? (selected.fallback_mode ? `fallback (${selected.market_data_source ?? "provider"})` : (selected.market_data_source ?? "provider")) : dataSource;
   const unsupportedGuidedMode = Boolean(guidedState.guided && guidedState.marketMode && guidedState.marketMode !== "equities");

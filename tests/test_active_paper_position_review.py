@@ -39,15 +39,16 @@ USER_AUTH = {"Authorization": "Bearer user-token"}
 
 
 class StubMarketDataService:
-    def __init__(self, marks: dict[str, float]) -> None:
+    def __init__(self, marks: dict[str, float], as_of: datetime | None = None) -> None:
         self.marks = {symbol.upper(): value for symbol, value in marks.items()}
+        self.as_of = as_of or datetime(2026, 5, 2, 15, 59, tzinfo=timezone.utc)
 
     def latest_snapshot(self, symbol: str, timeframe: str = "1D") -> MarketSnapshot:
         mark = self.marks.get(symbol.upper(), 100.0)
         return MarketSnapshot(
             symbol=symbol.upper(),
             timeframe=timeframe,
-            as_of=datetime(2026, 5, 2, 15, 59, tzinfo=timezone.utc),
+            as_of=self.as_of,
             open=mark,
             high=mark,
             low=mark,
@@ -228,6 +229,22 @@ def test_open_goog_long_returns_mark_pnl_and_excludes_closed_positions(monkeypat
     assert review["unrealized_return_pct"] == 5.0
     assert review["already_open"] is True
     assert review["current_recommendation_status"] == "top_candidate"
+
+
+def test_epoch_mark_as_of_returns_unavailable_timestamp(monkeypatch) -> None:
+    user_id = _approve_user()
+    monkeypatch.setattr(
+        admin_routes,
+        "market_data_service",
+        StubMarketDataService({"GOOG": 105.0}, as_of=datetime(1970, 1, 1, tzinfo=timezone.utc)),
+    )
+    monkeypatch.setattr(admin_routes, "risk_calendar_service", _risk_service())
+    _seed_position(app_user_id=user_id, symbol="GOOG", entry=100.0, stop=96.0, target_1=110.0)
+
+    review = client.get("/user/paper-positions/review", headers=USER_AUTH).json()[0]
+
+    assert review["current_mark_price"] == 105.0
+    assert review["mark_as_of"] is None
 
 
 def test_mark_below_stop_returns_stop_triggered(monkeypatch) -> None:

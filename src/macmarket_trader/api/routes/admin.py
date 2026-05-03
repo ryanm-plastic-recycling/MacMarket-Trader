@@ -1874,6 +1874,17 @@ def _holding_period_status(days_held: int | None, max_holding_days: int | None) 
     return "within_window"
 
 
+def _safe_mark_as_of(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    # Some provider snapshot payloads omit a timestamp; lower-level adapters can
+    # surface that as Unix epoch. Do not present that as an ancient live mark.
+    if aware <= datetime(2001, 1, 1, tzinfo=timezone.utc):
+        return None
+    return aware.isoformat()
+
+
 def _latest_position_mark(symbol: str) -> dict[str, object]:
     try:
         snapshot = market_data_service.latest_snapshot(symbol=symbol, timeframe="1D")
@@ -1921,7 +1932,7 @@ def _latest_position_mark(symbol: str) -> dict[str, object]:
         "current_mark_price": mark,
         "market_data_source": source,
         "market_data_fallback_mode": fallback_mode,
-        "mark_as_of": snapshot.as_of.isoformat() if snapshot.as_of else None,
+        "mark_as_of": _safe_mark_as_of(snapshot.as_of),
         "missing_data": missing_data,
         "warnings": warnings,
     }

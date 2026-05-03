@@ -8,22 +8,29 @@ type SeriesRecorder = { kind: string; options?: Record<string, unknown>; data: u
 function buildChartRecorder() {
   const series: SeriesRecorder[] = [];
   const scaleCalls: Array<{ id: string; options: Record<string, unknown> }> = [];
+  const events: Array<{ type: "series" | "scale"; id?: string }> = [];
   return {
     series,
     scaleCalls,
+    events,
     chart: {
       addLineSeries: (options?: Record<string, unknown>) => {
         const record: SeriesRecorder = { kind: "line", options, data: [] };
         series.push(record);
+        events.push({ type: "series", id: String(options?.priceScaleId ?? "") });
         return { setData: (data: unknown[]) => { record.data = data; } };
       },
       addHistogramSeries: (options?: Record<string, unknown>) => {
         const record: SeriesRecorder = { kind: "histogram", options, data: [] };
         series.push(record);
+        events.push({ type: "series", id: String(options?.priceScaleId ?? "") });
         return { setData: (data: unknown[]) => { record.data = data; } };
       },
       priceScale: (id: string) => ({
-        applyOptions: (options: Record<string, unknown>) => { scaleCalls.push({ id, options }); },
+        applyOptions: (options: Record<string, unknown>) => {
+          scaleCalls.push({ id, options });
+          events.push({ type: "scale", id });
+        },
       }),
     },
   };
@@ -45,7 +52,7 @@ describe("applyIndicatorsToChart", () => {
   });
 
   it("renders first-class workflow indicators with data-bearing series", () => {
-    const { chart, series, scaleCalls } = buildChartRecorder();
+    const { chart, series, scaleCalls, events } = buildChartRecorder();
     const selected: IndicatorId[] = ["volume", "sma20", "sma50", "ema20", "ema50", "ema200", "vwap", "bollinger", "prior_day_levels", "rsi"];
     const result = applyIndicatorsToChart(chart as never, candles as never, selected);
 
@@ -54,6 +61,9 @@ describe("applyIndicatorsToChart", () => {
     expect(series.some((entry) => entry.options?.priceScaleId === "rsi" && entry.data.length > 0)).toBe(true);
     expect(scaleCalls.some((call) => call.id === "volume")).toBe(true);
     expect(scaleCalls.some((call) => call.id === "rsi")).toBe(true);
+    expect(events.findIndex((event) => event.type === "series" && event.id === "rsi")).toBeLessThan(
+      events.findIndex((event) => event.type === "scale" && event.id === "rsi"),
+    );
     expect(result.legendEntries.some((entry) => entry.label === "SMA 20" && entry.latestValue != null)).toBe(true);
     expect(result.legendEntries.some((entry) => entry.label === "RSI 14" && entry.pane === "momentum")).toBe(true);
   });

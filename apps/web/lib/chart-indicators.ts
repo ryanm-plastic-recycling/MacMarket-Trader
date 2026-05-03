@@ -358,7 +358,7 @@ export function applyIndicatorsToChart(
   }
 
   for (const panel of model.momentumPanels) {
-    chart.priceScale(panel.scaleId).applyOptions({ scaleMargins: { top: 0.82, bottom: 0.05 }, autoScale: false });
+    let panelScaleCreated = false;
     for (const line of panel.lines) {
       chart
         .addLineSeries({
@@ -370,6 +370,7 @@ export function applyIndicatorsToChart(
           priceLineVisible: line.priceLineVisible,
         })
         .setData(line.points);
+      panelScaleCreated = true;
     }
     for (const guide of panel.guides ?? []) {
       chart
@@ -382,6 +383,10 @@ export function applyIndicatorsToChart(
           priceLineVisible: false,
         })
         .setData(candles.map((candle) => ({ time: candle.time, value: guide.value })));
+      panelScaleCreated = true;
+    }
+    if (panelScaleCreated) {
+      chart.priceScale(panel.scaleId).applyOptions({ scaleMargins: { top: 0.82, bottom: 0.05 }, autoScale: false });
     }
   }
 

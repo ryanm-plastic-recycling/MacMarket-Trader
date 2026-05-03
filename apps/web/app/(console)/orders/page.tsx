@@ -332,7 +332,8 @@ export default function Page() {
   // Pass 4 — display_id lookup for the workflow lineage card. Fetched once
   // per page mount; falls back to the auto-shortened "Rec #..." when missing.
   const [displayIdMap, setDisplayIdMap] = useState<Record<string, string>>({});
-  const authReady = isLoaded && (isSignedIn || isE2EAuthBypassEnabled());
+  const e2eBypass = isE2EAuthBypassEnabled();
+  const authReady = e2eBypass || (isLoaded && isSignedIn);
   const selected = useMemo(() => orders.find((o) => o.order_id === selectedOrderId) ?? null, [orders, selectedOrderId]);
   const selectedOpenPosition = useMemo(() => {
     if (!selected) return null;
