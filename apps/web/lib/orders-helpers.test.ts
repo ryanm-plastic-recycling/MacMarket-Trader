@@ -118,6 +118,10 @@ describe("formatMarkAsOfTime", () => {
   it("renders a timestamp for future mark times instead of a negative age", () => {
     expect(formatMarkAsOfTime("2026-04-28T12:05:00Z", NOW)).toBe("2026-04-28 12:05 UTC");
   });
+
+  it("renders a timestamp for stale mark times instead of huge relative ages", () => {
+    expect(formatMarkAsOfTime("2025-04-28T12:00:00Z", NOW)).toBe("2025-04-28 12:00 UTC");
+  });
 });
 
 describe("reopenSecondsRemaining", () => {

@@ -12,6 +12,7 @@ certification.
 - Provider Health separates configuration and probe state.
 - LLM explanation-only boundary documented and tested.
 - Paper equity lifecycle integrity test exists.
+- Options position review and options lifecycle integrity tests exist.
 - Defensive security hardening tests exist.
 - Clean release archive generator excludes local secrets/state.
 - Release evidence generator creates redacted JSON/Markdown evidence.
@@ -51,3 +52,6 @@ certification.
 - Clearly label paper-only and no broker-routing scope in every product demo.
 - Treat `scripts/run_model_validation.py` output as a preliminary internal
   evidence packet, not as live trading performance or a public marketing claim.
+- Label options review evidence as paper-only and mark-limited until
+  provider-backed option marks and any future Greeks/valuation model are
+  validated.

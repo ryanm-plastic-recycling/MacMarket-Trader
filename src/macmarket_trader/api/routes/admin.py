@@ -37,6 +37,8 @@ from macmarket_trader.domain.schemas import (
     OptionPaperCloseStructureResponse,
     OptionPaperLifecycleSummaryListResponse,
     OptionPaperOpenStructureResponse,
+    OptionPaperStructureReview,
+    OptionPaperStructureReviewListResponse,
     OptionPaperStructureInput,
     OptionReplayPreviewRequest,
     OptionReplayPreviewResponse,
@@ -1370,6 +1372,27 @@ def close_user_option_paper_structure(
 
 
 @user_router.get(
+    "/options/paper-structures/review",
+    response_model=OptionPaperStructureReviewListResponse,
+)
+def review_user_option_paper_structures(
+    limit: int = 100,
+    user=Depends(require_approved_user),
+) -> OptionPaperStructureReviewListResponse:
+    safe_limit = max(1, min(int(limit), 200))
+    now = utc_now()
+    return OptionPaperStructureReviewListResponse(
+        items=[
+            _build_option_paper_structure_review(position, user=user, now=now)
+            for position in option_paper_repo.list_open_positions(
+                app_user_id=user.id,
+                limit=safe_limit,
+            )
+        ]
+    )
+
+
+@user_router.get(
     "/options/paper-structures",
     response_model=OptionPaperLifecycleSummaryListResponse,
 )
@@ -2233,6 +2256,287 @@ def _build_position_review(position, *, app_user_id: int, user, recent_rows: lis
             "reviewed_at": _iso_or_none(now),
         },
     }
+
+
+_SUPPORTED_OPTION_REVIEW_STRATEGIES = {"long_call", "long_put", "vertical_debit_spread", "iron_condor"}
+
+
+def _option_leg_side(action: str | None) -> str:
+    return "short" if str(action or "").strip().lower() == "sell" else "long"
+
+
+def _option_structure_side(structure_type: str | None) -> str:
+    normalized = str(structure_type or "").strip().lower()
+    if normalized in {"long_call", "long_put", "vertical_debit_spread"}:
+        return "long_debit"
+    if normalized == "iron_condor":
+        return "neutral_credit"
+    return "unknown"
+
+
+def _option_contract_count(legs: list) -> int | None:
+    quantities = [_finite_int(getattr(leg, "quantity", None)) for leg in legs]
+    safe_quantities = [quantity for quantity in quantities if quantity is not None and quantity > 0]
+    if not safe_quantities:
+        return None
+    if len(set(safe_quantities)) == 1:
+        return safe_quantities[0]
+    return sum(safe_quantities)
+
+
+def _option_multiplier_assumption(legs: list) -> int | None:
+    multipliers = [_finite_int(getattr(leg, "multiplier", None)) for leg in legs]
+    safe_multipliers = [multiplier for multiplier in multipliers if multiplier is not None and multiplier > 0]
+    if not safe_multipliers:
+        return None
+    if len(set(safe_multipliers)) == 1:
+        return safe_multipliers[0]
+    return None
+
+
+def _option_opening_debit_credit(position) -> tuple[float | None, str]:
+    debit = _finite_float(getattr(position, "opening_net_debit", None))
+    credit = _finite_float(getattr(position, "opening_net_credit", None))
+    if debit is not None:
+        return _round_money(debit), "debit"
+    if credit is not None:
+        return _round_money(credit), "credit"
+    return None, "unknown"
+
+
+def _option_event_commissions_for_legs(legs: list, *, commission_per_contract: float) -> float | None:
+    if not legs:
+        return None
+    total = 0.0
+    for leg in legs:
+        quantity = _finite_int(getattr(leg, "quantity", None))
+        if quantity is None or quantity < 0:
+            return None
+        total += quantity * commission_per_contract
+    return _round_money(total)
+
+
+def _option_days_to_expiration(position, now: datetime) -> tuple[object | None, int | None]:
+    expiration = getattr(position, "expiration", None)
+    if expiration is None:
+        legs = list(getattr(position, "legs", []) or [])
+        expiration = getattr(legs[0], "expiration", None) if legs else None
+    if expiration is None:
+        return None, None
+    return expiration, (expiration - now.date()).days
+
+
+def _option_expiration_status(days_to_expiration: int | None) -> str:
+    if days_to_expiration is None:
+        return "expiration_unavailable"
+    if days_to_expiration < 0:
+        return "expired"
+    if days_to_expiration == 0:
+        return "expiration_due"
+    if days_to_expiration <= 2:
+        return "expiration_due"
+    if days_to_expiration <= 7:
+        return "expiration_warning"
+    return "active"
+
+
+def _option_payoff_summary(position, opening_type: str) -> str:
+    structure = str(getattr(position, "structure_type", "") or "option structure")
+    if opening_type == "debit":
+        return f"{structure} is a defined-risk debit paper structure using persisted payoff bounds."
+    if opening_type == "credit":
+        return f"{structure} is a defined-risk credit paper structure using persisted payoff bounds."
+    return f"{structure} has persisted option legs, but opening debit/credit could not be recovered."
+
+
+def _classify_option_structure_review(
+    *,
+    review_unavailable: bool,
+    mark_unavailable: bool,
+    expiration_status: str,
+    max_loss_near: bool,
+    max_profit_near: bool,
+    close_candidate: bool,
+    adjustment_review: bool,
+    profitable: bool | None,
+    losing: bool | None,
+) -> str:
+    if review_unavailable:
+        return "review_unavailable"
+    if mark_unavailable:
+        return "mark_unavailable"
+    if expiration_status == "expiration_due":
+        return "expiration_due"
+    if max_loss_near:
+        return "max_loss_near"
+    if max_profit_near:
+        return "max_profit_near"
+    if close_candidate:
+        return "close_candidate"
+    if adjustment_review:
+        return "adjustment_review"
+    if expiration_status == "expiration_warning":
+        return "expiration_warning"
+    if profitable:
+        return "profitable_hold"
+    if losing:
+        return "losing_hold"
+    return "hold_valid"
+
+
+def _option_structure_review_summary(action: str, symbol: str, warnings: list[str]) -> str:
+    summaries = {
+        "review_unavailable": f"{symbol} options structure needs manual review because required lifecycle data is missing or unsupported.",
+        "mark_unavailable": f"{symbol} options structure has no provider-backed option mark available; review is limited to opening, payoff, expiration, and risk-calendar context.",
+        "expiration_warning": f"{symbol} options structure is nearing expiration. Review only; no roll or close is created.",
+        "expiration_due": f"{symbol} options structure is at or past expiration. Manual review is required; settlement automation is not supported.",
+        "max_profit_near": f"{symbol} options structure is near persisted max profit. Review only; no automatic close is created.",
+        "max_loss_near": f"{symbol} options structure is near persisted max loss. Review only; no automatic close is created.",
+        "profitable_hold": f"{symbol} options structure is profitable on available marks and remains a hold review candidate.",
+        "losing_hold": f"{symbol} options structure is losing on available marks but not otherwise invalidated by deterministic review.",
+        "adjustment_review": f"{symbol} options structure needs human adjustment review only; no automatic adjustment is created.",
+        "close_candidate": f"{symbol} options structure is a manual close review candidate. No close order is staged.",
+        "hold_valid": f"{symbol} options structure has no deterministic review flags on available data.",
+    }
+    base = summaries.get(action, summaries["review_unavailable"])
+    if warnings:
+        return f"{base} {warnings[0]}"
+    return base
+
+
+def _build_option_paper_structure_review(position, *, user, now: datetime) -> OptionPaperStructureReview:
+    legs = list(getattr(position, "legs", []) or [])
+    structure_type = str(getattr(position, "structure_type", "") or "").strip().lower()
+    symbol = str(getattr(position, "underlying_symbol", "") or "").upper()
+    expiration, days_to_expiration = _option_days_to_expiration(position, now)
+    expiration_status = _option_expiration_status(days_to_expiration)
+    opening_debit_credit, opening_type = _option_opening_debit_credit(position)
+    commission_per_contract = _effective_commission_per_contract(user)
+    opening_commissions = _option_event_commissions_for_legs(
+        legs,
+        commission_per_contract=commission_per_contract,
+    )
+    contracts = _option_contract_count(legs)
+    multiplier_assumption = _option_multiplier_assumption(legs)
+
+    warnings: list[str] = []
+    missing_data: list[str] = []
+    if not legs:
+        missing_data.append("option_legs")
+    if structure_type not in _SUPPORTED_OPTION_REVIEW_STRATEGIES:
+        missing_data.append("unsupported_strategy_type")
+    if not symbol:
+        missing_data.append("underlying_symbol")
+    if expiration is None:
+        missing_data.append("expiration_date")
+    if opening_debit_credit is None:
+        missing_data.append("opening_debit_credit")
+    if opening_commissions is None:
+        missing_data.append("opening_commissions")
+
+    option_mark_missing = True
+    missing_data.append("option_mark_data")
+    warnings.append("Provider-backed option leg marks are not available for this review; no synthetic option marks were used.")
+    if expiration_status == "expiration_warning":
+        warnings.append("Expiration is within seven calendar days; review time decay and event risk manually.")
+    elif expiration_status == "expiration_due":
+        warnings.append("Expiration is due or past due; no expiration settlement automation is available.")
+
+    risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe="1D") if symbol else None
+    if risk_calendar is not None:
+        if risk_calendar.decision.allow_new_entries is False:
+            warnings.append("Risk calendar blocks or restricts new option additions/adjustments; it does not auto-close existing paper structures.")
+        if risk_calendar.decision.active_events:
+            warnings.append("Risk calendar has active event exposure for this underlying.")
+        if risk_calendar.decision.missing_evidence:
+            missing_data.extend(f"risk_calendar:{item}" for item in risk_calendar.decision.missing_evidence)
+            warnings.append("Risk calendar evidence is incomplete for this underlying.")
+    else:
+        missing_data.append("risk_calendar")
+
+    review_unavailable = bool({"option_legs", "unsupported_strategy_type", "underlying_symbol"}.intersection(missing_data))
+    action = _classify_option_structure_review(
+        review_unavailable=review_unavailable,
+        mark_unavailable=option_mark_missing,
+        expiration_status=expiration_status,
+        max_loss_near=False,
+        max_profit_near=False,
+        close_candidate=False,
+        adjustment_review=False,
+        profitable=None,
+        losing=None,
+    )
+
+    leg_reviews = []
+    for leg in legs:
+        leg_missing = ["option_mark_data"]
+        leg_reviews.append(
+            {
+                "leg_id": leg.id,
+                "option_symbol": None,
+                "underlying_symbol": symbol,
+                "expiration": leg.expiration,
+                "option_type": str(leg.right).lower(),
+                "strike": leg.strike,
+                "side": _option_leg_side(leg.action),
+                "contracts": leg.quantity,
+                "opening_premium": leg.entry_premium,
+                "current_mark_premium": None,
+                "estimated_leg_unrealized_pnl": None,
+                "market_data_source": "unavailable",
+                "market_data_fallback_mode": False,
+                "mark_as_of": None,
+                "missing_data": leg_missing,
+            }
+        )
+
+    return OptionPaperStructureReview(
+        structure_id=position.id,
+        underlying_symbol=symbol,
+        strategy_type=structure_type or "unknown",
+        side=_option_structure_side(structure_type),
+        opened_at=position.opened_at,
+        expiration_date=expiration,
+        days_to_expiration=days_to_expiration,
+        contracts=contracts,
+        quantity=contracts,
+        multiplier_assumption=multiplier_assumption,
+        opening_debit_credit=opening_debit_credit,
+        opening_debit_credit_type=opening_type,
+        opening_commissions=opening_commissions,
+        current_mark_debit_credit=None,
+        estimated_unrealized_pnl=None,
+        estimated_unrealized_return_pct=None,
+        max_profit=_round_money(_finite_float(position.max_profit)),
+        max_loss=_round_money(_finite_float(position.max_loss)),
+        breakevens=list(position.breakevens or []),
+        payoff_summary=_option_payoff_summary(position, opening_type),
+        risk_calendar=risk_calendar.model_dump(mode="json") if risk_calendar is not None else {},
+        expiration_status=expiration_status,
+        action_classification=action,
+        action_summary=_option_structure_review_summary(action, symbol or "Option", warnings),
+        warnings=warnings,
+        missing_data=sorted(set(missing_data)),
+        provenance={
+            "position_source": "paper_option_positions",
+            "leg_source": "paper_option_position_legs",
+            "valuation_source": "option_marks_unavailable",
+            "provider_option_marks_available": False,
+            "fallback_option_marks_used": False,
+            "payoff_source": "persisted_option_payoff_fields",
+            "commission_source": "current_user_commission_per_contract",
+            "paper_only": True,
+            "review_only": True,
+            "no_live_trading": True,
+            "no_broker_routing": True,
+            "no_automatic_exits": True,
+            "no_automatic_rolling": True,
+            "no_automatic_adjustment": True,
+            "deterministic_engine_owns": ["action_classification", "risk_calendar", "payoff_context"],
+            "reviewed_at": _iso_or_none(now),
+        },
+        legs=leg_reviews,
+    )
 
 
 def _already_open_default_context() -> dict[str, object]:

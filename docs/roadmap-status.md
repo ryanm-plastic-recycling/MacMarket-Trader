@@ -2,6 +2,36 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Options Position Review And Lifecycle Integrity Evidence
+Options paper structures now have a review-only active position review layer
+and a local lifecycle integrity audit without changing strategy math,
+recommendation ranking, market-data behavior, paper equity lifecycle behavior,
+broker routing, live trading, automated exits, automatic rolling, or automatic
+adjustments. The backend now exposes
+`GET /user/options/paper-structures/review`, with the Next.js proxy at
+`GET /api/user/options/paper-structures/review`, returning one current-user
+open options paper structure review per persisted structure.
+
+The first implementation supports the existing paper options persistence branch
+and defined-risk structures already accepted by the open/manual-close flow:
+single long calls/puts, vertical debit spreads, and iron condors. The review
+shape is structure/leg based rather than equity-position based. It includes
+opening debit/credit, opening commissions, persisted payoff bounds,
+breakevens, expiration/DTE status, risk-calendar context for the underlying,
+leg details, missing-data flags, warnings, and deterministic action
+classification. Provider-backed option leg marks are not yet available in the
+current runtime, so the review returns `mark_unavailable` and explicitly lists
+`option_mark_data` rather than fabricating marks or unrealized P&L.
+
+Orders now includes an Options Position Review section next to Active Position
+Review. It is labeled review-only, no automatic exits, no automatic rolling,
+no broker routing, and paper position management. Regression coverage now
+proves open options structures appear in review, closed structures are
+excluded, cross-user review/close access is blocked, suspended users are
+blocked, provider secrets are not exposed, manual close records gross/net P&L
+and contract commissions without an x100 mistake, no orphan option records are
+left behind, and equity paper sandbox reset leaves options records intact.
+
 ## 2026-05-03 Update - Phase 12 Model Validation And Performance Evidence Foundation
 Phase 12 adds the first model-validation evidence layer without changing
 strategy math, recommendation ranking, market-data behavior, paper lifecycle

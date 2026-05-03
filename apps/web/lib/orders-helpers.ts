@@ -58,6 +58,7 @@ export function canReopenTrade(
 }
 
 type RelativeTimeInput = string | number | null | undefined;
+const MAX_RELATIVE_MARK_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 function parseTimestampMs(value: RelativeTimeInput): number | null {
   if (value == null) return null;
@@ -88,6 +89,10 @@ function formatTimestampLabel(timestampMs: number, nowMs: number, futureLabel: s
   return `${days}d ago`;
 }
 
+function formatUtcTimestamp(timestampMs: number): string {
+  return new Date(timestampMs).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+}
+
 export function formatRelativeTime(value: RelativeTimeInput, nowMs: number = Date.now()): string {
   if (value == null || value === "") return "—";
   const t = parseTimestampMs(value);
@@ -99,6 +104,8 @@ export function formatMarkAsOfTime(value: RelativeTimeInput, nowMs: number = Dat
   const t = parseTimestampMs(value);
   if (t == null) return "mark time unavailable";
   if (t < Date.UTC(2000, 0, 1)) return "mark time unavailable";
-  if (t > nowMs) return new Date(t).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  if (t > nowMs) return formatUtcTimestamp(t);
+  const deltaSec = Math.floor((nowMs - t) / 1000);
+  if (deltaSec > MAX_RELATIVE_MARK_AGE_SECONDS) return formatUtcTimestamp(t);
   return formatTimestampLabel(t, nowMs, "mark time unavailable");
 }

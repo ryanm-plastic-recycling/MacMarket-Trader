@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import re
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -938,6 +938,65 @@ class OptionPaperLifecycleSummaryListResponse(BaseModel):
         "Paper-only options lifecycle listing. No broker execution, live routing, or replay persistence."
     )
     items: list[OptionPaperLifecycleSummary] = Field(default_factory=list)
+
+
+class OptionPaperStructureLegReview(BaseModel):
+    leg_id: int
+    option_symbol: str | None = None
+    underlying_symbol: str
+    expiration: date
+    option_type: Literal["call", "put"]
+    strike: float
+    side: Literal["long", "short"]
+    contracts: int
+    opening_premium: float | None = None
+    current_mark_premium: float | None = None
+    estimated_leg_unrealized_pnl: float | None = None
+    market_data_source: str | None = None
+    market_data_fallback_mode: bool = False
+    mark_as_of: datetime | str | int | None = None
+    missing_data: list[str] = Field(default_factory=list)
+
+
+class OptionPaperStructureReview(BaseModel):
+    structure_id: int
+    underlying_symbol: str
+    strategy_type: str
+    side: str | None = None
+    opened_at: datetime
+    expiration_date: date | None = None
+    days_to_expiration: int | None = None
+    contracts: int | None = None
+    quantity: int | None = None
+    multiplier_assumption: int | None = None
+    opening_debit_credit: float | None = None
+    opening_debit_credit_type: Literal["debit", "credit", "unknown"] = "unknown"
+    opening_commissions: float | None = None
+    current_mark_debit_credit: float | None = None
+    estimated_unrealized_pnl: float | None = None
+    estimated_unrealized_return_pct: float | None = None
+    max_profit: float | None = None
+    max_loss: float | None = None
+    breakevens: list[float] = Field(default_factory=list)
+    payoff_summary: str | None = None
+    risk_calendar: dict[str, Any] = Field(default_factory=dict)
+    expiration_status: str
+    action_classification: str
+    action_summary: str
+    warnings: list[str] = Field(default_factory=list)
+    missing_data: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    legs: list[OptionPaperStructureLegReview] = Field(default_factory=list)
+
+
+class OptionPaperStructureReviewListResponse(BaseModel):
+    market_mode: MarketMode = MarketMode.OPTIONS
+    paper_only: bool = True
+    review_only: bool = True
+    operator_disclaimer: str = (
+        "Paper-only options position review. No live routing, broker execution, automatic close, roll, or adjustment."
+    )
+    items: list[OptionPaperStructureReview] = Field(default_factory=list)
 
 
 class OptionPaperOpenStructureResponse(BaseModel):

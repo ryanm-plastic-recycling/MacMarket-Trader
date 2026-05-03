@@ -168,6 +168,23 @@ Current implementation:
 - No automatic scale-in, automatic close, broker routing, live trading,
   recommendation scoring change, or paper-order sizing change is introduced.
 
+Options parity note, 2026-05-03:
+Options paper structures now have a separate review-only endpoint and Orders
+section:
+
+```http
+GET /user/options/paper-structures/review
+GET /api/user/options/paper-structures/review
+```
+
+This does not reuse the equity position review shape because options require a
+structure/legs contract. The options review is paper-only, excludes closed
+structures by default, owner-scopes data to the current user, reports persisted
+opening debit/credit, commissions, payoff bounds, expiration status,
+risk-calendar context, and leg detail, and returns `mark_unavailable` when
+provider-backed option marks are unavailable. It does not auto-close, auto-roll,
+auto-adjust, auto-scale, route to a broker, or imply live trading.
+
 ## Scale-In Guardrails
 
 Scale-in is allowed only when deterministic risk rules explicitly approve it.

@@ -1,6 +1,6 @@
 # Phase 8D Options Paper Lifecycle Design
 
-Last updated: 2026-04-30
+Last updated: 2026-05-03
 
 ## Purpose
 
@@ -11,18 +11,113 @@ lifecycle support.
 `8D1` design, `8D2` schema foundation, `8D3` repository/service contracts,
 `8D4` open paper option structure behavior, `8D5` manual close paper
 option structure behavior, `8D6` `commission_per_contract` net-P&L
-modeling, `8D7` frontend operator UI, and `8D8` closure review/tests/docs
-alignment are now implemented. The dedicated options persistence branch
+modeling, `8D7` frontend operator UI, `8D8` closure review/tests/docs
+alignment, and the follow-on options position review/lifecycle integrity
+evidence pass are now implemented. The dedicated options persistence branch
 exists and now authorizes supported defined-risk structures to open and
 close manually through options-specific paper-only backend paths, with
 Recommendations hosting the first operator UI for the persisted paper
-lifecycle. It still does not authorize:
+lifecycle and Orders showing a review-only active options position review
+section. It still does not authorize:
 
 - options order staging
 - expiration settlement behavior
 - live routing
 - brokerage execution
+- automatic exits, rolling, or adjustments
 - automatic assignment or exercise handling
+
+## Options Position Review Implemented
+
+Backend:
+
+```http
+GET /user/options/paper-structures/review
+```
+
+Frontend proxy:
+
+```http
+GET /api/user/options/paper-structures/review
+```
+
+The endpoint returns one current-user open options paper structure review per
+persisted open structure. Closed structures, equity paper positions, and other
+users' structures are excluded by default. The response is intentionally
+structure/leg shaped instead of reusing the equity
+`/user/paper-positions/review` shape.
+
+Each structure review includes:
+
+- structure id, underlying, strategy type, side/direction, open time,
+  expiration, DTE, contracts, and multiplier assumption
+- opening debit/credit and opening commissions using the current user
+  `commission_per_contract`
+- persisted max profit, max loss, breakevens, and payoff summary
+- current mark and unrealized P&L fields when safe data exists
+- risk-calendar assessment for the underlying
+- expiration status
+- deterministic action classification and action summary
+- warnings, missing-data entries, provenance, and leg reviews
+
+Each leg review includes:
+
+- stable persisted leg id
+- underlying, expiration, right, strike, long/short side, contracts, and
+  opening premium
+- current mark premium and estimated leg P&L when safe data exists
+- market-data source/fallback/as-of fields and missing-data entries
+
+Current limitation:
+
+- provider-backed option leg marks are not implemented in the current market
+  data service
+- the review therefore returns `mark_unavailable`, sets current mark and
+  unrealized P&L fields to `null`, and includes `option_mark_data` in
+  `missing_data`
+- no stale, demo, or synthetic option prices are silently used
+
+Supported structures in this pass:
+
+- `long_call`
+- `long_put`
+- `vertical_debit_spread`
+- `iron_condor`
+
+Unsupported or malformed persisted structures return `review_unavailable` with
+missing-data entries such as `unsupported_strategy_type` or `option_legs`.
+
+Action classification precedence:
+
+1. `review_unavailable`
+2. `mark_unavailable`
+3. `expiration_due`
+4. `max_loss_near`
+5. `max_profit_near`
+6. `close_candidate`
+7. `adjustment_review`
+8. `expiration_warning`
+9. `profitable_hold`
+10. `losing_hold`
+11. `hold_valid`
+
+These are human review classifications only. They do not create close orders,
+rolls, adjustments, scale-ins, broker orders, or live trades.
+
+Risk-calendar behavior:
+
+- risk-calendar `restricted` or `no_trade` state warns against adding or
+  adjusting exposure
+- it does not recommend closing solely because new entries are blocked
+- missing event evidence is surfaced as warnings/missing data
+
+Options sandbox reset behavior:
+
+- the current equity paper sandbox reset remains equity scoped
+- persisted options paper orders, structures, legs, and trades are not reset
+  by `POST /user/paper/reset`
+- a future options reset path should be explicit, current-user scoped, and
+  separately tested before release
 
 ## Current repo anchors
 

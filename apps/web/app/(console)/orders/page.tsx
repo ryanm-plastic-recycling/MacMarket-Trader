@@ -111,6 +111,54 @@ type PaperPositionReview = {
   missing_data: string[];
 };
 
+type OptionLegReview = {
+  leg_id: number;
+  option_symbol: string | null;
+  underlying_symbol: string;
+  expiration: string | null;
+  option_type: "call" | "put" | string;
+  strike: number;
+  side: "long" | "short" | string;
+  contracts: number;
+  opening_premium: number | null;
+  current_mark_premium: number | null;
+  estimated_leg_unrealized_pnl: number | null;
+  market_data_source: string | null;
+  market_data_fallback_mode: boolean;
+  mark_as_of: string | number | null;
+  missing_data: string[];
+};
+
+type OptionStructureReview = {
+  structure_id: number;
+  underlying_symbol: string;
+  strategy_type: string;
+  side: string | null;
+  opened_at: string;
+  expiration_date: string | null;
+  days_to_expiration: number | null;
+  contracts: number | null;
+  quantity: number | null;
+  multiplier_assumption: number | null;
+  opening_debit_credit: number | null;
+  opening_debit_credit_type: "debit" | "credit" | "unknown" | string;
+  opening_commissions: number | null;
+  current_mark_debit_credit: number | null;
+  estimated_unrealized_pnl: number | null;
+  estimated_unrealized_return_pct: number | null;
+  max_profit: number | null;
+  max_loss: number | null;
+  breakevens: number[];
+  payoff_summary: string | null;
+  risk_calendar?: RiskCalendarPayload | null;
+  expiration_status: string;
+  action_classification: string;
+  action_summary: string;
+  warnings: string[];
+  missing_data: string[];
+  legs: OptionLegReview[];
+};
+
 type PaperTrade = {
   id: number;
   symbol: string;
@@ -224,6 +272,42 @@ function actionTone(action: string): "good" | "warn" | "bad" | "neutral" {
   return "neutral";
 }
 
+function optionActionTone(action: string): "good" | "warn" | "bad" | "neutral" {
+  if (["hold_valid", "profitable_hold"].includes(action)) return "good";
+  if (["review_unavailable", "expiration_due", "max_loss_near"].includes(action)) return "bad";
+  if (["mark_unavailable", "expiration_warning", "max_profit_near", "close_candidate", "adjustment_review", "losing_hold"].includes(action)) return "warn";
+  return "neutral";
+}
+
+function formatOptionStructureToken(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "Unknown";
+  return normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function formatOpeningDebitCredit(review: OptionStructureReview): string {
+  if (review.opening_debit_credit == null) return "Unavailable";
+  const label = review.opening_debit_credit_type === "credit" ? "Credit" : review.opening_debit_credit_type === "debit" ? "Debit" : "Open";
+  return `${label} ${formatMaybeDollars(review.opening_debit_credit)}`;
+}
+
+function formatBreakevenList(values: number[] | null | undefined): string {
+  const safeValues = (values ?? []).filter((value) => Number.isFinite(Number(value)));
+  return safeValues.length ? safeValues.map((value) => formatMaybeDollars(value)).join(" / ") : "Unavailable";
+}
+
+function formatDte(value: number | null | undefined): string {
+  if (!Number.isFinite(Number(value))) return "DTE unavailable";
+  const days = Number(value);
+  if (days < 0) return `${Math.abs(days)}d past expiration`;
+  if (days === 0) return "expires today";
+  return `${days}d`;
+}
+
 function tradeDirectionMultiplier(side: string | null | undefined): number {
   const normalized = String(side ?? "").trim().toLowerCase();
   return normalized === "short" || normalized === "sell" ? -1 : 1;
@@ -310,6 +394,7 @@ export default function Page() {
   const [closeResults, setCloseResults] = useState<Record<string, CloseResult>>({});
   const [positions, setPositions] = useState<PaperPosition[]>([]);
   const [positionReviews, setPositionReviews] = useState<PaperPositionReview[]>([]);
+  const [optionStructureReviews, setOptionStructureReviews] = useState<OptionStructureReview[]>([]);
   const [trades, setTrades] = useState<PaperTrade[]>([]);
   const [paperSettings, setPaperSettings] = useState<UserPaperSettings | null>(null);
   const [recommendationPayloadMap, setRecommendationPayloadMap] = useState<Record<string, RecommendationRow["payload"]>>({});
@@ -579,7 +664,7 @@ export default function Page() {
     setRiskCalendarConfirmed(false);
     setRiskCalendarOverrideReason("");
     await load();
-    await Promise.all([loadPositions(), loadPositionReviews(), loadTrades()]);
+    await Promise.all([loadPositions(), loadPositionReviews(), loadOptionStructureReviews(), loadTrades()]);
     detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     setBusy(false);
   }
@@ -619,6 +704,12 @@ export default function Page() {
     if (!authReady) return;
     const result = await fetchWorkflowApi<PaperPositionReview>("/api/user/paper-positions/review");
     if (result.ok) setPositionReviews(result.items);
+  }
+
+  async function loadOptionStructureReviews() {
+    if (!authReady) return;
+    const result = await fetchWorkflowApi<OptionStructureReview>("/api/user/options/paper-structures/review");
+    if (result.ok) setOptionStructureReviews(result.items);
   }
 
   async function loadTrades() {
@@ -677,7 +768,7 @@ export default function Page() {
       state: "success",
       message: `Position closed — net P&L ${result.data ? formatSignedDollars(result.data.net_pnl) : "—"}`,
     });
-    await Promise.all([loadPositions(), loadPositionReviews(), loadTrades(), loadPortfolioSummary()]);
+    await Promise.all([loadPositions(), loadPositionReviews(), loadOptionStructureReviews(), loadTrades(), loadPortfolioSummary()]);
     setBusy(false);
   }
 
@@ -696,7 +787,7 @@ export default function Page() {
     }
     setCancelingOrderId(null);
     setFeedback({ state: "success", message: "Order canceled." });
-    await Promise.all([load(), loadPositions(), loadPositionReviews()]);
+    await Promise.all([load(), loadPositions(), loadPositionReviews(), loadOptionStructureReviews()]);
     setBusy(false);
   }
 
@@ -715,7 +806,7 @@ export default function Page() {
     }
     setReopeningTradeId(null);
     setFeedback({ state: "success", message: "Position reopened." });
-    await Promise.all([loadPositions(), loadPositionReviews(), loadTrades(), loadPortfolioSummary()]);
+    await Promise.all([loadPositions(), loadPositionReviews(), loadOptionStructureReviews(), loadTrades(), loadPortfolioSummary()]);
     setBusy(false);
   }
 
@@ -746,7 +837,7 @@ export default function Page() {
     setSelectedOrderId(null);
     setResetConfirmInput("");
     setFeedback({ state: "success", message: "Paper sandbox reset complete." });
-    await Promise.all([load(), loadPositions(), loadPositionReviews(), loadTrades(), loadPortfolioSummary()]);
+    await Promise.all([load(), loadPositions(), loadPositionReviews(), loadOptionStructureReviews(), loadTrades(), loadPortfolioSummary()]);
     setBusy(false);
   }
 
@@ -755,6 +846,7 @@ export default function Page() {
     void load();
     void loadPositions();
     void loadPositionReviews();
+    void loadOptionStructureReviews();
     void loadTrades();
     void loadPaperSettings();
   }, [searchKey, authReady]);
@@ -1174,6 +1266,161 @@ export default function Page() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </Card>
+    </div>
+
+    <div id="options-position-review">
+    <Card title="Options Position Review">
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+        <StatusBadge tone="neutral">Review only</StatusBadge>
+        <StatusBadge tone="neutral">No automatic exits</StatusBadge>
+        <StatusBadge tone="neutral">No automatic rolling</StatusBadge>
+        <StatusBadge tone="neutral">No broker routing</StatusBadge>
+        <StatusBadge tone="neutral">Paper position management</StatusBadge>
+      </div>
+      {optionStructureReviews.length === 0 ? (
+        <EmptyState title="No active options structures to review" hint="Open paper-only options structures will appear here with payoff, expiration, leg, and risk-calendar context." />
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {optionStructureReviews.map((review) => (
+            <div
+              key={review.structure_id}
+              className="op-card"
+              style={{ padding: 12, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <strong>{review.underlying_symbol}</strong>
+                    <StatusBadge tone={optionActionTone(review.action_classification)}>{review.action_classification}</StatusBadge>
+                    <StatusBadge tone={review.current_mark_debit_credit == null ? "warn" : "good"}>
+                      {review.current_mark_debit_credit == null ? "Mark unavailable" : "Marked"}
+                    </StatusBadge>
+                  </div>
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem", marginTop: 4 }}>
+                    Structure #{review.structure_id} | {formatOptionStructureToken(review.strategy_type)} | {formatOptionStructureToken(review.side)}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div><strong>Expiration:</strong> {review.expiration_date ?? "Unavailable"}</div>
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                    {formatDte(review.days_to_expiration)} | {formatOptionStructureToken(review.expiration_status)}
+                  </div>
+                </div>
+              </div>
+              <div className="op-grid-4" style={{ marginTop: 10 }}>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Contracts</div>
+                  <strong>{review.contracts ?? "Unavailable"}</strong>
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                    multiplier {review.multiplier_assumption ?? "mixed/unavailable"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Opening debit/credit</div>
+                  <strong>{formatOpeningDebitCredit(review)}</strong>
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                    commissions {formatMaybeDollars(review.opening_commissions)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Current estimated mark</div>
+                  <strong>{review.current_mark_debit_credit != null ? formatMaybeDollars(review.current_mark_debit_credit) : "Mark unavailable"}</strong>
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                    P&L {review.estimated_unrealized_pnl != null ? formatSignedDollars(review.estimated_unrealized_pnl) : "Unavailable"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Risk calendar</div>
+                  <StatusBadge tone={riskTone(review.risk_calendar)}>
+                    {review.risk_calendar?.decision?.decision_state ?? "normal"}
+                  </StatusBadge>
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                    {review.risk_calendar?.decision?.risk_level ?? "normal"}
+                  </div>
+                </div>
+              </div>
+              <div className="op-grid-4" style={{ marginTop: 10 }}>
+                <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatMaybeDollars(review.max_profit)}</div>
+                <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatMaybeDollars(review.max_loss)}</div>
+                <div style={{ gridColumn: "span 2" }}><strong><MetricLabel label="Breakevens" term="breakeven" />:</strong> {formatBreakevenList(review.breakevens)}</div>
+              </div>
+              <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", fontSize: "0.86rem", lineHeight: 1.45 }}>
+                {review.action_summary}
+              </div>
+              {review.payoff_summary ? (
+                <div style={{ marginTop: 4, color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                  {review.payoff_summary}
+                </div>
+              ) : null}
+              {review.warnings.length ? (
+                <div style={{ marginTop: 8, color: "var(--op-warn, #f2a03f)", fontSize: "0.82rem" }}>
+                  Warnings: {review.warnings.join(" ")}
+                </div>
+              ) : null}
+              {review.missing_data.length ? (
+                <div style={{ marginTop: 6, color: "var(--op-warn, #f2a03f)", fontSize: "0.78rem" }}>
+                  Missing: {review.missing_data.join(", ")}
+                </div>
+              ) : null}
+              <details style={{ marginTop: 10 }}>
+                <summary>Leg details</summary>
+                <div style={{ marginTop: 6, overflowX: "auto", border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+                  <table className="op-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>leg</th>
+                        <th>side</th>
+                        <th>type</th>
+                        <th>strike</th>
+                        <th>expiry</th>
+                        <th>contracts</th>
+                        <th>opening premium</th>
+                        <th>current mark</th>
+                        <th><MetricLabel label="leg P&L" term="net_pnl" /></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {review.legs.length === 0 ? (
+                        <tr><td colSpan={9} style={{ color: "var(--op-muted, #7a8999)" }}>Leg details unavailable.</td></tr>
+                      ) : review.legs.map((leg) => (
+                        <tr key={leg.leg_id}>
+                          <td>
+                            #{leg.leg_id}
+                            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                              {leg.option_symbol ?? "option symbol unavailable"}
+                            </div>
+                          </td>
+                          <td>{formatOptionStructureToken(leg.side)}</td>
+                          <td>{formatOptionStructureToken(leg.option_type)}</td>
+                          <td>{leg.strike}</td>
+                          <td>{leg.expiration ?? "Unavailable"}</td>
+                          <td>{leg.contracts}</td>
+                          <td>{formatMaybeDollars(leg.opening_premium)}</td>
+                          <td>
+                            {leg.current_mark_premium != null ? formatMaybeDollars(leg.current_mark_premium) : "Mark unavailable"}
+                            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                              {leg.market_data_source ?? "unavailable"} | {formatMarkAsOfTime(leg.mark_as_of)}
+                            </div>
+                          </td>
+                          <td>
+                            {leg.estimated_leg_unrealized_pnl != null ? formatSignedDollars(leg.estimated_leg_unrealized_pnl) : "Unavailable"}
+                            {leg.missing_data.length ? (
+                              <div style={{ color: "var(--op-warn, #f2a03f)", fontSize: "0.76rem" }}>
+                                Missing: {leg.missing_data.join(", ")}
+                              </div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          ))}
         </div>
       )}
     </Card>
