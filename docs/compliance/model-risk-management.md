@@ -37,6 +37,20 @@ formal model/rules version register yet. Future releases should track:
 - Drift monitoring for provider changes, model changes, and strategy changes.
 - Human approval/sign-off for strategy/ranking changes.
 
+## Phase 12 Validation Foundation
+
+Phase 12 adds a model inventory and validation report template:
+
+- `docs/compliance/model-inventory.md`
+- `docs/compliance/model-validation-report-template.md`
+
+It also adds `scripts/run_model_validation.py`, a read-only local evidence
+generator that summarizes stored deterministic recommendations, replay runs,
+paper trades, attribution slices, and SPY/QQQ baseline data when local
+`daily_bars` coverage exists. Missing validation inputs are reported as
+`missing_data`; the script does not fabricate performance and does not call
+LLMs, live providers, broker APIs, or order-routing paths.
+
 ## Preliminary Evidence
 
 - Unit/integration tests for recommendation contracts.
@@ -45,10 +59,12 @@ formal model/rules version register yet. Future releases should track:
 - Active Paper Position Review tests.
 - Lifecycle integrity test.
 - LLM validation and fallback tests.
+- Model validation evidence generator tests.
 
 ## Remaining Gaps
 
 - No independently reviewed historical validation pack.
 - No formal model-change approval board.
 - No recurring drift report.
-- No production-grade model inventory.
+- No approved walk-forward validation dataset/version register.
+- No independent review of benchmark methodology.

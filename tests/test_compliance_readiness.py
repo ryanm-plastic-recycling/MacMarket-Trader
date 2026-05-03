@@ -30,6 +30,8 @@ def test_compliance_docs_exist_and_include_required_headings() -> None:
         "change-release-management.md": ["Release Gates", "Rollback Plan Template"],
         "backup-restore-dr-plan.md": ["Backup Expectations", "Restore Drill Expectations"],
         "model-risk-management.md": ["LLM Boundary", "Validation Evidence Needed"],
+        "model-inventory.md": ["Setup Engines", "LLM Explanation Boundary", "Current Versioning Gaps"],
+        "model-validation-report-template.md": ["Objective", "Baseline Comparison", "Approval / Signoff"],
         "regulatory-boundary-memo.md": ["Current Boundary", "Required Review Before Expansion"],
         "acquisition-readiness.md": ["Buyer Evidence Packet Checklist", "Not Yet Audit-Ready"],
     }

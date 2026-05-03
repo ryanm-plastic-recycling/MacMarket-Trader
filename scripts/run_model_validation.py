@@ -41,7 +41,7 @@ def redact_text(value: str) -> str:
 
 def redact_payload(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: redact_payload(item) for key, item in value.items()}
+        return {redact_text(str(key)): redact_payload(item) for key, item in value.items()}
     if isinstance(value, list):
         return [redact_payload(item) for item in value]
     if isinstance(value, str):
@@ -64,6 +64,11 @@ def safe_float(value: Any) -> float | None:
 def safe_bool(value: Any) -> bool | None:
     if isinstance(value, bool):
         return value
+    if isinstance(value, int):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
     if isinstance(value, str):
         lowered = value.strip().lower()
         if lowered in {"true", "1", "yes", "approved"}:

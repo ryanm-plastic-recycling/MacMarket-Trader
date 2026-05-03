@@ -2,6 +2,33 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Phase 12 Model Validation And Performance Evidence Foundation
+Phase 12 adds the first model-validation evidence layer without changing
+strategy math, recommendation ranking, market-data behavior, paper lifecycle
+behavior, broker routing, live trading, or automated exits. The new model
+inventory documents setup engines, deterministic ranking/scoring, risk
+sizing, Market Risk Calendar, Active Paper Position Review, LLM explanation
+boundaries, and versioning gaps. A validation report template now defines the
+expected objective, data period, universe, timeframes, provider/source,
+session policy, baseline comparison, walk-forward method, replay method,
+metrics, limitations, and signoff sections.
+
+A read-only local validation script now writes
+`.tmp/evidence/model-validation-YYYYMMDD-HHMMSS.json` and `.md`. It summarizes
+stored deterministic recommendations, replay runs, paper trades, SPY/QQQ
+baseline data when local `daily_bars` coverage exists, attribution by setup,
+regime, catalyst type, timeframe, risk-calendar state, provider source, and
+already-open vs fresh setup. Missing inputs are reported as `missing_data`;
+the script does not fabricate performance and does not call LLMs, live market
+providers, broker APIs, or order-routing paths.
+
+This foundation is preliminary internal validation evidence only. Remaining
+gaps include a dated point-in-time validation dataset, walk-forward split
+definitions, benchmark capital assumptions, provider/source coverage reports,
+independent benchmark review, model/rules version registers, drift monitoring,
+and securities/legal review before any public or commercial performance
+claims.
+
 ## 2026-05-03 Update - Phase 11B Operational Evidence Automation
 Phase 11B operationalizes the compliance-readiness foundation into repeatable
 local and CI-style evidence. Reusable scripts now scan for conflict markers,

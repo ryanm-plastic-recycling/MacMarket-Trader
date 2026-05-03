@@ -22,6 +22,8 @@ MacMarket-Trader's current product boundary remains:
 - [Change And Release Management](change-release-management.md)
 - [Backup, Restore, And DR Plan](backup-restore-dr-plan.md)
 - [Model Risk Management](model-risk-management.md)
+- [Model Inventory](model-inventory.md)
+- [Model Validation Report Template](model-validation-report-template.md)
 - [Regulatory Boundary Memo](regulatory-boundary-memo.md)
 - [Acquisition Readiness](acquisition-readiness.md)
 - [Evidence Manifest Template](evidence-manifest-template.md)
@@ -52,6 +54,7 @@ Useful commands:
 python scripts/check_conflict_markers.py --root .
 python scripts/scan_secrets.py --root .
 python scripts/check_release_artifact.py --source .
+python scripts/run_model_validation.py --database .\macmarket_trader.db
 python scripts/generate_release_evidence.py
 python scripts/backup_sqlite.py --database .\macmarket_trader.db
 python scripts/verify_sqlite_restore.py --database .\macmarket_trader.db

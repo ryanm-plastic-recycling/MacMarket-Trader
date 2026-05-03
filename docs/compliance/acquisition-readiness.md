@@ -29,6 +29,8 @@ certification.
 - Incident response plan.
 - Regulatory boundary memo.
 - Model risk management memo.
+- Model inventory.
+- Model validation report template and latest model-validation evidence.
 - Clean source archive produced by `scripts/create_clean_release_archive.py`.
 
 ## Not Yet Audit-Ready
@@ -37,7 +39,7 @@ certification.
 - No formal vendor DPAs/SOC report collection.
 - No recurring restore drill history.
 - No production SLO or monitoring history.
-- No independent model validation report.
+- No independent model validation report or buyer-reviewed benchmark packet.
 - No legal memo from securities counsel.
 
 ## Acquisition Diligence Notes
@@ -47,3 +49,5 @@ certification.
 - Provide sanitized evidence first; share runtime data only under a diligence
   data-room process.
 - Clearly label paper-only and no broker-routing scope in every product demo.
+- Treat `scripts/run_model_validation.py` output as a preliminary internal
+  evidence packet, not as live trading performance or a public marketing claim.

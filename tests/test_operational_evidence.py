@@ -50,6 +50,26 @@ def test_release_gate_produces_json_markdown_and_manifest_in_dry_run(tmp_path: P
     assert manifest["responsible_owner_placeholder"] == "TBD"
 
 
+def test_release_gate_resolves_command_shims(monkeypatch) -> None:
+    module = _load_script("run_release_gate.py")
+
+    def fake_which(name: str) -> str | None:
+        if name == "npm":
+            return r"C:\Program Files\nodejs\npm.cmd"
+        return None
+
+    monkeypatch.setattr(module.shutil, "which", fake_which)
+
+    assert module.resolve_command_args(["npm", "test"]) == [
+        r"C:\Program Files\nodejs\npm.cmd",
+        "test",
+    ]
+    assert module.resolve_command_args(["definitely-missing", "--version"]) == [
+        "definitely-missing",
+        "--version",
+    ]
+
+
 def test_secret_scan_redacts_values(tmp_path: Path) -> None:
     module = _load_script("scan_secrets.py")
     secret = "sk-proj-" + ("a" * 32)

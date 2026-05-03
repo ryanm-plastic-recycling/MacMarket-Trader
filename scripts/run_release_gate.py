@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -58,10 +59,20 @@ def redact_payload(value: Any) -> Any:
     return value
 
 
+def resolve_command_args(args: list[str]) -> list[str]:
+    if not args:
+        return args
+    resolved = shutil.which(args[0])
+    if not resolved:
+        return args
+    return [resolved, *args[1:]]
+
+
 def run_command(args: list[str], *, cwd: Path, timeout: int) -> dict[str, object]:
+    resolved_args = resolve_command_args(args)
     try:
         completed = subprocess.run(
-            args,
+            resolved_args,
             cwd=str(cwd),
             text=True,
             capture_output=True,
@@ -71,6 +82,7 @@ def run_command(args: list[str], *, cwd: Path, timeout: int) -> dict[str, object
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {
             "command": args,
+            "resolved_command": resolved_args,
             "available": False,
             "returncode": None,
             "stdout": "",
@@ -78,6 +90,7 @@ def run_command(args: list[str], *, cwd: Path, timeout: int) -> dict[str, object
         }
     return {
         "command": args,
+        "resolved_command": resolved_args,
         "available": True,
         "returncode": completed.returncode,
         "stdout": redact_text(completed.stdout.strip()[-6000:]),

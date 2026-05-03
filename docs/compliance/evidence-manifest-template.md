@@ -23,6 +23,7 @@ review. The runtime manifest is generated at `.tmp/evidence/evidence-manifest.js
 | Browser smoke screenshots | Screenshot directory path | QA/operator owner | TBD | TBD | Attach or link latest local/deployed smoke run. |
 | Security audit results | Audit report path or issue link | Security owner | TBD | TBD | Include findings, fixes, residual risk. |
 | Lifecycle audit results | Test output or evidence report | Backend owner | TBD | TBD | Covers recommendation to paper lifecycle and reset isolation. |
+| Model validation evidence | `.tmp/evidence/model-validation-*.json` and `.md` | Model risk owner | TBD | TBD | Preliminary paper/research-only validation metrics and missing-data report. |
 | Provider health verification | Provider Health capture or report | Operations owner | TBD | TBD | Must not expose full keys. |
 | OpenAI probe verification | Provider Health LLM probe capture | Model risk owner | TBD | TBD | Only when LLM behavior is in scope. |
 | Clean archive artifact | ZIP path or dry-run report | Engineering owner | TBD | TBD | Must exclude local state, secrets, DBs, logs, and generated artifacts. |
