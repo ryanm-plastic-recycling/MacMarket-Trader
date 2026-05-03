@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from macmarket_trader.api.main import app
+from macmarket_trader.api.routes import admin as admin_routes
+from macmarket_trader.data.providers.market_data import OptionContractSnapshot, build_polygon_option_ticker, unavailable_option_contract_snapshot
 from macmarket_trader.domain.models import AppUserModel
 from macmarket_trader.domain.time import utc_now
 from macmarket_trader.storage.db import SessionLocal
@@ -89,6 +91,67 @@ def _close_payload(open_payload: dict[str, object]) -> dict[str, object]:
     }
 
 
+class _StubOptionMarkService:
+    def __init__(self, snapshots: dict[str, OptionContractSnapshot]) -> None:
+        self.snapshots = snapshots
+
+    def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
+        del underlying_symbol
+        return self.snapshots.get(
+            option_symbol,
+            unavailable_option_contract_snapshot(
+                underlying_symbol="UNKNOWN",
+                option_symbol=option_symbol,
+                provider="polygon",
+                missing_fields=["option_mark_data"],
+            ),
+        )
+
+
+def _option_symbol(*, underlying: str, expiration: str, option_type: str, strike: float) -> str:
+    return build_polygon_option_ticker(
+        underlying_symbol=underlying,
+        expiration=datetime.fromisoformat(expiration).date(),
+        option_type=option_type,
+        strike=strike,
+    )
+
+
+def _snapshot(
+    *,
+    underlying: str,
+    option_symbol: str,
+    mark: float | None,
+    method: str = "quote_mid",
+    stale: bool = False,
+    missing: list[str] | None = None,
+    provider_error: str | None = None,
+    iv: float | None = 0.31,
+) -> OptionContractSnapshot:
+    return OptionContractSnapshot(
+        option_symbol=option_symbol,
+        underlying_symbol=underlying,
+        provider="polygon",
+        endpoint=f"/v3/snapshot/options/{underlying}/{option_symbol}",
+        mark_price=mark,
+        mark_method=method if mark is not None else "unavailable",
+        as_of=datetime(2026, 5, 3, 20, 0, tzinfo=UTC) if mark is not None else None,
+        stale=stale,
+        bid=mark - 0.05 if mark is not None else None,
+        ask=mark + 0.05 if mark is not None else None,
+        latest_trade_price=mark,
+        implied_volatility=iv,
+        open_interest=1200,
+        delta=0.45,
+        gamma=0.04,
+        theta=-0.08,
+        vega=0.12,
+        underlying_price=205.5,
+        missing_fields=missing or ([] if mark is not None else ["option_mark_data"]),
+        provider_error=provider_error,
+    )
+
+
 def test_options_position_review_returns_open_structure_with_leg_shape_and_mark_unavailable() -> None:
     _approve_user(
         headers=_USER_AUTH,
@@ -126,7 +189,192 @@ def test_options_position_review_returns_open_structure_with_leg_shape_and_mark_
     assert review["legs"][0]["side"] == "long"
     assert review["legs"][0]["option_type"] == "call"
     assert review["legs"][0]["current_mark_premium"] is None
-    assert review["legs"][0]["missing_data"] == ["option_mark_data"]
+    assert "option_mark_data" in review["legs"][0]["missing_data"]
+    assert "provider_option_snapshot_not_supported" in review["legs"][0]["missing_data"]
+
+
+def test_options_position_review_uses_provider_quote_mid_marks_for_structure_pnl(monkeypatch) -> None:
+    _approve_user(
+        headers=_USER_AUTH,
+        external_auth_user_id="clerk_user",
+        commission_per_contract=0.65,
+    )
+    opened = _open_vertical_position(symbol="goog", quantity=1, days_to_expiration=30)
+    long_symbol = _option_symbol(
+        underlying="GOOG",
+        expiration=opened["legs"][0]["expiration"],
+        option_type="call",
+        strike=205.0,
+    )
+    short_symbol = _option_symbol(
+        underlying="GOOG",
+        expiration=opened["legs"][1]["expiration"],
+        option_type="call",
+        strike=215.0,
+    )
+    monkeypatch.setattr(
+        admin_routes,
+        "market_data_service",
+        _StubOptionMarkService(
+            {
+                long_symbol: _snapshot(underlying="GOOG", option_symbol=long_symbol, mark=5.2),
+                short_symbol: _snapshot(underlying="GOOG", option_symbol=short_symbol, mark=1.0),
+            }
+        ),
+    )
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    review = response.json()["items"][0]
+
+    assert review["action_classification"] == "profitable_hold"
+    assert review["current_mark_debit_credit"] == 4.2
+    assert review["current_mark_debit_credit_type"] == "debit"
+    assert review["estimated_unrealized_gross_pnl"] == 160.0
+    assert review["estimated_unrealized_pnl"] == 157.4
+    assert review["estimated_total_commissions"] == 2.6
+    assert review["estimated_unrealized_return_pct"] == 60.54
+    assert review["provenance"]["provider_option_marks_available"] is True
+    assert "option_mark_data" not in review["missing_data"]
+    assert review["legs"][0]["current_mark_premium"] == 5.2
+    assert review["legs"][0]["mark_method"] == "quote_mid"
+    assert review["legs"][0]["implied_volatility"] == 0.31
+    assert review["legs"][0]["open_interest"] == 1200
+    assert review["legs"][0]["delta"] == 0.45
+
+
+def test_options_position_review_uses_last_trade_mark_method(monkeypatch) -> None:
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    opened = _open_vertical_position(symbol="goog", quantity=1, days_to_expiration=30)
+    long_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][0]["expiration"], option_type="call", strike=205.0)
+    short_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][1]["expiration"], option_type="call", strike=215.0)
+    monkeypatch.setattr(
+        admin_routes,
+        "market_data_service",
+        _StubOptionMarkService(
+            {
+                long_symbol: _snapshot(underlying="GOOG", option_symbol=long_symbol, mark=4.7, method="last_trade"),
+                short_symbol: _snapshot(underlying="GOOG", option_symbol=short_symbol, mark=1.4, method="last_trade"),
+            }
+        ),
+    )
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    review = response.json()["items"][0]
+
+    assert review["action_classification"] == "profitable_hold"
+    assert [leg["mark_method"] for leg in review["legs"]] == ["last_trade", "last_trade"]
+    assert review["estimated_unrealized_pnl"] == 67.4
+
+
+def test_options_position_review_keeps_structure_pnl_unavailable_when_any_leg_mark_missing(monkeypatch) -> None:
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    opened = _open_vertical_position(symbol="goog", quantity=1, days_to_expiration=30)
+    long_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][0]["expiration"], option_type="call", strike=205.0)
+    short_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][1]["expiration"], option_type="call", strike=215.0)
+    monkeypatch.setattr(
+        admin_routes,
+        "market_data_service",
+        _StubOptionMarkService(
+            {
+                long_symbol: _snapshot(underlying="GOOG", option_symbol=long_symbol, mark=5.2),
+                short_symbol: _snapshot(underlying="GOOG", option_symbol=short_symbol, mark=None),
+            }
+        ),
+    )
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    review = response.json()["items"][0]
+
+    assert review["action_classification"] == "mark_unavailable"
+    assert review["current_mark_debit_credit"] is None
+    assert review["estimated_unrealized_pnl"] is None
+    assert "option_mark_data" in review["missing_data"]
+
+
+def test_options_position_review_stale_snapshot_is_not_used_for_structure_pnl(monkeypatch) -> None:
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    opened = _open_vertical_position(symbol="goog", quantity=1, days_to_expiration=30)
+    long_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][0]["expiration"], option_type="call", strike=205.0)
+    short_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][1]["expiration"], option_type="call", strike=215.0)
+    monkeypatch.setattr(
+        admin_routes,
+        "market_data_service",
+        _StubOptionMarkService(
+            {
+                long_symbol: _snapshot(underlying="GOOG", option_symbol=long_symbol, mark=5.2, stale=True, missing=["stale_option_mark"]),
+                short_symbol: _snapshot(underlying="GOOG", option_symbol=short_symbol, mark=1.0),
+            }
+        ),
+    )
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    review = response.json()["items"][0]
+
+    assert review["action_classification"] == "mark_unavailable"
+    assert review["estimated_unrealized_pnl"] is None
+    assert "stale_option_mark" in review["missing_data"]
+    assert review["legs"][0]["stale"] is True
+
+
+def test_options_position_review_classifies_max_profit_near_when_marks_support_it(monkeypatch) -> None:
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    opened = _open_vertical_position(symbol="goog", quantity=1, days_to_expiration=30)
+    long_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][0]["expiration"], option_type="call", strike=205.0)
+    short_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][1]["expiration"], option_type="call", strike=215.0)
+    monkeypatch.setattr(
+        admin_routes,
+        "market_data_service",
+        _StubOptionMarkService(
+            {
+                long_symbol: _snapshot(underlying="GOOG", option_symbol=long_symbol, mark=9.9),
+                short_symbol: _snapshot(underlying="GOOG", option_symbol=short_symbol, mark=0.1),
+            }
+        ),
+    )
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    review = response.json()["items"][0]
+
+    assert review["action_classification"] == "max_profit_near"
+    assert review["estimated_unrealized_pnl"] == 717.4
+
+
+def test_options_position_review_sanitizes_provider_permission_errors(monkeypatch) -> None:
+    secret = "polygon-review-secret"
+    monkeypatch.setattr(admin_routes.settings, "polygon_api_key", secret)
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    opened = _open_vertical_position(symbol="goog", quantity=1, days_to_expiration=30)
+    long_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][0]["expiration"], option_type="call", strike=205.0)
+    short_symbol = _option_symbol(underlying="GOOG", expiration=opened["legs"][1]["expiration"], option_type="call", strike=215.0)
+    monkeypatch.setattr(
+        admin_routes,
+        "market_data_service",
+        _StubOptionMarkService(
+            {
+                long_symbol: _snapshot(
+                    underlying="GOOG",
+                    option_symbol=long_symbol,
+                    mark=None,
+                    provider_error=f"not entitled apiKey={secret}",
+                    missing=["provider_option_snapshot_not_entitled"],
+                ),
+                short_symbol: _snapshot(underlying="GOOG", option_symbol=short_symbol, mark=1.0),
+            }
+        ),
+    )
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    serialized = response.text
+
+    assert secret not in serialized
+    assert "not entitled" in serialized
+    assert "provider_option_snapshot_not_entitled" in serialized
 
 
 def test_options_position_review_adds_expiration_warning_without_auto_close() -> None:

@@ -2,6 +2,32 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Provider-Backed Options Marks For Review
+Options Position Review now uses provider-backed Polygon/Massive option
+contract snapshots when available. The backend market-data service supports
+`/v3/snapshot/options/{underlying}/{option}` lookups, caches snapshot reads,
+and derives leg marks using deterministic precedence: valid bid/ask midpoint,
+then valid latest trade, then prior/day close only as an explicitly stale
+fallback, otherwise unavailable. Zero, null, stale, or permission-blocked data
+is not treated as a live mark.
+
+The options review endpoint now returns per-leg mark method, stale flag, IV,
+open interest, provider-supplied Greeks, underlying price, source, as-of, and
+missing-data context. When every required leg has a fresh provider mark, the
+structure review computes current debit/credit, gross and net unrealized P&L,
+estimated total commissions, return percentage, and mark-enabled
+classifications such as `profitable_hold`, `max_profit_near`, and
+`max_loss_near`. If any required leg mark is missing or stale, structure-level
+P&L remains unavailable and the action stays `mark_unavailable`.
+
+Provider Health now includes an `options_data` readiness entry that separates
+configuration and probe state and states that options data readiness only
+supports paper Options Position Review marks. It does not enable live trading,
+broker routing, automatic exits, rolls, or adjustments. Orders now displays
+option leg mark method, IV/OI, provider-supplied Greeks, structure mark, and
+estimated P&L when available while preserving the review-only/no-routing
+operator labels.
+
 ## 2026-05-03 Update - Options Position Review And Lifecycle Integrity Evidence
 Options paper structures now have a review-only active position review layer
 and a local lifecycle integrity audit without changing strategy math,

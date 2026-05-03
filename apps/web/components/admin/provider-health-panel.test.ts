@@ -30,6 +30,9 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("Probe OK");
     expect(source).toContain("Probe failed");
     expect(source).toContain("probe_llm=true");
+    expect(source).toContain("sample option");
+    expect(source).toContain("sample_underlying");
+    expect(source).toContain("sample_option_symbol");
     expect(source).not.toContain("live probe:");
     expect(source).not.toContain("live probe: configured");
     expect(source).not.toContain("OPENAI_API_KEY");

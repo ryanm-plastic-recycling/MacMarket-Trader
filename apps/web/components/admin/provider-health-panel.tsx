@@ -22,6 +22,8 @@ type ProviderHealth = {
     configured?: boolean;
     feed?: string;
     sample_symbol?: string;
+    sample_underlying?: string | null;
+    sample_option_symbol?: string | null;
     latency_ms?: number | null;
     last_success_at?: string | null;
     selected_provider?: string;
@@ -274,6 +276,8 @@ export function ProviderHealthPanel() {
                   </div>
                 ) : null}
                 {p.feed ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>feed: </span>{p.feed}</div> : null}
+                {p.sample_underlying ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample underlying: </span>{p.sample_underlying}</div> : null}
+                {p.sample_option_symbol ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample option: </span>{p.sample_option_symbol}</div> : null}
                 {p.latency_ms != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>latency: </span>{p.latency_ms} ms</div> : null}
                 {p.last_success_at ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>last success: </span>{p.last_success_at}</div> : null}
                 {p.failure_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>failure: {p.failure_reason}</div> : null}

@@ -122,10 +122,19 @@ type OptionLegReview = {
   contracts: number;
   opening_premium: number | null;
   current_mark_premium: number | null;
+  mark_method: string;
+  implied_volatility: number | null;
+  open_interest: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  underlying_price: number | null;
   estimated_leg_unrealized_pnl: number | null;
   market_data_source: string | null;
   market_data_fallback_mode: boolean;
   mark_as_of: string | number | null;
+  stale: boolean;
   missing_data: string[];
 };
 
@@ -144,6 +153,10 @@ type OptionStructureReview = {
   opening_debit_credit_type: "debit" | "credit" | "unknown" | string;
   opening_commissions: number | null;
   current_mark_debit_credit: number | null;
+  current_mark_debit_credit_type: "debit" | "credit" | "unknown" | string;
+  estimated_unrealized_gross_pnl: number | null;
+  estimated_closing_commissions: number | null;
+  estimated_total_commissions: number | null;
   estimated_unrealized_pnl: number | null;
   estimated_unrealized_return_pct: number | null;
   max_profit: number | null;
@@ -306,6 +319,15 @@ function formatDte(value: number | null | undefined): string {
   if (days < 0) return `${Math.abs(days)}d past expiration`;
   if (days === 0) return "expires today";
   return `${days}d`;
+}
+
+function formatMaybeDecimal(value: number | null | undefined, digits = 2): string {
+  return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "Unavailable";
+}
+
+function formatMaybeIv(value: number | null | undefined): string {
+  if (!Number.isFinite(Number(value))) return "IV unavailable";
+  return `${(Number(value) * 100).toFixed(1)}% IV`;
 }
 
 function tradeDirectionMultiplier(side: string | null | undefined): number {
@@ -1327,9 +1349,14 @@ export default function Page() {
                 </div>
                 <div>
                   <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Current estimated mark</div>
-                  <strong>{review.current_mark_debit_credit != null ? formatMaybeDollars(review.current_mark_debit_credit) : "Mark unavailable"}</strong>
+                  <strong>
+                    {review.current_mark_debit_credit != null
+                      ? `${formatOptionStructureToken(review.current_mark_debit_credit_type)} ${formatMaybeDollars(review.current_mark_debit_credit)}`
+                      : "Mark unavailable"}
+                  </strong>
                   <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
-                    P&L {review.estimated_unrealized_pnl != null ? formatSignedDollars(review.estimated_unrealized_pnl) : "Unavailable"}
+                    Net P&L {review.estimated_unrealized_pnl != null ? formatSignedDollars(review.estimated_unrealized_pnl) : "Unavailable"}
+                    {review.estimated_unrealized_return_pct != null ? ` | ${review.estimated_unrealized_return_pct.toFixed(2)}%` : ""}
                   </div>
                 </div>
                 <div>
@@ -1347,6 +1374,12 @@ export default function Page() {
                 <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatMaybeDollars(review.max_loss)}</div>
                 <div style={{ gridColumn: "span 2" }}><strong><MetricLabel label="Breakevens" term="breakeven" />:</strong> {formatBreakevenList(review.breakevens)}</div>
               </div>
+              {review.estimated_unrealized_pnl != null ? (
+                <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                  Gross {review.estimated_unrealized_gross_pnl != null ? formatSignedDollars(review.estimated_unrealized_gross_pnl) : "Unavailable"}
+                  {" "} | Estimated total commissions {formatMaybeDollars(review.estimated_total_commissions)}
+                </div>
+              ) : null}
               <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", fontSize: "0.86rem", lineHeight: 1.45 }}>
                 {review.action_summary}
               </div>
@@ -1379,12 +1412,15 @@ export default function Page() {
                         <th>contracts</th>
                         <th>opening premium</th>
                         <th>current mark</th>
+                        <th>method / source</th>
+                        <th>IV / OI</th>
+                        <th>Greeks</th>
                         <th><MetricLabel label="leg P&L" term="net_pnl" /></th>
                       </tr>
                     </thead>
                     <tbody>
                       {review.legs.length === 0 ? (
-                        <tr><td colSpan={9} style={{ color: "var(--op-muted, #7a8999)" }}>Leg details unavailable.</td></tr>
+                        <tr><td colSpan={12} style={{ color: "var(--op-muted, #7a8999)" }}>Leg details unavailable.</td></tr>
                       ) : review.legs.map((leg) => (
                         <tr key={leg.leg_id}>
                           <td>
@@ -1401,8 +1437,26 @@ export default function Page() {
                           <td>{formatMaybeDollars(leg.opening_premium)}</td>
                           <td>
                             {leg.current_mark_premium != null ? formatMaybeDollars(leg.current_mark_premium) : "Mark unavailable"}
+                            {leg.stale ? (
+                              <div style={{ color: "var(--op-warn, #f2a03f)", fontSize: "0.76rem" }}>stale</div>
+                            ) : null}
+                          </td>
+                          <td>
+                            {formatOptionStructureToken(leg.mark_method)}
                             <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
                               {leg.market_data_source ?? "unavailable"} | {formatMarkAsOfTime(leg.mark_as_of)}
+                            </div>
+                          </td>
+                          <td>
+                            {formatMaybeIv(leg.implied_volatility)}
+                            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                              OI {Number.isFinite(Number(leg.open_interest)) ? Number(leg.open_interest).toLocaleString("en-US") : "unavailable"}
+                            </div>
+                          </td>
+                          <td>
+                            <div>Delta {formatMaybeDecimal(leg.delta, 3)} | Gamma {formatMaybeDecimal(leg.gamma, 3)}</div>
+                            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                              Theta {formatMaybeDecimal(leg.theta, 3)} | Vega {formatMaybeDecimal(leg.vega, 3)}
                             </div>
                           </td>
                           <td>

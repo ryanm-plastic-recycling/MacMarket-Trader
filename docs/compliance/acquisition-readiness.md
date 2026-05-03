@@ -10,6 +10,7 @@ certification.
 - Roadmap/status tracker in `docs/roadmap-status.md`.
 - Auth/approval model documented and tested.
 - Provider Health separates configuration and probe state.
+- Provider Health includes options-data readiness for paper review marks.
 - LLM explanation-only boundary documented and tested.
 - Paper equity lifecycle integrity test exists.
 - Options position review and options lifecycle integrity tests exist.
@@ -52,6 +53,7 @@ certification.
 - Clearly label paper-only and no broker-routing scope in every product demo.
 - Treat `scripts/run_model_validation.py` output as a preliminary internal
   evidence packet, not as live trading performance or a public marketing claim.
-- Label options review evidence as paper-only and mark-limited until
-  provider-backed option marks and any future Greeks/valuation model are
-  validated.
+- Label options review evidence as paper-only and provider-mark dependent.
+  Current options marks use provider snapshots when plan coverage exists; no
+  Black-Scholes model, internally calculated Greeks, live routing, automatic
+  exits, rolls, or adjustments are included.

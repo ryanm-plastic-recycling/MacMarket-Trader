@@ -41,6 +41,97 @@ RTH_BUCKETS_BY_TIMEFRAME = {
 }
 
 
+def _finite_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in {float("inf"), float("-inf")}:
+        return None
+    return number
+
+
+def _positive_float(value: Any) -> float | None:
+    number = _finite_float(value)
+    if number is None or number <= 0:
+        return None
+    return number
+
+
+def _timestamp_from_provider_value(value: Any) -> datetime | None:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    # Polygon snapshot timestamps may arrive as nanoseconds, milliseconds, or seconds.
+    if numeric > 10_000_000_000_000:
+        numeric = numeric / 1_000_000_000
+    elif numeric > 10_000_000_000:
+        numeric = numeric / 1_000
+    try:
+        return datetime.fromtimestamp(numeric, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _timestamp_from_provider_object(payload: dict[str, Any], *keys: str) -> datetime | None:
+    for key in keys:
+        value = payload.get(key)
+        parsed = _timestamp_from_provider_value(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _is_stale(as_of: datetime | None, *, now: datetime | None = None) -> bool:
+    if as_of is None:
+        return False
+    reference = now or datetime.now(tz=UTC)
+    return (reference - as_of.astimezone(UTC)).total_seconds() > settings.market_data_option_snapshot_stale_seconds
+
+
+def build_polygon_option_ticker(
+    *,
+    underlying_symbol: str,
+    expiration: date,
+    option_type: str,
+    strike: float,
+) -> str:
+    """Build Polygon's OCC-style option ticker, e.g. O:AAPL260515C00205000."""
+    underlying = "".join(ch for ch in underlying_symbol.upper().strip() if ch.isalnum())
+    right = "C" if str(option_type).strip().lower().startswith("c") else "P"
+    strike_mills = int(round(float(strike) * 1000))
+    return f"O:{underlying}{expiration.strftime('%y%m%d')}{right}{strike_mills:08d}"
+
+
+def unavailable_option_contract_snapshot(
+    *,
+    underlying_symbol: str,
+    option_symbol: str,
+    provider: str,
+    endpoint: str = "unavailable",
+    missing_fields: list[str] | None = None,
+    provider_error: str | None = None,
+    fallback_mode: bool = False,
+    stale: bool = False,
+) -> OptionContractSnapshot:
+    return OptionContractSnapshot(
+        option_symbol=option_symbol.upper().strip(),
+        underlying_symbol=underlying_symbol.upper().strip(),
+        provider=provider,
+        endpoint=endpoint,
+        mark_price=None,
+        mark_method="unavailable",
+        as_of=None,
+        stale=stale,
+        fallback_mode=fallback_mode,
+        missing_fields=missing_fields or ["option_mark_data"],
+        provider_error=provider_error,
+    )
+
+
 def normalize_polygon_ticker(symbol: str) -> str:
     """Map known index symbols to their Polygon I: prefixed form; pass all others through unchanged."""
     upper = symbol.upper()
@@ -159,6 +250,32 @@ class MarketProviderHealth:
     last_success_at: datetime | None = None
 
 
+@dataclass
+class OptionContractSnapshot:
+    option_symbol: str
+    underlying_symbol: str
+    provider: str
+    endpoint: str
+    mark_price: float | None
+    mark_method: str
+    as_of: datetime | None
+    stale: bool
+    bid: float | None = None
+    ask: float | None = None
+    latest_trade_price: float | None = None
+    prior_close: float | None = None
+    implied_volatility: float | None = None
+    open_interest: int | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    underlying_price: float | None = None
+    fallback_mode: bool = False
+    missing_fields: list[str] | None = None
+    provider_error: str | None = None
+
+
 class TTLCache:
     def __init__(self) -> None:
         self._store: dict[str, tuple[float, Any]] = {}
@@ -185,6 +302,9 @@ class MarketDataProvider:
         raise NotImplementedError
 
     def fetch_latest_snapshot(self, symbol: str, timeframe: str) -> MarketSnapshot:
+        raise NotImplementedError
+
+    def fetch_option_contract_snapshot(self, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
         raise NotImplementedError
 
     def health_check(self, sample_symbol: str) -> MarketProviderHealth:
@@ -632,6 +752,7 @@ class PolygonMarketDataProvider(MarketDataProvider):
 
         def _row(r: dict[str, Any]) -> dict[str, Any]:
             return {
+                "ticker": r.get("ticker"),
                 "strike": r.get("strike_price"),
                 "expiry": r.get("expiration_date"),
                 "last_price": None,
@@ -649,6 +770,95 @@ class PolygonMarketDataProvider(MarketDataProvider):
             "data_as_of": today,
             "source": "polygon_options_basic",
         }
+
+    def fetch_option_contract_snapshot(self, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
+        underlying = underlying_symbol.upper().strip()
+        option_ticker = option_symbol.upper().strip()
+        endpoint = f"/v3/snapshot/options/{underlying}/{option_ticker}"
+        payload = self._request_json(endpoint, {})
+        result = payload.get("results")
+        if not isinstance(result, dict):
+            raise SymbolNotFoundError(f"No option snapshot returned for {option_ticker}")
+
+        quote = result.get("last_quote") if isinstance(result.get("last_quote"), dict) else {}
+        trade = result.get("last_trade") if isinstance(result.get("last_trade"), dict) else {}
+        day = result.get("day") if isinstance(result.get("day"), dict) else {}
+        greeks = result.get("greeks") if isinstance(result.get("greeks"), dict) else {}
+        underlying_asset = result.get("underlying_asset") if isinstance(result.get("underlying_asset"), dict) else {}
+
+        bid = _positive_float(quote.get("bid") or quote.get("bp"))
+        ask = _positive_float(quote.get("ask") or quote.get("ap"))
+        last_price = _positive_float(trade.get("price") or trade.get("p"))
+        prior_close = _positive_float(day.get("close") or day.get("c") or day.get("previous_close"))
+        quote_as_of = _timestamp_from_provider_object(quote, "sip_timestamp", "participant_timestamp", "t", "timestamp")
+        trade_as_of = _timestamp_from_provider_object(trade, "sip_timestamp", "participant_timestamp", "t", "timestamp")
+        day_as_of = _timestamp_from_provider_object(day, "last_updated", "t", "timestamp")
+
+        missing_fields: list[str] = []
+        mark_price: float | None = None
+        mark_method = "unavailable"
+        as_of: datetime | None = None
+        stale = False
+
+        quote_is_stale = _is_stale(quote_as_of)
+        trade_is_stale = _is_stale(trade_as_of)
+
+        if bid is not None and ask is not None and ask >= bid and not quote_is_stale:
+            mark_price = round((bid + ask) / 2, 4)
+            mark_method = "quote_mid"
+            as_of = quote_as_of
+            if quote_as_of is None:
+                missing_fields.append("quote_timestamp")
+        elif last_price is not None and not trade_is_stale:
+            mark_price = round(last_price, 4)
+            mark_method = "last_trade"
+            as_of = trade_as_of
+            if trade_as_of is None:
+                missing_fields.append("trade_timestamp")
+        elif prior_close is not None:
+            mark_price = round(prior_close, 4)
+            mark_method = "prior_close_fallback"
+            as_of = day_as_of
+            stale = True
+            missing_fields.append("fresh_option_mark")
+        else:
+            stale = quote_is_stale or trade_is_stale
+            missing_fields.append("option_mark_data")
+
+        if quote_as_of is not None and quote_is_stale:
+            missing_fields.append("stale_quote")
+        if trade_as_of is not None and trade_is_stale:
+            missing_fields.append("stale_trade")
+        if bid is None:
+            missing_fields.append("bid")
+        if ask is None:
+            missing_fields.append("ask")
+        if last_price is None:
+            missing_fields.append("latest_trade_price")
+
+        return OptionContractSnapshot(
+            option_symbol=option_ticker,
+            underlying_symbol=underlying,
+            provider="polygon",
+            endpoint=endpoint,
+            mark_price=mark_price,
+            mark_method=mark_method,
+            as_of=as_of,
+            stale=stale,
+            bid=bid,
+            ask=ask,
+            latest_trade_price=last_price,
+            prior_close=prior_close,
+            implied_volatility=_finite_float(result.get("implied_volatility")),
+            open_interest=int(result["open_interest"]) if _finite_float(result.get("open_interest")) is not None else None,
+            delta=_finite_float(greeks.get("delta")),
+            gamma=_finite_float(greeks.get("gamma")),
+            theta=_finite_float(greeks.get("theta")),
+            vega=_finite_float(greeks.get("vega")),
+            underlying_price=_finite_float(underlying_asset.get("price") or underlying_asset.get("value")),
+            fallback_mode=False,
+            missing_fields=sorted(set(missing_fields)),
+        )
 
     def get_provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
         return self.health_check(sample_symbol=sample_symbol)
@@ -699,6 +909,8 @@ class MarketDataService:
     def __init__(self) -> None:
         self._historical_cache = TTLCache()
         self._latest_cache = TTLCache()
+        self._option_snapshot_cache = TTLCache()
+        self._options_health_cache = TTLCache()
         self._provider = self._build_provider()
         self._fallback_provider = DeterministicFallbackMarketDataProvider()
         self.last_historical_metadata: dict[str, object] | None = None
@@ -811,6 +1023,144 @@ class MarketDataService:
         if not isinstance(self._provider, PolygonMarketDataProvider):
             return None
         return self._provider.fetch_options_chain_preview(symbol=symbol, limit=limit)
+
+    def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
+        normalized_underlying = underlying_symbol.upper().strip()
+        normalized_option = option_symbol.upper().strip()
+        cache_key = f"option_snapshot::{normalized_underlying}::{normalized_option}"
+        cached = self._option_snapshot_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if not isinstance(self._provider, PolygonMarketDataProvider):
+            snapshot = unavailable_option_contract_snapshot(
+                underlying_symbol=normalized_underlying,
+                option_symbol=normalized_option,
+                provider=self._provider.name,
+                missing_fields=["provider_option_snapshot_not_supported"],
+                fallback_mode=self._provider.name == "fallback",
+            )
+        elif not self._provider.is_configured():
+            snapshot = unavailable_option_contract_snapshot(
+                underlying_symbol=normalized_underlying,
+                option_symbol=normalized_option,
+                provider="polygon",
+                missing_fields=["provider_option_snapshot_missing_config"],
+            )
+        else:
+            try:
+                snapshot = self._provider.fetch_option_contract_snapshot(
+                    underlying_symbol=normalized_underlying,
+                    option_symbol=normalized_option,
+                )
+            except DataNotEntitledError as exc:
+                snapshot = unavailable_option_contract_snapshot(
+                    underlying_symbol=normalized_underlying,
+                    option_symbol=normalized_option,
+                    provider="polygon",
+                    endpoint="/v3/snapshot/options/{underlying}/{option}",
+                    missing_fields=["provider_option_snapshot_not_entitled"],
+                    provider_error=str(exc)[:300],
+                )
+            except SymbolNotFoundError as exc:
+                snapshot = unavailable_option_contract_snapshot(
+                    underlying_symbol=normalized_underlying,
+                    option_symbol=normalized_option,
+                    provider="polygon",
+                    endpoint="/v3/snapshot/options/{underlying}/{option}",
+                    missing_fields=["provider_option_snapshot_not_found"],
+                    provider_error=str(exc)[:300],
+                )
+            except (ProviderUnavailableError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+                snapshot = unavailable_option_contract_snapshot(
+                    underlying_symbol=normalized_underlying,
+                    option_symbol=normalized_option,
+                    provider="polygon",
+                    endpoint="/v3/snapshot/options/{underlying}/{option}",
+                    missing_fields=["provider_option_snapshot_unavailable"],
+                    provider_error=str(exc)[:300],
+                )
+
+        self._option_snapshot_cache.set(cache_key, snapshot, settings.market_data_option_snapshot_cache_ttl_seconds)
+        return snapshot
+
+    def options_data_health(self, sample_symbol: str = "AAPL") -> dict[str, object]:
+        cached = self._options_health_cache.get(f"options_health::{sample_symbol.upper()}")
+        if cached is not None:
+            return cached
+
+        if not settings.polygon_enabled:
+            result = {
+                "probe_state": "skipped",
+                "probe_status": "skipped",
+                "details": "Options data readiness is disabled because Polygon market data is not selected.",
+                "sample_underlying": sample_symbol.upper(),
+                "sample_option_symbol": None,
+                "latency_ms": None,
+                "last_success_at": None,
+            }
+            self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+            return result
+        if not isinstance(self._provider, PolygonMarketDataProvider) or not self._provider.is_configured():
+            result = {
+                "probe_state": "unavailable",
+                "probe_status": "unavailable",
+                "details": "Options data readiness requires Polygon API key and base URL configuration.",
+                "sample_underlying": sample_symbol.upper(),
+                "sample_option_symbol": None,
+                "latency_ms": None,
+                "last_success_at": None,
+            }
+            self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+            return result
+
+        started = monotonic()
+        try:
+            chain = self._provider.fetch_options_chain_preview(symbol=sample_symbol, limit=10) or {}
+            if chain.get("reason"):
+                raise ProviderUnavailableError(str(chain["reason"]))
+            candidates = list(chain.get("calls") or []) + list(chain.get("puts") or [])
+            sample_option = next((str(item.get("ticker")) for item in candidates if item.get("ticker")), None)
+            if not sample_option:
+                raise SymbolNotFoundError("No sample option contract returned for readiness probe")
+            snapshot = self.option_contract_snapshot(
+                underlying_symbol=sample_symbol,
+                option_symbol=sample_option,
+            )
+            elapsed = round((monotonic() - started) * 1000, 2)
+            if snapshot.mark_method == "unavailable":
+                result = {
+                    "probe_state": "failed",
+                    "probe_status": "failed",
+                    "details": snapshot.provider_error or "Options snapshot probe did not return a usable mark.",
+                    "sample_underlying": sample_symbol.upper(),
+                    "sample_option_symbol": sample_option,
+                    "latency_ms": elapsed,
+                    "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
+                }
+            else:
+                result = {
+                    "probe_state": "ok",
+                    "probe_status": "ok",
+                    "details": f"Polygon options snapshot probe succeeded using {snapshot.mark_method}.",
+                    "sample_underlying": sample_symbol.upper(),
+                    "sample_option_symbol": sample_option,
+                    "latency_ms": elapsed,
+                    "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
+                }
+        except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+            elapsed = round((monotonic() - started) * 1000, 2)
+            result = {
+                "probe_state": "failed",
+                "probe_status": "failed",
+                "details": str(exc)[:300],
+                "sample_underlying": sample_symbol.upper(),
+                "sample_option_symbol": None,
+                "latency_ms": elapsed,
+                "last_success_at": self._provider._last_success_at.isoformat() if isinstance(self._provider, PolygonMarketDataProvider) and self._provider._last_success_at else None,
+            }
+        self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+        return result
 
     def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
         health = self._provider.health_check(sample_symbol=sample_symbol)

@@ -66,16 +66,34 @@ Each leg review includes:
 - underlying, expiration, right, strike, long/short side, contracts, and
   opening premium
 - current mark premium and estimated leg P&L when safe data exists
+- mark method, IV, open interest, Greeks, stale flag, and provider as-of
+  metadata when supplied by the provider snapshot
 - market-data source/fallback/as-of fields and missing-data entries
 
-Current limitation:
+Provider-backed option mark support:
 
-- provider-backed option leg marks are not implemented in the current market
-  data service
-- the review therefore returns `mark_unavailable`, sets current mark and
-  unrealized P&L fields to `null`, and includes `option_mark_data` in
-  `missing_data`
-- no stale, demo, or synthetic option prices are silently used
+- options review now queries Polygon/Massive contract snapshots through
+  `/v3/snapshot/options/{underlying}/{option}` when Polygon/Massive is the
+  configured market data provider and the account plan permits options
+  snapshots
+- option symbols are generated in Polygon OCC-style form, for example
+  `O:AAPL260515C00205000`
+- leg mark precedence is deterministic:
+  1. valid bid/ask midpoint (`quote_mid`)
+  2. valid latest trade (`last_trade`)
+  3. previous/day close only as an explicitly stale
+     `prior_close_fallback`
+  4. `unavailable`
+- stale, zero, null, or missing values are not used as fresh marks
+- if any required leg mark is missing or stale, structure-level current mark
+  and unrealized P&L remain unavailable and the review stays
+  `mark_unavailable`
+- IV, open interest, Greeks, and underlying price are displayed only when the
+  provider supplies them; MacMarket does not calculate Greeks in this pass
+- no Black-Scholes model, synthetic mark, demo price, or stale close is used
+  as a real current option mark
+- provider permission/plan errors are sanitized and surfaced as missing-data
+  context instead of exposing secrets
 
 Supported structures in this pass:
 
@@ -103,6 +121,12 @@ Action classification precedence:
 
 These are human review classifications only. They do not create close orders,
 rolls, adjustments, scale-ins, broker orders, or live trades.
+
+When all required leg marks are fresh, the review can now classify
+`max_profit_near`, `max_loss_near`, `profitable_hold`, `losing_hold`,
+`close_candidate`, or `adjustment_review` from the deterministic mark-to-open
+P&L context. These classifications remain review-only and never stage or
+submit an options action.
 
 Risk-calendar behavior:
 

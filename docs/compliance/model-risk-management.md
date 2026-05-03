@@ -10,8 +10,9 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
 - Paper lifecycle code owns order, fill, position, trade, P&L, and reset state.
 - Active Paper Position Review uses deterministic action classifications.
 - Options Position Review uses deterministic structure-level classifications
-  and exposes missing option marks rather than estimating them with an
-  unapproved pricing model.
+  from persisted lifecycle data and provider-backed option snapshots when
+  available. It exposes missing or stale option marks rather than estimating
+  them with an unapproved pricing model.
 
 ## LLM Boundary
 
@@ -62,6 +63,8 @@ LLMs, live providers, broker APIs, or order-routing paths.
 - Active Paper Position Review tests.
 - Lifecycle integrity test.
 - Options Position Review and options lifecycle integrity tests.
+- Provider-backed option snapshot mark precedence and Options Position Review
+  mark-to-open P&L tests.
 - LLM validation and fallback tests.
 - Model validation evidence generator tests.
 
@@ -72,5 +75,8 @@ LLMs, live providers, broker APIs, or order-routing paths.
 - No recurring drift report.
 - No approved walk-forward validation dataset/version register.
 - No independent review of benchmark methodology.
-- No approved options mark/Greeks model validation pack; current options
-  review reports mark data as unavailable when provider-backed marks are absent.
+- No approved options mark/Greeks model validation pack. Current options
+  review uses provider-supplied bid/ask, last trade, IV, open interest, and
+  Greeks when available, but does not calculate Black-Scholes values or Greeks.
+  Missing, stale, or plan-blocked provider marks remain explicit
+  `mark_unavailable` evidence.

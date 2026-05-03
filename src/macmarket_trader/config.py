@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     alpaca_market_data_feed: str = "iex"
     market_data_request_timeout_seconds: int = 8
     market_data_latest_cache_ttl_seconds: int = 10
+    market_data_option_snapshot_cache_ttl_seconds: int = 30
+    market_data_option_snapshot_stale_seconds: int = 86_400
     market_data_historical_cache_ttl_seconds: int = 120
     polygon_enabled: bool = False
     polygon_api_key: str = ""

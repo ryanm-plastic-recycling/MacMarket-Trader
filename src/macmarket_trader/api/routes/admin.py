@@ -23,7 +23,7 @@ from macmarket_trader.api.security import (
 )
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
-from macmarket_trader.data.providers.market_data import DataNotEntitledError, DeterministicFallbackMarketDataProvider, SymbolNotFoundError
+from macmarket_trader.data.providers.market_data import DataNotEntitledError, DeterministicFallbackMarketDataProvider, SymbolNotFoundError, build_polygon_option_ticker, unavailable_option_contract_snapshot
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import utc_now
@@ -2304,6 +2304,18 @@ def _option_opening_debit_credit(position) -> tuple[float | None, str]:
     return None, "unknown"
 
 
+def _option_current_debit_credit(legs: list[tuple[object, float]]) -> tuple[float | None, str]:
+    if not legs:
+        return None, "unknown"
+    signed_total = 0.0
+    for leg, mark in legs:
+        side = str(getattr(leg, "action", "") or "").strip().lower()
+        signed_total += mark if side == "buy" else -mark
+    if signed_total >= 0:
+        return _round_money(signed_total), "debit"
+    return _round_money(abs(signed_total)), "credit"
+
+
 def _option_event_commissions_for_legs(legs: list, *, commission_per_contract: float) -> float | None:
     if not legs:
         return None
@@ -2314,6 +2326,63 @@ def _option_event_commissions_for_legs(legs: list, *, commission_per_contract: f
             return None
         total += quantity * commission_per_contract
     return _round_money(total)
+
+
+def _option_leg_roundtrip_commission(leg, *, commission_per_contract: float) -> float | None:
+    quantity = _finite_int(getattr(leg, "quantity", None))
+    if quantity is None or quantity < 0:
+        return None
+    return _round_money(quantity * commission_per_contract * 2.0)
+
+
+def _option_leg_unrealized_pnl(leg, *, current_mark: float, commission_per_contract: float) -> tuple[float | None, float | None]:
+    entry = _finite_float(getattr(leg, "entry_premium", None))
+    quantity = _finite_int(getattr(leg, "quantity", None))
+    multiplier = _finite_int(getattr(leg, "multiplier", None))
+    if entry is None or quantity is None or multiplier is None:
+        return None, None
+    direction = 1.0 if str(getattr(leg, "action", "") or "").strip().lower() == "buy" else -1.0
+    gross = _round_money((current_mark - entry) * quantity * multiplier * direction)
+    commission = _option_leg_roundtrip_commission(leg, commission_per_contract=commission_per_contract)
+    net = _round_money(gross - commission) if gross is not None and commission is not None else None
+    return gross, net
+
+
+def _option_return_denominator(position, *, opening_debit_credit: float | None, contracts: int | None, multiplier: int | None) -> float | None:
+    max_loss = _finite_float(getattr(position, "max_loss", None))
+    if max_loss is not None and max_loss > 0:
+        return max_loss
+    if opening_debit_credit is not None and contracts is not None and multiplier is not None:
+        value = opening_debit_credit * contracts * multiplier
+        return value if value > 0 else None
+    return None
+
+
+def _option_snapshot_for_leg(symbol: str, leg):
+    option_symbol = build_polygon_option_ticker(
+        underlying_symbol=symbol,
+        expiration=leg.expiration,
+        option_type=leg.right,
+        strike=leg.strike,
+    )
+    snapshot_fn = getattr(market_data_service, "option_contract_snapshot", None)
+    if not callable(snapshot_fn):
+        return unavailable_option_contract_snapshot(
+            underlying_symbol=symbol,
+            option_symbol=option_symbol,
+            provider="unavailable",
+            missing_fields=["provider_option_snapshot_not_supported"],
+        )
+    try:
+        return snapshot_fn(underlying_symbol=symbol, option_symbol=option_symbol)
+    except Exception as exc:
+        return unavailable_option_contract_snapshot(
+            underlying_symbol=symbol,
+            option_symbol=option_symbol,
+            provider="provider",
+            missing_fields=["provider_option_snapshot_unavailable"],
+            provider_error=_sanitize_provider_error(exc),
+        )
 
 
 def _option_days_to_expiration(position, now: datetime) -> tuple[object | None, int | None]:
@@ -2434,9 +2503,6 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
     if opening_commissions is None:
         missing_data.append("opening_commissions")
 
-    option_mark_missing = True
-    missing_data.append("option_mark_data")
-    warnings.append("Provider-backed option leg marks are not available for this review; no synthetic option marks were used.")
     if expiration_status == "expiration_warning":
         warnings.append("Expiration is within seven calendar days; review time decay and event risk manually.")
     elif expiration_status == "expiration_due":
@@ -2454,26 +2520,52 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
     else:
         missing_data.append("risk_calendar")
 
-    review_unavailable = bool({"option_legs", "unsupported_strategy_type", "underlying_symbol"}.intersection(missing_data))
-    action = _classify_option_structure_review(
-        review_unavailable=review_unavailable,
-        mark_unavailable=option_mark_missing,
-        expiration_status=expiration_status,
-        max_loss_near=False,
-        max_profit_near=False,
-        close_candidate=False,
-        adjustment_review=False,
-        profitable=None,
-        losing=None,
-    )
-
     leg_reviews = []
+    marked_legs: list[tuple[object, float]] = []
+    gross_pnl_total = 0.0
+    net_pnl_total = 0.0
+    all_leg_marks_available = bool(legs)
+    any_stale_mark = False
     for leg in legs:
-        leg_missing = ["option_mark_data"]
+        snapshot = _option_snapshot_for_leg(symbol, leg) if symbol else unavailable_option_contract_snapshot(
+            underlying_symbol=symbol,
+            option_symbol="",
+            provider="unavailable",
+            missing_fields=["underlying_symbol"],
+        )
+        snapshot_missing = list(snapshot.missing_fields or [])
+        mark = _finite_float(snapshot.mark_price)
+        leg_net_pnl = None
+        if snapshot.stale:
+            any_stale_mark = True
+            if "stale_option_mark" not in snapshot_missing:
+                snapshot_missing.append("stale_option_mark")
+        if mark is None or snapshot.mark_method == "unavailable" or snapshot.stale:
+            all_leg_marks_available = False
+            if "option_mark_data" not in snapshot_missing and mark is None:
+                snapshot_missing.append("option_mark_data")
+        else:
+            gross_leg, net_leg = _option_leg_unrealized_pnl(
+                leg,
+                current_mark=mark,
+                commission_per_contract=commission_per_contract,
+            )
+            if gross_leg is None or net_leg is None:
+                all_leg_marks_available = False
+                snapshot_missing.append("leg_pnl_inputs")
+            else:
+                next_gross = _round_money(gross_pnl_total + gross_leg)
+                next_net = _round_money(net_pnl_total + net_leg)
+                gross_pnl_total = next_gross if next_gross is not None else gross_pnl_total
+                net_pnl_total = next_net if next_net is not None else net_pnl_total
+                leg_net_pnl = net_leg
+                marked_legs.append((leg, mark))
+        if snapshot.provider_error:
+            warnings.append(f"Option mark unavailable for leg {leg.id}: {_sanitize_provider_error(snapshot.provider_error)}")
         leg_reviews.append(
             {
                 "leg_id": leg.id,
-                "option_symbol": None,
+                "option_symbol": snapshot.option_symbol or None,
                 "underlying_symbol": symbol,
                 "expiration": leg.expiration,
                 "option_type": str(leg.right).lower(),
@@ -2481,14 +2573,72 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
                 "side": _option_leg_side(leg.action),
                 "contracts": leg.quantity,
                 "opening_premium": leg.entry_premium,
-                "current_mark_premium": None,
-                "estimated_leg_unrealized_pnl": None,
-                "market_data_source": "unavailable",
-                "market_data_fallback_mode": False,
-                "mark_as_of": None,
-                "missing_data": leg_missing,
+                "current_mark_premium": mark,
+                "mark_method": snapshot.mark_method,
+                "implied_volatility": snapshot.implied_volatility,
+                "open_interest": snapshot.open_interest,
+                "delta": snapshot.delta,
+                "gamma": snapshot.gamma,
+                "theta": snapshot.theta,
+                "vega": snapshot.vega,
+                "underlying_price": snapshot.underlying_price,
+                "estimated_leg_unrealized_pnl": leg_net_pnl,
+                "market_data_source": snapshot.provider,
+                "market_data_fallback_mode": bool(snapshot.fallback_mode),
+                "mark_as_of": _safe_mark_as_of(snapshot.as_of),
+                "stale": bool(snapshot.stale),
+                "missing_data": sorted(set(snapshot_missing)),
             }
         )
+
+    if not all_leg_marks_available:
+        missing_data.append("option_mark_data")
+        if any_stale_mark:
+            missing_data.append("stale_option_mark")
+        warnings.append("One or more option leg marks are unavailable or stale; structure-level mark and P&L are not computed.")
+
+    current_mark_debit_credit = None
+    current_mark_debit_credit_type = "unknown"
+    estimated_gross_pnl = None
+    estimated_net_pnl = None
+    estimated_return_pct = None
+    estimated_closing_commissions = None
+    estimated_total_commissions = None
+    if all_leg_marks_available:
+        current_mark_debit_credit, current_mark_debit_credit_type = _option_current_debit_credit(marked_legs)
+        estimated_gross_pnl = _round_money(gross_pnl_total)
+        estimated_net_pnl = _round_money(net_pnl_total)
+        estimated_closing_commissions = opening_commissions
+        estimated_total_commissions = _round_money((opening_commissions or 0.0) * 2.0) if opening_commissions is not None else None
+        denominator = _option_return_denominator(
+            position,
+            opening_debit_credit=opening_debit_credit,
+            contracts=contracts,
+            multiplier=multiplier_assumption,
+        )
+        if estimated_net_pnl is not None and denominator is not None and denominator > 0:
+            estimated_return_pct = round((estimated_net_pnl / denominator) * 100, 2)
+
+    max_profit = _round_money(_finite_float(position.max_profit))
+    max_loss = _round_money(_finite_float(position.max_loss))
+    max_profit_near = estimated_net_pnl is not None and max_profit is not None and max_profit > 0 and estimated_net_pnl >= max_profit * 0.9
+    max_loss_near = estimated_net_pnl is not None and max_loss is not None and max_loss > 0 and estimated_net_pnl <= -max_loss * 0.9
+    profitable = estimated_net_pnl is not None and estimated_net_pnl > 0
+    losing = estimated_net_pnl is not None and estimated_net_pnl < 0
+    close_candidate = profitable and days_to_expiration is not None and 0 < days_to_expiration <= 3
+    adjustment_review = losing and risk_calendar is not None and risk_calendar.decision.allow_new_entries is False
+    review_unavailable = bool({"option_legs", "unsupported_strategy_type", "underlying_symbol"}.intersection(missing_data))
+    action = _classify_option_structure_review(
+        review_unavailable=review_unavailable,
+        mark_unavailable=not all_leg_marks_available,
+        expiration_status=expiration_status,
+        max_loss_near=max_loss_near,
+        max_profit_near=max_profit_near,
+        close_candidate=bool(close_candidate),
+        adjustment_review=bool(adjustment_review),
+        profitable=profitable,
+        losing=losing,
+    )
 
     return OptionPaperStructureReview(
         structure_id=position.id,
@@ -2504,11 +2654,15 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         opening_debit_credit=opening_debit_credit,
         opening_debit_credit_type=opening_type,
         opening_commissions=opening_commissions,
-        current_mark_debit_credit=None,
-        estimated_unrealized_pnl=None,
-        estimated_unrealized_return_pct=None,
-        max_profit=_round_money(_finite_float(position.max_profit)),
-        max_loss=_round_money(_finite_float(position.max_loss)),
+        current_mark_debit_credit=current_mark_debit_credit,
+        current_mark_debit_credit_type=current_mark_debit_credit_type,
+        estimated_unrealized_gross_pnl=estimated_gross_pnl,
+        estimated_closing_commissions=estimated_closing_commissions,
+        estimated_total_commissions=estimated_total_commissions,
+        estimated_unrealized_pnl=estimated_net_pnl,
+        estimated_unrealized_return_pct=estimated_return_pct,
+        max_profit=max_profit,
+        max_loss=max_loss,
         breakevens=list(position.breakevens or []),
         payoff_summary=_option_payoff_summary(position, opening_type),
         risk_calendar=risk_calendar.model_dump(mode="json") if risk_calendar is not None else {},
@@ -2520,8 +2674,8 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         provenance={
             "position_source": "paper_option_positions",
             "leg_source": "paper_option_position_legs",
-            "valuation_source": "option_marks_unavailable",
-            "provider_option_marks_available": False,
+            "valuation_source": "provider_option_snapshots" if all_leg_marks_available else "option_marks_partial_or_unavailable",
+            "provider_option_marks_available": bool(all_leg_marks_available),
             "fallback_option_marks_used": False,
             "payoff_source": "persisted_option_payoff_fields",
             "commission_source": "current_user_commission_per_contract",
@@ -3964,11 +4118,71 @@ def _news_readiness() -> dict[str, object]:
     }
 
 
+def _options_data_readiness() -> dict[str, object]:
+    mode = "polygon" if settings.polygon_enabled else "disabled"
+    configured = bool(settings.polygon_enabled and settings.polygon_api_key.strip() and settings.polygon_base_url.strip())
+    config_state = _config_state(enabled=settings.polygon_enabled, configured=configured)
+    probe_state = "skipped" if not settings.polygon_enabled else "unavailable"
+    probe_payload: dict[str, object] = {}
+    if configured:
+        health_fn = getattr(market_data_service, "options_data_health", None)
+        if callable(health_fn):
+            try:
+                probe_payload = dict(health_fn(sample_symbol="AAPL") or {})
+                probe_state = str(probe_payload.get("probe_state") or probe_payload.get("probe_status") or "unavailable")
+            except Exception as exc:
+                probe_state = "failed"
+                probe_payload = {"details": _sanitize_provider_error(exc)}
+        else:
+            probe_state = "unavailable"
+
+    details = str(
+        probe_payload.get("details")
+        or (
+            "Options data readiness requires Polygon/Massive option contract snapshot access."
+            if settings.polygon_enabled
+            else "Options data readiness is disabled because Polygon/Massive market data is not selected."
+        )
+    )
+    if probe_state == "failed":
+        details = _sanitize_provider_error(details)
+
+    return {
+        "provider": "options_data",
+        "mode": mode,
+        "status": _readiness_status(config_state=config_state, probe_state=probe_state),
+        "details": details,
+        "config_state": config_state,
+        "probe_state": probe_state,
+        "configured": configured,
+        "selected_provider": "polygon" if settings.polygon_enabled else "none",
+        "probe_status": probe_state,
+        "sample_underlying": probe_payload.get("sample_underlying") or "AAPL",
+        "sample_option_symbol": probe_payload.get("sample_option_symbol"),
+        "latency_ms": probe_payload.get("latency_ms"),
+        "last_success_at": probe_payload.get("last_success_at"),
+        "readiness_scope": "options_research_marks_only",
+        "operational_impact": (
+            "Options snapshot readiness can populate paper Options Position Review marks only. "
+            "It does not enable live trading, broker routing, automatic exits, rolls, or adjustments."
+        ),
+    }
+
+
 def _sanitize_provider_error(value: object) -> str:
     if isinstance(value, dict):
         return "; ".join(f"{key}={_sanitize_provider_error(val)}" for key, val in value.items())
     text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
-    for secret in (settings.llm_api_key, settings.openai_api_key):
+    for secret in (
+        settings.llm_api_key,
+        settings.openai_api_key,
+        settings.polygon_api_key,
+        settings.alpaca_api_key_id,
+        settings.alpaca_api_secret_key,
+        settings.clerk_secret_key,
+        settings.resend_api_key,
+        settings.fred_api_key,
+    ):
         if secret and secret.strip():
             text = text.replace(secret.strip(), "[redacted]")
     if "Authorization" in text:
@@ -4101,6 +4315,7 @@ def provider_health(
             _alpaca_paper_readiness(),
             _fred_readiness(),
             _news_readiness(),
+            _options_data_readiness(),
             _llm_readiness(probe=probe_llm),
             {
                 "provider": "market_data",

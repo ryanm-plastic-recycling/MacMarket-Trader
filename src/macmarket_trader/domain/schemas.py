@@ -951,10 +951,19 @@ class OptionPaperStructureLegReview(BaseModel):
     contracts: int
     opening_premium: float | None = None
     current_mark_premium: float | None = None
+    mark_method: str = "unavailable"
+    implied_volatility: float | None = None
+    open_interest: int | None = None
+    delta: float | None = None
+    gamma: float | None = None
+    theta: float | None = None
+    vega: float | None = None
+    underlying_price: float | None = None
     estimated_leg_unrealized_pnl: float | None = None
     market_data_source: str | None = None
     market_data_fallback_mode: bool = False
     mark_as_of: datetime | str | int | None = None
+    stale: bool = False
     missing_data: list[str] = Field(default_factory=list)
 
 
@@ -973,6 +982,10 @@ class OptionPaperStructureReview(BaseModel):
     opening_debit_credit_type: Literal["debit", "credit", "unknown"] = "unknown"
     opening_commissions: float | None = None
     current_mark_debit_credit: float | None = None
+    current_mark_debit_credit_type: Literal["debit", "credit", "unknown"] = "unknown"
+    estimated_unrealized_gross_pnl: float | None = None
+    estimated_closing_commissions: float | None = None
+    estimated_total_commissions: float | None = None
     estimated_unrealized_pnl: float | None = None
     estimated_unrealized_return_pct: float | None = None
     max_profit: float | None = None

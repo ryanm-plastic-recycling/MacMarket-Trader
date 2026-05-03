@@ -18,6 +18,7 @@ from macmarket_trader.data.providers.market_data import (
     PolygonMarketDataProvider,
     ProviderUnavailableError,
     SymbolNotFoundError,
+    build_polygon_option_ticker,
     normalize_polygon_ticker,
 )
 
@@ -269,6 +270,146 @@ def test_latest_snapshot_normalization(monkeypatch) -> None:
     assert snapshot.fallback_mode is False
 
 
+def test_polygon_option_snapshot_quote_mid_mark(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    ts_ns = int(datetime.now(tz=UTC).timestamp() * 1_000_000_000)
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        assert path == "/v3/snapshot/options/AAPL/O:AAPL260515C00205000"
+        del query
+        return {
+            "results": {
+                "last_quote": {"bid": 2.1, "ask": 2.4, "sip_timestamp": ts_ns},
+                "last_trade": {"price": 2.3, "sip_timestamp": ts_ns},
+                "day": {"close": 2.0},
+                "implied_volatility": 0.32,
+                "open_interest": 1200,
+                "greeks": {"delta": 0.45, "gamma": 0.04, "theta": -0.08, "vega": 0.12},
+                "underlying_asset": {"price": 205.5},
+            }
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+    snapshot = provider.fetch_option_contract_snapshot(
+        underlying_symbol="AAPL",
+        option_symbol="O:AAPL260515C00205000",
+    )
+
+    assert snapshot.mark_price == 2.25
+    assert snapshot.mark_method == "quote_mid"
+    assert snapshot.stale is False
+    assert snapshot.implied_volatility == 0.32
+    assert snapshot.open_interest == 1200
+    assert snapshot.delta == 0.45
+    assert snapshot.underlying_price == 205.5
+
+
+def test_polygon_option_snapshot_last_trade_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    ts_ns = int(datetime.now(tz=UTC).timestamp() * 1_000_000_000)
+
+    monkeypatch.setattr(
+        provider,
+        "_request_json",
+        lambda path, query: {
+            "results": {
+                "last_quote": {"bid": None, "ask": None},
+                "last_trade": {"price": 1.75, "sip_timestamp": ts_ns},
+            }
+        },
+    )
+
+    snapshot = provider.fetch_option_contract_snapshot(
+        underlying_symbol="AAPL",
+        option_symbol="O:AAPL260515C00205000",
+    )
+
+    assert snapshot.mark_price == 1.75
+    assert snapshot.mark_method == "last_trade"
+    assert snapshot.stale is False
+    assert "bid" in snapshot.missing_fields
+    assert "ask" in snapshot.missing_fields
+
+
+def test_polygon_option_snapshot_missing_prices_returns_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    monkeypatch.setattr(provider, "_request_json", lambda path, query: {"results": {"last_quote": {}, "last_trade": {}, "day": {}}})
+
+    snapshot = provider.fetch_option_contract_snapshot(
+        underlying_symbol="AAPL",
+        option_symbol="O:AAPL260515C00205000",
+    )
+
+    assert snapshot.mark_price is None
+    assert snapshot.mark_method == "unavailable"
+    assert "option_mark_data" in snapshot.missing_fields
+
+
+def test_polygon_option_snapshot_stale_trade_is_not_used_as_real_mark(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    stale_ns = int(datetime(2025, 1, 1, tzinfo=UTC).timestamp() * 1_000_000_000)
+    monkeypatch.setattr(
+        provider,
+        "_request_json",
+        lambda path, query: {
+            "results": {
+                "last_quote": {},
+                "last_trade": {"price": 1.75, "sip_timestamp": stale_ns},
+                "day": {},
+            }
+        },
+    )
+
+    snapshot = provider.fetch_option_contract_snapshot(
+        underlying_symbol="AAPL",
+        option_symbol="O:AAPL260515C00205000",
+    )
+
+    assert snapshot.mark_price is None
+    assert snapshot.mark_method == "unavailable"
+    assert snapshot.stale is True
+    assert "stale_trade" in snapshot.missing_fields
+
+
+def test_polygon_option_snapshot_prior_close_is_explicit_stale_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    monkeypatch.setattr(
+        provider,
+        "_request_json",
+        lambda path, query: {
+            "results": {
+                "last_quote": {},
+                "last_trade": {},
+                "day": {"close": 1.55, "t": 1775088000000},
+            }
+        },
+    )
+
+    snapshot = provider.fetch_option_contract_snapshot(
+        underlying_symbol="AAPL",
+        option_symbol="O:AAPL260515C00205000",
+    )
+
+    assert snapshot.mark_price == 1.55
+    assert snapshot.mark_method == "prior_close_fallback"
+    assert snapshot.stale is True
+    assert "fresh_option_mark" in snapshot.missing_fields
+
+
+def test_build_polygon_option_ticker() -> None:
+    assert build_polygon_option_ticker(
+        underlying_symbol="aapl",
+        expiration=datetime(2026, 5, 15, tzinfo=UTC).date(),
+        option_type="call",
+        strike=205.0,
+    ) == "O:AAPL260515C00205000"
+
+
 def test_provider_health_result_structure(monkeypatch) -> None:
     class StubMarketDataService:
         def latest_snapshot(self, symbol: str, timeframe: str):
@@ -441,6 +582,82 @@ def test_provider_health_reports_missing_config_separately_from_probe(monkeypatc
     assert fred_entry["status"] == "unconfigured"
     assert fred_entry["config_state"] == "missing_config"
     assert fred_entry["probe_state"] == "unavailable"
+
+
+def test_provider_health_reports_options_data_probe_ok(monkeypatch) -> None:
+    class StubMarketDataService:
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data",
+                mode="polygon",
+                status="ok",
+                details="Polygon snapshot probe succeeded.",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+        def options_data_health(self, sample_symbol: str = "AAPL") -> dict[str, object]:
+            return {
+                "probe_state": "ok",
+                "probe_status": "ok",
+                "details": "Polygon options snapshot probe succeeded using quote_mid.",
+                "sample_underlying": sample_symbol,
+                "sample_option_symbol": "O:AAPL260515C00205000",
+                "latency_ms": 14.2,
+                "last_success_at": "2026-05-03T20:00:00+00:00",
+            }
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    entry = admin_routes._options_data_readiness()
+
+    assert entry["provider"] == "options_data"
+    assert entry["status"] == "ok"
+    assert entry["config_state"] == "configured"
+    assert entry["probe_state"] == "ok"
+    assert entry["sample_option_symbol"] == "O:AAPL260515C00205000"
+    assert "does not enable live trading" in str(entry["operational_impact"])
+
+
+def test_provider_health_options_data_probe_failure_sanitizes_error(monkeypatch) -> None:
+    secret = "polygon-secret-health"
+
+    class StubMarketDataService:
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data",
+                mode="polygon",
+                status="ok",
+                details="Polygon snapshot probe succeeded.",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+        def options_data_health(self, sample_symbol: str = "AAPL") -> dict[str, object]:
+            return {
+                "probe_state": "failed",
+                "probe_status": "failed",
+                "details": f"Polygon options probe failed with apiKey={secret}",
+                "sample_underlying": sample_symbol,
+                "sample_option_symbol": "O:AAPL260515C00205000",
+            }
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", secret)
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    entry = admin_routes._options_data_readiness()
+
+    assert entry["status"] == "degraded"
+    assert entry["probe_state"] == "failed"
+    assert secret not in str(entry)
+    assert "[redacted]" in str(entry["details"])
 
 
 def test_normalize_polygon_ticker_maps_index_symbols() -> None:
