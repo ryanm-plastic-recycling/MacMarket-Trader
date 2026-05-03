@@ -2,6 +2,18 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Paper Equity Lifecycle Integrity Audit
+A local/test-only lifecycle data-integrity audit now exercises the equity
+paper workflow end to end: ranked queue generation, candidate promotion,
+paper order stage/fill, fill-to-position lineage, Active Position Review
+visibility, cross-user isolation checks, manual close, gross/net realized P&L
+with commissions, portfolio-summary updates, closed-position exclusion from
+Active Position Review, current-user paper sandbox reset, and preservation of
+another user's paper records. The audit found no orphaned lifecycle rows in
+the tested path and adds regression coverage rather than changing runtime
+strategy math, recommendation ranking, sizing, market-data behavior, broker
+routing, live trading, automated exits, or paper lifecycle semantics.
+
 ## 2026-05-03 Update - Defensive Security Audit
 A defensive pre-alpha security audit reviewed README constraints, route/auth
 inventory, user-scoping, secret/deploy hygiene, LLM boundaries, provider
