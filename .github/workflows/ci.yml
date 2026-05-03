@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      AUTH_PROVIDER: mock
+      MARKET_DATA_PROVIDER: mock
+      MARKET_DATA_ENABLED: "false"
+      LLM_ENABLED: "false"
+      BROKER_PROVIDER: mock
+      EMAIL_PROVIDER: mock
+      API_DOCS_ENABLED: "true"
+      SECURITY_RATE_LIMIT_ENABLED: "false"
+      SECURITY_ORIGIN_CHECK_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.6"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install backend dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Conflict marker scan
+        run: python scripts/check_conflict_markers.py --root . --json
+
+      - name: Secret scan
+        run: python scripts/scan_secrets.py --root . --json
+
+      - name: Diff hygiene
+        run: git diff --check
+
+      - name: Backend tests
+        run: python -m pytest --basetemp .pytest-tmp
+
+      - name: Frontend tests
+        working-directory: apps/web
+        run: npm test
+
+      - name: TypeScript check
+        working-directory: apps/web
+        run: npx tsc --noEmit
+
+      - name: npm audit report only
+        working-directory: apps/web
+        run: npm audit --json || true
+
+      - name: Compliance readiness tests
+        run: python -m pytest tests/test_compliance_readiness.py tests/test_operational_evidence.py --basetemp .pytest-tmp
+
+      - name: Clean release archive dry-run
+        run: python scripts/check_release_artifact.py --source . --json
+
+      - name: Release gate evidence dry-run
+        run: python scripts/run_release_gate.py --repo-root . --dry-run --mock-commands

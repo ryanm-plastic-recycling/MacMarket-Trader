@@ -2,6 +2,65 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Phase 11B Operational Evidence Automation
+Phase 11B operationalizes the compliance-readiness foundation into repeatable
+local and CI-style evidence. Reusable scripts now scan for conflict markers,
+scan for common secret patterns with redacted findings, verify clean release
+artifact exclusions, and run a release gate that orchestrates scans, diff
+hygiene, backend tests, frontend tests, TypeScript, npm audit report-only,
+compliance-doc checks, clean-archive dry-run, release evidence generation,
+and a runtime evidence manifest under `.tmp/evidence/`.
+
+The release gate produces machine-readable JSON and Markdown reports and exits
+nonzero on hard failures. Moderate `npm audit` findings remain report-only
+unless the operator configures a stricter threshold; high/critical findings
+fail by default. CI wiring was added for mock-provider, no-secret validation,
+including backend/frontend tests, TypeScript, conflict/secret scans,
+compliance tests, clean artifact dry-run, and CI-safe release-gate evidence.
+
+Additional operational templates now cover evidence manifests, access
+reviews, vendor reviews, and incident tabletop exercises. A Windows backup
+schedule helper can print or, only with an explicit apply flag, register a
+daily SQLite backup task. This pass remains documentation, scripts, tests,
+and CI-style gating only; it does not change strategy math, recommendation
+ranking, market-data behavior, paper lifecycle behavior, broker routing, live
+trading, automated exits, or automatic scale-in.
+
+Remaining manual governance includes assigning owners, reviewing generated
+evidence before deploy, approving access/vendor/tabletop records, enabling and
+monitoring backup schedules, retaining off-host backups, preserving monthly
+restore-drill evidence, and obtaining legal/security/vendor reviews before
+public or commercial expansion.
+
+## 2026-05-03 Update - Phase 11 Trust, Compliance, And Acquisition Readiness Foundation
+Phase 11 now has an evidence-first foundation for external diligence and
+internal audit readiness. The new `docs/compliance/` evidence set covers the
+control matrix, risk register, vendor inventory, data classification and
+retention, incident response, change/release management, backup/restore and
+DR, model risk management, regulatory boundary, and acquisition-readiness
+checklists. These documents are framed as readiness artifacts only; they do
+not claim SOC 2, ISO, regulatory, or legal certification.
+
+Safe local evidence tooling was also added. SQLite backup and restore
+verification scripts write sanitized reports under `.tmp/evidence/` while
+using copies instead of overwriting the source database. A release evidence
+generator collects git/runtime/dependency/test-placeholder/provider-config
+metadata with secrets redacted, and a clean release archive generator excludes
+local state, secrets, databases, logs, test artifacts, AI worktrees, and
+generated build artifacts. Regression tests now verify required compliance
+docs, regulatory-boundary wording, clean archive exclusions, release-evidence
+redaction, and SQLite backup/restore copy behavior. This pass does not change
+strategy math, recommendation ranking, market-data logic, paper lifecycle
+behavior, broker routing, live trading, automated exits, or automatic
+scale-in.
+
+Remaining Phase 11 gaps are operational rather than foundational: named
+owners, dated risk treatments, recurring backup jobs, off-host backup
+retention evidence, monthly restore drill history, formal vendor/security
+reviews, model/version registers, benchmark validation packets, incident
+exercise evidence, and securities counsel review before any public or
+commercial expansion.
+
 ## 2026-05-03 Update - Defensive Security Hardening Pass 2
 The next defensive hardening slice landed app-local guardrails for Phase 1
 alpha safety. Backend middleware now enforces practical in-memory abuse
