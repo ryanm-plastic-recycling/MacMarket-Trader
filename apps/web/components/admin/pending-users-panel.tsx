@@ -75,8 +75,7 @@ export function PendingUsersPanel() {
       setFeedback({ state: "error", message: response.error ?? `Invite failed (${response.status})` });
       return;
     }
-    const token = (response.raw as Record<string, any>)?.invite_token;
-    setInviteStatus(`Invite sent. Token: ${token ?? "(hidden)"}`);
+    setInviteStatus("Invite sent. Token masked; email invite link sent.");
     setFeedback({ state: "success", message: "Invite sent." });
     setInviteEmail("");
     setInviteName("");

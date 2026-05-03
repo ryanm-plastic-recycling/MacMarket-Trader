@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     enforce_global_mfa: bool = False
     email_provider: str = "console"
     cors_allowed_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:9500", "http://localhost:9500"])
+    security_allowed_origins: list[str] = Field(default_factory=list)
+    security_origin_check_enabled: bool = True
+    security_rate_limit_enabled: bool = True
+    api_docs_enabled: bool = True
 
     app_base_url: str = "http://localhost:9500"
 

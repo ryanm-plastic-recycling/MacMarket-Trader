@@ -2,6 +2,29 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Defensive Security Hardening Pass 2
+The next defensive hardening slice landed app-local guardrails for Phase 1
+alpha safety. Backend middleware now enforces practical in-memory abuse
+limits on provider/LLM/workflow-heavy routes and validates Origin/Referer on
+browser-originated mutating requests while preserving server-to-server/local
+test calls without Origin headers. Backend payload handling now caps ranked
+queue symbols/top_n/strategies, watchlist and schedule symbols, chart request
+bars, recommendation/replay bars and text, Opportunity Intelligence selection
+ids, and options replay/paper-leg payload sizes. Symbols are normalized to
+uppercase and rejected when they fall outside the supported compact ticker
+shape.
+
+The web app now has centralized security headers in `next.config.ts`,
+including `nosniff`, `DENY` frame protection, a strict referrer policy,
+restricted browser permissions, and a report-only CSP that names Clerk
+compatibility sources without enforcing a potentially disruptive policy yet.
+Mutating `/api/*` requests also share the same safe Origin policy in Next
+middleware. Production-like FastAPI app construction disables `/docs`,
+`/redoc`, and `/openapi.json` by default, and admin invite APIs now return
+masked invite tokens in admin payloads while preserving the emailed invite
+link flow. HSTS remains an edge/deployment concern for Cloudflare/Caddy rather
+than a Next app header in this pass.
+
 ## 2026-05-03 Update - Paper Equity Lifecycle Integrity Audit
 A local/test-only lifecycle data-integrity audit now exercises the equity
 paper workflow end to end: ranked queue generation, candidate promotion,

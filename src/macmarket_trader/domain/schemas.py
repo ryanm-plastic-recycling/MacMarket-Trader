@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import re
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from macmarket_trader.domain.enums import AppRole, ApprovalStatus, Direction, EventSourceType, InstrumentType, MarketMode, OrderStatus, RegimeType, SetupType, TradingSessionModel
 from macmarket_trader.domain.time import utc_now
+
+SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.:-]{0,14}$")
+
+
+def _validated_symbol(value: object, *, field_name: str = "symbol") -> str:
+    symbol = str(value or "").strip().upper()
+    if not symbol:
+        raise ValueError(f"{field_name} is required")
+    if len(symbol) > 15 or not SYMBOL_PATTERN.fullmatch(symbol):
+        raise ValueError(f"{field_name} must be 1-15 characters using letters, numbers, '.', ':', or '-'")
+    return symbol
 
 
 class Bar(BaseModel):
@@ -118,7 +130,20 @@ class HacoChartRequest(BaseModel):
     symbol: str
     timeframe: str = "1D"
     include_heikin_ashi: bool = True
-    bars: list[Bar] = Field(default_factory=list)
+    bars: list[Bar] = Field(default_factory=list, max_length=500)
+
+    @field_validator("symbol")
+    @classmethod
+    def _normalize_symbol(cls, value: str) -> str:
+        return _validated_symbol(value)
+
+    @field_validator("timeframe")
+    @classmethod
+    def _validate_timeframe(cls, value: str) -> str:
+        timeframe = str(value or "1D").strip().upper()
+        if timeframe not in {"1D", "1H", "4H"}:
+            raise ValueError("timeframe must be one of: 1D, 1H, 4H")
+        return timeframe
 
 
 class HacoChartExplanation(BaseModel):
@@ -452,6 +477,14 @@ class OpportunityIntelligenceRequest(BaseModel):
     include_better_elsewhere: bool = False
     max_candidates: int = Field(default=5, ge=2, le=12)
 
+    @field_validator("selected_recommendation_ids")
+    @classmethod
+    def _validate_selected_ids(cls, values: list[str]) -> list[str]:
+        cleaned = [str(item or "").strip() for item in values if str(item or "").strip()]
+        if any(len(item) > 80 for item in cleaned):
+            raise ValueError("selected_recommendation_ids entries may be at most 80 characters")
+        return cleaned
+
 
 class OpportunityIntelligenceProvenance(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -645,13 +678,26 @@ class OptionReplayPreviewLegRequest(BaseModel):
 
 class OptionReplayPreviewRequest(BaseModel):
     structure_type: str | None = None
-    legs: list[OptionReplayPreviewLegRequest] = Field(default_factory=list)
-    underlying_prices: list[object] | None = None
+    legs: list[OptionReplayPreviewLegRequest] = Field(default_factory=list, max_length=6)
+    underlying_prices: list[object] | None = Field(default=None, max_length=101)
     underlying_symbol: str | None = None
     expiration: date | None = None
-    notes: list[str] = Field(default_factory=list)
-    source: str | None = None
-    workflow_source: str | None = None
+    notes: list[str] = Field(default_factory=list, max_length=12)
+    source: str | None = Field(default=None, max_length=80)
+    workflow_source: str | None = Field(default=None, max_length=80)
+
+    @field_validator("underlying_symbol")
+    @classmethod
+    def _normalize_underlying_symbol(cls, value: str | None) -> str | None:
+        return _validated_symbol(value, field_name="underlying_symbol") if value else None
+
+    @field_validator("notes")
+    @classmethod
+    def _validate_notes(cls, values: list[str]) -> list[str]:
+        cleaned = [str(item or "").strip() for item in values if str(item or "").strip()]
+        if any(len(item) > 400 for item in cleaned):
+            raise ValueError("notes entries may be at most 400 characters")
+        return cleaned
 
 
 class OptionReplayPreviewLeg(BaseModel):
@@ -720,13 +766,18 @@ class OptionPaperStructureInput(BaseModel):
     structure_type: Literal["long_call", "long_put", "vertical_debit_spread", "iron_condor"]
     underlying_symbol: str
     expiration: date | None = None
-    legs: list[OptionPaperLegInput] = Field(default_factory=list)
+    legs: list[OptionPaperLegInput] = Field(default_factory=list, max_length=6)
     net_debit: float | None = None
     net_credit: float | None = None
     max_profit: float | None = None
     max_loss: float | None = None
-    breakevens: list[float] = Field(default_factory=list)
-    notes: str | None = None
+    breakevens: list[float] = Field(default_factory=list, max_length=6)
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("underlying_symbol")
+    @classmethod
+    def _normalize_underlying_symbol(cls, value: str) -> str:
+        return _validated_symbol(value, field_name="underlying_symbol")
 
 
 class OptionPaperOrderLegRecord(BaseModel):
@@ -923,9 +974,9 @@ class OptionPaperCloseLegInput(BaseModel):
 
 class OptionPaperCloseStructureRequest(BaseModel):
     settlement_mode: str = "manual_close"
-    legs: list[OptionPaperCloseLegInput] = Field(default_factory=list)
+    legs: list[OptionPaperCloseLegInput] = Field(default_factory=list, max_length=6)
     underlying_settlement_price: float | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class OptionPaperCloseStructureResponse(BaseModel):
@@ -967,19 +1018,37 @@ class CryptoMarketContext(BaseModel):
 class RecommendationGenerateRequest(BaseModel):
     symbol: str
     market_mode: MarketMode = MarketMode.EQUITIES
-    strategy_id: str | None = None
-    event_text: str | None = None
+    strategy_id: str | None = Field(default=None, max_length=80)
+    event_text: str | None = Field(default=None, max_length=4000)
     event: NewsEvent | MacroEvent | CorporateEvent | None = None
-    bars: list[Bar]
+    bars: list[Bar] = Field(max_length=500)
     portfolio: PortfolioSnapshot | None = None
+
+    @field_validator("symbol")
+    @classmethod
+    def _normalize_symbol(cls, value: str) -> str:
+        return _validated_symbol(value)
 
 
 class ReplayRunRequest(BaseModel):
     symbol: str
     market_mode: MarketMode = MarketMode.EQUITIES
-    event_texts: list[str]
-    bars: list[Bar]
+    event_texts: list[str] = Field(max_length=10)
+    bars: list[Bar] = Field(max_length=500)
     portfolio: PortfolioSnapshot | None = None
+
+    @field_validator("symbol")
+    @classmethod
+    def _normalize_symbol(cls, value: str) -> str:
+        return _validated_symbol(value)
+
+    @field_validator("event_texts")
+    @classmethod
+    def _validate_event_texts(cls, values: list[str]) -> list[str]:
+        cleaned = [str(item or "").strip() for item in values if str(item or "").strip()]
+        if any(len(item) > 4000 for item in cleaned):
+            raise ValueError("event_texts entries may be at most 4000 characters")
+        return cleaned
 
 
 

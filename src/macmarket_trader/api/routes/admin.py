@@ -11,6 +11,16 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
 from macmarket_trader.api.routes.workflow_lineage import extract_recommendation_key_levels, extract_recommendation_strategy
+from macmarket_trader.api.security import (
+    MAX_BULK_SYMBOLS,
+    MAX_QUEUE_TOP_N,
+    MAX_SELECTED_STRATEGIES,
+    MAX_WATCHLIST_SYMBOLS,
+    capped_int,
+    capped_text,
+    normalize_symbol,
+    normalize_symbol_list,
+)
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.market_data import DataNotEntitledError, DeterministicFallbackMarketDataProvider, SymbolNotFoundError
@@ -983,11 +993,23 @@ def recommendation_opportunity_intelligence(
 @user_router.post("/recommendations/queue")
 def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_approved_user)):
     market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
-    symbols = [str(item).upper() for item in (req.get("symbols") or ["AAPL", "MSFT", "NVDA"]) if str(item).strip()]
-    timeframe = str(req.get("timeframe") or "1D")
-    selected_strategies = [str(item) for item in (req.get("strategies") or []) if str(item).strip()]
+    symbols = normalize_symbol_list(
+        req.get("symbols") or ["AAPL", "MSFT", "NVDA"],
+        max_items=MAX_BULK_SYMBOLS,
+    )
+    timeframe = capped_text(req.get("timeframe") or "1D", field_name="timeframe", max_length=4).upper()
+    if timeframe not in {"1D", "1H", "4H"}:
+        raise HTTPException(status_code=400, detail="timeframe must be one of: 1D, 1H, 4H.")
+    selected_strategies = [
+        capped_text(item, field_name="strategies", max_length=80)
+        for item in (req.get("strategies") or [])
+        if str(item).strip()
+    ]
+    if len(selected_strategies) > MAX_SELECTED_STRATEGIES:
+        raise HTTPException(status_code=400, detail=f"strategies may include at most {MAX_SELECTED_STRATEGIES} entries.")
     if not selected_strategies:
         selected_strategies = [entry.display_name for entry in list_strategies(market_mode)[:3]]
+    top_n = capped_int(req.get("top_n"), default=10, minimum=1, maximum=MAX_QUEUE_TOP_N, field_name="top_n")
     bars_by_symbol: dict[str, tuple[list[Bar], str, bool]] = {}
     session_metadata_by_symbol: dict[str, dict[str, object]] = {}
     for symbol in symbols:
@@ -999,7 +1021,7 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
         strategies=selected_strategies,
         market_mode=market_mode,
         timeframe=timeframe,
-        top_n=int(req.get("top_n") or 10),
+        top_n=top_n,
     )
     already_open_by_symbol = _open_paper_position_context_by_symbol(
         app_user_id=_user.id,
@@ -1042,17 +1064,17 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
 
 @user_router.post("/recommendations/queue/promote")
 def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approved_user)):
-    symbol = str(req.get("symbol") or "").upper()
-    strategy = str(req.get("strategy") or "Event Continuation")
-    if not symbol:
-        raise HTTPException(status_code=400, detail="symbol is required to promote queue candidate")
+    symbol = normalize_symbol(req.get("symbol"), field_name="symbol")
+    strategy = capped_text(req.get("strategy") or "Event Continuation", field_name="strategy", max_length=80)
 
     action = str(req.get("action") or "make_active")
 
-    timeframe = str(req.get("timeframe") or "1D")
+    timeframe = capped_text(req.get("timeframe") or "1D", field_name="timeframe", max_length=4).upper()
+    if timeframe not in {"1D", "1H", "4H"}:
+        raise HTTPException(status_code=400, detail="timeframe must be one of: 1D, 1H, 4H.")
     bars, source, fallback_mode = _workflow_bars(symbol, timeframe=timeframe)
     session_metadata = _workflow_session_metadata(bars, timeframe=timeframe)
-    event_text = str(req.get("thesis") or f"Queue promotion for {strategy}")
+    event_text = capped_text(req.get("thesis") or f"Queue promotion for {strategy}", field_name="thesis")
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     promote_market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
@@ -1143,12 +1165,17 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
 
 @user_router.post("/recommendations/generate")
 def generate_recommendations(req: dict[str, object], _user=Depends(require_approved_user)):
-    symbol = str(req.get("symbol") or "AAPL").upper()
-    event_text = str(req.get("event_text") or "Operator-triggered deterministic refresh run.")
+    symbol = normalize_symbol(req.get("symbol") or "AAPL", field_name="symbol")
+    event_text = capped_text(
+        req.get("event_text") or "Operator-triggered deterministic refresh run.",
+        field_name="event_text",
+    )
     market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
-    strategy = str(req.get("strategy") or "").strip()
-    timeframe = str(req.get("timeframe") or "1D")
-    workflow_source = str(req.get("workflow_source") or req.get("source") or "")
+    strategy = capped_text(req.get("strategy") or "", field_name="strategy", max_length=80)
+    timeframe = capped_text(req.get("timeframe") or "1D", field_name="timeframe", max_length=4).upper()
+    if timeframe not in {"1D", "1H", "4H"}:
+        raise HTTPException(status_code=400, detail="timeframe must be one of: 1D, 1H, 4H.")
+    workflow_source = capped_text(req.get("workflow_source") or req.get("source") or "", field_name="workflow_source", max_length=80)
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     bars, source, fallback_mode = _workflow_bars(symbol, timeframe=timeframe)
@@ -2970,10 +2997,12 @@ def list_watchlists(user=Depends(require_approved_user)):
 
 @user_router.post("/watchlists")
 def create_or_update_watchlist(req: dict[str, object], user=Depends(require_approved_user)):
-    name = str(req.get("name") or "Core watchlist").strip()
-    symbols = [str(item).upper() for item in (req.get("symbols") or []) if str(item).strip()]
-    if not symbols:
-        raise HTTPException(status_code=400, detail="watchlist requires symbols")
+    name = capped_text(req.get("name") or "Core watchlist", field_name="name", max_length=80)
+    symbols = normalize_symbol_list(
+        req.get("symbols") or [],
+        max_items=MAX_WATCHLIST_SYMBOLS,
+        field_name="watchlist symbols",
+    )
     row = watchlist_repo.upsert(app_user_id=user.id, name=name, symbols=symbols)
     return {"id": row.id, "name": row.name, "symbols": row.symbols}
 
@@ -2981,13 +3010,15 @@ def create_or_update_watchlist(req: dict[str, object], user=Depends(require_appr
 @user_router.put("/watchlists/{watchlist_id}")
 def update_watchlist(watchlist_id: int, req: dict[str, object], user=Depends(require_approved_user)):
     name_raw = req.get("name")
-    name = str(name_raw).strip() if name_raw is not None else None
+    name = capped_text(name_raw, field_name="name", max_length=80) if name_raw is not None else None
     symbols_raw = req.get("symbols")
     symbols: list[str] | None = None
     if symbols_raw is not None:
-        symbols = [str(item).upper() for item in symbols_raw if str(item).strip()]
-        if not symbols:
-            raise HTTPException(status_code=400, detail="watchlist requires symbols")
+        symbols = normalize_symbol_list(
+            symbols_raw,
+            max_items=MAX_WATCHLIST_SYMBOLS,
+            field_name="watchlist symbols",
+        )
     row = watchlist_repo.update(watchlist_id=watchlist_id, app_user_id=user.id, name=name, symbols=symbols)
     if row is None:
         raise HTTPException(status_code=404, detail="watchlist not found")
@@ -3067,12 +3098,18 @@ def create_strategy_schedule(req: dict[str, object], user=Depends(require_approv
     next_run = strategy_report_service._next_run_at(now=now, frequency=frequency, run_time=run_time, timezone_name=timezone_name)
     market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
     default_strategies = [entry.display_name for entry in list_strategies(market_mode)[:3]]
+    symbols = normalize_symbol_list(
+        req.get("symbols") or ["AAPL", "MSFT", "NVDA"],
+        max_items=MAX_BULK_SYMBOLS,
+        field_name="symbols",
+    )
+    top_n = capped_int(req.get("top_n"), default=5, minimum=1, maximum=MAX_QUEUE_TOP_N, field_name="top_n")
     payload = {
         "market_mode": market_mode.value,
         "enabled_strategies": req.get("enabled_strategies") or default_strategies,
-        "symbols": req.get("symbols") or ["AAPL", "MSFT", "NVDA"],
+        "symbols": symbols,
         "ranking_preferences": req.get("ranking_preferences") or ["strategy_fit", "expected_rr", "liquidity"],
-        "top_n": int(req.get("top_n") or 5),
+        "top_n": top_n,
         "email_delivery_target": str(req.get("email_delivery_target") or user.email),
     }
     row = strategy_report_repo.create_schedule(
@@ -3312,7 +3349,13 @@ def create_invite(req: InviteCreateRequest, admin=Depends(require_admin)):
         logger.warning("Invite email failed (non-fatal): %s", e)
         email_status = "failed"
     email_repo.create(invited_user.id, "private_alpha_invite", invited_user.email, email_status, provider_id or "")
-    return {"invite_id": invite.id, "status": invite.status, "email": invite.email, "invite_token": invite.invite_token}
+    return {
+        "invite_id": invite.id,
+        "status": invite.status,
+        "email": invite.email,
+        "invite_token": _masked_invite_token(invite.invite_token),
+        "invite_token_masked": True,
+    }
 
 
 @router.delete("/invites/{invite_id}")
@@ -3423,7 +3466,8 @@ def list_invites(_admin=Depends(require_admin)):
             "email": row.email,
             "display_name": row.display_name,
             "status": row.status,
-            "invite_token": row.invite_token,
+            "invite_token": _masked_invite_token(row.invite_token),
+            "invite_token_masked": True,
             "invited_by": row.invited_by,
             "created_at": row.created_at,
             "market_data_source": "workflow_snapshot_unavailable",
@@ -3491,6 +3535,15 @@ def _readiness_status(*, config_state: str, probe_state: str) -> str:
     if config_state == "missing_config":
         return "unconfigured"
     return "configured"
+
+
+def _masked_invite_token(token: str | None) -> str | None:
+    if not token:
+        return None
+    normalized = str(token)
+    if len(normalized) <= 8:
+        return "****"
+    return f"{normalized[:7]}...{normalized[-4:]}"
 
 
 def _alpaca_paper_readiness() -> dict[str, object]:
