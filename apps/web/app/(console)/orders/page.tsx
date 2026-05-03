@@ -19,6 +19,7 @@ import { PaperOptionsPositionsSection } from "@/components/orders/paper-options-
 import {
   canReopenTrade,
   formatHoldDuration,
+  formatMarkAsOfTime,
   formatRelativeTime,
   pnlColor,
   reopenSecondsRemaining,
@@ -86,7 +87,7 @@ type PaperPositionReview = {
   current_mark_price: number | null;
   market_data_source: string | null;
   market_data_fallback_mode: boolean;
-  mark_as_of: string | null;
+  mark_as_of: string | number | null;
   market_session_policy: string | null;
   unrealized_pnl: number | null;
   unrealized_return_pct: number | null;
@@ -1127,7 +1128,7 @@ export default function Page() {
                   <td>
                     {formatMaybeDollars(review.current_mark_price)}
                     <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>
-                      {review.market_data_fallback_mode ? `fallback (${review.market_data_source ?? "provider"})` : review.market_data_source ?? "provider"} | {formatRelativeTime(review.mark_as_of)}
+                      {review.market_data_fallback_mode ? `fallback (${review.market_data_source ?? "provider"})` : review.market_data_source ?? "provider"} | {formatMarkAsOfTime(review.mark_as_of)}
                     </div>
                   </td>
                   <td>

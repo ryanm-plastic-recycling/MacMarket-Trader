@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   canReopenTrade,
   formatHoldDuration,
+  formatMarkAsOfTime,
   formatRelativeTime,
   pnlColor,
   REOPEN_WINDOW_SECONDS,
@@ -25,9 +26,9 @@ describe("pnlColor", () => {
 
 describe("formatHoldDuration", () => {
   it("returns em-dash for null/undefined/negative input", () => {
-    expect(formatHoldDuration(null)).toBe("—");
-    expect(formatHoldDuration(undefined)).toBe("—");
-    expect(formatHoldDuration(-5)).toBe("—");
+    expect(formatHoldDuration(null)).toBe("\u2014");
+    expect(formatHoldDuration(undefined)).toBe("\u2014");
+    expect(formatHoldDuration(-5)).toBe("\u2014");
   });
 
   it("renders sub-minute as <1m", () => {
@@ -55,8 +56,8 @@ describe("formatRelativeTime", () => {
   const NOW = Date.parse("2026-04-28T12:00:00Z");
 
   it("returns em-dash for null/undefined", () => {
-    expect(formatRelativeTime(null, NOW)).toBe("—");
-    expect(formatRelativeTime(undefined, NOW)).toBe("—");
+    expect(formatRelativeTime(null, NOW)).toBe("\u2014");
+    expect(formatRelativeTime(undefined, NOW)).toBe("\u2014");
   });
 
   it("returns 'just now' for sub-minute deltas", () => {
@@ -81,6 +82,41 @@ describe("formatRelativeTime", () => {
 
   it("returns the input string when not a parseable date", () => {
     expect(formatRelativeTime("not-a-date", NOW)).toBe("not-a-date");
+  });
+
+  it("accepts Unix seconds and milliseconds", () => {
+    expect(formatRelativeTime(1777377300, NOW)).toBe("5m ago");
+    expect(formatRelativeTime(1777377300000, NOW)).toBe("5m ago");
+    expect(formatRelativeTime("1777377300", NOW)).toBe("5m ago");
+  });
+});
+
+describe("formatMarkAsOfTime", () => {
+  const NOW = Date.parse("2026-04-28T12:00:00Z");
+
+  it("returns an unavailable label for missing, invalid, or epoch-like mark times", () => {
+    expect(formatMarkAsOfTime(null, NOW)).toBe("mark time unavailable");
+    expect(formatMarkAsOfTime(undefined, NOW)).toBe("mark time unavailable");
+    expect(formatMarkAsOfTime("", NOW)).toBe("mark time unavailable");
+    expect(formatMarkAsOfTime("not-a-date", NOW)).toBe("mark time unavailable");
+    expect(formatMarkAsOfTime(0, NOW)).toBe("mark time unavailable");
+    expect(formatMarkAsOfTime("1970-01-01T00:00:00Z", NOW)).toBe("mark time unavailable");
+  });
+
+  it("renders sane recent labels for ISO timestamps", () => {
+    expect(formatMarkAsOfTime("2026-04-28T11:59:30Z", NOW)).toBe("just now");
+    expect(formatMarkAsOfTime("2026-04-28T11:55:00Z", NOW)).toBe("5m ago");
+    expect(formatMarkAsOfTime("2026-04-28T11:00:00Z", NOW)).toBe("1h ago");
+  });
+
+  it("renders sane recent labels for Unix seconds and milliseconds", () => {
+    expect(formatMarkAsOfTime(1777377300, NOW)).toBe("5m ago");
+    expect(formatMarkAsOfTime(1777377300000, NOW)).toBe("5m ago");
+    expect(formatMarkAsOfTime("1777377300", NOW)).toBe("5m ago");
+  });
+
+  it("renders a timestamp for future mark times instead of a negative age", () => {
+    expect(formatMarkAsOfTime("2026-04-28T12:05:00Z", NOW)).toBe("2026-04-28 12:05 UTC");
   });
 });
 

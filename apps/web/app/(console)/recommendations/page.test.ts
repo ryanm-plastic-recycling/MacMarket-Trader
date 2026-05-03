@@ -23,6 +23,27 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain('body: JSON.stringify({ symbols: activeSymbols, timeframe: "1D", market_mode: "equities" })');
   });
 
+  it("places recommendation workflow buttons below the full-width symbols input with clear hierarchy", () => {
+    const symbolsIndex = source.indexOf("<span>Symbols to evaluate</span>");
+    const textareaIndex = source.indexOf("<textarea", symbolsIndex);
+    const actionsIndex = source.indexOf('<div className="op-row" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>', textareaIndex);
+    const refreshIndex = source.indexOf("Refresh queue", actionsIndex);
+    const promoteIndex = source.indexOf("Promote selected queue candidate", actionsIndex);
+    const replayIndex = source.indexOf("Go to Replay step", actionsIndex);
+    const ordersIndex = source.indexOf("Go to Paper Order step", actionsIndex);
+
+    expect(source).toContain('style={{ width: "100%", minWidth: 0, resize: "vertical" }}');
+    expect(actionsIndex).toBeGreaterThan(textareaIndex);
+    expect(refreshIndex).toBeGreaterThan(actionsIndex);
+    expect(promoteIndex).toBeGreaterThan(refreshIndex);
+    expect(replayIndex).toBeGreaterThan(promoteIndex);
+    expect(ordersIndex).toBeGreaterThan(replayIndex);
+    expect(source).toContain('<button className="op-btn op-btn-secondary" onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>');
+    expect(source).toContain('<button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote || selectedQueuePromotionBlocked}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>');
+    expect(source).toContain('<button className="op-btn op-btn-secondary" onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>');
+    expect(source).toContain('<button className="op-btn op-btn-primary" onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button>');
+  });
+
   it("adds a read-only recommendation-universe selector and preview proxy", () => {
     expect(source).toContain('type UniverseSourceType = "manual" | "watchlist" | "watchlist_plus_manual" | "all_active";');
     expect(source).toContain('const [universeMode, setUniverseMode] = useState<UniverseSourceType>("manual");');

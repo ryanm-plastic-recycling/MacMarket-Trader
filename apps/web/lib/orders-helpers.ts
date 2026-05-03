@@ -7,11 +7,11 @@ export function pnlColor(pnl: number): string {
 }
 
 // Format a hold duration in seconds as a compact human string.
-//   < 60s         → "<1m"
-//   < 60m         → "Nm"
-//   < 24h         → "Nh Mm"
-//   ≥ 24h         → "Nd Mh"
-// Negative or null inputs return "—".
+//   < 60s -> "<1m"
+//   < 60m -> "Nm"
+//   < 24h -> "Nh Mm"
+//   >= 24h -> "Nd Mh"
+// Negative or null inputs return an em dash.
 export function formatHoldDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
   const total = Math.floor(seconds);
@@ -28,7 +28,7 @@ export function formatHoldDuration(seconds: number | null | undefined): string {
   return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
 }
 
-// Pass 4 reopen-undo helpers — the operator can undo a paper close within
+// Pass 4 reopen-undo helpers: the operator can undo a paper close within
 // REOPEN_WINDOW_SECONDS of the trade's closed_at timestamp. After that, the
 // realized P&L is treated as final and the Reopen button must disappear.
 
@@ -57,14 +57,28 @@ export function canReopenTrade(
   return reopenSecondsRemaining(closedAt, nowMs) > 0;
 }
 
-// Format an ISO timestamp as "Nh ago" / "Nm ago" / "Nd ago" relative to `now` (defaults to Date.now()).
-// Returns the original ISO string on parse failure or for future-dated inputs.
-export function formatRelativeTime(iso: string | null | undefined, nowMs: number = Date.now()): string {
-  if (!iso) return "—";
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return iso;
-  const deltaSec = Math.floor((nowMs - t) / 1000);
-  if (deltaSec < 0) return iso;
+type RelativeTimeInput = string | number | null | undefined;
+
+function parseTimestampMs(value: RelativeTimeInput): number | null {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return value < 1_000_000_000_000 ? value * 1000 : value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) {
+    if (numeric <= 0) return null;
+    return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatTimestampLabel(timestampMs: number, nowMs: number, futureLabel: string): string {
+  const deltaSec = Math.floor((nowMs - timestampMs) / 1000);
+  if (deltaSec < 0) return futureLabel;
   if (deltaSec < 60) return "just now";
   const minutes = Math.floor(deltaSec / 60);
   if (minutes < 60) return `${minutes}m ago`;
@@ -72,4 +86,19 @@ export function formatRelativeTime(iso: string | null | undefined, nowMs: number
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+export function formatRelativeTime(value: RelativeTimeInput, nowMs: number = Date.now()): string {
+  if (value == null || value === "") return "—";
+  const t = parseTimestampMs(value);
+  if (t == null) return String(value);
+  return formatTimestampLabel(t, nowMs, String(value));
+}
+
+export function formatMarkAsOfTime(value: RelativeTimeInput, nowMs: number = Date.now()): string {
+  const t = parseTimestampMs(value);
+  if (t == null) return "mark time unavailable";
+  if (t < Date.UTC(2000, 0, 1)) return "mark time unavailable";
+  if (t > nowMs) return new Date(t).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  return formatTimestampLabel(t, nowMs, "mark time unavailable");
 }

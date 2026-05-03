@@ -1038,8 +1038,8 @@ export default function RecommendationsPage() {
           </div>
         ) : null}
         <InlineFeedback state={universeFeedback.state} message={universeFeedback.message} />
-        <div className="op-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
-          <label style={{ display: "grid", gap: 4, minWidth: 320, flex: "1 1 360px" }}>
+        <div style={{ display: "grid", gap: 10 }}>
+          <label style={{ display: "grid", gap: 4 }}>
             <span>Symbols to evaluate</span>
             <textarea
               value={symbols}
@@ -1049,16 +1049,16 @@ export default function RecommendationsPage() {
               }}
               rows={2}
               placeholder="SPY, QQQ, AAPL, MSFT"
-              style={{ minWidth: 320, resize: "vertical" }}
+              style={{ width: "100%", minWidth: 0, resize: "vertical" }}
             />
           </label>
-          <div className="op-row" style={{ alignItems: "center", flexWrap: "wrap", paddingTop: 22 }}>
-            <button onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
+          <div className="op-row" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <button className="op-btn op-btn-secondary" onClick={() => void loadQueue()} disabled={loading.queue}>Refresh queue</button>
             {!guidedState.guided ? (
-              <button onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote || selectedQueuePromotionBlocked}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
+              <button className="op-btn op-btn-primary" onClick={() => void promoteSelected()} disabled={!selectedQueue || loading.promote || selectedQueuePromotionBlocked}>{loading.promote ? "Promoting…" : "Promote selected queue candidate"}</button>
             ) : null}
-            <button onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>
-            {!guidedState.guided ? <button onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
+            <button className="op-btn op-btn-secondary" onClick={openReplay} disabled={guidedState.guided ? !selectedRecommendation : (!selectedQueue && !selectedRecommendation)}>Go to Replay step</button>
+            {!guidedState.guided ? <button className="op-btn op-btn-primary" onClick={openOrders} disabled={!selectedQueue && !selectedRecommendation}>Go to Paper Order step</button> : null}
           </div>
         </div>
         {selectedQueuePromotionBlocked ? (

@@ -31,6 +31,7 @@ describe("orders metric help rollout", () => {
     expect(source).toContain("No automatic exits");
     expect(source).toContain("Paper position management");
     expect(source).toContain("current mark");
+    expect(source).toContain("formatMarkAsOfTime(review.mark_as_of)");
     expect(source).toContain('<MetricLabel label="unrealized P&L" term="net_pnl" />');
     expect(source).toContain("stop / targets");
     expect(source).toContain("risk calendar");

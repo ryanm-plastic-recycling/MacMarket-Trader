@@ -2,6 +2,18 @@
 
 Last updated: 2026-05-02
 
+## 2026-05-02 Update - Recommendations Layout And Mark-Age Cleanup
+The Recommendations universe card now keeps the symbols input visually
+dominant and moves workflow actions into a wrapping button row below it:
+Refresh queue as secondary, Promote selected queue candidate as primary,
+Replay as secondary, and Paper Order as primary/accent. Orders Active Position
+Review now formats mark-as-of values through a mark-specific relative-time
+helper that accepts ISO strings plus Unix seconds/milliseconds and fails closed
+to `mark time unavailable` for missing, invalid, or epoch-like timestamps. This
+is UI/display cleanup only; recommendation ranking, sizing, paper-order
+staging, active review calculations, live trading, broker routing, automatic
+exits, and automatic scale-in behavior are unchanged.
+
 ## 2026-05-02 Update - Already-Open Recommendation Awareness
 Phase 7E active paper position management now extends into Recommendations and
 the ranked queue. User-scoped recommendation list/detail responses, ranked
