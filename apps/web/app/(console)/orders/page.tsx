@@ -131,11 +131,29 @@ type OptionLegReview = {
   vega: number | null;
   underlying_price: number | null;
   estimated_leg_unrealized_pnl: number | null;
+  intrinsic_value: number | null;
+  extrinsic_value: number | null;
+  moneyness: "itm" | "atm" | "otm" | "unknown" | string;
+  distance_to_strike_pct: number | null;
+  assignment_risk: "none" | "low" | "elevated" | "high" | "unknown" | string;
+  exercise_risk: "none" | "low" | "elevated" | "high" | "unknown" | string;
   market_data_source: string | null;
   market_data_fallback_mode: boolean;
   mark_as_of: string | number | null;
   stale: boolean;
   missing_data: string[];
+};
+
+type OptionSettlementPreview = {
+  underlying_settlement_price?: number | null;
+  gross_settlement_value?: number | null;
+  gross_settlement_pnl?: number | null;
+  net_realized_pnl_estimate?: number | null;
+  total_commissions?: number | null;
+  max_profit_loss_comparison?: string | null;
+  winning_leg_ids?: number[];
+  losing_leg_ids?: number[];
+  operator_disclaimer?: string | null;
 };
 
 type OptionStructureReview = {
@@ -164,6 +182,16 @@ type OptionStructureReview = {
   breakevens: number[];
   payoff_summary: string | null;
   risk_calendar?: RiskCalendarPayload | null;
+  underlying_mark_price: number | null;
+  underlying_mark_source: string | null;
+  underlying_mark_as_of: string | number | null;
+  itm_otm_summary: string | null;
+  assignment_risk_summary: string | null;
+  exercise_risk_summary: string | null;
+  expiration_action_summary: string | null;
+  settlement_available: boolean;
+  settlement_required: boolean;
+  settlement_preview: OptionSettlementPreview | null;
   expiration_status: string;
   action_classification: string;
   action_summary: string;
@@ -286,9 +314,9 @@ function actionTone(action: string): "good" | "warn" | "bad" | "neutral" {
 }
 
 function optionActionTone(action: string): "good" | "warn" | "bad" | "neutral" {
-  if (["hold_valid", "profitable_hold"].includes(action)) return "good";
-  if (["review_unavailable", "expiration_due", "max_loss_near"].includes(action)) return "bad";
-  if (["mark_unavailable", "expiration_warning", "max_profit_near", "close_candidate", "adjustment_review", "losing_hold"].includes(action)) return "warn";
+  if (["hold_valid", "profitable_hold", "settlement_available"].includes(action)) return "good";
+  if (["review_unavailable", "expired_unsettled", "settlement_blocked_missing_underlying", "max_loss_near"].includes(action)) return "bad";
+  if (["mark_unavailable", "expiration_due", "assignment_risk_review", "exercise_risk_review", "expiration_warning", "max_profit_near", "close_candidate", "adjustment_review", "losing_hold"].includes(action)) return "warn";
   return "neutral";
 }
 
@@ -429,6 +457,8 @@ export default function Page() {
   const [closingPositionId, setClosingPositionId] = useState<number | null>(null);
   const [closeMarkInput, setCloseMarkInput] = useState("");
   const [closeReasonInput, setCloseReasonInput] = useState<string>(CLOSE_REASONS[0]);
+  const [settlingOptionStructureId, setSettlingOptionStructureId] = useState<number | null>(null);
+  const [settleConfirmInput, setSettleConfirmInput] = useState("");
   // Pass 4 — Cancel staged order: which order_id is awaiting inline confirm.
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
   // Pass 4 — Reopen closed trade: which trade_id is awaiting inline confirm.
@@ -795,6 +825,49 @@ export default function Page() {
   }
 
   // Pass 4 — Cancel staged order
+  function beginSettleOptionExpiration(review: OptionStructureReview) {
+    setSettlingOptionStructureId(review.structure_id);
+    setSettleConfirmInput("");
+  }
+
+  function cancelSettleOptionExpiration() {
+    setSettlingOptionStructureId(null);
+    setSettleConfirmInput("");
+  }
+
+  async function confirmSettleOptionExpiration(review: OptionStructureReview) {
+    if (settleConfirmInput !== "SETTLE") {
+      setFeedback({ state: "error", message: "Type SETTLE to confirm paper-only expiration settlement." });
+      return;
+    }
+    setBusy(true);
+    setFeedback({ state: "loading", message: "Settling paper expiration..." });
+    const result = await fetchWorkflowApi<{ net_pnl: number | null; settlement_mode: string }>(
+      `/api/user/options/paper-structures/${review.structure_id}/settle-expiration`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation: "SETTLE",
+          underlying_settlement_price: review.underlying_mark_price,
+          notes: "manual paper expiration settlement from Options Position Review",
+        }),
+      },
+    );
+    if (!result.ok) {
+      setFeedback({ state: "error", message: result.error ?? "Paper expiration settlement failed." });
+      setBusy(false);
+      return;
+    }
+    cancelSettleOptionExpiration();
+    setFeedback({
+      state: "success",
+      message: `Paper expiration settled${result.data?.net_pnl != null ? ` - net P&L ${formatSignedDollars(result.data.net_pnl)}` : ""}.`,
+    });
+    await loadOptionStructureReviews();
+    setBusy(false);
+  }
+
   async function confirmCancelOrder(orderId: string) {
     setBusy(true);
     setFeedback({ state: "loading", message: "Canceling order…" });
@@ -1330,6 +1403,9 @@ export default function Page() {
                   <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
                     {formatDte(review.days_to_expiration)} | {formatOptionStructureToken(review.expiration_status)}
                   </div>
+                  <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                    underlying {formatMaybeDollars(review.underlying_mark_price)} | {review.underlying_mark_source ?? "source unavailable"} | {formatMarkAsOfTime(review.underlying_mark_as_of)}
+                  </div>
                 </div>
               </div>
               <div className="op-grid-4" style={{ marginTop: 10 }}>
@@ -1388,6 +1464,44 @@ export default function Page() {
                   {review.payoff_summary}
                 </div>
               ) : null}
+              <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.82rem", lineHeight: 1.45 }}>
+                <div>{review.itm_otm_summary ?? "Moneyness unavailable."}</div>
+                <div>{review.assignment_risk_summary ?? "Assignment risk unavailable."}</div>
+                <div>{review.exercise_risk_summary ?? "Exercise risk unavailable."}</div>
+                <div>{review.expiration_action_summary ?? "Expiration action review unavailable."}</div>
+              </div>
+              {review.settlement_preview ? (
+                <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--op-border, #1e2d3d)", borderRadius: 8 }}>
+                  <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)" }}>Paper-only settlement preview</div>
+                  <div className="op-grid-4" style={{ marginTop: 6 }}>
+                    <div><strong>Underlying:</strong> {formatMaybeDollars(review.settlement_preview.underlying_settlement_price)}</div>
+                    <div><strong>Gross P&L:</strong> {review.settlement_preview.gross_settlement_pnl != null ? formatSignedDollars(review.settlement_preview.gross_settlement_pnl) : "Unavailable"}</div>
+                    <div><strong>Net estimate:</strong> {review.settlement_preview.net_realized_pnl_estimate != null ? formatSignedDollars(review.settlement_preview.net_realized_pnl_estimate) : "Unavailable"}</div>
+                    <div><strong>Fees:</strong> {formatMaybeDollars(review.settlement_preview.total_commissions)}</div>
+                  </div>
+                  <div style={{ marginTop: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.78rem" }}>
+                    {formatOptionStructureToken(review.settlement_preview.max_profit_loss_comparison)} | Paper-only settlement. No broker action.
+                  </div>
+                  {review.settlement_available ? (
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      {settlingOptionStructureId === review.structure_id ? (
+                        <>
+                          <input
+                            value={settleConfirmInput}
+                            onChange={(event) => setSettleConfirmInput(event.target.value)}
+                            placeholder="Type SETTLE"
+                            style={{ width: 140 }}
+                          />
+                          <button className="op-btn op-btn-destructive" onClick={() => void confirmSettleOptionExpiration(review)} disabled={busy || settleConfirmInput !== "SETTLE"}>Settle paper expiration</button>
+                          <button onClick={cancelSettleOptionExpiration} disabled={busy}>Cancel</button>
+                        </>
+                      ) : (
+                        <button className="op-btn op-btn-secondary" onClick={() => beginSettleOptionExpiration(review)} disabled={busy}>Settle paper expiration</button>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {review.warnings.length ? (
                 <div style={{ marginTop: 8, color: "var(--op-warn, #f2a03f)", fontSize: "0.82rem" }}>
                   Warnings: {review.warnings.join(" ")}
@@ -1415,12 +1529,14 @@ export default function Page() {
                         <th>method / source</th>
                         <th>IV / OI</th>
                         <th>Greeks</th>
+                        <th>moneyness</th>
+                        <th>assignment / exercise</th>
                         <th><MetricLabel label="leg P&L" term="net_pnl" /></th>
                       </tr>
                     </thead>
                     <tbody>
                       {review.legs.length === 0 ? (
-                        <tr><td colSpan={12} style={{ color: "var(--op-muted, #7a8999)" }}>Leg details unavailable.</td></tr>
+                        <tr><td colSpan={14} style={{ color: "var(--op-muted, #7a8999)" }}>Leg details unavailable.</td></tr>
                       ) : review.legs.map((leg) => (
                         <tr key={leg.leg_id}>
                           <td>
@@ -1457,6 +1573,21 @@ export default function Page() {
                             <div>Delta {formatMaybeDecimal(leg.delta, 3)} | Gamma {formatMaybeDecimal(leg.gamma, 3)}</div>
                             <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
                               Theta {formatMaybeDecimal(leg.theta, 3)} | Vega {formatMaybeDecimal(leg.vega, 3)}
+                            </div>
+                          </td>
+                          <td>
+                            <StatusBadge tone={leg.moneyness === "itm" ? "warn" : leg.moneyness === "atm" ? "neutral" : "good"}>{formatOptionStructureToken(leg.moneyness)}</StatusBadge>
+                            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                              strike distance {formatMaybePercent(leg.distance_to_strike_pct)}
+                            </div>
+                            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                              intrinsic {formatMaybeDollars(leg.intrinsic_value)} | extrinsic {formatMaybeDollars(leg.extrinsic_value)}
+                            </div>
+                          </td>
+                          <td>
+                            <div>assignment {formatOptionStructureToken(leg.assignment_risk)}</div>
+                            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                              exercise {formatOptionStructureToken(leg.exercise_risk)}
                             </div>
                           </td>
                           <td>

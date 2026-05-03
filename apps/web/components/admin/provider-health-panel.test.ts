@@ -9,7 +9,8 @@ describe("provider health readiness copy", () => {
   it("keeps options/index provider guidance readiness-only", () => {
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("SPX/NDX may require index data access");
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("SPY/QQQ can be practical ETF substitutes");
-    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("Options chain, IV, Greeks, and open interest depend on provider coverage");
+    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("Options chain, IV, Greeks, open interest, and option snapshot marks depend on provider coverage");
+    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("mark_unavailable rather than fake P&L");
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("does not enable execution");
     expect(OPTIONS_PROVIDER_READINESS_NOTE.toLowerCase()).not.toContain("stage real order");
     expect(OPTIONS_PROVIDER_READINESS_NOTE.toLowerCase()).not.toContain("routing");
@@ -33,6 +34,9 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("sample option");
     expect(source).toContain("sample_underlying");
     expect(source).toContain("sample_option_symbol");
+    expect(source).toContain("entitlement_state");
+    expect(source).toContain("Options marks unavailable");
+    expect(source).toContain("provider plan is not entitled");
     expect(source).not.toContain("live probe:");
     expect(source).not.toContain("live probe: configured");
     expect(source).not.toContain("OPENAI_API_KEY");

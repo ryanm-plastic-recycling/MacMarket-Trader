@@ -1,6 +1,6 @@
 # MacMarket-Trader Operator Welcome Guide
 
-Last updated: 2026-04-30
+Last updated: 2026-05-03
 
 This is the practical welcome/training guide for MacMarket-Trader operators.
 It is written for:
@@ -11,6 +11,57 @@ It is written for:
 
 MacMarket-Trader is still paper-only. Nothing in this guide authorizes live
 trading, brokerage routing, or real-money execution.
+
+## MacMarket Quick Start
+
+### What this is
+
+MacMarket is a research and paper-trading console. It has no live trading,
+no broker routing, and no real-money execution.
+
+### Daily workflow
+
+1. Check **Provider Health**.
+2. Check **Market Risk Today**.
+3. Review **Charts** and **Analysis**.
+4. Refresh the **Recommendations** queue.
+5. Compare candidates with **Opportunity Intelligence**.
+6. Promote only candidates worth tracking.
+7. Stage a paper order with risk-at-stop and max paper order value checks.
+8. Manage open positions from **Orders** and **Active Position Review**.
+
+### Equity paper
+
+Risk budget at stop controls the estimated max loss for a paper order. Max
+paper order value caps the dollars committed to that staged paper order.
+
+### Options paper
+
+Options research preview is read-only. The options paper lifecycle is
+persisted once you intentionally save a supported structure. Option marks
+require provider entitlement; `mark_unavailable` means MacMarket did not fake
+option P&L.
+
+### LLM
+
+Opportunity Intelligence and OpenAI-backed explanations compare and explain
+only. Deterministic engines own approval, entry, stop, target, sizing, risk
+gates, and paper order creation.
+
+### Safety rules
+
+No live trading. No broker routing. No automatic exits. No automatic rolls.
+No automatic adjustments. No automatic exercise or assignment.
+
+### Red flags
+
+Provider degraded, stale data, risk-calendar `restricted` or `no_trade`,
+option mark unavailable, missing lineage, or missing evidence.
+
+### Where to go
+
+Dashboard, Charts, Analysis, Recommendations, Orders, Provider Health, and
+Settings.
 
 ## 1. What MacMarket-Trader is
 
@@ -25,6 +76,9 @@ Current reality:
   - research preview
   - replay payoff preview
   - a separate paper-only open/manual-close lifecycle
+  - Options Position Review with provider marks when entitled
+  - deterministic expiration, assignment-risk, exercise-risk, and paper
+    settlement review
 - it is not live trading
 - it is not brokerage execution
 - it does not route real-money orders
@@ -46,9 +100,10 @@ Recommendations page.
 | Mode | What it does now | What it does not do |
 | --- | --- | --- |
 | Equities mode | Full operator flow: Analysis -> Recommendations -> Replay -> Orders -> close paper trade | No live routing |
-| Options research preview | Shows structure, legs, expected range status, chain preview when available, and chart/research context | Not execution support |
+| Options research preview | Shows structure, legs, expiration/DTE, expected range status, chain preview when available, and chart/research context | Not execution support |
 | Options replay payoff preview | Read-only, non-persisted expiration payoff preview for supported defined-risk structures | Does not create replay runs, orders, positions, or trades |
-| Paper options lifecycle | Persists a paper-only options position and supports manual close for supported structures | No expiration settlement, no assignment/exercise automation, no live routing |
+| Paper options lifecycle | Persists a paper-only options position and supports manual close for supported structures | No live routing, no automatic exits, no automatic rolls |
+| Options Position Review | Reviews open options paper structures, option marks when entitled, DTE, moneyness, assignment/exercise risk, and paper-only settlement preview when available | No automated exercise, assignment, close, roll, adjustment, or broker order |
 | Provider health / operator readiness | Shows provider configuration, fallback/blocking truth, and operator trust state | Does not enable live trading |
 
 Two workflow styles also matter:
@@ -66,17 +121,26 @@ Two workflow styles also matter:
 2. Pick a symbol.
 3. Choose the correct market mode.
 4. Review chart context, workflow source, strategy rationale, and levels.
+   Intraday 1H/4H charts are regular-trading-hours normalized.
 5. Continue based on mode.
 
 ### Equities flow
 
 1. In Analysis, review the setup and chart.
-2. Create the recommendation.
-3. Open **Recommendations** and review the persisted lineage.
-4. Run **Replay** to validate the path.
-5. If the replay is stageable, continue into **Orders**.
-6. Stage the paper order, monitor the paper position, and close it when ready.
-7. Review realized paper results.
+2. Check the Market Risk Calendar and sit-out guardrails.
+3. Create the recommendation.
+4. Open **Recommendations**, refresh the ranked queue, and review persisted
+   lineage.
+5. Use Opportunity Intelligence to compare selected queue candidates when
+   OpenAI is configured; deterministic ranking and approval still own the
+   trade fields.
+6. Run **Replay** to validate the path.
+7. If the replay is stageable, continue into **Orders**.
+8. Stage the paper order with risk budget at stop and max paper order value
+   checks.
+9. Use **Active Position Review** for open equity paper positions, including
+   already-open awareness when the same symbol reappears in Recommendations.
+10. Close manually when ready and review realized paper results.
 
 ### Options flow
 
@@ -101,6 +165,9 @@ Two workflow styles also matter:
 6. Review gross P&L, commissions, and net P&L.
 7. Open **Orders** later to review the durable saved paper option position or
    closed paper trade result outside Recommendations.
+8. Use **Options Position Review** in Orders for open structures, mark status,
+   expiration status, assignment/exercise risk, and paper-only settlement
+   review.
 
 ## 4. Options training
 
@@ -113,10 +180,16 @@ Keep these distinctions clear:
 - **Save as paper option position** means a paper-only record is created.
   No broker order is sent.
 - **Manual close** requires one exit premium per leg.
-- **Expiration settlement** is deferred.
-- **Assignment/exercise automation** is deferred.
+- **Expiration settlement review** is deterministic and paper-only.
+- **Settle paper expiration** requires explicit manual confirmation when it is
+  available.
+- **Assignment/exercise risk** is informational only.
+- **Assignment/exercise automation** is not available.
 - **Naked shorts** are blocked.
 - **Live routing** is not available.
+- **Provider option marks** depend on Polygon/Massive option snapshot
+  entitlement. If the provider returns `Not entitled to this data`, MacMarket
+  shows `mark_unavailable` and does not fabricate leg marks or P&L.
 
 Current supported operator expectation:
 
@@ -190,8 +263,11 @@ Practical operator notes:
 - SPX and NDX may require index-data entitlement
 - if index access is unavailable, SPY and QQQ are practical ETF substitutes
   for research and workflow testing
-- options chain rows, Greeks, IV, and open interest depend on provider plan
-  coverage
+- options chain rows, option snapshot marks, Greeks, IV, and open interest
+  depend on provider plan coverage
+- Provider Health can honestly show `options_data` as degraded when
+  Polygon/Massive says `Not entitled to this data`; that means option marks
+  are unavailable, not that live trading is enabled or disabled
 - missing options data is often a provider/plan limitation unless the app
   explicitly shows a different error
 - the Recommendations options risk surface and Analysis options preview now
@@ -206,7 +282,26 @@ Interpretation rule:
 - provider readiness does **not** mean live trading is enabled
 - provider degradation should be treated as a workflow trust issue first
 
-## 7. Symbol discovery and watchlists
+## 7. Admin evidence and release gates
+
+Admins and maintainers can use the release/evidence tooling to collect
+readiness artifacts before deploy or diligence review.
+
+Useful local commands:
+
+```powershell
+python scripts/run_release_gate.py --quick
+python scripts/run_release_gate.py
+python scripts/generate_release_evidence.py
+```
+
+`--quick` prints progress for scans, targeted compliance evidence tests, clean
+archive dry-run, and evidence generation. The full release gate adds backend
+tests, frontend tests, TypeScript, and npm audit report-only. These gates are
+evidence and deployment hygiene tools; they do not call live brokers or enable
+trading.
+
+## 8. Symbol discovery and watchlists
 
 Current symbol and watchlist management is improved but still intentionally
 manual. You may need to know the symbols you want to inspect and, in
@@ -286,7 +381,7 @@ Design checkpoint status:
 - schedule universe preview/apply now follows that rule: later watchlist edits
   do not automatically change existing schedules
 
-## 8. Metric glossary and tooltips
+## 9. Metric glossary and tooltips
 
 The console currently exposes operator abbreviations and risk terms such as
 `RR`, `CONF`, `Score`, `DTE`, Expected Range, `IV`, open interest, breakevens,
@@ -317,7 +412,7 @@ Important interpretation rules:
 Longer explanations should continue to live in operator docs so dense tables
 and cards stay readable.
 
-## 9. Chart and indicator training
+## 10. Chart and indicator training
 
 Analysis and Recommendations now use compact workflow chart presets.
 
@@ -348,7 +443,7 @@ Operator guidance:
 Indicators are research context only. They are not automatic trade
 instructions.
 
-## 10. Expected Move / Expected Range
+## 11. Expected Move / Expected Range
 
 Expected Move / Expected Range is a first-class options research concept in
 MacMarket-Trader.
@@ -384,7 +479,7 @@ Operator rule:
 - missing or blocked Expected Range visualization should still read as
   `Unavailable` or muted context, not as a hidden zero
 
-## 11. Safety guardrails
+## 12. Safety guardrails
 
 Treat these as hard boundaries:
 
@@ -403,7 +498,7 @@ Also remember:
 - options do not reuse equity replay persistence or equity order semantics
 - if a screen says paper-only, believe it
 
-## 12. Manual smoke checklist
+## 13. Manual smoke checklist
 
 Use this checklist when validating the current operator workflow:
 
@@ -412,19 +507,27 @@ Use this checklist when validating the current operator workflow:
    - equity `commission_per_trade`
    - options `commission_per_contract`
 3. Run an **equity** setup through Analysis.
-4. Run an **options** setup and review research preview details.
-5. Run **Replay payoff preview** for the options structure.
-6. Open the **paper option structure** from Recommendations.
-7. Manually close it with one exit premium per leg.
-8. Verify:
+4. Refresh **Recommendations** and confirm queue/source/risk labels are clear.
+5. Stage an equity paper order and verify risk-at-stop plus max paper order
+   value checks.
+6. Open **Orders** and verify **Active Position Review** shows open equity
+   paper positions without automatic exits.
+7. Run an **options** setup and review research preview details.
+8. Run **Replay payoff preview** for the options structure.
+9. Open the **paper option structure** from Recommendations.
+10. Open **Orders** and verify **Options Position Review** shows mark status,
+    DTE, assignment/exercise risk, and no automatic roll/adjust/exercise
+    action.
+11. Manually close it with one exit premium per leg.
+12. Verify:
    - gross P&L
    - opening commissions
    - closing commissions
    - total commissions
    - net P&L
-9. Confirm no live-trading or brokerage-routing language appears.
+13. Confirm no live-trading or brokerage-routing language appears.
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 ### "Data not available on current plan"
 
@@ -453,6 +556,17 @@ Possible causes:
 - the symbol/expiration is not currently available
 - the app has enough structure context to show research but not enough chain
   detail to show preview rows
+
+### Option mark unavailable
+
+Possible causes:
+
+- provider plan is not entitled to option snapshot data
+- the specific option contract snapshot is unavailable
+- the snapshot is stale or missing bid/ask/last fields
+
+This is expected to render as `mark_unavailable`. Do not treat it as zero
+premium, zero P&L, or permission to fabricate a mark.
 
 ### Missing expected range
 
@@ -489,7 +603,7 @@ If net P&L looks wildly wrong:
 2. confirm it is something like `0.65`, not `65`
 3. remember options commission is not multiplied by `100`
 
-## 14. Current phase status
+## 15. Current phase status
 
 Current project status, in operator terms:
 
@@ -592,6 +706,13 @@ Current options boundary:
 - paper open/manual-close lifecycle is live
 - Orders now provides durable paper-options position/trade visibility outside
   Recommendations
+- Options Position Review is live for open options paper structures
+- provider-backed option marks populate review only when provider entitlement
+  permits snapshots
+- expiration, moneyness, assignment-risk, exercise-risk, and paper-only
+  settlement review are live
+- manual paper expiration settlement requires explicit confirmation when an
+  expired structure has a usable underlying mark
 - current scoped Phase 8 paper-first options capability is complete
 - current scoped Phase 9 operator parity and Expected Range visualization
   capability is complete
@@ -599,7 +720,7 @@ Current options boundary:
   Analysis Expected Range visualization using existing fields only
 - `10B1` improves Orders display/readability for saved and manually closed
   paper option lifecycle rows without adding Orders actions
-- expiration settlement is still deferred
+- automatic expiration settlement is not available
 - broader options dashboard depth and workflow actions remain deferred
 - persisted options recommendations, options replay persistence,
   assignment/exercise automation, naked shorts, probability/margin modeling,

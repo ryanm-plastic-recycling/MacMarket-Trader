@@ -17,6 +17,7 @@ import {
   fetchOptionsPaperClose,
   fetchOptionsPaperOpen,
   fetchOptionsReplayPreview,
+  formatOptionsExpectedRangeHorizon,
   formatOptionsLegLabel,
   formatOptionsReplayToken,
   formatResearchCell,
@@ -30,6 +31,7 @@ import {
   getOptionsChainUnavailableMessage,
   getOptionsResearchDataQualityWarnings,
   getOptionsLegDisplayLines,
+  getOptionsResearchDisplayDte,
   getOptionsPaperOpenAvailability,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
@@ -366,6 +368,7 @@ export function OptionsStructureRiskSummary({
 }) {
   const structure = setup.option_structure ?? null;
   const chainPreview = setup.options_chain_preview ?? null;
+  const displayDte = getOptionsResearchDisplayDte(structure, setup.expected_range);
   const structureBreakevens = getStructureBreakevenValues(structure);
   const replayBreakevens = getOptionsReplayPreviewBreakevens(replayPreview);
   const breakevens = replayBreakevens.length > 0 ? replayBreakevens : structureBreakevens;
@@ -392,7 +395,7 @@ export function OptionsStructureRiskSummary({
   const expectedRangeDetail = setup.expected_range
     ? expectedRangeReason
       ? `Reason: ${expectedRangeReason}`
-      : formatExpectedMoveSummary(setup.expected_range)
+      : formatExpectedMoveSummary(setup.expected_range, formatOptionsExpectedRangeHorizon(setup.expected_range, structure))
     : "Expected range context unavailable for this setup.";
   const legCount = getLegCount(structure, paperOpenResult);
   const multiplierSummary = getMultiplierSummary(structure, paperOpenResult);
@@ -490,7 +493,7 @@ export function OptionsStructureRiskSummary({
           label="Expiration / DTE"
           term="dte"
           value={formatResearchValue(structure?.expiration)}
-          detail={`DTE ${formatResearchValue(structure?.dte, "—")}`}
+          detail={`DTE ${formatResearchValue(displayDte, "—")}`}
         />
         <RiskMetricCard
           label="Legs / multiplier"
@@ -521,7 +524,7 @@ export function OptionsStructureRiskSummary({
         expectedRange={setup.expected_range}
         breakevens={breakevens}
         expiration={structure?.expiration}
-        dte={structure?.dte}
+        dte={displayDte}
         maxProfit={maxProfit}
         maxLoss={maxLoss}
         workflowSource={setup.workflow_source}
@@ -706,6 +709,7 @@ export function OptionsPaperLifecyclePanel({
   }, [closeDraftActive, onCloseDraftActiveChange]);
 
   const openAvailability = getOptionsPaperOpenAvailability(setup);
+  const displayDte = getOptionsResearchDisplayDte(setup.option_structure, setup.expected_range);
   const hasActiveInMemoryPosition = openResult !== null && closeResult === null;
   const openDisabledReason = hasActiveInMemoryPosition
     ? "This page only tracks the current in-memory paper option position. Manual close it below before opening another from this research preview."
@@ -795,7 +799,7 @@ export function OptionsPaperLifecyclePanel({
         <div>
           <div><strong>Structure:</strong> {formatResearchValue(setup.option_structure?.type)}</div>
           <div><strong>Expiration:</strong> {formatResearchValue(setup.option_structure?.expiration)}</div>
-          <div><strong>DTE:</strong> {formatResearchValue(setup.option_structure?.dte)}</div>
+          <div><strong>DTE:</strong> {formatResearchValue(displayDte)}</div>
           <div><strong>{getOptionsPremiumLabel(setup.option_structure)}:</strong> {formatResearchCurrency(getOptionsPremiumValue(setup.option_structure))}</div>
           <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatResearchCurrency(setup.option_structure?.max_profit)}</div>
           <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchCurrency(setup.option_structure?.max_loss)}</div>
@@ -1252,6 +1256,7 @@ export function OptionsResearchPreview({
   }
 
   const structure = setup.option_structure ?? null;
+  const displayDte = getOptionsResearchDisplayDte(structure, setup.expected_range);
   const premiumLabel = getOptionsPremiumLabel(structure);
   const premiumValue = getOptionsPremiumValue(structure);
   const chainPreview = setup.options_chain_preview ?? null;
@@ -1319,7 +1324,7 @@ export function OptionsResearchPreview({
           <div><strong>Workflow source:</strong> {formatResearchValue(setup.workflow_source)}</div>
           <div><strong>Structure:</strong> {formatResearchValue(structure?.type)}</div>
           <div><strong>Expiration:</strong> {formatResearchValue(structure?.expiration)}</div>
-          <div><strong><MetricLabel label="DTE" term="dte" />:</strong> {formatResearchValue(structure?.dte)}</div>
+          <div><strong><MetricLabel label="DTE" term="dte" />:</strong> {formatResearchValue(displayDte)}</div>
           <div><strong>{premiumLabel}:</strong> {formatResearchValue(premiumValue)}</div>
           <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatResearchValue(structure?.max_profit)}</div>
           <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchValue(structure?.max_loss)}</div>
@@ -1356,14 +1361,14 @@ export function OptionsResearchPreview({
               <div><strong>Reference price:</strong> {formatResearchValue(setup.expected_range.reference_price_type, "Source unavailable")}</div>
               <div><strong>As-of:</strong> {formatResearchTimestamp(setup.expected_range.snapshot_timestamp)}</div>
               <div><strong>Move:</strong> {formatResearchValue(setup.expected_range.absolute_move)} ({formatResearchValue(setup.expected_range.lower_bound)} to {formatResearchValue(setup.expected_range.upper_bound)})</div>
-              <div><strong>Horizon:</strong> {formatResearchValue(setup.expected_range.horizon_value)} {formatResearchValue(setup.expected_range.horizon_unit, "").trim()}</div>
+              <div><strong>Horizon:</strong> {formatOptionsExpectedRangeHorizon(setup.expected_range, structure)}</div>
               {expectedRangeReason ? <div><strong>Reason:</strong> {formatResearchValue(expectedRangeReason)}</div> : null}
               <div><strong>Source notes:</strong> {formatResearchValue(setup.expected_range.provenance_notes, "Source unavailable")}</div>
               <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
                 Expected range is research context only. It does not change expiration payoff math or enable execution.
               </div>
               <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
-                {formatExpectedMoveSummary(setup.expected_range)}
+                {formatExpectedMoveSummary(setup.expected_range, formatOptionsExpectedRangeHorizon(setup.expected_range, structure))}
               </div>
             </>
           ) : (

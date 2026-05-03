@@ -2,6 +2,56 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Options DTE, Entitlement UX, Release Gate Progress, And Welcome Guide
+Options research now uses a shared UTC-calendar DTE helper for displayed DTE
+and Expected Range `calendar_days`. The fixed `2026-05-16` options research
+expiration now evaluates to 13 DTE when assessed on `2026-05-03`, matching
+Options Position Review and avoiding the stale 33-day expected-range horizon.
+Frontend options research, Expected Range visualization, and durable paper
+options lifecycle rows now prefer recomputed DTE from expiration/as-of when
+available rather than trusting stale persisted DTE.
+
+Options mark entitlement failures remain honest but less noisy. Repeated
+Polygon/Massive "not entitled" option snapshot failures are aggregated at the
+structure level while leg-level missing-data codes remain available. Provider
+Health still reports `options_data` as degraded when the provider plan lacks
+snapshot entitlement, and the UI states that option marks are unavailable
+rather than fabricating P&L.
+
+`scripts/run_release_gate.py` now prints progress before each major step,
+records elapsed seconds per step in evidence, and supports `--quick` for scans,
+targeted compliance/evidence tests, clean archive dry-run, and release
+evidence generation without the full backend/frontend/TypeScript suite. The
+Welcome Guide now starts with a compact MacMarket Quick Start cheat sheet and
+documents current Provider Health, Market Risk Calendar, RTH chart, equity
+paper, options paper, Options Position Review, option mark entitlement, and
+release/evidence gate boundaries.
+
+## 2026-05-03 Update - Options Expiration And Paper Settlement Review
+Options Position Review now includes deterministic expiration, moneyness,
+assignment-risk, exercise-risk, and paper settlement context for open options
+paper structures. Each structure review exposes underlying mark metadata,
+ITM/OTM summary, assignment/exercise summaries, expiration action summary,
+settlement required/available flags, and a paper-only settlement preview when
+an expired structure has a usable underlying mark. Each leg includes intrinsic
+value, extrinsic value when a fresh option mark exists, moneyness,
+distance-to-strike percentage, assignment risk, and exercise risk.
+
+Expired open structures can be manually settled through
+`POST /user/options/paper-structures/{position_id}/settle-expiration`. The
+endpoint requires explicit `SETTLE` confirmation, is current-user scoped,
+uses intrinsic values from the supplied or provider-backed underlying
+settlement mark, persists through the existing options paper close path with
+`settlement_mode=expiration`, and is idempotent through the existing
+open-position guard. It does not create equity records, broker orders, live
+exercise, live assignment, automatic exits, automatic rolls, or automatic
+adjustments.
+
+If the underlying mark is unavailable, expired structures are classified as
+`settlement_blocked_missing_underlying` and settlement preview/confirmation
+remain unavailable. Risk-calendar warnings still appear, but macro/event risk
+does not trigger automatic close or settlement.
+
 ## 2026-05-03 Update - Provider-Backed Options Marks For Review
 Options Position Review now uses provider-backed Polygon/Massive option
 contract snapshots when available. The backend market-data service supports

@@ -42,6 +42,15 @@ Run the repeatable release gate:
 python scripts/run_release_gate.py
 ```
 
+The gate prints progress before each major step and records elapsed time in
+the JSON/Markdown evidence.
+
+Quick local evidence pass:
+
+```powershell
+python scripts/run_release_gate.py --quick
+```
+
 Fast dry-run for CI/test evidence wiring:
 
 ```powershell

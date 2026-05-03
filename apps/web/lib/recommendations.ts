@@ -95,6 +95,8 @@ export type OptionsResearchStructure = {
   breakeven_low?: number | null;
   breakeven_high?: number | null;
   dte?: number | null;
+  dte_as_of?: string | null;
+  dte_policy?: string | null;
   iv_snapshot?: number | null;
   theta_context?: number | null;
   vega_context?: number | null;
@@ -483,6 +485,68 @@ function normalizeResearchSymbol(symbol: string | null | undefined): string | nu
 function toFiniteNumber(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   return value;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function utcDayNumberFromParts(year: number, month: number, day: number): number | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return Math.floor(Date.UTC(year, month - 1, day) / MS_PER_DAY);
+}
+
+function parseUtcCalendarDay(value: string | Date | null | undefined): number | null {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return utcDayNumberFromParts(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  if (dateOnly) {
+    return utcDayNumberFromParts(Number(dateOnly[1]), Number(dateOnly[2]), Number(dateOnly[3]));
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return utcDayNumberFromParts(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
+}
+
+export function calculateOptionsCalendarDte(
+  expiration: string | Date | null | undefined,
+  asOf: string | Date | null | undefined = new Date(),
+  options: { allowExpiredNegative?: boolean } = {},
+): number | null {
+  const expirationDay = parseUtcCalendarDay(expiration);
+  const asOfDay = parseUtcCalendarDay(asOf ?? new Date());
+  if (expirationDay == null || asOfDay == null) return null;
+  const days = expirationDay - asOfDay;
+  return days < 0 && !options.allowExpiredNegative ? 0 : days;
+}
+
+export function getOptionsResearchDisplayDte(
+  structure: OptionsResearchStructure | null | undefined,
+  expectedRange?: OptionsExpectedRange | null,
+  asOfOverride?: string | Date | null,
+): number | null {
+  const asOf = asOfOverride ?? structure?.dte_as_of ?? expectedRange?.snapshot_timestamp ?? null;
+  const recomputed = calculateOptionsCalendarDte(structure?.expiration ?? null, asOf);
+  if (recomputed != null) return recomputed;
+  return toFiniteNumber(structure?.dte);
+}
+
+export function formatOptionsExpectedRangeHorizon(
+  expectedRange: OptionsExpectedRange | null | undefined,
+  structure?: OptionsResearchStructure | null,
+): string {
+  const displayDte = getOptionsResearchDisplayDte(structure ?? null, expectedRange ?? null);
+  if (displayDte != null) {
+    return `${formatResearchValue(displayDte)} calendar_days`;
+  }
+  if (expectedRange && (expectedRange.horizon_value != null || expectedRange.horizon_unit)) {
+    return `${formatResearchValue(expectedRange.horizon_value)} ${formatResearchValue(expectedRange.horizon_unit, "")}`.trim();
+  }
+  return "Unavailable";
 }
 
 function toPositiveInteger(value: unknown, fallback: number): number {

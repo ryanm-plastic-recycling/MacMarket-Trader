@@ -26,13 +26,14 @@ from macmarket_trader.data.providers.base import EmailMessage
 from macmarket_trader.data.providers.market_data import DataNotEntitledError, DeterministicFallbackMarketDataProvider, SymbolNotFoundError, build_polygon_option_ticker, unavailable_option_contract_snapshot
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
-from macmarket_trader.domain.time import utc_now
+from macmarket_trader.domain.time import calendar_days_to_expiration, utc_now
 from macmarket_trader.domain.schemas import (
     ApprovalActionRequest,
     Bar,
     ExpectedRange,
     InviteCreateRequest,
     BetterElsewhereCandidate,
+    OptionPaperExpirationSettleRequest,
     OptionPaperCloseStructureRequest,
     OptionPaperCloseStructureResponse,
     OptionPaperLifecycleSummaryListResponse,
@@ -53,7 +54,7 @@ from macmarket_trader.domain.schemas import (
 from macmarket_trader.execution.paper_broker import PaperBroker
 from macmarket_trader.llm.base import LLMProviderUnavailable, LLMValidationError
 from macmarket_trader.llm.openai_provider import OpenAICompatibleLLMClient, get_last_openai_provider_error
-from macmarket_trader.options.paper_close import OptionPaperCloseError, close_paper_option_structure
+from macmarket_trader.options.paper_close import OptionPaperCloseError, close_paper_option_structure, settle_paper_option_expiration
 from macmarket_trader.options.paper_contracts import OptionPaperContractError
 from macmarket_trader.options.paper_open import open_paper_option_structure
 from macmarket_trader.options.replay_preview import build_options_replay_preview
@@ -317,7 +318,7 @@ preview_market_data_provider = DeterministicFallbackMarketDataProvider()
 ranking_engine = DeterministicRankingEngine()
 
 
-def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | None, dte: int) -> ExpectedRange:
+def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | None, dte: int, as_of: datetime) -> ExpectedRange:
     reference = round(latest_close, 2)
     if iv_snapshot is None:
         return ExpectedRange(
@@ -326,7 +327,7 @@ def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | N
             horizon_value=dte,
             horizon_unit="calendar_days",
             reference_price_type="underlying_last",
-            snapshot_timestamp=utc_now(),
+            snapshot_timestamp=as_of,
             provenance_notes="Expected range requires IV input from options chain quality checks.",
         )
     if iv_snapshot < 0.08:
@@ -337,7 +338,7 @@ def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | N
             horizon_value=dte,
             horizon_unit="calendar_days",
             reference_price_type="underlying_last",
-            snapshot_timestamp=utc_now(),
+            snapshot_timestamp=as_of,
             provenance_notes="IV snapshot too low-quality for deterministic expected range contract.",
         )
 
@@ -352,10 +353,20 @@ def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | N
         percent_move=percent_move,
         lower_bound=round(reference - absolute_move, 2),
         upper_bound=round(reference + absolute_move, 2),
-        snapshot_timestamp=utc_now(),
+        snapshot_timestamp=as_of,
         provenance_notes="Research preview only. Computed from IV 1-sigma method; not execution support.",
         status="computed",
     )
+
+
+def _options_research_expiration_context(*, expiration: str, as_of: datetime) -> dict[str, object]:
+    dte = calendar_days_to_expiration(expiration, as_of=as_of)
+    return {
+        "expiration": expiration,
+        "dte": dte if dte is not None else 0,
+        "as_of": as_of.isoformat(),
+        "dte_policy": "utc_calendar_days",
+    }
 
 
 def _build_equity_expected_range(bars: list[Bar], *, horizon_trading_days: int = 5) -> ExpectedRange:
@@ -1366,6 +1377,38 @@ def close_user_option_paper_structure(
             req=req,
             commission_per_contract=_effective_commission_per_contract(user),
             repository=option_paper_repo,
+        )
+    except OptionPaperCloseError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.reason) from exc
+
+
+@user_router.post(
+    "/options/paper-structures/{position_id}/settle-expiration",
+    response_model=OptionPaperCloseStructureResponse,
+)
+def settle_user_option_paper_structure_expiration(
+    position_id: int,
+    req: OptionPaperExpirationSettleRequest,
+    user=Depends(require_approved_user),
+) -> OptionPaperCloseStructureResponse:
+    position = option_paper_repo.get_position(position_id=position_id, app_user_id=user.id)
+    if position is None:
+        raise HTTPException(status_code=404, detail="option_position_not_found")
+    settlement_price = _finite_float(req.underlying_settlement_price)
+    if settlement_price is None:
+        mark_payload = _option_underlying_mark(position.underlying_symbol)
+        settlement_price = _finite_float(mark_payload.get("underlying_mark_price"))
+        if settlement_price is None:
+            raise HTTPException(status_code=409, detail="underlying_mark_required_for_expiration_settlement")
+    try:
+        return settle_paper_option_expiration(
+            app_user_id=user.id,
+            position_id=position_id,
+            confirmation=req.confirmation,
+            underlying_settlement_price=settlement_price,
+            commission_per_contract=_effective_commission_per_contract(user),
+            repository=option_paper_repo,
+            notes=req.notes or "",
         )
     except OptionPaperCloseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.reason) from exc
@@ -2392,21 +2435,153 @@ def _option_days_to_expiration(position, now: datetime) -> tuple[object | None, 
         expiration = getattr(legs[0], "expiration", None) if legs else None
     if expiration is None:
         return None, None
-    return expiration, (expiration - now.date()).days
+    return expiration, calendar_days_to_expiration(expiration, as_of=now, allow_expired_negative=True)
 
 
 def _option_expiration_status(days_to_expiration: int | None) -> str:
     if days_to_expiration is None:
         return "expiration_unavailable"
     if days_to_expiration < 0:
-        return "expired"
+        return "expired_unsettled"
     if days_to_expiration == 0:
-        return "expiration_due"
-    if days_to_expiration <= 2:
-        return "expiration_due"
+        return "expires_today"
     if days_to_expiration <= 7:
         return "expiration_warning"
     return "active"
+
+
+def _option_underlying_mark(symbol: str) -> dict[str, object]:
+    payload = _latest_position_mark(symbol)
+    mark = _finite_float(payload.get("current_mark_price"))
+    source = str(payload.get("market_data_source") or "provider")
+    fallback_mode = bool(payload.get("market_data_fallback_mode"))
+    missing_data = list(payload.get("missing_data") or [])
+    warnings = [_sanitize_provider_error(item) for item in list(payload.get("warnings") or [])]
+    if fallback_mode:
+        mark = None
+        if "provider_backed_underlying_mark" not in missing_data:
+            missing_data.append("provider_backed_underlying_mark")
+        warnings.append("Provider-backed underlying mark is required for options expiration review and settlement.")
+    return {
+        "underlying_mark_price": mark,
+        "underlying_mark_source": source,
+        "underlying_mark_as_of": payload.get("mark_as_of"),
+        "missing_data": missing_data,
+        "warnings": warnings,
+    }
+
+
+def _option_intrinsic_value(*, right: str, strike: float, underlying_mark: float | None) -> float | None:
+    if underlying_mark is None or underlying_mark <= 0:
+        return None
+    normalized_right = str(right or "").strip().lower()
+    if normalized_right == "call":
+        return _round_money(max(underlying_mark - float(strike), 0.0))
+    if normalized_right == "put":
+        return _round_money(max(float(strike) - underlying_mark, 0.0))
+    return None
+
+
+def _option_distance_to_strike_pct(*, strike: float, underlying_mark: float | None) -> float | None:
+    if underlying_mark is None or underlying_mark <= 0:
+        return None
+    return round(((underlying_mark - float(strike)) / underlying_mark) * 100, 2)
+
+
+def _option_moneyness(*, right: str, strike: float, underlying_mark: float | None) -> str:
+    distance_pct = _option_distance_to_strike_pct(strike=strike, underlying_mark=underlying_mark)
+    if distance_pct is None:
+        return "unknown"
+    if abs(distance_pct) <= 0.5:
+        return "atm"
+    normalized_right = str(right or "").strip().lower()
+    if normalized_right == "call":
+        return "itm" if underlying_mark is not None and underlying_mark > float(strike) else "otm"
+    if normalized_right == "put":
+        return "itm" if underlying_mark is not None and underlying_mark < float(strike) else "otm"
+    return "unknown"
+
+
+_OPTION_RISK_RANK = {"none": 0, "low": 1, "elevated": 2, "high": 3, "unknown": -1}
+
+
+def _max_option_risk(values: list[str]) -> str:
+    known = [value for value in values if value in _OPTION_RISK_RANK and value != "unknown"]
+    if not known:
+        return "unknown" if any(value == "unknown" for value in values) else "none"
+    return max(known, key=lambda value: _OPTION_RISK_RANK[value])
+
+
+def _is_option_snapshot_entitlement_error(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    return any(token in text for token in ("not entitled", "entitlement", "permission", "not authorized"))
+
+
+def _option_assignment_risk(*, side: str, moneyness: str, days_to_expiration: int | None) -> str:
+    if side != "short":
+        return "none"
+    if moneyness == "unknown" or days_to_expiration is None:
+        return "unknown"
+    if moneyness == "itm":
+        if days_to_expiration <= 0:
+            return "high"
+        if days_to_expiration <= 2:
+            return "elevated"
+        if days_to_expiration <= 7:
+            return "low"
+    if moneyness == "atm" and days_to_expiration <= 2:
+        return "elevated"
+    return "none"
+
+
+def _option_exercise_risk(*, side: str, moneyness: str, days_to_expiration: int | None) -> str:
+    if side != "long":
+        return "none"
+    if moneyness == "unknown" or days_to_expiration is None:
+        return "unknown"
+    if moneyness == "itm":
+        if days_to_expiration <= 0:
+            return "high"
+        if days_to_expiration <= 2:
+            return "elevated"
+        if days_to_expiration <= 7:
+            return "low"
+    if moneyness == "atm" and days_to_expiration <= 2:
+        return "low"
+    return "none"
+
+
+def _option_leg_gross_pnl_at_premium(leg, *, exit_premium: float) -> float | None:
+    entry = _finite_float(getattr(leg, "entry_premium", None))
+    quantity = _finite_int(getattr(leg, "quantity", None))
+    multiplier = _finite_int(getattr(leg, "multiplier", None))
+    if entry is None or quantity is None or multiplier is None:
+        return None
+    direction = 1.0 if str(getattr(leg, "action", "") or "").strip().lower() == "buy" else -1.0
+    return _round_money((float(exit_premium) - entry) * quantity * multiplier * direction)
+
+
+def _option_expiration_summary(
+    *,
+    expiration_status: str,
+    assignment_risk: str,
+    exercise_risk: str,
+    settlement_available: bool,
+    settlement_blocked: bool,
+) -> str:
+    if settlement_available:
+        return "Expired paper structure can be manually settled from intrinsic value. Paper-only settlement; no broker action."
+    if settlement_blocked:
+        return "Expired paper structure needs a provider-backed underlying mark before paper settlement can be previewed or confirmed."
+    if expiration_status == "expired_unsettled":
+        return "Expired paper structure remains open and requires manual paper settlement review."
+    if expiration_status == "expires_today":
+        return "Structure expires today. Review ITM/OTM, assignment, and exercise risk; no automatic exercise or assignment occurs."
+    if assignment_risk in {"elevated", "high"} or exercise_risk in {"elevated", "high"}:
+        return "Near-expiration option risk is elevated. Review only; no automatic close, roll, exercise, or assignment occurs."
+    if expiration_status == "expiration_warning":
+        return "Structure is near expiration. Review time decay and event overlap; no automatic roll or adjustment occurs."
+    return "Structure is not near expiration; continue normal paper review."
 
 
 def _option_payoff_summary(position, opening_type: str) -> str:
@@ -2423,6 +2598,11 @@ def _classify_option_structure_review(
     review_unavailable: bool,
     mark_unavailable: bool,
     expiration_status: str,
+    expired_unsettled: bool,
+    settlement_blocked_missing_underlying: bool,
+    settlement_available: bool,
+    assignment_risk_review: bool,
+    exercise_risk_review: bool,
     max_loss_near: bool,
     max_profit_near: bool,
     close_candidate: bool,
@@ -2434,8 +2614,18 @@ def _classify_option_structure_review(
         return "review_unavailable"
     if mark_unavailable:
         return "mark_unavailable"
-    if expiration_status == "expiration_due":
+    if expired_unsettled:
+        return "expired_unsettled"
+    if settlement_blocked_missing_underlying:
+        return "settlement_blocked_missing_underlying"
+    if settlement_available:
+        return "settlement_available"
+    if expiration_status == "expires_today":
         return "expiration_due"
+    if assignment_risk_review:
+        return "assignment_risk_review"
+    if exercise_risk_review:
+        return "exercise_risk_review"
     if max_loss_near:
         return "max_loss_near"
     if max_profit_near:
@@ -2458,7 +2648,12 @@ def _option_structure_review_summary(action: str, symbol: str, warnings: list[st
         "review_unavailable": f"{symbol} options structure needs manual review because required lifecycle data is missing or unsupported.",
         "mark_unavailable": f"{symbol} options structure has no provider-backed option mark available; review is limited to opening, payoff, expiration, and risk-calendar context.",
         "expiration_warning": f"{symbol} options structure is nearing expiration. Review only; no roll or close is created.",
-        "expiration_due": f"{symbol} options structure is at or past expiration. Manual review is required; settlement automation is not supported.",
+        "expiration_due": f"{symbol} options structure expires today. Review only; no exercise, assignment, roll, or close is automatic.",
+        "expired_unsettled": f"{symbol} options structure is expired and still open. Manual paper settlement review is required.",
+        "settlement_blocked_missing_underlying": f"{symbol} options structure is expired, but paper settlement is blocked until an underlying mark is available.",
+        "settlement_available": f"{symbol} options structure is expired and has a paper-only settlement preview available. Manual confirmation is required.",
+        "assignment_risk_review": f"{symbol} options structure has elevated short-leg assignment risk. Review only; no assignment is automated.",
+        "exercise_risk_review": f"{symbol} options structure has elevated long-leg exercise risk. Review only; no exercise is automated.",
         "max_profit_near": f"{symbol} options structure is near persisted max profit. Review only; no automatic close is created.",
         "max_loss_near": f"{symbol} options structure is near persisted max loss. Review only; no automatic close is created.",
         "profitable_hold": f"{symbol} options structure is profitable on available marks and remains a hold review candidate.",
@@ -2487,6 +2682,15 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
     )
     contracts = _option_contract_count(legs)
     multiplier_assumption = _option_multiplier_assumption(legs)
+    underlying_payload = _option_underlying_mark(symbol) if symbol else {
+        "underlying_mark_price": None,
+        "underlying_mark_source": None,
+        "underlying_mark_as_of": None,
+        "missing_data": ["underlying_symbol"],
+        "warnings": [],
+    }
+    underlying_mark = _finite_float(underlying_payload.get("underlying_mark_price"))
+    underlying_mark_missing = underlying_mark is None
 
     warnings: list[str] = []
     missing_data: list[str] = []
@@ -2505,8 +2709,13 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
 
     if expiration_status == "expiration_warning":
         warnings.append("Expiration is within seven calendar days; review time decay and event risk manually.")
-    elif expiration_status == "expiration_due":
-        warnings.append("Expiration is due or past due; no expiration settlement automation is available.")
+    elif expiration_status == "expires_today":
+        warnings.append("Structure expires today; assignment/exercise risk is informational and no exercise or assignment is automated.")
+    elif expiration_status == "expired_unsettled":
+        warnings.append("Structure is expired and still open; manual paper settlement review is required.")
+    if expiration_status in {"expiration_warning", "expires_today", "expired_unsettled"}:
+        missing_data.extend(underlying_payload.get("missing_data") or [])
+        warnings.extend(underlying_payload.get("warnings") or [])
 
     risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe="1D") if symbol else None
     if risk_calendar is not None:
@@ -2514,6 +2723,8 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
             warnings.append("Risk calendar blocks or restricts new option additions/adjustments; it does not auto-close existing paper structures.")
         if risk_calendar.decision.active_events:
             warnings.append("Risk calendar has active event exposure for this underlying.")
+            if expiration_status in {"expiration_warning", "expires_today", "expired_unsettled"}:
+                warnings.append("Earnings or macro event exposure overlaps with near-expiration option risk.")
         if risk_calendar.decision.missing_evidence:
             missing_data.extend(f"risk_calendar:{item}" for item in risk_calendar.decision.missing_evidence)
             warnings.append("Risk calendar evidence is incomplete for this underlying.")
@@ -2522,6 +2733,11 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
 
     leg_reviews = []
     marked_legs: list[tuple[object, float]] = []
+    settlement_legs: list[tuple[object, float, float | None]] = []
+    leg_moneyness_values: list[str] = []
+    assignment_risk_values: list[str] = []
+    exercise_risk_values: list[str] = []
+    entitlement_blocked_leg_count = 0
     gross_pnl_total = 0.0
     net_pnl_total = 0.0
     all_leg_marks_available = bool(legs)
@@ -2536,6 +2752,43 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         snapshot_missing = list(snapshot.missing_fields or [])
         mark = _finite_float(snapshot.mark_price)
         leg_net_pnl = None
+        intrinsic_value = _option_intrinsic_value(
+            right=str(getattr(leg, "right", "")),
+            strike=float(getattr(leg, "strike", 0.0) or 0.0),
+            underlying_mark=underlying_mark,
+        )
+        extrinsic_value = _round_money(mark - intrinsic_value) if mark is not None and intrinsic_value is not None and not snapshot.stale else None
+        distance_to_strike_pct = _option_distance_to_strike_pct(
+            strike=float(getattr(leg, "strike", 0.0) or 0.0),
+            underlying_mark=underlying_mark,
+        )
+        moneyness = _option_moneyness(
+            right=str(getattr(leg, "right", "")),
+            strike=float(getattr(leg, "strike", 0.0) or 0.0),
+            underlying_mark=underlying_mark,
+        )
+        side = _option_leg_side(leg.action)
+        assignment_risk = _option_assignment_risk(
+            side=side,
+            moneyness=moneyness,
+            days_to_expiration=days_to_expiration,
+        )
+        exercise_risk = _option_exercise_risk(
+            side=side,
+            moneyness=moneyness,
+            days_to_expiration=days_to_expiration,
+        )
+        leg_moneyness_values.append(moneyness)
+        assignment_risk_values.append(assignment_risk)
+        exercise_risk_values.append(exercise_risk)
+        if intrinsic_value is not None:
+            settlement_legs.append(
+                (
+                    leg,
+                    intrinsic_value,
+                    _option_leg_gross_pnl_at_premium(leg, exit_premium=intrinsic_value),
+                )
+            )
         if snapshot.stale:
             any_stale_mark = True
             if "stale_option_mark" not in snapshot_missing:
@@ -2561,7 +2814,10 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
                 leg_net_pnl = net_leg
                 marked_legs.append((leg, mark))
         if snapshot.provider_error:
-            warnings.append(f"Option mark unavailable for leg {leg.id}: {_sanitize_provider_error(snapshot.provider_error)}")
+            if _is_option_snapshot_entitlement_error(snapshot.provider_error):
+                entitlement_blocked_leg_count += 1
+            else:
+                warnings.append(f"Option mark unavailable for leg {leg.id}: {_sanitize_provider_error(snapshot.provider_error)}")
         leg_reviews.append(
             {
                 "leg_id": leg.id,
@@ -2570,7 +2826,7 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
                 "expiration": leg.expiration,
                 "option_type": str(leg.right).lower(),
                 "strike": leg.strike,
-                "side": _option_leg_side(leg.action),
+                "side": side,
                 "contracts": leg.quantity,
                 "opening_premium": leg.entry_premium,
                 "current_mark_premium": mark,
@@ -2583,12 +2839,24 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
                 "vega": snapshot.vega,
                 "underlying_price": snapshot.underlying_price,
                 "estimated_leg_unrealized_pnl": leg_net_pnl,
+                "intrinsic_value": intrinsic_value,
+                "extrinsic_value": extrinsic_value,
+                "moneyness": moneyness,
+                "distance_to_strike_pct": distance_to_strike_pct,
+                "assignment_risk": assignment_risk,
+                "exercise_risk": exercise_risk,
                 "market_data_source": snapshot.provider,
                 "market_data_fallback_mode": bool(snapshot.fallback_mode),
                 "mark_as_of": _safe_mark_as_of(snapshot.as_of),
                 "stale": bool(snapshot.stale),
                 "missing_data": sorted(set(snapshot_missing)),
             }
+        )
+
+    if entitlement_blocked_leg_count:
+        warnings.append(
+            "Option marks unavailable: provider plan is not entitled to option snapshot data. "
+            f"{entitlement_blocked_leg_count} leg{'s' if entitlement_blocked_leg_count != 1 else ''} affected."
         )
 
     if not all_leg_marks_available:
@@ -2619,19 +2887,123 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         if estimated_net_pnl is not None and denominator is not None and denominator > 0:
             estimated_return_pct = round((estimated_net_pnl / denominator) * 100, 2)
 
+    moneyness_counts = {key: leg_moneyness_values.count(key) for key in ("itm", "atm", "otm", "unknown")}
+    itm_otm_summary = (
+        f"{moneyness_counts['itm']} ITM, {moneyness_counts['atm']} ATM, {moneyness_counts['otm']} OTM"
+        if underlying_mark is not None
+        else "Moneyness unavailable because underlying mark is missing."
+    )
+    assignment_risk_level = _max_option_risk(assignment_risk_values)
+    exercise_risk_level = _max_option_risk(exercise_risk_values)
+    assignment_risk_summary = (
+        f"Highest short-leg assignment risk: {assignment_risk_level}. Informational only; no assignment is automated."
+    )
+    exercise_risk_summary = (
+        f"Highest long-leg exercise risk: {exercise_risk_level}. Informational only; no exercise is automated."
+    )
+
     max_profit = _round_money(_finite_float(position.max_profit))
     max_loss = _round_money(_finite_float(position.max_loss))
+    settlement_required = expiration_status == "expired_unsettled"
+    settlement_blocked_missing_underlying = bool(settlement_required and underlying_mark_missing)
+    settlement_preview = None
+    settlement_available = False
+    if settlement_required and not settlement_blocked_missing_underlying:
+        if len(settlement_legs) != len(legs):
+            missing_data.append("settlement_leg_inputs")
+        elif opening_commissions is None:
+            missing_data.append("opening_commissions")
+        else:
+            settlement_available = True
+            settlement_mark, settlement_mark_type = _option_current_debit_credit(
+                [(leg, intrinsic) for leg, intrinsic, _gross in settlement_legs]
+            )
+            gross_values = [gross for _leg, _intrinsic, gross in settlement_legs if gross is not None]
+            gross_settlement_pnl = _round_money(sum(gross_values)) if len(gross_values) == len(settlement_legs) else None
+            closing_commissions = opening_commissions
+            total_commissions = _round_money(opening_commissions + closing_commissions)
+            net_realized_pnl_estimate = (
+                _round_money(gross_settlement_pnl - total_commissions)
+                if gross_settlement_pnl is not None and total_commissions is not None
+                else None
+            )
+            leg_previews = []
+            for leg, intrinsic, leg_gross in settlement_legs:
+                leg_commission = _option_leg_roundtrip_commission(leg, commission_per_contract=commission_per_contract)
+                leg_net = _round_money(leg_gross - leg_commission) if leg_gross is not None and leg_commission is not None else None
+                outcome = "flat"
+                if leg_gross is not None and leg_gross > 0:
+                    outcome = "winning"
+                elif leg_gross is not None and leg_gross < 0:
+                    outcome = "losing"
+                leg_previews.append(
+                    {
+                        "leg_id": leg.id,
+                        "settlement_premium": intrinsic,
+                        "leg_gross_pnl": leg_gross,
+                        "leg_commission": leg_commission,
+                        "leg_net_pnl": leg_net,
+                        "outcome": outcome,
+                    }
+                )
+            comparison = "inside_payoff_range"
+            if gross_settlement_pnl is not None and max_profit is not None and max_profit > 0 and gross_settlement_pnl >= max_profit * 0.95:
+                comparison = "near_or_at_max_profit"
+            elif gross_settlement_pnl is not None and max_loss is not None and max_loss > 0 and gross_settlement_pnl <= -max_loss * 0.95:
+                comparison = "near_or_at_max_loss"
+            settlement_preview = {
+                "paper_only": True,
+                "requires_confirmation": True,
+                "underlying_settlement_price": underlying_mark,
+                "underlying_mark_source": underlying_payload.get("underlying_mark_source"),
+                "underlying_mark_as_of": underlying_payload.get("underlying_mark_as_of"),
+                "settlement_mark_debit_credit": settlement_mark,
+                "settlement_mark_debit_credit_type": settlement_mark_type,
+                "gross_settlement_value": settlement_mark,
+                "gross_settlement_pnl": gross_settlement_pnl,
+                "closing_commissions": closing_commissions,
+                "total_commissions": total_commissions,
+                "net_realized_pnl_estimate": net_realized_pnl_estimate,
+                "winning_leg_ids": [item["leg_id"] for item in leg_previews if item["outcome"] == "winning"],
+                "losing_leg_ids": [item["leg_id"] for item in leg_previews if item["outcome"] == "losing"],
+                "max_profit_loss_comparison": comparison,
+                "legs": leg_previews,
+                "operator_disclaimer": "Paper-only expiration settlement preview. No broker action, exercise, assignment, or live order.",
+            }
+    if settlement_blocked_missing_underlying:
+        missing_data.append("underlying_mark_price")
+
+    expiration_action_summary = _option_expiration_summary(
+        expiration_status=expiration_status,
+        assignment_risk=assignment_risk_level,
+        exercise_risk=exercise_risk_level,
+        settlement_available=settlement_available,
+        settlement_blocked=settlement_blocked_missing_underlying,
+    )
     max_profit_near = estimated_net_pnl is not None and max_profit is not None and max_profit > 0 and estimated_net_pnl >= max_profit * 0.9
     max_loss_near = estimated_net_pnl is not None and max_loss is not None and max_loss > 0 and estimated_net_pnl <= -max_loss * 0.9
     profitable = estimated_net_pnl is not None and estimated_net_pnl > 0
     losing = estimated_net_pnl is not None and estimated_net_pnl < 0
     close_candidate = profitable and days_to_expiration is not None and 0 < days_to_expiration <= 3
     adjustment_review = losing and risk_calendar is not None and risk_calendar.decision.allow_new_entries is False
+    assignment_risk_review = assignment_risk_level in {"elevated", "high"}
+    exercise_risk_review = exercise_risk_level in {"elevated", "high"}
     review_unavailable = bool({"option_legs", "unsupported_strategy_type", "underlying_symbol"}.intersection(missing_data))
+    mark_unavailable_for_action = (
+        not all_leg_marks_available
+        and expiration_status not in {"expires_today", "expired_unsettled"}
+        and not assignment_risk_review
+        and not exercise_risk_review
+    )
     action = _classify_option_structure_review(
         review_unavailable=review_unavailable,
-        mark_unavailable=not all_leg_marks_available,
+        mark_unavailable=mark_unavailable_for_action,
         expiration_status=expiration_status,
+        expired_unsettled=bool(settlement_required and not settlement_available and not settlement_blocked_missing_underlying),
+        settlement_blocked_missing_underlying=settlement_blocked_missing_underlying,
+        settlement_available=settlement_available,
+        assignment_risk_review=assignment_risk_review,
+        exercise_risk_review=exercise_risk_review,
         max_loss_near=max_loss_near,
         max_profit_near=max_profit_near,
         close_candidate=bool(close_candidate),
@@ -2666,6 +3038,16 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         breakevens=list(position.breakevens or []),
         payoff_summary=_option_payoff_summary(position, opening_type),
         risk_calendar=risk_calendar.model_dump(mode="json") if risk_calendar is not None else {},
+        underlying_mark_price=underlying_mark,
+        underlying_mark_source=underlying_payload.get("underlying_mark_source"),
+        underlying_mark_as_of=underlying_payload.get("underlying_mark_as_of"),
+        itm_otm_summary=itm_otm_summary,
+        assignment_risk_summary=assignment_risk_summary,
+        exercise_risk_summary=exercise_risk_summary,
+        expiration_action_summary=expiration_action_summary,
+        settlement_available=settlement_available,
+        settlement_required=settlement_required,
+        settlement_preview=settlement_preview,
         expiration_status=expiration_status,
         action_classification=action,
         action_summary=_option_structure_review_summary(action, symbol or "Option", warnings),
@@ -3014,6 +3396,7 @@ def analysis_setup(
 
     latest = bars[-1]
     prior = bars[-2] if len(bars) > 1 else bars[-1]
+    analysis_as_of = utc_now()
 
     # ── Strategy-specific level computation for equities ─────────────────────
     # Levels vary meaningfully by strategy so changing strategy on the same
@@ -3133,6 +3516,7 @@ def analysis_setup(
     if market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "iron_condor":
         # Use a low IV for LOWIV test symbol to exercise the IV quality gate
         iv_snapshot = 0.05 if symbol.upper().startswith("LOW") else 0.24
+        expiration_context = _options_research_expiration_context(expiration="2026-05-16", as_of=analysis_as_of)
         short_put = round(latest.close * 0.955, 2)
         long_put = round(latest.close * 0.930, 2)
         short_call = round(latest.close * 1.045, 2)
@@ -3141,7 +3525,7 @@ def analysis_setup(
         width = round(short_put - long_put, 2)
         option_structure = {
             "type": "iron_condor",
-            "expiration": "2026-05-16",
+            "expiration": expiration_context["expiration"],
             "legs": [
                 {"action": "buy", "right": "put", "strike": long_put, "label": "lower long put"},
                 {"action": "sell", "right": "put", "strike": short_put, "label": "short put"},
@@ -3153,7 +3537,9 @@ def analysis_setup(
             "max_loss": round((width - net_credit) * 100, 2),
             "breakeven_low": round(short_put - net_credit, 2),
             "breakeven_high": round(short_call + net_credit, 2),
-            "dte": 33,
+            "dte": expiration_context["dte"],
+            "dte_policy": expiration_context["dte_policy"],
+            "dte_as_of": expiration_context["as_of"],
             "iv_snapshot": iv_snapshot,
             "theta_context": 0.07,
             "vega_context": -0.11,
@@ -3164,16 +3550,18 @@ def analysis_setup(
             latest_close=latest.close,
             iv_snapshot=iv_snapshot,
             dte=option_structure["dte"],
+            as_of=analysis_as_of,
         ).model_dump(mode="json")
     elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bull_call_debit_spread":
         iv_snapshot = 0.25
+        expiration_context = _options_research_expiration_context(expiration="2026-05-16", as_of=analysis_as_of)
         long_call = round(latest.close * 1.02, 2)
         short_call = round(latest.close * 1.06, 2)
         debit = round(latest.close * 0.012, 2)
         width = round(short_call - long_call, 2)
         option_structure = {
             "type": "bull_call_debit_spread",
-            "expiration": "2026-05-16",
+            "expiration": expiration_context["expiration"],
             "legs": [
                 {"action": "buy", "right": "call", "strike": long_call, "label": "long call"},
                 {"action": "sell", "right": "call", "strike": short_call, "label": "short call"},
@@ -3182,7 +3570,9 @@ def analysis_setup(
             "max_profit": round((width - debit) * 100, 2),
             "max_loss": round(debit * 100, 2),
             "breakeven_high": round(long_call + debit, 2),
-            "dte": 33,
+            "dte": expiration_context["dte"],
+            "dte_policy": expiration_context["dte_policy"],
+            "dte_as_of": expiration_context["as_of"],
             "iv_snapshot": iv_snapshot,
         }
         payload["option_structure"] = option_structure
@@ -3190,16 +3580,18 @@ def analysis_setup(
             latest_close=latest.close,
             iv_snapshot=iv_snapshot,
             dte=option_structure["dte"],
+            as_of=analysis_as_of,
         ).model_dump(mode="json")
     elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bear_put_debit_spread":
         iv_snapshot = 0.25
+        expiration_context = _options_research_expiration_context(expiration="2026-05-16", as_of=analysis_as_of)
         long_put = round(latest.close * 0.98, 2)
         short_put = round(latest.close * 0.94, 2)
         debit = round(latest.close * 0.012, 2)
         width = round(long_put - short_put, 2)
         option_structure = {
             "type": "bear_put_debit_spread",
-            "expiration": "2026-05-16",
+            "expiration": expiration_context["expiration"],
             "legs": [
                 {"action": "buy", "right": "put", "strike": long_put, "label": "long put"},
                 {"action": "sell", "right": "put", "strike": short_put, "label": "short put"},
@@ -3208,7 +3600,9 @@ def analysis_setup(
             "max_profit": round((width - debit) * 100, 2),
             "max_loss": round(debit * 100, 2),
             "breakeven_low": round(long_put - debit, 2),
-            "dte": 33,
+            "dte": expiration_context["dte"],
+            "dte_policy": expiration_context["dte_policy"],
+            "dte_as_of": expiration_context["as_of"],
             "iv_snapshot": iv_snapshot,
         }
         payload["option_structure"] = option_structure
@@ -3216,16 +3610,17 @@ def analysis_setup(
             latest_close=latest.close,
             iv_snapshot=iv_snapshot,
             dte=option_structure["dte"],
+            as_of=analysis_as_of,
         ).model_dump(mode="json")
     elif market_mode == MarketMode.OPTIONS:
         # Covered Call requires inventory modeling — expected range omitted pending that data
         payload["expected_range"] = ExpectedRange(
             status="omitted",
             reason="strategy_not_configured_for_expected_range_preview",
-            horizon_value=30,
+            horizon_value=calendar_days_to_expiration("2026-05-16", as_of=analysis_as_of) or 0,
             horizon_unit="calendar_days",
             reference_price_type="underlying_last",
-            snapshot_timestamp=utc_now(),
+            snapshot_timestamp=analysis_as_of,
             provenance_notes="Expected range for this strategy requires inventory and assignment context not yet wired.",
         ).model_dump(mode="json")
     if market_mode == MarketMode.CRYPTO:
@@ -4146,6 +4541,9 @@ def _options_data_readiness() -> dict[str, object]:
     )
     if probe_state == "failed":
         details = _sanitize_provider_error(details)
+    entitlement_blocked = probe_state == "failed" and _is_option_snapshot_entitlement_error(details)
+    if entitlement_blocked:
+        details = "Option marks unavailable: provider plan is not entitled to option snapshot data."
 
     return {
         "provider": "options_data",
@@ -4163,9 +4561,15 @@ def _options_data_readiness() -> dict[str, object]:
         "last_success_at": probe_payload.get("last_success_at"),
         "readiness_scope": "options_research_marks_only",
         "operational_impact": (
-            "Options snapshot readiness can populate paper Options Position Review marks only. "
-            "It does not enable live trading, broker routing, automatic exits, rolls, or adjustments."
-        ),
+            (
+                "Options data is configured, but snapshot marks are unavailable because the provider plan is not entitled. "
+                "Options Position Review will show mark_unavailable rather than fake P&L. "
+            )
+            if entitlement_blocked
+            else "Options snapshot readiness can populate paper Options Position Review marks only. "
+        )
+        + "It does not enable live trading, broker routing, automatic exits, rolls, or adjustments.",
+        "entitlement_state": "not_entitled" if entitlement_blocked else None,
     }
 
 

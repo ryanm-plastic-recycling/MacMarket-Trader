@@ -23,6 +23,9 @@ describe("analysis options provider/source/as-of copy", () => {
     expect(source).toContain('formatResearchValue(expectedRange.reference_price_type, "Source unavailable")');
     expect(source).toContain("formatResearchTimestamp(expectedRange.snapshot_timestamp ?? null)");
     expect(source).toContain("formatResearchValue(expectedRange.provenance_notes, \"Source unavailable\")");
+    expect(source).toContain("getOptionsResearchDisplayDte(optionStructure, expectedRange)");
+    expect(source).toContain("formatOptionsExpectedRangeHorizon(expectedRange, optionStructure)");
+    expect(source).toContain("formatExpectedMoveSummary(expectedRange, expectedRangeHorizon)");
     expect(source).toContain("<ExpectedRangeVisualization");
     expect(source).toContain("expectedRange={expectedRange}");
     expect(source).toContain("expectedRange={null}");

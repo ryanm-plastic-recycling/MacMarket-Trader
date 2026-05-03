@@ -21,6 +21,7 @@ import { SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import {
   formatResearchCell,
+  formatOptionsExpectedRangeHorizon,
   formatResearchTimestamp,
   formatResearchValue,
   getOptionsChainIncompleteSideWarning,
@@ -29,6 +30,7 @@ import {
   getOptionsLegDisplayLines,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
+  getOptionsResearchDisplayDte,
   isReadOnlyResearchMode,
   type OptionsResearchStructure,
 } from "@/lib/recommendations";
@@ -292,14 +294,12 @@ export default function Page() {
   });
   const researchPreviewHref = researchPreviewQuery ? `/recommendations?${researchPreviewQuery}` : "/recommendations";
   const expectedRange = setup?.expected_range ?? null;
+  const optionDisplayDte = getOptionsResearchDisplayDte(optionStructure, expectedRange);
   const optionsChainPreview = setup?.options_chain_preview ?? null;
   const optionsChainUnavailableMessage = getOptionsChainUnavailableMessage(optionsChainPreview);
   const optionsChainIncompleteSideWarning = getOptionsChainIncompleteSideWarning(optionsChainPreview);
   const optionsChainPreviewNotes = getOptionsChainPreviewNotes(optionsChainPreview);
-  const expectedRangeHorizon =
-    expectedRange && (expectedRange.horizon_value != null || expectedRange.horizon_unit)
-      ? `${formatResearchValue(expectedRange.horizon_value)} ${formatResearchValue(expectedRange.horizon_unit)}`.trim()
-      : "Unavailable";
+  const expectedRangeHorizon = formatOptionsExpectedRangeHorizon(expectedRange, optionStructure);
   const optionStructureBreakevens = optionStructure
     ? [optionStructure.breakeven_low, optionStructure.breakeven_high].filter(
       (value): value is number => typeof value === "number" && Number.isFinite(value),
@@ -396,7 +396,7 @@ export default function Page() {
             <div><strong>{optionPremiumLabel}:</strong> {formatResearchValue(optionPremiumValue)}</div>
             <div><strong><MetricLabel label="Max profit" term="max_profit" /> / <MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchValue(optionStructure.max_profit)} / {formatResearchValue(optionStructure.max_loss)}</div>
             <div><strong><MetricLabel label="Breakevens" term="breakeven" />:</strong> {formatResearchValue(optionStructure.breakeven_low)} - {formatResearchValue(optionStructure.breakeven_high)}</div>
-            <div><strong>Expiration / <MetricLabel label="DTE" term="dte" />:</strong> {formatResearchValue(optionStructure.expiration)} / {formatResearchValue(optionStructure.dte)}</div>
+            <div><strong>Expiration / <MetricLabel label="DTE" term="dte" />:</strong> {formatResearchValue(optionStructure.expiration)} / {formatResearchValue(optionDisplayDte)}</div>
             <div><strong><MetricLabel label="IV snapshot" term="iv" />:</strong> {formatResearchValue(optionStructure.iv_snapshot)}</div>
           </div>
         ) : (
@@ -432,14 +432,14 @@ export default function Page() {
             <div><strong><MetricLabel label="Horizon / DTE" term="dte" />:</strong> {expectedRangeHorizon}</div>
             <div><strong>Source notes:</strong> {formatResearchValue(expectedRange.provenance_notes, "Source unavailable")}</div>
             {expectedRange.reason ? <div><strong>Reason:</strong> {expectedRange.reason}</div> : null}
-            <div>{formatExpectedMoveSummary(expectedRange)}</div>
+            <div>{formatExpectedMoveSummary(expectedRange, expectedRangeHorizon)}</div>
             {appliedMarketMode === "options" ? (
               <div style={{ marginTop: 10 }}>
                 <ExpectedRangeVisualization
                   expectedRange={expectedRange}
                   breakevens={optionStructureBreakevens}
                   expiration={optionStructure?.expiration ?? null}
-                  dte={optionStructure?.dte ?? null}
+                  dte={optionDisplayDte}
                   maxProfit={optionStructure?.max_profit ?? null}
                   maxLoss={optionStructure?.max_loss ?? null}
                   workflowSource={setup?.workflow_source ?? source}

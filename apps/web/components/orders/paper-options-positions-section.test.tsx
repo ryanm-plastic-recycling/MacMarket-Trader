@@ -220,6 +220,52 @@ describe("PaperOptionsPositionsSectionContent", () => {
     expect(html).not.toContain("Infinity");
   });
 
+  it("recomputes lifecycle DTE from expiration and as-of date", () => {
+    const html = renderToStaticMarkup(
+      <PaperOptionsPositionsSectionContent
+        loading={false}
+        error={null}
+        asOf="2026-05-03T14:00:00Z"
+        items={[
+          {
+            position_id: 42,
+            trade_id: null,
+            market_mode: "options",
+            underlying_symbol: "GOOG",
+            structure_type: "iron_condor",
+            status: "open",
+            expiration: "2026-05-16",
+            opened_at: "2026-05-03T14:00:00Z",
+            closed_at: null,
+            source_order_id: null,
+            contract_count: 1,
+            leg_count: 4,
+            opening_net_debit: null,
+            opening_net_credit: 2.5,
+            max_profit: 250,
+            max_loss: 250,
+            breakevens: [92.5, 107.5],
+            settlement_mode: null,
+            gross_pnl: null,
+            opening_commissions: 2.6,
+            closing_commissions: null,
+            total_commissions: null,
+            net_pnl: null,
+            execution_enabled: false,
+            persistence_enabled: true,
+            paper_only: true,
+            operator_disclaimer: "paper only",
+            legs: [],
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("2026-05-16");
+    expect(html).toContain("DTE:</strong> 13");
+    expect(html).not.toContain("DTE:</strong> 33");
+  });
+
   it("renders leg detail columns for open and closed lifecycle rows", () => {
     const html = renderToStaticMarkup(
       <PaperOptionsPositionsSectionContent

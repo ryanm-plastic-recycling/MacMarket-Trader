@@ -13,6 +13,10 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
   from persisted lifecycle data and provider-backed option snapshots when
   available. It exposes missing or stale option marks rather than estimating
   them with an unapproved pricing model.
+- Options expiration review uses deterministic intrinsic-value, moneyness,
+  assignment-risk, exercise-risk, and paper-only settlement-preview logic.
+  Manual expiration settlement requires explicit confirmation and does not
+  automate exercise, assignment, rolling, adjustment, or broker routing.
 
 ## LLM Boundary
 
@@ -65,6 +69,7 @@ LLMs, live providers, broker APIs, or order-routing paths.
 - Options Position Review and options lifecycle integrity tests.
 - Provider-backed option snapshot mark precedence and Options Position Review
   mark-to-open P&L tests.
+- Options expiration review and manual paper settlement tests.
 - LLM validation and fallback tests.
 - Model validation evidence generator tests.
 

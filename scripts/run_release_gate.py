@@ -10,6 +10,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 
@@ -47,6 +48,23 @@ AUDIT_LEVELS = ("info", "low", "moderate", "high", "critical")
 
 def now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
+
+
+def _progress(enabled: bool, message: str) -> None:
+    if enabled:
+        print(f"[release-gate] {message}", flush=True)
+
+
+def _start_step(enabled: bool, name: str) -> float:
+    _progress(enabled, f"starting {name}")
+    return monotonic()
+
+
+def _finish_step(enabled: bool, item: dict[str, object], started_at: float) -> dict[str, object]:
+    elapsed = round(monotonic() - started_at, 2)
+    item["elapsed_seconds"] = elapsed
+    _progress(enabled, f"finished {item['name']}: {item['status']} in {elapsed}s")
+    return item
 
 
 def redact_payload(value: Any) -> Any:
@@ -217,13 +235,17 @@ def write_gate_reports(
         "",
         f"- Overall status: `{result['status']}`",
         f"- Dry run: `{result['dry_run']}`",
+        f"- Quick mode: `{result.get('quick', False)}`",
         f"- Mock commands: `{result['mock_commands']}`",
         f"- Repository: `{result['repo_root']}`",
         "",
         "## Steps",
     ]
     for item in result["steps"]:
-        lines.append(f"- `{item['name']}`: `{item['status']}` hard_failure=`{item['hard_failure']}`")
+        lines.append(
+            f"- `{item['name']}`: `{item['status']}` hard_failure=`{item['hard_failure']}` "
+            f"elapsed=`{item.get('elapsed_seconds', 0)}`s"
+        )
     lines.extend(
         [
             "",
@@ -240,10 +262,12 @@ def run_release_gate(
     repo_root: Path,
     evidence_dir: Path = DEFAULT_EVIDENCE_DIR,
     dry_run: bool = False,
+    quick: bool = False,
     mock_commands: bool = False,
     audit_fail_level: str = "high",
     screenshots: str = "",
     skip_release_evidence_npm_audit: bool = True,
+    progress: bool = False,
 ) -> dict[str, object]:
     root = repo_root.resolve()
     evidence = evidence_dir if evidence_dir.is_absolute() else root / evidence_dir
@@ -251,114 +275,186 @@ def run_release_gate(
     stamp = timestamp()
     steps: list[dict[str, object]] = []
 
+    started = _start_step(progress, "conflict_marker_scan")
     conflict_findings = scan_conflict_markers(root)
     steps.append(
-        step(
-            "conflict_marker_scan",
-            "passed" if not conflict_findings else "failed",
-            hard_failure=bool(conflict_findings),
-            details={"finding_count": len(conflict_findings), "findings": conflict_findings[:50]},
+        _finish_step(
+            progress,
+            step(
+                "conflict_marker_scan",
+                "passed" if not conflict_findings else "failed",
+                hard_failure=bool(conflict_findings),
+                details={"finding_count": len(conflict_findings), "findings": conflict_findings[:50]},
+            ),
+            started,
         )
     )
 
+    started = _start_step(progress, "secret_scan")
     secret_findings = scan_secrets(root)
     steps.append(
-        step(
-            "secret_scan",
-            "passed" if not secret_findings else "failed",
-            hard_failure=bool(secret_findings),
-            details={"finding_count": len(secret_findings), "findings": secret_findings[:50]},
+        _finish_step(
+            progress,
+            step(
+                "secret_scan",
+                "passed" if not secret_findings else "failed",
+                hard_failure=bool(secret_findings),
+                details={"finding_count": len(secret_findings), "findings": secret_findings[:50]},
+            ),
+            started,
         )
     )
 
+    started = _start_step(progress, "git_diff_check")
     if dry_run and mock_commands:
         diff_result = {"command": ["git", "diff", "--check"], "returncode": 0, "stdout": "", "stderr": ""}
     else:
         diff_result = run_command(["git", "diff", "--check"], cwd=root, timeout=60)
     steps.append(
-        step(
-            "git_diff_check",
-            "passed" if diff_result.get("returncode") == 0 else "failed",
-            hard_failure=diff_result.get("returncode") != 0,
-            details=diff_result,
+        _finish_step(
+            progress,
+            step(
+                "git_diff_check",
+                "passed" if diff_result.get("returncode") == 0 else "failed",
+                hard_failure=diff_result.get("returncode") != 0,
+                details=diff_result,
+            ),
+            started,
         )
     )
 
-    command_steps = [
-        ("backend_pytest", ["python", "-m", "pytest", "--basetemp", ".pytest-tmp"], root, 900),
-        ("frontend_npm_test", ["npm", "test"], root / "apps" / "web", 900),
-        ("frontend_tsc", ["npx", "tsc", "--noEmit"], root / "apps" / "web", 900),
-    ]
+    command_steps = (
+        [
+            (
+                "targeted_compliance_pytest",
+                [
+                    "python",
+                    "-m",
+                    "pytest",
+                    "tests/test_compliance_readiness.py",
+                    "tests/test_operational_evidence.py",
+                    "--basetemp",
+                    ".pytest-tmp",
+                ],
+                root,
+                300,
+            )
+        ]
+        if quick
+        else [
+            ("backend_pytest", ["python", "-m", "pytest", "--basetemp", ".pytest-tmp"], root, 900),
+            ("frontend_npm_test", ["npm", "test"], root / "apps" / "web", 900),
+            ("frontend_tsc", ["npx", "tsc", "--noEmit"], root / "apps" / "web", 900),
+        ]
+    )
     for name, command, cwd, timeout in command_steps:
+        started = _start_step(progress, name)
         if dry_run:
             details = {"command": command, "skipped_reason": "dry_run"}
             if mock_commands:
                 details["mocked_returncode"] = 0
-                steps.append(step(name, "passed", details=details))
+                steps.append(_finish_step(progress, step(name, "passed", details=details), started))
             else:
-                steps.append(step(name, "skipped", details=details))
+                steps.append(_finish_step(progress, step(name, "skipped", details=details), started))
             continue
         command_result = run_command(command, cwd=cwd, timeout=timeout)
         steps.append(
-            step(
-                name,
-                "passed" if command_result.get("returncode") == 0 else "failed",
-                hard_failure=command_result.get("returncode") != 0,
-                details=command_result,
+            _finish_step(
+                progress,
+                step(
+                    name,
+                    "passed" if command_result.get("returncode") == 0 else "failed",
+                    hard_failure=command_result.get("returncode") != 0,
+                    details=command_result,
+                ),
+                started,
             )
         )
 
-    if dry_run and mock_commands:
-        audit_result = mock_audit_result()
-    else:
-        audit_result = run_command(["npm", "audit", "--json"], cwd=root / "apps" / "web", timeout=120)
-    parsed_audit = parse_npm_audit(str(audit_result.get("stdout") or "{}"))
-    vulnerabilities = parsed_audit.get("vulnerabilities", {})
-    audit_hard_failure = audit_has_hard_failure(
-        vulnerabilities if isinstance(vulnerabilities, dict) else {},
-        audit_fail_level,
-    )
-    audit_status = "failed" if audit_hard_failure else "warning"
-    if not parsed_audit.get("available"):
-        audit_status = "failed"
-        audit_hard_failure = True
-    elif int((vulnerabilities or {}).get("total", 0) or 0) == 0:
-        audit_status = "passed"
-    steps.append(
-        step(
-            "npm_audit_report_only",
-            audit_status,
-            hard_failure=audit_hard_failure,
-            details={
-                "command": audit_result.get("command"),
-                "returncode": audit_result.get("returncode"),
-                "audit_fail_level": audit_fail_level,
-                "vulnerabilities": vulnerabilities,
-                "auto_fix_invoked": False,
-            },
+    started = _start_step(progress, "npm_audit_report_only")
+    if quick:
+        steps.append(
+            _finish_step(
+                progress,
+                step(
+                    "npm_audit_report_only",
+                    "skipped",
+                    details={
+                        "command": ["npm", "audit", "--json"],
+                        "skipped_reason": "quick_mode",
+                        "auto_fix_invoked": False,
+                    },
+                ),
+                started,
+            )
         )
-    )
+    else:
+        if dry_run and mock_commands:
+            audit_result = mock_audit_result()
+        else:
+            audit_result = run_command(["npm", "audit", "--json"], cwd=root / "apps" / "web", timeout=120)
+        parsed_audit = parse_npm_audit(str(audit_result.get("stdout") or "{}"))
+        vulnerabilities = parsed_audit.get("vulnerabilities", {})
+        audit_hard_failure = audit_has_hard_failure(
+            vulnerabilities if isinstance(vulnerabilities, dict) else {},
+            audit_fail_level,
+        )
+        audit_status = "failed" if audit_hard_failure else "warning"
+        if not parsed_audit.get("available"):
+            audit_status = "failed"
+            audit_hard_failure = True
+        elif int((vulnerabilities or {}).get("total", 0) or 0) == 0:
+            audit_status = "passed"
+        steps.append(
+            _finish_step(
+                progress,
+                step(
+                    "npm_audit_report_only",
+                    audit_status,
+                    hard_failure=audit_hard_failure,
+                    details={
+                        "command": audit_result.get("command"),
+                        "returncode": audit_result.get("returncode"),
+                        "audit_fail_level": audit_fail_level,
+                        "vulnerabilities": vulnerabilities,
+                        "auto_fix_invoked": False,
+                    },
+                ),
+                started,
+            )
+        )
 
+    started = _start_step(progress, "compliance_docs_presence")
     docs_report = check_compliance_docs(root)
     steps.append(
-        step(
-            "compliance_docs_presence",
-            "passed" if docs_report["passed"] else "failed",
-            hard_failure=not docs_report["passed"],
-            details=docs_report,
+        _finish_step(
+            progress,
+            step(
+                "compliance_docs_presence",
+                "passed" if docs_report["passed"] else "failed",
+                hard_failure=not docs_report["passed"],
+                details=docs_report,
+            ),
+            started,
         )
     )
 
+    started = _start_step(progress, "clean_release_archive_dry_run")
     archive_report = check_release_artifact(root)
     steps.append(
-        step(
-            "clean_release_archive_dry_run",
-            "passed" if archive_report["passed"] else "failed",
-            hard_failure=not archive_report["passed"],
-            details=archive_report,
+        _finish_step(
+            progress,
+            step(
+                "clean_release_archive_dry_run",
+                "passed" if archive_report["passed"] else "failed",
+                hard_failure=not archive_report["passed"],
+                details=archive_report,
+            ),
+            started,
         )
     )
 
+    started = _start_step(progress, "release_evidence_generation")
     release_evidence = generate_release_evidence(
         repo_root=root,
         evidence_dir=evidence,
@@ -366,13 +462,17 @@ def run_release_gate(
         skip_npm_audit=skip_release_evidence_npm_audit,
     )
     steps.append(
-        step(
-            "release_evidence_generation",
-            "passed",
-            details={
-                "evidence_json": release_evidence.get("evidence_json"),
-                "evidence_markdown": release_evidence.get("evidence_markdown"),
-            },
+        _finish_step(
+            progress,
+            step(
+                "release_evidence_generation",
+                "passed",
+                details={
+                    "evidence_json": release_evidence.get("evidence_json"),
+                    "evidence_markdown": release_evidence.get("evidence_markdown"),
+                },
+            ),
+            started,
         )
     )
 
@@ -382,6 +482,7 @@ def run_release_gate(
         "repo_root": str(root),
         "platform": platform.platform(),
         "dry_run": dry_run,
+        "quick": quick,
         "mock_commands": mock_commands,
         "status": "failed" if hard_failed else "passed",
         "steps": steps,
@@ -407,7 +508,13 @@ def main() -> int:
     parser.add_argument("--repo-root", default=".", help="Repository root")
     parser.add_argument("--evidence-dir", default=str(DEFAULT_EVIDENCE_DIR), help="Evidence output directory")
     parser.add_argument("--dry-run", action="store_true", help="Skip expensive command execution")
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Run scans, targeted compliance evidence tests, clean archive dry-run, and evidence generation only",
+    )
     parser.add_argument("--mock-commands", action="store_true", help="Mock command results for tests/CI-safe dry runs")
+    parser.add_argument("--quiet", action="store_true", help="Suppress progress output")
     parser.add_argument(
         "--audit-fail-level",
         default="high",
@@ -425,10 +532,12 @@ def main() -> int:
         repo_root=Path(args.repo_root),
         evidence_dir=Path(args.evidence_dir),
         dry_run=args.dry_run,
+        quick=args.quick,
         mock_commands=args.mock_commands,
         audit_fail_level=args.audit_fail_level,
         screenshots=args.screenshots,
         skip_release_evidence_npm_audit=not args.include_release_evidence_npm_audit,
+        progress=not args.quiet,
     )
     print(json.dumps({"status": result["status"], "evidence_json": result["evidence_json"]}, indent=2))
     return 1 if result["status"] == "failed" else 0

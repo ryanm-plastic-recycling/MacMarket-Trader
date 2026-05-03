@@ -960,6 +960,12 @@ class OptionPaperStructureLegReview(BaseModel):
     vega: float | None = None
     underlying_price: float | None = None
     estimated_leg_unrealized_pnl: float | None = None
+    intrinsic_value: float | None = None
+    extrinsic_value: float | None = None
+    moneyness: Literal["itm", "atm", "otm", "unknown"] = "unknown"
+    distance_to_strike_pct: float | None = None
+    assignment_risk: Literal["none", "low", "elevated", "high", "unknown"] = "unknown"
+    exercise_risk: Literal["none", "low", "elevated", "high", "unknown"] = "unknown"
     market_data_source: str | None = None
     market_data_fallback_mode: bool = False
     mark_as_of: datetime | str | int | None = None
@@ -993,6 +999,16 @@ class OptionPaperStructureReview(BaseModel):
     breakevens: list[float] = Field(default_factory=list)
     payoff_summary: str | None = None
     risk_calendar: dict[str, Any] = Field(default_factory=dict)
+    underlying_mark_price: float | None = None
+    underlying_mark_source: str | None = None
+    underlying_mark_as_of: datetime | str | int | None = None
+    itm_otm_summary: str | None = None
+    assignment_risk_summary: str | None = None
+    exercise_risk_summary: str | None = None
+    expiration_action_summary: str | None = None
+    settlement_available: bool = False
+    settlement_required: bool = False
+    settlement_preview: dict[str, Any] | None = None
     expiration_status: str
     action_classification: str
     action_summary: str
@@ -1047,6 +1063,12 @@ class OptionPaperCloseLegInput(BaseModel):
 class OptionPaperCloseStructureRequest(BaseModel):
     settlement_mode: str = "manual_close"
     legs: list[OptionPaperCloseLegInput] = Field(default_factory=list, max_length=6)
+    underlying_settlement_price: float | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class OptionPaperExpirationSettleRequest(BaseModel):
+    confirmation: str = Field(max_length=20)
     underlying_settlement_price: float | None = None
     notes: str | None = Field(default=None, max_length=1000)
 

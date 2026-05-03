@@ -11,6 +11,7 @@ vi.mock("@/lib/api-client", () => ({
 import {
   buildOptionsReplayPreviewRequest,
   buildOptionsPaperOpenRequest,
+  calculateOptionsCalendarDte,
   canRenderOptionsResearchChart,
   describeOptionsCommissionEstimate,
   estimateOptionsCommissionForEvents,
@@ -37,6 +38,8 @@ import {
   formatResearchValue,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
+  getOptionsResearchDisplayDte,
+  formatOptionsExpectedRangeHorizon,
   getPromotedQueueKeys,
   getRankingProvenance,
   isFallbackWorkflow,
@@ -283,6 +286,31 @@ describe("research preview helpers", () => {
   it("formats as-of timestamps deterministically and renders unavailable safely", () => {
     expect(formatResearchTimestamp("2026-04-29T13:01:00Z")).toBe("2026-04-29 13:01 UTC");
     expect(formatResearchTimestamp("")).toBe("As-of unavailable");
+  });
+
+  it("uses canonical calendar DTE for options research and expected range horizon", () => {
+    const structure = {
+      type: "iron_condor",
+      expiration: "2026-05-16",
+      dte: 33,
+      dte_as_of: "2026-05-03T14:00:00Z",
+      legs: [],
+    };
+    const expectedRange = {
+      status: "computed" as const,
+      method: "iv_1sigma",
+      horizon_value: 33,
+      horizon_unit: "calendar_days",
+      snapshot_timestamp: "2026-05-03T14:00:00Z",
+      absolute_move: 4.2,
+      lower_bound: 100,
+      upper_bound: 108,
+    };
+
+    expect(calculateOptionsCalendarDte("2026-05-16", "2026-05-03T14:00:00Z")).toBe(13);
+    expect(getOptionsResearchDisplayDte(structure, expectedRange)).toBe(13);
+    expect(formatOptionsExpectedRangeHorizon(expectedRange, structure)).toBe("13 calendar_days");
+    expect(formatOptionsExpectedRangeHorizon(expectedRange, structure)).not.toBe("33 calendar_days");
   });
 
   it("builds data-quality warnings from existing source, chain, and expected-range payload gaps", () => {

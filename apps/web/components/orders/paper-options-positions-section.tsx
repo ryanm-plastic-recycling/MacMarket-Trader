@@ -6,6 +6,7 @@ import { Card, EmptyState, ErrorState, StatusBadge } from "@/components/operator
 import { MetricLabel } from "@/components/ui/metric-help";
 import {
   fetchOptionsPaperPositions,
+  calculateOptionsCalendarDte,
   formatOptionsReplayToken,
   formatResearchCurrency,
   formatResearchTimestamp,
@@ -51,6 +52,11 @@ function formatSafeText(value: string | null | undefined, fallback = "—"): str
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
   return trimmed ? trimmed : fallback;
+}
+
+function formatLifecycleDte(expiration: string | null | undefined, asOf: string | Date | null | undefined): string {
+  const dte = calculateOptionsCalendarDte(expiration, asOf ?? new Date());
+  return dte == null ? "Unavailable" : `${dte}`;
 }
 
 function structureTone(status: string): "good" | "warn" | "neutral" {
@@ -159,11 +165,13 @@ export function PaperOptionsPositionsSectionContent({
   loading,
   error,
   onRetry,
+  asOf,
 }: {
   items: OptionsPaperLifecycleSummary[];
   loading: boolean;
   error: string | null;
   onRetry?: (() => void) | undefined;
+  asOf?: string | Date | null;
 }) {
   const openItems = useMemo(
     () => items.filter((item) => item.status.trim().toLowerCase() === "open"),
@@ -254,7 +262,7 @@ export function PaperOptionsPositionsSectionContent({
                         <td>
                           <div><strong>Opened:</strong> {formatCompactTimestamp(item.opened_at)}</div>
                           <div><strong>Expiration:</strong> {formatSafeText(item.expiration ?? null)}</div>
-                          <div><strong>DTE:</strong> Unavailable</div>
+                          <div><strong>DTE:</strong> {formatLifecycleDte(item.expiration ?? null, asOf)}</div>
                         </td>
                         <td>
                           <div><strong>Open:</strong> {formatOpeningPremium(item)}</div>
@@ -322,7 +330,7 @@ export function PaperOptionsPositionsSectionContent({
                           <div><strong>Opened:</strong> {formatCompactTimestamp(item.opened_at)}</div>
                           <div><strong>Closed:</strong> {formatCompactTimestamp(item.closed_at ?? null)}</div>
                           <div><strong>Expiration:</strong> {formatSafeText(item.expiration ?? null)}</div>
-                          <div><strong>DTE:</strong> Unavailable</div>
+                          <div><strong>DTE:</strong> {formatLifecycleDte(item.expiration ?? null, asOf)}</div>
                         </td>
                         <td>
                           <div><strong>Open:</strong> {formatOpeningPremium(item)}</div>

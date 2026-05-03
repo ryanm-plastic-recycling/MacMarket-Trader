@@ -36,6 +36,7 @@ import {
 import type {
   OptionsReplayPreviewAvailability,
   OptionsReplayPreviewResponse,
+  OptionsResearchSetup,
 } from "@/lib/recommendations";
 
 const require = createRequire(import.meta.url);
@@ -967,6 +968,69 @@ describe("OptionsPaperLifecyclePanel", () => {
     expect(html).toContain("2026-04-29 13:00 UTC");
     expect(html).toContain("2026-04-29 13:01 UTC");
     expect(html).toContain("Derived from the current IV snapshot.");
+  });
+
+  it("renders recomputed options DTE and expected-range horizon from expiration and as-of", () => {
+    const setup: OptionsResearchSetup = {
+      symbol: "GOOG",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        dte: 33,
+        dte_as_of: "2026-05-03T14:00:00Z",
+        net_credit: 2.5,
+        max_profit: 250,
+        max_loss: 250,
+        breakeven_low: 92.5,
+        breakeven_high: 107.5,
+        iv_snapshot: 0.24,
+        legs: [
+          { action: "buy", right: "put", strike: 90, multiplier: 100, label: "lower long put" },
+          { action: "sell", right: "put", strike: 95, multiplier: 100, label: "short put" },
+          { action: "sell", right: "call", strike: 105, multiplier: 100, label: "short call" },
+          { action: "buy", right: "call", strike: 110, multiplier: 100, label: "higher long call" },
+        ],
+      },
+      expected_range: {
+        status: "computed" as const,
+        method: "iv_1sigma",
+        reference_price_type: "underlying_last",
+        absolute_move: 4.2,
+        lower_bound: 95.8,
+        upper_bound: 104.2,
+        horizon_value: 33,
+        horizon_unit: "calendar_days",
+        snapshot_timestamp: "2026-05-03T14:00:00Z",
+        provenance_notes: "Derived from the current IV snapshot.",
+        reason: null,
+      },
+      options_chain_preview: null,
+    };
+
+    const riskHtml = renderToStaticMarkup(
+      <OptionsStructureRiskSummary
+        setup={setup}
+        replayPreview={null}
+        paperOpenResult={null}
+        paperCloseResult={null}
+      />,
+    );
+    const lifecycleHtml = renderToStaticMarkup(
+      <OptionsPaperLifecyclePanel
+        setup={setup}
+        loadCommissionOnMount={false}
+      />,
+    );
+
+    expect(riskHtml).toContain("DTE 13");
+    expect(riskHtml).toContain("over 13 calendar_days");
+    expect(riskHtml).not.toContain("DTE 33");
+    expect(riskHtml).not.toContain("over 33 calendar_days");
+    expect(lifecycleHtml).toContain("DTE:</strong> 13");
+    expect(lifecycleHtml).not.toContain("DTE:</strong> 33");
   });
 
   it("renders safe muted provider-plan guidance for missing source and chain context", () => {

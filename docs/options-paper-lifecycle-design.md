@@ -21,7 +21,7 @@ lifecycle and Orders showing a review-only active options position review
 section. It still does not authorize:
 
 - options order staging
-- expiration settlement behavior
+- live or automatic expiration settlement behavior
 - live routing
 - brokerage execution
 - automatic exits, rolling, or adjustments
@@ -94,6 +94,21 @@ Provider-backed option mark support:
   as a real current option mark
 - provider permission/plan errors are sanitized and surfaced as missing-data
   context instead of exposing secrets
+- repeated provider entitlement failures are aggregated at the structure level
+  as "Option marks unavailable" while leg-level missing-data codes remain
+  available for audit/debug review
+
+DTE policy:
+
+- options research setup, Expected Range horizon, durable paper lifecycle
+  display, and Options Position Review use UTC calendar-day DTE from
+  expiration date and assessment as-of date
+- for active research/display, expired contracts clamp to zero DTE and should
+  use a separate expiration status for expired handling
+- Options Position Review can preserve negative DTE internally only to
+  classify `expired_unsettled`
+- stale persisted DTE should not override recomputed display DTE when
+  expiration and as-of are available
 
 Supported structures in this pass:
 
@@ -108,19 +123,26 @@ missing-data entries such as `unsupported_strategy_type` or `option_legs`.
 Action classification precedence:
 
 1. `review_unavailable`
-2. `mark_unavailable`
-3. `expiration_due`
-4. `max_loss_near`
-5. `max_profit_near`
-6. `close_candidate`
-7. `adjustment_review`
-8. `expiration_warning`
-9. `profitable_hold`
-10. `losing_hold`
-11. `hold_valid`
+2. `mark_unavailable` when current option marks are required for the review
+3. `expired_unsettled`
+4. `settlement_blocked_missing_underlying`
+5. `settlement_available`
+6. `expiration_due`
+7. `assignment_risk_review`
+8. `exercise_risk_review`
+9. `max_loss_near`
+10. `max_profit_near`
+11. `close_candidate`
+12. `adjustment_review`
+13. `expiration_warning`
+14. `profitable_hold`
+15. `losing_hold`
+16. `hold_valid`
 
-These are human review classifications only. They do not create close orders,
-rolls, adjustments, scale-ins, broker orders, or live trades.
+These are human review classifications only. They do not automatically create
+close orders, rolls, adjustments, scale-ins, broker orders, exercise events,
+assignment events, or live trades. Expiration settlement, when available,
+requires a separate manual paper-only `SETTLE` confirmation.
 
 When all required leg marks are fresh, the review can now classify
 `max_profit_near`, `max_loss_near`, `profitable_hold`, `losing_hold`,
@@ -142,6 +164,50 @@ Options sandbox reset behavior:
   by `POST /user/paper/reset`
 - a future options reset path should be explicit, current-user scoped, and
   separately tested before release
+
+## Expiration, Assignment Risk, And Paper Settlement
+
+Options Position Review now includes deterministic expiration review context
+for open paper structures:
+
+- expiration status is normalized to `active`, `expiration_warning`,
+  `expires_today`, or `expired_unsettled` for open structures
+- the underlying mark is fetched through provider-backed market data when
+  available and is required for expiration settlement preview
+- each leg includes intrinsic value, extrinsic value when a fresh option mark
+  exists, moneyness, distance to strike, assignment risk, and exercise risk
+- assignment and exercise risk are informational only; no assignment,
+  exercise, close, roll, adjustment, or broker order is automated
+- risk-calendar warnings remain visible, but macro/event risk does not cause
+  automatic settlement or closure
+
+Expired open structures can now be manually paper-settled through:
+
+```http
+POST /user/options/paper-structures/{position_id}/settle-expiration
+```
+
+The endpoint is current-user scoped and requires explicit `SETTLE`
+confirmation. It is paper-only, uses intrinsic values from the supplied or
+provider-backed underlying settlement mark, closes all legs together through
+the existing options paper close persistence path, and records
+`settlement_mode=expiration`. It does not route a broker order, exercise,
+assign, roll, adjust, or touch equity records. Calling it again after the
+position is closed is blocked by the existing open-position guard.
+
+Settlement preview fields include:
+
+- underlying settlement mark and source
+- structure settlement debit/credit
+- gross settlement P&L
+- estimated total commissions
+- estimated net realized P&L
+- winning and losing leg ids
+- max profit/loss comparison
+
+If the underlying mark is missing, settlement remains blocked and
+`missing_data` includes `underlying_mark_price`. No fallback or synthetic
+underlying mark is used for settlement.
 
 ## Current repo anchors
 

@@ -14,6 +14,7 @@ certification.
 - LLM explanation-only boundary documented and tested.
 - Paper equity lifecycle integrity test exists.
 - Options position review and options lifecycle integrity tests exist.
+- Options expiration review and manual paper settlement evidence exists.
 - Defensive security hardening tests exist.
 - Clean release archive generator excludes local secrets/state.
 - Release evidence generator creates redacted JSON/Markdown evidence.
@@ -57,3 +58,6 @@ certification.
   Current options marks use provider snapshots when plan coverage exists; no
   Black-Scholes model, internally calculated Greeks, live routing, automatic
   exits, rolls, or adjustments are included.
+- Label expiration settlement as manual, paper-only lifecycle simulation.
+  It is not live exercise, assignment, broker routing, or discretionary
+  management.

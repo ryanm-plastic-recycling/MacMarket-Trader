@@ -179,3 +179,29 @@ def test_release_gate_reports_npm_audit_summary_without_auto_fixing(tmp_path: Pa
     assert audit_step["details"]["auto_fix_invoked"] is False
     assert audit_step["details"]["command"] == ["npm", "audit", "--json"]
     assert audit_step["details"]["vulnerabilities"]["moderate"] == 1
+
+
+def test_release_gate_progress_output_and_quick_mode(tmp_path: Path, capsys) -> None:
+    module = _load_script("run_release_gate.py")
+    result = module.run_release_gate(
+        repo_root=REPO_ROOT,
+        evidence_dir=tmp_path / "evidence",
+        dry_run=True,
+        quick=True,
+        mock_commands=True,
+        progress=True,
+    )
+
+    output = capsys.readouterr().out
+    assert "[release-gate] starting conflict_marker_scan" in output
+    assert "[release-gate] starting targeted_compliance_pytest" in output
+    assert "[release-gate] finished release_evidence_generation" in output
+    assert " in " in output
+    assert result["quick"] is True
+    step_names = {step["name"] for step in result["steps"]}
+    assert "targeted_compliance_pytest" in step_names
+    assert "backend_pytest" not in step_names
+    assert "frontend_npm_test" not in step_names
+    audit_step = next(step for step in result["steps"] if step["name"] == "npm_audit_report_only")
+    assert audit_step["status"] == "skipped"
+    assert audit_step["details"]["skipped_reason"] == "quick_mode"

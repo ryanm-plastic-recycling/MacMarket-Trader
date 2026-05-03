@@ -4,9 +4,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from macmarket_trader.api.main import app
+from macmarket_trader.api.routes import admin as admin_routes
 from macmarket_trader.domain.enums import MarketMode
 from macmarket_trader.domain.models import AppUserModel, StrategyReportRunModel
 from macmarket_trader.domain.schemas import ExpectedRange
+from macmarket_trader.domain.time import calendar_days_to_expiration
 from macmarket_trader.storage.db import SessionLocal
 from macmarket_trader.storage.repositories import EmailLogRepository, StrategyReportRepository
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
@@ -124,7 +126,16 @@ def test_symbol_analyze_response_shape() -> None:
     assert 'levels' in payload
 
 
-def test_analysis_setup_accepts_market_mode_and_returns_setup_for_options() -> None:
+def test_calendar_days_to_expiration_uses_utc_calendar_dates() -> None:
+    as_of = datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc)
+
+    assert calendar_days_to_expiration("2026-05-16", as_of=as_of) == 13
+    assert calendar_days_to_expiration("2026-05-02", as_of=as_of) == 0
+    assert calendar_days_to_expiration("2026-05-02", as_of=as_of, allow_expired_negative=True) == -1
+
+
+def test_analysis_setup_accepts_market_mode_and_returns_setup_for_options(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
     _seed_and_approve_user()
     resp = client.get(
         '/user/analysis/setup',
@@ -137,6 +148,12 @@ def test_analysis_setup_accepts_market_mode_and_returns_setup_for_options() -> N
     assert 'operator_disclaimer' in payload
     assert 'Options research' in payload['operator_disclaimer']
     assert payload['option_structure']['type'] == 'iron_condor'
+    assert payload['option_structure']['expiration'] == '2026-05-16'
+    assert payload['option_structure']['dte'] == 13
+    assert payload['expected_range']['horizon_value'] == 13
+    assert payload['expected_range']['horizon_unit'] == 'calendar_days'
+    assert payload['option_structure']['dte'] != 33
+    assert payload['expected_range']['horizon_value'] != 33
     assert payload['expected_range']['status'] == 'computed'
     assert payload['expected_range']['method'] == 'iv_1sigma'
     assert payload['expected_range']['lower_bound'] < payload['expected_range']['upper_bound']

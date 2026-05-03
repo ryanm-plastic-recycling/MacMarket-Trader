@@ -660,6 +660,43 @@ def test_provider_health_options_data_probe_failure_sanitizes_error(monkeypatch)
     assert "[redacted]" in str(entry["details"])
 
 
+def test_provider_health_options_data_not_entitled_is_clear_without_enabling_execution(monkeypatch) -> None:
+    class StubMarketDataService:
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data",
+                mode="polygon",
+                status="ok",
+                details="Polygon snapshot probe succeeded.",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+        def options_data_health(self, sample_symbol: str = "AAPL") -> dict[str, object]:
+            return {
+                "probe_state": "failed",
+                "probe_status": "failed",
+                "details": "Not entitled to this data.",
+                "sample_underlying": sample_symbol,
+                "sample_option_symbol": "O:AAPL260515C00205000",
+            }
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    entry = admin_routes._options_data_readiness()
+
+    assert entry["status"] == "degraded"
+    assert entry["probe_state"] == "failed"
+    assert entry["entitlement_state"] == "not_entitled"
+    assert entry["details"] == "Option marks unavailable: provider plan is not entitled to option snapshot data."
+    assert "mark_unavailable rather than fake P&L" in str(entry["operational_impact"])
+    assert "does not enable live trading" in str(entry["operational_impact"])
+
+
 def test_normalize_polygon_ticker_maps_index_symbols() -> None:
     # Every known index should get the I: prefix
     for sym in INDEX_SYMBOLS:

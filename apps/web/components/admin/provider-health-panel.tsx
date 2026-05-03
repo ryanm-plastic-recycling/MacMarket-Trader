@@ -29,6 +29,7 @@ type ProviderHealth = {
     selected_provider?: string;
     probe_status?: string;
     readiness_scope?: string;
+    entitlement_state?: string | null;
     llm_enabled?: boolean;
     model?: string | null;
     key_present?: boolean;
@@ -49,7 +50,7 @@ type ProviderHealth = {
 };
 
 export const OPTIONS_PROVIDER_READINESS_NOTE =
-  "Options/index data note: SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes. Options chain, IV, Greeks, and open interest depend on provider coverage. This readiness view does not enable execution.";
+  "Options/index data note: SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes. Options chain, IV, Greeks, open interest, and option snapshot marks depend on provider coverage. If the plan is not entitled, Options Position Review shows mark_unavailable rather than fake P&L. This readiness view does not enable execution.";
 
 export function ProviderHealthPanel() {
   const [data, setData] = useState<ProviderHealth | null>(null);
@@ -85,6 +86,7 @@ export function ProviderHealthPanel() {
   const alpacaPaper = data?.providers.find((p) => p.provider === "alpaca_paper");
   const fred = data?.providers.find((p) => p.provider === "fred");
   const news = data?.providers.find((p) => p.provider === "news");
+  const optionsData = data?.providers.find((p) => p.provider === "options_data");
   const llm = data?.providers.find((p) => p.provider === "llm");
   const workflowBlocked = market?.workflow_execution_mode === "blocked";
   const workflowDemoFallback = market?.workflow_execution_mode === "demo_fallback";
@@ -173,6 +175,9 @@ export function ProviderHealthPanel() {
   }
 
   function providerDetailCopy(provider: ProviderHealth["providers"][number]): string {
+    if (provider.provider === "options_data" && provider.entitlement_state === "not_entitled") {
+      return "Options data is configured, but the provider plan is not entitled to option snapshot marks. Options marks remain unavailable; no fake option P&L is shown.";
+    }
     if (provider.config_state === "configured" && provider.probe_state === "unavailable") {
       if (provider.provider === "alpaca_paper") {
         return "Required config appears present. No safe live probe is currently implemented. Paper-provider readiness only. Order routing is not enabled.";
@@ -213,6 +218,7 @@ export function ProviderHealthPanel() {
           {alpacaPaper ? <StatusBadge tone={configTone(alpacaPaper.config_state)}>alpaca paper: {formatConfigLabel(alpacaPaper.config_state)} / {formatProbeLabel(alpacaPaper.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {fred ? <StatusBadge tone="neutral">fred: {formatConfigLabel(fred.config_state)} / {formatProbeLabel(fred.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {news ? <StatusBadge tone="neutral">news: {formatConfigLabel(news.config_state)} / {formatProbeLabel(news.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
+          {optionsData ? <StatusBadge tone={probeTone(optionsData.probe_state)}>options data: {formatConfigLabel(optionsData.config_state)} / {formatProbeLabel(optionsData.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {llm ? <StatusBadge tone={statusTone(llm.status)}>LLM provider: {llm.mode} / {formatStatusLabel(llm.status)} / {formatProbeLabel(llm.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
         </div>
         {healthyProvider ? <p style={{ color: "#7ee787", margin: "8px 0 0" }}>Provider-backed market-data mode is active and healthy.</p> : null}
@@ -230,6 +236,11 @@ export function ProviderHealthPanel() {
         <p style={{ ...muted, margin: "6px 0 0" }}>
           {OPTIONS_PROVIDER_READINESS_NOTE}
         </p>
+        {optionsData?.entitlement_state === "not_entitled" ? (
+          <p style={{ color: "#f7b267", margin: "6px 0 0" }}>
+            Options marks unavailable: provider plan is not entitled to option snapshot data. Options Position Review remains honest and will show mark_unavailable.
+          </p>
+        ) : null}
       </Card>
 
       <div className="op-grid-3">

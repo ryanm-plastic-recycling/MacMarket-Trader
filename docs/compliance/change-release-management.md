@@ -12,6 +12,12 @@ Preferred local gate:
 python scripts/run_release_gate.py
 ```
 
+Quick local gate for non-destructive evidence wiring and archive checks:
+
+```powershell
+python scripts/run_release_gate.py --quick
+```
+
 CI-safe evidence wiring check:
 
 ```powershell
@@ -19,9 +25,10 @@ python scripts/run_release_gate.py --dry-run --mock-commands
 ```
 
 The release gate writes JSON and Markdown evidence under `.tmp/evidence/` and
-returns nonzero on hard failures. Moderate `npm audit` findings are
-report-only by default; high or critical findings fail unless the operator
-changes the configured threshold for a documented exception.
+returns nonzero on hard failures. It prints progress before each major step
+and records elapsed time per step. Moderate `npm audit` findings are
+report-only by default in the full gate; high or critical findings fail unless
+the operator changes the configured threshold for a documented exception.
 
 - Git status reviewed and expected.
 - No conflict markers:

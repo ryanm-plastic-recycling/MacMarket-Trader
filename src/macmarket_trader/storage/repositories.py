@@ -1196,7 +1196,11 @@ class OptionPaperRepository:
         leg_closes: list[OptionPaperCloseLegInput],
         commission_per_contract: float,
         notes: str = "",
+        settlement_mode: str = "manual_close",
     ) -> OptionPaperCloseStructureResponse:
+        normalized_settlement_mode = str(settlement_mode or "manual_close").strip().lower()
+        if normalized_settlement_mode not in {"manual_close", "expiration"}:
+            raise OptionPaperCloseError("invalid_settlement_mode")
         if not leg_closes:
             raise OptionPaperCloseError("close_legs_are_required")
 
@@ -1282,7 +1286,7 @@ class OptionPaperRepository:
                 gross_pnl=gross_pnl,
                 total_commissions=total_commissions,
                 net_pnl=net_pnl,
-                settlement_mode="manual_close",
+                settlement_mode=normalized_settlement_mode,
                 notes=notes,
             )
             session.add(trade_row)
