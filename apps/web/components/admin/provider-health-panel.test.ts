@@ -34,6 +34,8 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("sample option");
     expect(source).toContain("sample_underlying");
     expect(source).toContain("sample_option_symbol");
+    expect(source).toContain("sample_selection_method");
+    expect(source).toContain("sample method");
     expect(source).toContain("entitlement_state");
     expect(source).toContain("Options marks unavailable");
     expect(source).toContain("provider plan is not entitled");

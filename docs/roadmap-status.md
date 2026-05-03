@@ -2,6 +2,22 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Options Data Provider-Health Sample Discovery
+Options Data provider health now prefers a discovered Polygon/Massive sample
+contract instead of relying first on a hardcoded option ticker. The readiness
+probe asks for active SPY/AAPL option reference data, chooses a near-term
+at/near-the-money contract when chain/reference access is available, retries a
+small discovered candidate set, and reports the sample underlying, sample
+option, and sample-selection method. The old static AAPL sample remains only as
+a clearly labeled `static_sample` fallback when discovery returns no usable
+active candidates.
+
+If option reference discovery or option snapshots are blocked by provider plan
+or permission, Provider Health reports the failure with sanitized, entitlement-
+specific copy. This remains a readiness signal for paper Options Position
+Review marks only and does not enable live trading, broker routing, automatic
+exits, rolls, or adjustments.
+
 ## 2026-05-03 Update - Options DTE, Entitlement UX, Release Gate Progress, And Welcome Guide
 Options research now uses a shared UTC-calendar DTE helper for displayed DTE
 and Expected Range `calendar_days`. The fixed `2026-05-16` options research

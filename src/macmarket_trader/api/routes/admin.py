@@ -4523,7 +4523,7 @@ def _options_data_readiness() -> dict[str, object]:
         health_fn = getattr(market_data_service, "options_data_health", None)
         if callable(health_fn):
             try:
-                probe_payload = dict(health_fn(sample_symbol="AAPL") or {})
+                probe_payload = dict(health_fn(sample_symbol="SPY") or {})
                 probe_state = str(probe_payload.get("probe_state") or probe_payload.get("probe_status") or "unavailable")
             except Exception as exc:
                 probe_state = "failed"
@@ -4555,8 +4555,9 @@ def _options_data_readiness() -> dict[str, object]:
         "configured": configured,
         "selected_provider": "polygon" if settings.polygon_enabled else "none",
         "probe_status": probe_state,
-        "sample_underlying": probe_payload.get("sample_underlying") or "AAPL",
+        "sample_underlying": probe_payload.get("sample_underlying") or "SPY",
         "sample_option_symbol": probe_payload.get("sample_option_symbol"),
+        "sample_selection_method": probe_payload.get("sample_selection_method") or "unavailable",
         "latency_ms": probe_payload.get("latency_ms"),
         "last_success_at": probe_payload.get("last_success_at"),
         "readiness_scope": "options_research_marks_only",
