@@ -264,15 +264,19 @@ class RecommendationRepository:
             stmt = stmt.order_by(RecommendationModel.created_at.desc()).limit(limit)
             return list(session.execute(stmt).scalars())
 
-    def get_by_id(self, recommendation_id: int) -> RecommendationModel | None:
+    def get_by_id(self, recommendation_id: int, *, app_user_id: int | None = None) -> RecommendationModel | None:
         with self.session_factory() as session:
-            return session.get(RecommendationModel, recommendation_id)
+            stmt = select(RecommendationModel).where(RecommendationModel.id == recommendation_id)
+            if app_user_id is not None:
+                stmt = stmt.where(RecommendationModel.app_user_id == app_user_id)
+            return session.execute(stmt).scalar_one_or_none()
 
-    def get_by_recommendation_uid(self, recommendation_uid: str) -> RecommendationModel | None:
+    def get_by_recommendation_uid(self, recommendation_uid: str, *, app_user_id: int | None = None) -> RecommendationModel | None:
         with self.session_factory() as session:
-            return session.execute(
-                select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
-            ).scalar_one_or_none()
+            stmt = select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
+            if app_user_id is not None:
+                stmt = stmt.where(RecommendationModel.app_user_id == app_user_id)
+            return session.execute(stmt).scalar_one_or_none()
 
     def attach_workflow_metadata(
         self,
@@ -317,11 +321,18 @@ class RecommendationRepository:
             row.payload = payload
             session.commit()
 
-    def set_approved(self, recommendation_uid: str, *, approved: bool) -> "RecommendationModel | None":
+    def set_approved(
+        self,
+        recommendation_uid: str,
+        *,
+        approved: bool,
+        app_user_id: int | None = None,
+    ) -> "RecommendationModel | None":
         with self.session_factory() as session:
-            row = session.execute(
-                select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
-            ).scalar_one_or_none()
+            stmt = select(RecommendationModel).where(RecommendationModel.recommendation_id == recommendation_uid)
+            if app_user_id is not None:
+                stmt = stmt.where(RecommendationModel.app_user_id == app_user_id)
+            row = session.execute(stmt).scalar_one_or_none()
             if row is None:
                 return None
             payload = dict(row.payload or {})
@@ -2187,13 +2198,24 @@ class DashboardRepository:
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
 
-    def summary_counts(self) -> dict[str, int]:
+    def summary_counts(self, *, app_user_id: int | None = None) -> dict[str, int]:
         with self.session_factory() as session:
+            recommendation_stmt = select(func.count(RecommendationModel.id))
+            replay_stmt = select(func.count(ReplayRunModel.id))
+            order_stmt = select(func.count(OrderModel.id))
+            fill_stmt = select(func.count(FillModel.id))
+            if app_user_id is not None:
+                recommendation_stmt = recommendation_stmt.where(RecommendationModel.app_user_id == app_user_id)
+                replay_stmt = replay_stmt.where(ReplayRunModel.app_user_id == app_user_id)
+                order_stmt = order_stmt.where(OrderModel.app_user_id == app_user_id)
+                fill_stmt = fill_stmt.join(OrderModel, FillModel.order_id == OrderModel.order_id).where(
+                    OrderModel.app_user_id == app_user_id
+                )
             return {
-                "recommendations": int(session.scalar(select(func.count(RecommendationModel.id))) or 0),
-                "replay_runs": int(session.scalar(select(func.count(ReplayRunModel.id))) or 0),
-                "orders": int(session.scalar(select(func.count(OrderModel.id))) or 0),
-                "fills": int(session.scalar(select(func.count(FillModel.id))) or 0),
+                "recommendations": int(session.scalar(recommendation_stmt) or 0),
+                "replay_runs": int(session.scalar(replay_stmt) or 0),
+                "orders": int(session.scalar(order_stmt) or 0),
+                "fills": int(session.scalar(fill_stmt) or 0),
             }
 
 

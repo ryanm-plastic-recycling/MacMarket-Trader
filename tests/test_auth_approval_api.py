@@ -49,6 +49,7 @@ def test_pending_user_blocked_then_admin_approves() -> None:
     with SessionLocal() as session:
         admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
         admin.app_role = 'admin'
+        admin.approval_status = 'approved'
         admin.mfa_enabled = True
         target = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
         target_id = target.id
@@ -72,6 +73,7 @@ def test_admin_can_reject_user() -> None:
     with SessionLocal() as session:
         admin = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_admin')).scalar_one()
         admin.app_role = 'admin'
+        admin.approval_status = 'approved'
         admin.mfa_enabled = True
         target = session.execute(select(AppUserModel).where(AppUserModel.external_auth_user_id == 'clerk_user')).scalar_one()
         target.approval_status = 'pending'

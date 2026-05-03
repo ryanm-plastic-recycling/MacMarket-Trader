@@ -1,6 +1,32 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-05-02
+Last updated: 2026-05-03
+
+## 2026-05-03 Update - Defensive Security Audit
+A defensive pre-alpha security audit reviewed README constraints, route/auth
+inventory, user-scoping, secret/deploy hygiene, LLM boundaries, provider
+health masking, browser security posture, and dependency audit output. The
+audit found no high-confidence tracked secret values and confirmed deployment
+mirroring excludes runtime env/state and local test/AI artifacts.
+
+Low-risk authorization fixes landed from the audit: admin APIs now require
+both local `app_role=admin` and `approval_status=approved`; recommendation
+detail, approval, replay, paper-order staging, and fee-preview lookups are
+current-user scoped; manual strategy-schedule run-now is owner-scoped; and the
+Dashboard no longer exposes global counts, pending-user metadata, or recent
+admin/email/schedule audit events to regular approved users. Provider Health
+also has regression coverage proving configured secret values are not returned
+in the health payload. This pass does not change recommendation ranking,
+strategy math, sizing, market-data logic, LLM decision boundaries,
+risk-calendar logic, paper order lifecycle semantics, broker routing, live
+trading, automated exits, or automatic scale-in.
+
+Remaining recommended security hardening is tracked as Phase 1 private-alpha
+work: practical rate limits for provider/LLM-heavy endpoints, explicit
+backend caps and symbol validation for bulk request payloads, app-level
+security headers if not guaranteed by the edge proxy, a CSRF/origin policy for
+same-origin mutating proxy routes, and planned dependency upgrades for the
+moderate `npm audit` findings.
 
 ## 2026-05-03 Update - Browser Smoke Audit Fixes
 A Playwright-driven local smoke audit ran against a disposable mock-auth

@@ -106,6 +106,8 @@ def require_approved_user(user=Depends(current_user)):
 def require_admin(user=Depends(current_user)):
     if user.app_role != AppRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Admin role required")
+    if user.approval_status != ApprovalStatus.APPROVED.value:
+        raise HTTPException(status_code=403, detail=f"Approval status is {user.approval_status}")
     if settings.require_mfa_for_admin and not user.mfa_enabled:
         raise HTTPException(status_code=403, detail="Admin MFA required")
     return user

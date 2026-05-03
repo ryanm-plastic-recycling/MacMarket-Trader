@@ -188,10 +188,11 @@ def _recommendation_fee_preview_from_uid(
     recommendation_id: str | None,
     *,
     commission_per_trade: float,
+    app_user_id: int | None = None,
 ) -> dict[str, object]:
     if not recommendation_id:
         return _recommendation_fee_preview(None, commission_per_trade=commission_per_trade)
-    rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+    rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id, app_user_id=app_user_id)
     if rec_row is None:
         return _recommendation_fee_preview(None, commission_per_trade=commission_per_trade)
     try:
@@ -650,11 +651,12 @@ def onboarding_status(user=Depends(require_approved_user)):
 
 @user_router.get("/dashboard")
 def dashboard(user=Depends(require_approved_user)):
-    counts = dashboard_repo.summary_counts()
+    is_admin = str(user.app_role) == "admin"
+    counts = dashboard_repo.summary_counts(app_user_id=user.id)
     recommendations = recommendation_repo.list_recent(limit=5, app_user_id=user.id)
     replay_runs = replay_repo.list_runs(limit=5, app_user_id=user.id)
     orders = order_repo.list_with_fills(limit=5, app_user_id=user.id)
-    pending_users = user_repo.list_by_status(ApprovalStatus.PENDING)
+    pending_users = user_repo.list_by_status(ApprovalStatus.PENDING) if is_admin else []
     provider_health = provider_health_summary()
     latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
     risk_calendar = risk_calendar_service.assess(symbol="SPY", timeframe="1D")
@@ -667,7 +669,7 @@ def dashboard(user=Depends(require_approved_user)):
             "detail": f"{row.template_name} → {row.destination}",
             "status": row.status,
         }
-        for row in email_repo.list_recent(limit=5)
+        for row in (email_repo.list_recent(limit=5) if is_admin else [])
     ]
     approval_events = [
         {
@@ -676,7 +678,7 @@ def dashboard(user=Depends(require_approved_user)):
             "detail": f"approval request: {row.status} ({row.note})",
             "status": row.status,
         }
-        for row in user_repo.list_recent_approval_requests(limit=5)
+        for row in (user_repo.list_recent_approval_requests(limit=5) if is_admin else [])
     ]
     schedule_run_events = [
         {
@@ -685,7 +687,7 @@ def dashboard(user=Depends(require_approved_user)):
             "detail": f"schedule #{row.schedule_id} → {row.status} / {row.delivered_to}",
             "status": row.status,
         }
-        for row in strategy_report_repo.list_recent_runs_all(limit=5)
+        for row in (strategy_report_repo.list_recent_runs_all(limit=5) if is_admin else [])
     ]
     all_events = sorted(
         email_events + approval_events + schedule_run_events,
@@ -749,7 +751,7 @@ def dashboard(user=Depends(require_approved_user)):
                 ),
             }
         ],
-        "quick_links": ["/charts/haco", "/admin/users/pending", "/recommendations"],
+        "quick_links": ["/charts/haco", *([] if not is_admin else ["/admin/users/pending"]), "/recommendations"],
         "workflow_guide": [
             "Start guided paper trade from Dashboard or Analysis to run the canonical Analyze → Recommendation → Replay → Paper Order flow.",
             "Run Replay to validate path-by-path risk transitions before staging paper execution.",
@@ -933,8 +935,8 @@ def recommendation_opportunity_intelligence(
     selected_ids = [item.strip() for item in req.selected_recommendation_ids if item.strip()]
     selected_rows = []
     for recommendation_id in selected_ids:
-        row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
-        if row is None or row.app_user_id != _user.id:
+        row = recommendation_repo.get_by_recommendation_uid(recommendation_id, app_user_id=_user.id)
+        if row is None:
             raise HTTPException(status_code=404, detail=f"Recommendation not found: {recommendation_id}")
         selected_rows.append(row)
     queue_candidates = [
@@ -1211,7 +1213,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
 
 @user_router.get("/recommendations/{recommendation_id}")
 def recommendation_detail(recommendation_id: int, _user=Depends(require_approved_user)):
-    row = recommendation_repo.get_by_id(recommendation_id)
+    row = recommendation_repo.get_by_id(recommendation_id, app_user_id=_user.id)
     if row is None:
         raise HTTPException(status_code=404, detail="Recommendation not found")
     already_open_by_symbol = _open_paper_position_context_by_symbol(
@@ -1235,7 +1237,7 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
 @user_router.patch("/recommendations/{recommendation_uid}/approve")
 def set_recommendation_approved(recommendation_uid: str, req: dict[str, object], _user=Depends(require_approved_user)):
     approved = bool(req.get("approved", True))
-    row = recommendation_repo.set_approved(recommendation_uid, approved=approved)
+    row = recommendation_repo.set_approved(recommendation_uid, approved=approved, app_user_id=_user.id)
     if row is None:
         raise HTTPException(status_code=404, detail="Recommendation not found")
     payload = row.payload or {}
@@ -1256,7 +1258,10 @@ def replay_runs(_user=Depends(require_approved_user)):
         fallback_mode: bool | None = None
         first_step = replay_repo.list_steps_for_run(row.id)[:1]
         if first_step:
-            rec = recommendation_repo.get_by_recommendation_uid(first_step[0].recommendation_id)
+            rec = recommendation_repo.get_by_recommendation_uid(
+                first_step[0].recommendation_id,
+                app_user_id=_user.id,
+            )
             workflow = (rec.payload or {}).get("workflow", {}) if rec else {}
             source = str(workflow.get("market_data_source") or source)
             fallback = workflow.get("fallback_mode")
@@ -1265,6 +1270,7 @@ def replay_runs(_user=Depends(require_approved_user)):
         fee_preview = _recommendation_fee_preview_from_uid(
             row.stageable_recommendation_id,
             commission_per_trade=commission_per_trade,
+            app_user_id=_user.id,
         )
         output.append(
             {
@@ -1366,7 +1372,7 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
     source_strategy = str(req.get("strategy")).strip() if req.get("strategy") else None
     source_market_mode = market_mode.value
     if recommendation_id:
-        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id, app_user_id=_user.id)
         if rec_row is None:
             raise HTTPException(status_code=404, detail="Recommendation not found for replay.")
         symbol = rec_row.symbol
@@ -1422,7 +1428,6 @@ def run_user_replay(req: dict[str, object], _user=Depends(require_approved_user)
     key_levels: dict[str, object] = {}
     thesis: str | None = None
     if recommendation_id:
-        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
         payload = (rec_row.payload or {}) if rec_row else {}
         key_levels = extract_recommendation_key_levels(payload)
         thesis = payload.get("thesis") if isinstance(payload.get("thesis"), str) else None
@@ -1451,11 +1456,16 @@ def replay_run_detail(run_id: int, _user=Depends(require_approved_user)):
     run = replay_repo.get_run(run_id, app_user_id=_user.id)
     if run is None:
         raise HTTPException(status_code=404, detail="Replay run not found")
-    source_rec = recommendation_repo.get_by_recommendation_uid(run.source_recommendation_id) if run.source_recommendation_id else None
+    source_rec = (
+        recommendation_repo.get_by_recommendation_uid(run.source_recommendation_id, app_user_id=_user.id)
+        if run.source_recommendation_id
+        else None
+    )
     source_payload = (source_rec.payload or {}) if source_rec else {}
     fee_preview = _recommendation_fee_preview_from_uid(
         run.stageable_recommendation_id,
         commission_per_trade=_effective_commission_per_trade(_user),
+        app_user_id=_user.id,
     )
     return {
         "id": run.id,
@@ -1490,7 +1500,7 @@ def replay_steps(run_id: int, _user=Depends(require_approved_user)):
     rows = replay_repo.list_steps_for_run(run_id)
     output = []
     for row in rows:
-        rec_row = recommendation_repo.get_by_recommendation_uid(row.recommendation_id)
+        rec_row = recommendation_repo.get_by_recommendation_uid(row.recommendation_id, app_user_id=_user.id)
         payload = (rec_row.payload or {}) if rec_row else {}
         quality = payload.get("quality") if isinstance(payload.get("quality"), dict) else {}
         output.append(
@@ -1523,6 +1533,7 @@ def list_orders(_user=Depends(require_approved_user)):
             **_recommendation_fee_preview_from_uid(
                 str(row.get("recommendation_id") or "") or None,
                 commission_per_trade=commission_per_trade,
+                app_user_id=_user.id,
             ),
         }
         for row in rows
@@ -1649,7 +1660,7 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
             recommendation_id = run.stageable_recommendation_id
 
     if recommendation_id:
-        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id)
+        rec_row = recommendation_repo.get_by_recommendation_uid(recommendation_id, app_user_id=_user.id)
         if rec_row is None:
             raise HTTPException(status_code=404, detail="Recommendation not found for paper-order staging.")
         rec = TradeRecommendation.model_validate(rec_row.payload or {})
@@ -3092,6 +3103,9 @@ def update_strategy_schedule(schedule_id: int, req: dict[str, object], user=Depe
 
 @user_router.post("/strategy-schedules/{schedule_id}/run")
 def run_strategy_schedule(schedule_id: int, _user=Depends(require_approved_user)):
+    schedule = strategy_report_repo.get_schedule(schedule_id)
+    if schedule is None or schedule.app_user_id != _user.id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
     try:
         payload = strategy_report_service.run_schedule(schedule_id, trigger="run_now")
     except ValueError as exc:
