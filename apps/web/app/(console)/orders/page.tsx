@@ -142,6 +142,10 @@ type OptionLegReview = {
   mark_as_of: string | number | null;
   stale: boolean;
   missing_data: string[];
+  target_strike?: number | null;
+  selected_listed_strike?: number | null;
+  strike_snap_distance?: number | null;
+  contract_selection_method?: string | null;
 };
 
 type OptionSettlementPreview = {
@@ -159,6 +163,9 @@ type OptionSettlementPreview = {
 type OptionStructureReview = {
   structure_id: number;
   underlying_symbol: string;
+  underlying_asset_type?: string | null;
+  settlement_style?: string | null;
+  deliverable_type?: string | null;
   strategy_type: string;
   side: string | null;
   opened_at: string;
@@ -1397,6 +1404,11 @@ export default function Page() {
                   <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem", marginTop: 4 }}>
                     Structure #{review.structure_id} | {formatOptionStructureToken(review.strategy_type)} | {formatOptionStructureToken(review.side)}
                   </div>
+                  {review.underlying_asset_type === "index" ? (
+                    <div style={{ color: "var(--op-warn, #f2a03f)", fontSize: "0.82rem", marginTop: 4 }}>
+                      Index option research. Cash-settled. No share delivery modeled. Paper-only; no exercise/assignment automation.
+                    </div>
+                  ) : null}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div><strong>Expiration:</strong> {review.expiration_date ?? "Unavailable"}</div>
@@ -1544,6 +1556,12 @@ export default function Page() {
                             <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
                               {leg.option_symbol ?? "option symbol unavailable"}
                             </div>
+                            {leg.contract_selection_method ? (
+                              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.76rem" }}>
+                                {formatOptionStructureToken(leg.contract_selection_method)}
+                                {leg.target_strike != null ? ` | target ${leg.target_strike}` : ""}
+                              </div>
+                            ) : null}
                           </td>
                           <td>{formatOptionStructureToken(leg.side)}</td>
                           <td>{formatOptionStructureToken(leg.option_type)}</td>

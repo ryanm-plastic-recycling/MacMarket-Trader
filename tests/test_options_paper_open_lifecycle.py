@@ -6,6 +6,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from macmarket_trader.api.main import app
+from macmarket_trader.api.routes import admin as admin_routes
+from macmarket_trader.config import settings
+from macmarket_trader.data.providers.market_data import OptionContractResolution
 from macmarket_trader.domain.models import (
     AppUserModel,
     OrderModel,
@@ -151,6 +154,95 @@ def test_open_option_paper_structure_creates_order_and_position_only() -> None:
         assert order_row.status == "opened"
         assert position_row.status == "open"
         assert position_row.source_order_id == order_row.id
+
+
+def test_open_option_paper_structure_snaps_to_listed_contracts_when_provider_configured(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    _approve_default_user()
+    expiration = date(2026, 5, 15)
+    selections: list[tuple[str, float]] = []
+
+    class ContractResolvingService:
+        def resolve_option_contract(self, *, underlying_symbol: str, expiration, option_type: str, target_strike: float):
+            del expiration
+            selections.append((option_type, target_strike))
+            selected = 206.0 if target_strike == 205.0 else 216.0
+            right = "C" if option_type == "call" else "P"
+            return OptionContractResolution(
+                requested_underlying=underlying_symbol.upper(),
+                underlying_asset_type="equity",
+                target_expiration=date(2026, 5, 15),
+                selected_expiration=date(2026, 5, 15),
+                option_type=option_type,
+                target_strike=target_strike,
+                selected_strike=selected,
+                option_symbol=f"O:AAPL260515{right}{int(selected * 1000):08d}",
+                provider="polygon",
+                contract_selection_method="provider_reference_exact_expiration",
+                strike_snap_distance=abs(selected - target_strike),
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", ContractResolvingService())
+
+    response = client.post(
+        "/user/options/paper-structures/open",
+        headers=_USER_AUTH,
+        json=_vertical_debit_payload(),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert selections == [("call", 205.0), ("call", 215.0)]
+    assert payload["legs"][0]["option_symbol"] == "O:AAPL260515C00206000"
+    assert payload["legs"][0]["strike"] == 206.0
+    assert payload["legs"][0]["target_strike"] == 205.0
+    assert payload["legs"][0]["contract_selection"]["selected_listed_strike"] == 206.0
+
+    with SessionLocal() as session:
+        position_leg = session.execute(
+            select(PaperOptionPositionLegModel).where(PaperOptionPositionLegModel.id == payload["legs"][0]["id"])
+        ).scalar_one()
+        assert position_leg.option_symbol == "O:AAPL260515C00206000"
+        assert position_leg.target_strike == 205.0
+        assert position_leg.contract_selection["contract_selection_method"] == "provider_reference_exact_expiration"
+
+
+def test_open_option_paper_structure_blocks_unresolvable_contracts_when_provider_configured(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    _approve_default_user()
+    before = _counts()
+
+    class UnresolvableService:
+        def resolve_option_contract(self, *, underlying_symbol: str, expiration, option_type: str, target_strike: float):
+            return OptionContractResolution(
+                requested_underlying=underlying_symbol.upper(),
+                underlying_asset_type="equity",
+                target_expiration=expiration,
+                selected_expiration=None,
+                option_type=option_type,
+                target_strike=target_strike,
+                selected_strike=None,
+                option_symbol=None,
+                provider="polygon",
+                contract_selection_method="provider_reference_unavailable",
+                unavailable_reason="No listed option contracts matched requested strike.",
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", UnresolvableService())
+
+    response = client.post(
+        "/user/options/paper-structures/open",
+        headers=_USER_AUTH,
+        json=_vertical_debit_payload(),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "listed_option_contract_resolution_required"
+    assert _counts() == before
 
 
 def test_open_option_paper_structure_blocks_naked_short_and_persists_nothing() -> None:

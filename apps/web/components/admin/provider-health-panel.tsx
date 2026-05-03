@@ -25,6 +25,7 @@ type ProviderHealth = {
     sample_underlying?: string | null;
     sample_option_symbol?: string | null;
     sample_selection_method?: string | null;
+    sample_mark_method?: string | null;
     latency_ms?: number | null;
     last_success_at?: string | null;
     selected_provider?: string;
@@ -291,6 +292,7 @@ export function ProviderHealthPanel() {
                 {p.sample_underlying ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample underlying: </span>{p.sample_underlying}</div> : null}
                 {p.sample_option_symbol ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample option: </span>{p.sample_option_symbol}</div> : null}
                 {p.sample_selection_method ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample method: </span>{p.sample_selection_method}</div> : null}
+                {p.sample_mark_method ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>mark method: </span>{p.sample_mark_method}</div> : null}
                 {p.latency_ms != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>latency: </span>{p.latency_ms} ms</div> : null}
                 {p.last_success_at ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>last success: </span>{p.last_success_at}</div> : null}
                 {p.failure_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>failure: {p.failure_reason}</div> : null}

@@ -771,6 +771,63 @@ describe("OptionsPaperLifecyclePanel", () => {
     expect(html).toContain("P&amp;L uses premium x 100. Commission is not multiplied by 100.");
   });
 
+  it("renders listed contract resolution and unresolvable contract warnings", () => {
+    const resolvedHtml = renderToStaticMarkup(
+      <OptionsPaperLifecyclePanel
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "2026-05-16",
+            dte: 13,
+            net_credit: 2.4,
+            max_profit: 240,
+            max_loss: 260,
+            contract_resolution_status: "resolved",
+            paper_persistence_allowed: true,
+            legs: [
+              { action: "buy", right: "put", strike: 660, premium: 0, option_symbol: "O:SPY260516P00660000", target_strike: 661.77 },
+              { action: "sell", right: "put", strike: 665, premium: 1.2, option_symbol: "O:SPY260516P00665000", target_strike: 664.2 },
+              { action: "sell", right: "call", strike: 700, premium: 1.2, option_symbol: "O:SPY260516C00700000", target_strike: 699.8 },
+              { action: "buy", right: "call", strike: 705, premium: 0, option_symbol: "O:SPY260516C00705000", target_strike: 704.9 },
+            ],
+          },
+        }}
+        loadCommissionOnMount={false}
+      />,
+    );
+    expect(resolvedHtml).toContain("Selected listed contracts from provider chain.");
+    expect(resolvedHtml).toContain("O:SPY260516P00660000");
+
+    const unresolvedHtml = renderToStaticMarkup(
+      <OptionsPaperLifecyclePanel
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "2026-05-16",
+            dte: 13,
+            net_credit: 2.4,
+            max_profit: 240,
+            max_loss: 260,
+            contract_resolution_status: "unresolved",
+            paper_persistence_allowed: false,
+            contract_resolution_summary: "Unable to resolve listed contracts; paper position cannot be marked.",
+            legs: [{ action: "buy", right: "put", strike: 661.77, premium: 0, label: "lower long put" }],
+          },
+        }}
+        loadCommissionOnMount={false}
+      />,
+    );
+    expect(unresolvedHtml).toContain("Unable to resolve listed contracts; paper position cannot be marked.");
+  });
+
   it("renders manual close results with gross, commissions, and net values", () => {
     const html = renderToStaticMarkup(
       <OptionsPaperLifecyclePanel

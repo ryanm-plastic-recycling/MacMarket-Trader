@@ -459,6 +459,9 @@ class PaperOptionOrderLegModel(Base):
     premium: Mapped[float] = mapped_column(Float)
     leg_status: Mapped[str] = mapped_column(String(24), default="created", index=True)
     label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    option_symbol: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    target_strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    contract_selection: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class PaperOptionPositionModel(Base):
@@ -497,6 +500,9 @@ class PaperOptionPositionLegModel(Base):
     exit_premium: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(24), default="open", index=True)
     label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    option_symbol: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    target_strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    contract_selection: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class PaperOptionTradeModel(Base):
@@ -536,3 +542,6 @@ class PaperOptionTradeLegModel(Base):
     leg_commission: Mapped[float | None] = mapped_column(Float, nullable=True)
     leg_net_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
     label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    option_symbol: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    target_strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    contract_selection: Mapped[dict | None] = mapped_column(JSON, nullable=True)

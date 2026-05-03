@@ -14,6 +14,11 @@ certification.
 - LLM explanation-only boundary documented and tested.
 - Paper equity lifecycle integrity test exists.
 - Options position review and options lifecycle integrity tests exist.
+- Options paper structures now preserve listed-contract selection provenance
+  when provider-backed options data is configured, including original target
+  strike, selected listed strike, provider symbol, and snap distance.
+- SPX/index-options review uses cash-settled/no-share-delivery labeling and
+  provider path tests for index reference/snapshot behavior.
 - Options expiration review and manual paper settlement evidence exists.
 - Defensive security hardening tests exist.
 - Clean release archive generator excludes local secrets/state.

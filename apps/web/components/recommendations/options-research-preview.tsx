@@ -452,6 +452,13 @@ export function OptionsStructureRiskSummary({
         Replay payoff preview stays read-only and non-persisted. The paper lifecycle only reflects the current in-memory
         position opened from this page.
       </div>
+      {structure?.contract_resolution_status ? (
+        <div style={{ color: structure.paper_persistence_allowed === false ? "var(--op-warn, #f2a03f)" : "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
+          {structure.contract_resolution_status === "resolved"
+            ? "Selected listed contracts from provider chain."
+            : structure.contract_resolution_summary ?? "Unable to resolve listed contracts; paper position cannot be marked."}
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -794,6 +801,13 @@ export function OptionsPaperLifecyclePanel({
         Save the current structure as a paper-only position when you want persisted lifecycle tracking.
         This stays separate from the read-only replay payoff preview above and does not place a broker order.
       </div>
+      {setup.option_structure?.contract_resolution_status ? (
+        <div style={{ color: setup.option_structure.paper_persistence_allowed === false ? "var(--op-warn, #f2a03f)" : "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
+          {setup.option_structure.contract_resolution_status === "resolved"
+            ? "Selected listed contracts from provider chain."
+            : setup.option_structure.contract_resolution_summary ?? "Unable to resolve listed contracts; paper position cannot be marked."}
+        </div>
+      ) : null}
 
       <div className="op-grid-2" style={{ gap: 12, marginBottom: 12 }}>
         <div>
@@ -839,6 +853,7 @@ export function OptionsPaperLifecyclePanel({
           {(openAvailability.request?.legs ?? []).map((leg, index) => (
             <div key={`${leg.action}-${leg.right}-${leg.strike}-${index}`} style={{ color: "var(--op-muted, #7a8999)" }}>
               {formatOptionsLegLabel(leg)} | qty {leg.quantity} | multiplier {leg.multiplier} | entry premium {formatResearchCurrency(leg.premium)}
+              {leg.option_symbol ? ` | ${leg.option_symbol}` : ""}
             </div>
           ))}
           {(openAvailability.request?.legs ?? []).length === 0 ? (

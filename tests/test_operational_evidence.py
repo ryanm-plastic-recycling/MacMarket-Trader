@@ -156,12 +156,62 @@ def test_release_gate_fails_on_conflict_marker_fixture(tmp_path: Path) -> None:
         evidence_dir=tmp_path / "evidence",
         dry_run=True,
         mock_commands=True,
+        deployed=True,
     )
 
     assert result["status"] == "failed"
     conflict_step = next(step for step in result["steps"] if step["name"] == "conflict_marker_scan")
     assert conflict_step["hard_failure"] is True
     assert conflict_step["details"]["finding_count"] == 3
+
+
+def test_release_gate_deployed_non_git_mode_skips_git_diff_check(tmp_path: Path) -> None:
+    module = _load_script("run_release_gate.py")
+    source = tmp_path / "deployed"
+    source.mkdir()
+    (source / "README.md").write_text("# Deployed copy\n", encoding="utf-8")
+    docs = source / "docs" / "compliance"
+    docs.mkdir(parents=True)
+    for filename in module.COMPLIANCE_REQUIRED_DOCS:
+        (docs / filename).write_text(f"# {filename}\n", encoding="utf-8")
+    (source / "apps" / "web").mkdir(parents=True)
+
+    result = module.run_release_gate(
+        repo_root=source,
+        evidence_dir=tmp_path / "evidence",
+        dry_run=True,
+        quick=True,
+        mock_commands=True,
+        deployed=True,
+    )
+
+    assert result["git_available"] is False
+    assert result["deployed"] is True
+    git_step = next(step for step in result["steps"] if step["name"] == "git_diff_check")
+    assert git_step["status"] == "skipped"
+    assert git_step["hard_failure"] is False
+    assert git_step["details"]["skipped_reason"] == "deployed_non_git_folder"
+    pytest_step = next(step for step in result["steps"] if step["name"] == "targeted_compliance_pytest")
+    assert pytest_step["status"] == "skipped"
+    assert pytest_step["details"]["skipped_reason"] == "deployed_non_git_folder"
+
+
+def test_release_gate_non_git_without_deployed_fails_with_clear_message(tmp_path: Path) -> None:
+    module = _load_script("run_release_gate.py")
+    source = tmp_path / "deployed"
+    source.mkdir()
+
+    result = module.run_release_gate(
+        repo_root=source,
+        evidence_dir=tmp_path / "evidence",
+        dry_run=True,
+        quick=True,
+        mock_commands=True,
+    )
+
+    assert result["status"] == "failed"
+    assert result["failure_reason"] == "This path is not a Git repository. Run from source repo or pass --deployed."
+    assert result["steps"][0]["name"] == "git_repository_check"
 
 
 def test_release_gate_reports_npm_audit_summary_without_auto_fixing(tmp_path: Path) -> None:

@@ -62,6 +62,10 @@ describe("orders metric help rollout", () => {
     expect(source).toContain("Vega");
     expect(source).toContain("formatMaybeIv(leg.implied_volatility)");
     expect(source).toContain("formatOptionStructureToken(leg.mark_method)");
+    expect(source).toContain("underlying_asset_type");
+    expect(source).toContain("Index option research. Cash-settled. No share delivery modeled.");
+    expect(source).toContain("contract_selection_method");
+    expect(source).toContain("target_strike");
     expect(source).toContain("underlying_mark_price");
     expect(source).toContain("itm_otm_summary");
     expect(source).toContain("assignment_risk_summary");

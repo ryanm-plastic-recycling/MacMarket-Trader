@@ -43,6 +43,7 @@ OPTIONS_HEALTH_DEFAULT_UNDERLYINGS = ("SPY", "AAPL")
 OPTIONS_HEALTH_STATIC_SAMPLE_UNDERLYING = "AAPL"
 OPTIONS_HEALTH_STATIC_SAMPLE_OPTION = "O:AAPL260504C00200000"
 OPTIONS_HEALTH_MAX_DISCOVERED_CANDIDATES = 8
+OPTION_INDEX_UNDERLYINGS = {"SPX", "NDX", "RUT", "VIX"}
 
 
 def _finite_float(value: Any) -> float | None:
@@ -120,6 +121,24 @@ def build_polygon_option_ticker(
     right = "C" if str(option_type).strip().lower().startswith("c") else "P"
     strike_mills = int(round(float(strike) * 1000))
     return f"O:{underlying}{expiration.strftime('%y%m%d')}{right}{strike_mills:08d}"
+
+
+def option_reference_underlying_ticker(symbol: str) -> str:
+    """Polygon reference contracts expect the raw underlying ticker, even for index options."""
+    return symbol.upper().strip().removeprefix("I:")
+
+
+def option_snapshot_underlying_ticker(symbol: str) -> str:
+    """Polygon option snapshots use I: for index underlyings such as SPX."""
+    normalized = option_reference_underlying_ticker(symbol)
+    if normalized in OPTION_INDEX_UNDERLYINGS:
+        return f"I:{normalized}"
+    return normalized
+
+
+def option_underlying_asset_type(symbol: str) -> str:
+    normalized = option_reference_underlying_ticker(symbol)
+    return "index" if normalized in OPTION_INDEX_UNDERLYINGS else "equity"
 
 
 def unavailable_option_contract_snapshot(
@@ -299,6 +318,45 @@ class OptionsHealthSample:
     selection_method: str
 
 
+@dataclass(frozen=True)
+class OptionContractResolution:
+    requested_underlying: str
+    underlying_asset_type: str
+    target_expiration: date
+    selected_expiration: date | None
+    option_type: str
+    target_strike: float
+    selected_strike: float | None
+    option_symbol: str | None
+    provider: str
+    contract_selection_method: str
+    strike_snap_distance: float | None = None
+    unavailable_reason: str | None = None
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def resolved(self) -> bool:
+        return bool(self.option_symbol and self.selected_strike is not None and self.selected_expiration is not None)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "resolved": self.resolved,
+            "requested_underlying": self.requested_underlying,
+            "underlying_asset_type": self.underlying_asset_type,
+            "target_expiration": self.target_expiration.isoformat(),
+            "selected_expiration": self.selected_expiration.isoformat() if self.selected_expiration else None,
+            "option_type": self.option_type,
+            "target_strike": self.target_strike,
+            "selected_listed_strike": self.selected_strike,
+            "strike_snap_distance": self.strike_snap_distance,
+            "provider": self.provider,
+            "provider_contract_symbol": self.option_symbol,
+            "contract_selection_method": self.contract_selection_method,
+            "unavailable_reason": self.unavailable_reason,
+            "warnings": list(self.warnings),
+        }
+
+
 class TTLCache:
     def __init__(self) -> None:
         self._store: dict[str, tuple[float, Any]] = {}
@@ -328,6 +386,16 @@ class MarketDataProvider:
         raise NotImplementedError
 
     def fetch_option_contract_snapshot(self, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
+        raise NotImplementedError
+
+    def resolve_option_contract(
+        self,
+        *,
+        underlying_symbol: str,
+        expiration: date,
+        option_type: str,
+        target_strike: float,
+    ) -> OptionContractResolution:
         raise NotImplementedError
 
     def health_check(self, sample_symbol: str) -> MarketProviderHealth:
@@ -736,7 +804,7 @@ class PolygonMarketDataProvider(MarketDataProvider):
             payload = self._request_json(
                 "/v3/reference/options/contracts",
                 {
-                    "underlying_ticker": symbol.upper(),
+                    "underlying_ticker": option_reference_underlying_ticker(symbol),
                     "limit": str(limit),
                     "sort": "expiration_date",
                     "order": "asc",
@@ -789,7 +857,7 @@ class PolygonMarketDataProvider(MarketDataProvider):
         puts = [_row(r) for r in expiry_contracts if r.get("contract_type") == "put"][:5]
 
         return {
-            "underlying": symbol,
+            "underlying": option_reference_underlying_ticker(symbol),
             "expiry": nearest_expiry,
             "calls": calls if calls else None,
             "puts": puts if puts else None,
@@ -798,7 +866,7 @@ class PolygonMarketDataProvider(MarketDataProvider):
         }
 
     def fetch_option_contract_snapshot(self, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
-        underlying = underlying_symbol.upper().strip()
+        underlying = option_snapshot_underlying_ticker(underlying_symbol)
         option_ticker = option_symbol.upper().strip()
         endpoint = f"/v3/snapshot/options/{underlying}/{option_ticker}"
         payload = self._request_json(endpoint, {})
@@ -884,6 +952,124 @@ class PolygonMarketDataProvider(MarketDataProvider):
             underlying_price=_finite_float(underlying_asset.get("price") or underlying_asset.get("value")),
             fallback_mode=False,
             missing_fields=sorted(set(missing_fields)),
+        )
+
+    def fetch_option_contracts(
+        self,
+        *,
+        underlying_symbol: str,
+        expiration: date | None = None,
+        option_type: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        query: dict[str, str] = {
+            "underlying_ticker": option_reference_underlying_ticker(underlying_symbol),
+            "limit": str(limit),
+            "sort": "strike_price",
+            "order": "asc",
+            "expired": "false",
+        }
+        if expiration is not None:
+            query["expiration_date"] = expiration.isoformat()
+        if option_type:
+            normalized_type = str(option_type).strip().lower()
+            if normalized_type in {"call", "put"}:
+                query["contract_type"] = normalized_type
+        payload = self._request_json("/v3/reference/options/contracts", query)
+        return list(payload.get("results") or [])
+
+    def resolve_option_contract(
+        self,
+        *,
+        underlying_symbol: str,
+        expiration: date,
+        option_type: str,
+        target_strike: float,
+    ) -> OptionContractResolution:
+        normalized_underlying = option_reference_underlying_ticker(underlying_symbol)
+        normalized_type = "call" if str(option_type).strip().lower().startswith("c") else "put"
+        target = float(target_strike)
+        asset_type = option_underlying_asset_type(normalized_underlying)
+
+        def _unresolved(reason: str, *, method: str = "unavailable") -> OptionContractResolution:
+            return OptionContractResolution(
+                requested_underlying=normalized_underlying,
+                underlying_asset_type=asset_type,
+                target_expiration=expiration,
+                selected_expiration=None,
+                option_type=normalized_type,
+                target_strike=target,
+                selected_strike=None,
+                option_symbol=None,
+                provider=self.name,
+                contract_selection_method=method,
+                unavailable_reason=str(reason)[:300],
+            )
+
+        try:
+            candidates = self.fetch_option_contracts(
+                underlying_symbol=normalized_underlying,
+                expiration=expiration,
+                option_type=normalized_type,
+                limit=1000,
+            )
+        except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+            return _unresolved(str(exc), method="provider_reference_unavailable")
+
+        selection_method = "provider_reference_exact_expiration"
+        warnings: list[str] = []
+        if not candidates:
+            try:
+                candidates = self.fetch_option_contracts(
+                    underlying_symbol=normalized_underlying,
+                    expiration=None,
+                    option_type=normalized_type,
+                    limit=1000,
+                )
+            except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+                return _unresolved(str(exc), method="provider_reference_unavailable")
+            selection_method = "provider_reference_nearest_expiration"
+            warnings.append("Exact expiration was unavailable; selected closest listed expiration from provider reference data.")
+
+        normalized_candidates: list[tuple[date, float, str, dict[str, Any]]] = []
+        for item in candidates:
+            contract_type = str(item.get("contract_type") or item.get("option_type") or "").lower()
+            if contract_type != normalized_type:
+                continue
+            option_symbol = str(item.get("ticker") or "").upper().strip()
+            selected_expiration = _parse_expiration_date(item.get("expiration_date") or item.get("expiry"))
+            selected_strike = _finite_float(item.get("strike_price") or item.get("strike"))
+            if not option_symbol or selected_expiration is None or selected_strike is None:
+                continue
+            normalized_candidates.append((selected_expiration, selected_strike, option_symbol, item))
+
+        if not normalized_candidates:
+            return _unresolved("No listed option contracts matched requested type/expiration.", method=selection_method)
+
+        def _sort_key(item: tuple[date, float, str, dict[str, Any]]) -> tuple[int, float, float, str]:
+            selected_expiration, selected_strike, option_symbol, row = item
+            expiration_distance = abs((selected_expiration - expiration).days)
+            strike_distance = abs(selected_strike - target)
+            liquidity = max(_finite_float(row.get("open_interest")) or 0.0, _finite_float(row.get("volume")) or 0.0)
+            return (expiration_distance, strike_distance, -liquidity, option_symbol)
+
+        selected_expiration, selected_strike, option_symbol, _row = sorted(normalized_candidates, key=_sort_key)[0]
+        if selected_expiration != expiration and not warnings:
+            warnings.append("Selected option contract uses closest available provider expiration.")
+
+        return OptionContractResolution(
+            requested_underlying=normalized_underlying,
+            underlying_asset_type=asset_type,
+            target_expiration=expiration,
+            selected_expiration=selected_expiration,
+            option_type=normalized_type,
+            target_strike=target,
+            selected_strike=round(float(selected_strike), 4),
+            option_symbol=option_symbol,
+            provider=self.name,
+            contract_selection_method=selection_method,
+            strike_snap_distance=round(abs(float(selected_strike) - target), 4),
+            warnings=tuple(warnings),
         )
 
     def get_provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
@@ -1050,8 +1236,54 @@ class MarketDataService:
             return None
         return self._provider.fetch_options_chain_preview(symbol=symbol, limit=limit)
 
+    def resolve_option_contract(
+        self,
+        *,
+        underlying_symbol: str,
+        expiration: date,
+        option_type: str,
+        target_strike: float,
+    ) -> OptionContractResolution:
+        normalized_underlying = option_reference_underlying_ticker(underlying_symbol)
+        normalized_type = "call" if str(option_type).strip().lower().startswith("c") else "put"
+        target = float(target_strike)
+        if not isinstance(self._provider, PolygonMarketDataProvider):
+            return OptionContractResolution(
+                requested_underlying=normalized_underlying,
+                underlying_asset_type=option_underlying_asset_type(normalized_underlying),
+                target_expiration=expiration,
+                selected_expiration=None,
+                option_type=normalized_type,
+                target_strike=target,
+                selected_strike=None,
+                option_symbol=None,
+                provider=self._provider.name,
+                contract_selection_method="provider_reference_not_supported",
+                unavailable_reason="Listed option contract resolution requires Polygon/Massive reference data.",
+            )
+        if not self._provider.is_configured():
+            return OptionContractResolution(
+                requested_underlying=normalized_underlying,
+                underlying_asset_type=option_underlying_asset_type(normalized_underlying),
+                target_expiration=expiration,
+                selected_expiration=None,
+                option_type=normalized_type,
+                target_strike=target,
+                selected_strike=None,
+                option_symbol=None,
+                provider="polygon",
+                contract_selection_method="provider_reference_missing_config",
+                unavailable_reason="Polygon/Massive API key or base URL is missing.",
+            )
+        return self._provider.resolve_option_contract(
+            underlying_symbol=normalized_underlying,
+            expiration=expiration,
+            option_type=normalized_type,
+            target_strike=target,
+        )
+
     def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
-        normalized_underlying = underlying_symbol.upper().strip()
+        normalized_underlying = option_reference_underlying_ticker(underlying_symbol)
         normalized_option = option_symbol.upper().strip()
         cache_key = f"option_snapshot::{normalized_underlying}::{normalized_option}"
         cached = self._option_snapshot_cache.get(cache_key)
@@ -1207,6 +1439,7 @@ class MarketDataService:
                 "sample_underlying": sample_symbol.upper(),
                 "sample_option_symbol": None,
                 "sample_selection_method": "unavailable",
+                "sample_mark_method": "unavailable",
                 "latency_ms": None,
                 "last_success_at": None,
             }
@@ -1220,6 +1453,7 @@ class MarketDataService:
                 "sample_underlying": sample_symbol.upper(),
                 "sample_option_symbol": None,
                 "sample_selection_method": "unavailable",
+                "sample_mark_method": "unavailable",
                 "latency_ms": None,
                 "last_success_at": None,
             }
@@ -1238,6 +1472,7 @@ class MarketDataService:
                     "sample_underlying": sample_symbol.upper(),
                     "sample_option_symbol": None,
                     "sample_selection_method": "unavailable",
+                    "sample_mark_method": "unavailable",
                     "latency_ms": elapsed,
                     "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
                 }
@@ -1259,10 +1494,15 @@ class MarketDataService:
                 result = {
                     "probe_state": "ok",
                     "probe_status": "ok",
-                    "details": f"Polygon options snapshot probe succeeded using {snapshot.mark_method}.",
+                    "details": (
+                        "Access verified; fresh quote/trade mark not available for sample; using prior_close_fallback."
+                        if snapshot.mark_method == "prior_close_fallback"
+                        else f"Polygon options snapshot probe succeeded using {snapshot.mark_method}."
+                    ),
                     "sample_underlying": sample.underlying,
                     "sample_option_symbol": sample.option_symbol,
                     "sample_selection_method": sample.selection_method,
+                    "sample_mark_method": snapshot.mark_method,
                     "latency_ms": elapsed,
                     "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
                 }
@@ -1282,6 +1522,7 @@ class MarketDataService:
                 "sample_underlying": failed_sample.underlying,
                 "sample_option_symbol": failed_sample.option_symbol,
                 "sample_selection_method": failed_sample.selection_method,
+                "sample_mark_method": last_snapshot.mark_method if last_snapshot else "unavailable",
                 "latency_ms": elapsed,
                 "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
             }
@@ -1294,6 +1535,7 @@ class MarketDataService:
                 "sample_underlying": sample_symbol.upper(),
                 "sample_option_symbol": None,
                 "sample_selection_method": "unavailable",
+                "sample_mark_method": "unavailable",
                 "latency_ms": elapsed,
                 "last_success_at": self._provider._last_success_at.isoformat() if isinstance(self._provider, PolygonMarketDataProvider) and self._provider._last_success_at else None,
             }

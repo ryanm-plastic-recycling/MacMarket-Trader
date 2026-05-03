@@ -943,6 +943,9 @@ class OptionPaperRepository:
                         premium=leg.premium,
                         leg_status="opened",
                         label=leg.label,
+                        option_symbol=leg.option_symbol,
+                        target_strike=leg.target_strike,
+                        contract_selection=dict(leg.contract_selection or {}),
                     )
                 )
 
@@ -974,6 +977,9 @@ class OptionPaperRepository:
                         entry_premium=leg.premium,
                         status="open",
                         label=leg.label,
+                        option_symbol=leg.option_symbol,
+                        target_strike=leg.target_strike,
+                        contract_selection=dict(leg.contract_selection or {}),
                     )
                 )
             session.commit()
@@ -1030,6 +1036,9 @@ class OptionPaperRepository:
                         premium=leg.premium,
                         leg_status=status,
                         label=leg.label,
+                        option_symbol=leg.option_symbol,
+                        target_strike=leg.target_strike,
+                        contract_selection=dict(leg.contract_selection or {}),
                     )
                 )
             session.commit()
@@ -1089,6 +1098,9 @@ class OptionPaperRepository:
                         entry_premium=leg.premium,
                         status=status,
                         label=leg.label,
+                        option_symbol=leg.option_symbol,
+                        target_strike=leg.target_strike,
+                        contract_selection=dict(leg.contract_selection or {}),
                     )
                 )
             session.commit()
@@ -1315,6 +1327,9 @@ class OptionPaperRepository:
                         leg_commission=leg_commission,
                         leg_net_pnl=leg_net_pnl,
                         label=position_leg.label,
+                        option_symbol=position_leg.option_symbol,
+                        target_strike=position_leg.target_strike,
+                        contract_selection=dict(position_leg.contract_selection or {}),
                     )
                 )
 
@@ -1370,6 +1385,9 @@ class OptionPaperRepository:
                         multiplier=leg.multiplier,
                         entry_premium=leg.premium,
                         label=leg.label,
+                        option_symbol=leg.option_symbol,
+                        target_strike=leg.target_strike,
+                        contract_selection=dict(leg.contract_selection or {}),
                     )
                 )
             session.commit()
@@ -1438,6 +1456,9 @@ class OptionPaperRepository:
                     premium=leg.premium,
                     leg_status=leg.leg_status,
                     label=leg.label,
+                    option_symbol=leg.option_symbol,
+                    target_strike=leg.target_strike,
+                    contract_selection=dict(leg.contract_selection or {}),
                 )
                 for leg in legs
             ],
@@ -1489,6 +1510,9 @@ class OptionPaperRepository:
                     exit_premium=leg.exit_premium,
                     status=leg.status,
                     label=leg.label,
+                    option_symbol=leg.option_symbol,
+                    target_strike=leg.target_strike,
+                    contract_selection=dict(leg.contract_selection or {}),
                 )
                 for leg in legs
             ],
@@ -1541,6 +1565,9 @@ class OptionPaperRepository:
                     leg_commission=leg.leg_commission,
                     leg_net_pnl=leg.leg_net_pnl,
                     label=leg.label,
+                    option_symbol=leg.option_symbol,
+                    target_strike=leg.target_strike,
+                    contract_selection=dict(leg.contract_selection or {}),
                 )
                 for leg in legs
             ],
@@ -1594,6 +1621,9 @@ class OptionPaperRepository:
                     leg_gross_pnl=leg.leg_gross_pnl,
                     leg_commission=leg.leg_commission,
                     leg_net_pnl=leg.leg_net_pnl,
+                    option_symbol=leg.option_symbol,
+                    target_strike=leg.target_strike,
+                    contract_selection=dict(leg.contract_selection or {}),
                 )
                 for leg in trade_record.legs
             ]
@@ -1610,6 +1640,9 @@ class OptionPaperRepository:
                     exit_premium=leg.exit_premium,
                     status=leg.status,
                     label=leg.label,
+                    option_symbol=leg.option_symbol,
+                    target_strike=leg.target_strike,
+                    contract_selection=dict(leg.contract_selection or {}),
                 )
                 for leg in position_record.legs
             ]

@@ -70,7 +70,7 @@ def test_options_paper_schema_migration_upgrade_and_downgrade(tmp_path) -> None:
     assert {"execution_enabled", "breakevens", "created_at"}.issubset(order_columns)
 
     order_leg_columns = {column["name"] for column in inspector.get_columns("paper_option_order_legs")}
-    assert {"option_order_id", "multiplier", "leg_status"}.issubset(order_leg_columns)
+    assert {"option_order_id", "multiplier", "leg_status", "option_symbol", "target_strike", "contract_selection"}.issubset(order_leg_columns)
 
     trade_columns = {column["name"] for column in inspector.get_columns("paper_option_trades")}
     assert {"position_id", "total_commissions", "settlement_mode"}.issubset(trade_columns)
@@ -129,6 +129,9 @@ def test_options_paper_models_support_defaults_and_leg_rows(tmp_path) -> None:
             strike=200.0,
             expiration=date(2026, 5, 15),
             premium=4.2,
+            option_symbol="O:AAPL260515C00200000",
+            target_strike=199.8,
+            contract_selection={"contract_selection_method": "provider_reference_exact_expiration"},
         )
         session.add(order_leg)
 
@@ -154,6 +157,9 @@ def test_options_paper_models_support_defaults_and_leg_rows(tmp_path) -> None:
             strike=200.0,
             expiration=date(2026, 5, 15),
             entry_premium=4.2,
+            option_symbol="O:AAPL260515C00200000",
+            target_strike=199.8,
+            contract_selection={"contract_selection_method": "provider_reference_exact_expiration"},
         )
         session.add(position_leg)
 
@@ -183,6 +189,9 @@ def test_options_paper_models_support_defaults_and_leg_rows(tmp_path) -> None:
             leg_gross_pnl=125.0,
             leg_commission=0.0,
             leg_net_pnl=125.0,
+            option_symbol="O:AAPL260515C00200000",
+            target_strike=199.8,
+            contract_selection={"contract_selection_method": "provider_reference_exact_expiration"},
         )
         session.add(trade_leg)
         session.commit()
@@ -196,12 +205,17 @@ def test_options_paper_models_support_defaults_and_leg_rows(tmp_path) -> None:
         assert order_leg.quantity == 1
         assert order_leg.multiplier == 100
         assert order_leg.leg_status == "created"
+        assert order_leg.option_symbol == "O:AAPL260515C00200000"
+        assert order_leg.target_strike == 199.8
+        assert order_leg.contract_selection["contract_selection_method"] == "provider_reference_exact_expiration"
         assert position.status == "open"
         assert position.source_order_id == order.id
         assert position_leg.quantity == 1
         assert position_leg.multiplier == 100
         assert position_leg.status == "open"
+        assert position_leg.option_symbol == "O:AAPL260515C00200000"
         assert trade.notes == ""
         assert trade.position_id == position.id
         assert trade_leg.quantity == 1
         assert trade_leg.multiplier == 100
+        assert trade_leg.option_symbol == "O:AAPL260515C00200000"

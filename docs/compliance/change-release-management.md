@@ -24,11 +24,25 @@ CI-safe evidence wiring check:
 python scripts/run_release_gate.py --dry-run --mock-commands
 ```
 
+Deployed-copy quick gate for non-git runtime folders:
+
+```powershell
+python scripts/run_release_gate.py --quick --deployed
+```
+
 The release gate writes JSON and Markdown evidence under `.tmp/evidence/` and
 returns nonzero on hard failures. It prints progress before each major step
 and records elapsed time per step. Moderate `npm audit` findings are
 report-only by default in the full gate; high or critical findings fail unless
 the operator changes the configured threshold for a documented exception.
+When `--deployed`/`--no-git` is passed from a non-git deployment folder, the
+gate still runs file scans and archive/evidence checks, but git-only evidence
+such as `git diff --check`, branch, and commit is marked not applicable. If the
+path is not the source repo root and `--deployed` is omitted, the gate fails
+with a clear source-vs-deployed path message instead of dumping raw git usage
+output. Quick deployed mode also marks source-only targeted pytest checks not
+applicable, because deployed runtime folders may intentionally omit the test
+suite.
 
 - Git status reviewed and expected.
 - No conflict markers:

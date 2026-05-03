@@ -759,6 +759,17 @@ class OptionPaperLegInput(BaseModel):
     quantity: int = 1
     multiplier: int = 100
     label: str | None = None
+    option_symbol: str | None = Field(default=None, max_length=64)
+    target_strike: float | None = None
+    contract_selection: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("option_symbol")
+    @classmethod
+    def _normalize_option_symbol(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        return normalized or None
 
 
 class OptionPaperStructureInput(BaseModel):
@@ -792,6 +803,9 @@ class OptionPaperOrderLegRecord(BaseModel):
     premium: float
     leg_status: str
     label: str | None = None
+    option_symbol: str | None = None
+    target_strike: float | None = None
+    contract_selection: dict[str, Any] = Field(default_factory=dict)
 
 
 class OptionPaperOrderRecord(BaseModel):
@@ -826,6 +840,9 @@ class OptionPaperPositionLegRecord(BaseModel):
     exit_premium: float | None = None
     status: str
     label: str | None = None
+    option_symbol: str | None = None
+    target_strike: float | None = None
+    contract_selection: dict[str, Any] = Field(default_factory=dict)
 
 
 class OptionPaperPositionRecord(BaseModel):
@@ -862,6 +879,9 @@ class OptionPaperTradeLegRecord(BaseModel):
     leg_commission: float | None = None
     leg_net_pnl: float | None = None
     label: str | None = None
+    option_symbol: str | None = None
+    target_strike: float | None = None
+    contract_selection: dict[str, Any] = Field(default_factory=dict)
 
 
 class OptionPaperTradeRecord(BaseModel):
@@ -896,6 +916,9 @@ class OptionPaperLifecycleLegSummary(BaseModel):
     leg_gross_pnl: float | None = None
     leg_commission: float | None = None
     leg_net_pnl: float | None = None
+    option_symbol: str | None = None
+    target_strike: float | None = None
+    contract_selection: dict[str, Any] = Field(default_factory=dict)
 
 
 class OptionPaperLifecycleSummary(BaseModel):
@@ -971,11 +994,18 @@ class OptionPaperStructureLegReview(BaseModel):
     mark_as_of: datetime | str | int | None = None
     stale: bool = False
     missing_data: list[str] = Field(default_factory=list)
+    target_strike: float | None = None
+    selected_listed_strike: float | None = None
+    strike_snap_distance: float | None = None
+    contract_selection_method: str | None = None
 
 
 class OptionPaperStructureReview(BaseModel):
     structure_id: int
     underlying_symbol: str
+    underlying_asset_type: Literal["equity", "etf", "index", "unknown"] = "unknown"
+    settlement_style: str | None = None
+    deliverable_type: str | None = None
     strategy_type: str
     side: str | None = None
     opened_at: datetime

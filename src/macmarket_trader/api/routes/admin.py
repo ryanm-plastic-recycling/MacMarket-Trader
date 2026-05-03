@@ -23,7 +23,14 @@ from macmarket_trader.api.security import (
 )
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.base import EmailMessage
-from macmarket_trader.data.providers.market_data import DataNotEntitledError, DeterministicFallbackMarketDataProvider, SymbolNotFoundError, build_polygon_option_ticker, unavailable_option_contract_snapshot
+from macmarket_trader.data.providers.market_data import (
+    DataNotEntitledError,
+    DeterministicFallbackMarketDataProvider,
+    SymbolNotFoundError,
+    build_polygon_option_ticker,
+    option_underlying_asset_type,
+    unavailable_option_contract_snapshot,
+)
 from macmarket_trader.data.providers.registry import build_email_provider, build_market_data_service
 from macmarket_trader.domain.enums import ApprovalStatus, MarketMode
 from macmarket_trader.domain.time import calendar_days_to_expiration, utc_now
@@ -1351,6 +1358,7 @@ def open_user_option_paper_structure(
     user=Depends(require_approved_user),
 ) -> OptionPaperOpenStructureResponse:
     try:
+        req = _resolve_paper_option_structure_contracts(req)
         return open_paper_option_structure(
             app_user_id=user.id,
             structure=req,
@@ -2302,6 +2310,200 @@ def _build_position_review(position, *, app_user_id: int, user, recent_rows: lis
 
 
 _SUPPORTED_OPTION_REVIEW_STRATEGIES = {"long_call", "long_put", "vertical_debit_spread", "iron_condor"}
+_SYNTHETIC_OPTION_NOT_FOUND_WARNING = (
+    "Saved leg contract was not found by provider. This may be an older synthetic/generated strike. "
+    "Create a fresh paper options structure after provider contract resolution."
+)
+
+
+def _option_contract_resolution_required() -> bool:
+    return bool(settings.polygon_enabled and settings.polygon_api_key.strip() and settings.polygon_base_url.strip())
+
+
+def _option_asset_metadata(symbol: str) -> dict[str, str | None]:
+    asset_type = option_underlying_asset_type(symbol)
+    if asset_type == "index":
+        return {
+            "underlying_asset_type": "index",
+            "settlement_style": "cash_settled",
+            "deliverable_type": "cash_index",
+        }
+    if symbol.upper() in {"SPY", "QQQ", "IWM"}:
+        return {"underlying_asset_type": "etf", "settlement_style": "physical", "deliverable_type": "shares"}
+    return {"underlying_asset_type": "equity", "settlement_style": "physical", "deliverable_type": "shares"}
+
+
+def _resolve_option_contract(symbol: str, expiration, right: str, target_strike: float):
+    resolver = getattr(market_data_service, "resolve_option_contract", None)
+    if not callable(resolver):
+        return None
+    try:
+        return resolver(
+            underlying_symbol=symbol,
+            expiration=expiration,
+            option_type=right,
+            target_strike=target_strike,
+        )
+    except Exception:
+        return None
+
+
+def _resolved_contract_dict(resolution) -> dict[str, object]:
+    if resolution is None:
+        return {
+            "resolved": False,
+            "contract_selection_method": "provider_reference_unavailable",
+            "unavailable_reason": "Listed option contract resolver is unavailable.",
+        }
+    as_dict = getattr(resolution, "as_dict", None)
+    if callable(as_dict):
+        return as_dict()
+    return dict(resolution) if isinstance(resolution, dict) else {"resolved": False}
+
+
+def _refresh_research_option_payoff(option_structure: dict[str, object], *, as_of: datetime) -> None:
+    structure_type = str(option_structure.get("type") or "")
+    legs = [leg for leg in option_structure.get("legs", []) if isinstance(leg, dict)]
+    expiration = str(option_structure.get("expiration") or "")
+    if expiration:
+        option_structure["dte"] = calendar_days_to_expiration(expiration, as_of=as_of)
+        option_structure["dte_as_of"] = as_of.isoformat()
+    if structure_type == "iron_condor" and len(legs) == 4:
+        puts = sorted([leg for leg in legs if leg.get("right") == "put"], key=lambda leg: float(leg.get("strike") or 0.0))
+        calls = sorted([leg for leg in legs if leg.get("right") == "call"], key=lambda leg: float(leg.get("strike") or 0.0))
+        credit = _finite_float(option_structure.get("net_credit"))
+        if len(puts) == 2 and len(calls) == 2 and credit is not None:
+            put_width = float(puts[1]["strike"]) - float(puts[0]["strike"])
+            call_width = float(calls[1]["strike"]) - float(calls[0]["strike"])
+            width = max(put_width, call_width)
+            short_put = next((leg for leg in puts if leg.get("action") == "sell"), puts[1])
+            short_call = next((leg for leg in calls if leg.get("action") == "sell"), calls[0])
+            option_structure["max_profit"] = _round_money(credit * 100)
+            option_structure["max_loss"] = _round_money((width - credit) * 100)
+            option_structure["breakeven_low"] = _round_money(float(short_put["strike"]) - credit)
+            option_structure["breakeven_high"] = _round_money(float(short_call["strike"]) + credit)
+    elif structure_type in {"bull_call_debit_spread", "bear_put_debit_spread"} and len(legs) == 2:
+        debit = _finite_float(option_structure.get("net_debit"))
+        if debit is None:
+            return
+        strikes = sorted(float(leg.get("strike") or 0.0) for leg in legs)
+        width = strikes[-1] - strikes[0]
+        option_structure["max_profit"] = _round_money((width - debit) * 100)
+        option_structure["max_loss"] = _round_money(debit * 100)
+        if structure_type == "bull_call_debit_spread":
+            option_structure["breakeven_high"] = _round_money(strikes[0] + debit)
+        else:
+            option_structure["breakeven_low"] = _round_money(strikes[-1] - debit)
+
+
+def _apply_research_contract_resolution(symbol: str, option_structure: dict[str, object], *, as_of: datetime) -> dict[str, object]:
+    required = _option_contract_resolution_required()
+    expiration_raw = option_structure.get("expiration")
+    try:
+        expiration = datetime.fromisoformat(str(expiration_raw)).date()
+    except (TypeError, ValueError):
+        return option_structure
+    legs = option_structure.get("legs")
+    if not isinstance(legs, list) or not legs:
+        return option_structure
+
+    resolved_count = 0
+    warnings: list[str] = []
+    updated_legs: list[dict[str, object]] = []
+    for raw_leg in legs:
+        leg = dict(raw_leg) if isinstance(raw_leg, dict) else {}
+        target_strike = _finite_float(leg.get("strike"))
+        if target_strike is None:
+            updated_legs.append(leg)
+            continue
+        resolution = _resolve_option_contract(symbol, expiration, str(leg.get("right") or ""), target_strike)
+        selection = _resolved_contract_dict(resolution)
+        if selection.get("resolved"):
+            resolved_count += 1
+            selected_strike = _finite_float(selection.get("selected_listed_strike"))
+            selected_expiration = selection.get("selected_expiration")
+            if selected_strike is not None:
+                leg["strike"] = selected_strike
+            if isinstance(selected_expiration, str) and selected_expiration:
+                leg["expiration"] = selected_expiration
+            leg["option_symbol"] = selection.get("provider_contract_symbol")
+            leg["target_strike"] = target_strike
+            leg["selected_listed_strike"] = selected_strike
+            leg["strike_snap_distance"] = selection.get("strike_snap_distance")
+            leg["contract_selection_method"] = selection.get("contract_selection_method")
+            leg["contract_selection"] = selection
+            warnings.extend(str(item) for item in selection.get("warnings") or [] if item)
+        else:
+            leg["target_strike"] = target_strike
+            leg["contract_selection"] = selection
+            if selection.get("unavailable_reason"):
+                warnings.append(str(selection["unavailable_reason"]))
+        updated_legs.append(leg)
+
+    option_structure["legs"] = updated_legs
+    if resolved_count == len(updated_legs):
+        expirations = {
+            str(leg.get("expiration"))
+            for leg in updated_legs
+            if isinstance(leg.get("expiration"), str) and str(leg.get("expiration")).strip()
+        }
+        if len(expirations) == 1:
+            option_structure["expiration"] = next(iter(expirations))
+        option_structure["contract_resolution_status"] = "resolved"
+        option_structure["contract_resolution_summary"] = "Selected listed contracts from provider chain."
+        option_structure["paper_persistence_allowed"] = True
+        option_structure["contract_resolution_warnings"] = sorted(set(warnings))
+        _refresh_research_option_payoff(option_structure, as_of=as_of)
+    elif required:
+        option_structure["contract_resolution_status"] = "unresolved"
+        option_structure["contract_resolution_summary"] = "Unable to resolve listed contracts; paper position cannot be marked."
+        option_structure["paper_persistence_allowed"] = False
+        option_structure["contract_resolution_warnings"] = sorted(set(warnings))
+    else:
+        option_structure["contract_resolution_status"] = "unavailable"
+        option_structure["contract_resolution_summary"] = "Listed contract resolution is unavailable in the current local provider mode."
+        option_structure["paper_persistence_allowed"] = True
+        option_structure["contract_resolution_warnings"] = sorted(set(warnings))
+    return option_structure
+
+
+def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) -> OptionPaperStructureInput:
+    if not _option_contract_resolution_required():
+        return req
+    resolved_legs = []
+    failures: list[str] = []
+    for leg in req.legs:
+        target_strike = _finite_float(leg.target_strike if leg.target_strike is not None else leg.strike)
+        if target_strike is None:
+            failures.append("invalid_target_strike")
+            continue
+        resolution = _resolve_option_contract(req.underlying_symbol, leg.expiration, leg.right, target_strike)
+        selection = _resolved_contract_dict(resolution)
+        if not selection.get("resolved"):
+            failures.append(str(selection.get("unavailable_reason") or "listed_option_contract_unresolved"))
+            continue
+        selected_strike = _finite_float(selection.get("selected_listed_strike"))
+        selected_expiration = selection.get("selected_expiration")
+        option_symbol = selection.get("provider_contract_symbol")
+        if selected_strike is None or not isinstance(selected_expiration, str) or not option_symbol:
+            failures.append("listed_option_contract_incomplete")
+            continue
+        resolved_legs.append(
+            leg.model_copy(
+                update={
+                    "strike": selected_strike,
+                    "expiration": datetime.fromisoformat(selected_expiration).date(),
+                    "option_symbol": str(option_symbol),
+                    "target_strike": target_strike,
+                    "contract_selection": selection,
+                }
+            )
+        )
+    if failures or len(resolved_legs) != len(req.legs):
+        raise OptionPaperContractError("listed_option_contract_resolution_required")
+    expirations = {leg.expiration for leg in resolved_legs}
+    resolved_expiration = next(iter(expirations)) if len(expirations) == 1 else req.expiration
+    return req.model_copy(update={"legs": resolved_legs, "expiration": resolved_expiration})
 
 
 def _option_leg_side(action: str | None) -> str:
@@ -2402,7 +2604,8 @@ def _option_return_denominator(position, *, opening_debit_credit: float | None, 
 
 
 def _option_snapshot_for_leg(symbol: str, leg):
-    option_symbol = build_polygon_option_ticker(
+    persisted_symbol = str(getattr(leg, "option_symbol", "") or "").strip().upper()
+    option_symbol = persisted_symbol or build_polygon_option_ticker(
         underlying_symbol=symbol,
         expiration=leg.expiration,
         option_type=leg.right,
@@ -2672,6 +2875,8 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
     legs = list(getattr(position, "legs", []) or [])
     structure_type = str(getattr(position, "structure_type", "") or "").strip().lower()
     symbol = str(getattr(position, "underlying_symbol", "") or "").upper()
+    asset_metadata = _option_asset_metadata(symbol)
+    is_index_option = asset_metadata["underlying_asset_type"] == "index"
     expiration, days_to_expiration = _option_days_to_expiration(position, now)
     expiration_status = _option_expiration_status(days_to_expiration)
     opening_debit_credit, opening_type = _option_opening_debit_credit(position)
@@ -2716,6 +2921,9 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
     if expiration_status in {"expiration_warning", "expires_today", "expired_unsettled"}:
         missing_data.extend(underlying_payload.get("missing_data") or [])
         warnings.extend(underlying_payload.get("warnings") or [])
+    if is_index_option:
+        warnings.append("Index option research. Cash-settled. No share delivery modeled.")
+        warnings.append("Paper-only. No exercise/assignment automation.")
 
     risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe="1D") if symbol else None
     if risk_calendar is not None:
@@ -2738,6 +2946,7 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
     assignment_risk_values: list[str] = []
     exercise_risk_values: list[str] = []
     entitlement_blocked_leg_count = 0
+    not_found_leg_count = 0
     gross_pnl_total = 0.0
     net_pnl_total = 0.0
     all_leg_marks_available = bool(legs)
@@ -2797,6 +3006,8 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
             all_leg_marks_available = False
             if "option_mark_data" not in snapshot_missing and mark is None:
                 snapshot_missing.append("option_mark_data")
+            if "provider_option_snapshot_not_found" in snapshot_missing:
+                not_found_leg_count += 1
         else:
             gross_leg, net_leg = _option_leg_unrealized_pnl(
                 leg,
@@ -2816,8 +3027,9 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         if snapshot.provider_error:
             if _is_option_snapshot_entitlement_error(snapshot.provider_error):
                 entitlement_blocked_leg_count += 1
-            else:
+            elif "provider_option_snapshot_not_found" not in snapshot_missing:
                 warnings.append(f"Option mark unavailable for leg {leg.id}: {_sanitize_provider_error(snapshot.provider_error)}")
+        contract_selection = getattr(leg, "contract_selection", None) or {}
         leg_reviews.append(
             {
                 "leg_id": leg.id,
@@ -2850,6 +3062,10 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
                 "mark_as_of": _safe_mark_as_of(snapshot.as_of),
                 "stale": bool(snapshot.stale),
                 "missing_data": sorted(set(snapshot_missing)),
+                "target_strike": getattr(leg, "target_strike", None),
+                "selected_listed_strike": contract_selection.get("selected_listed_strike"),
+                "strike_snap_distance": contract_selection.get("strike_snap_distance"),
+                "contract_selection_method": contract_selection.get("contract_selection_method"),
             }
         )
 
@@ -2858,6 +3074,8 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
             "Option marks unavailable: provider plan is not entitled to option snapshot data. "
             f"{entitlement_blocked_leg_count} leg{'s' if entitlement_blocked_leg_count != 1 else ''} affected."
         )
+    if not_found_leg_count:
+        warnings.append(_SYNTHETIC_OPTION_NOT_FOUND_WARNING)
 
     if not all_leg_marks_available:
         missing_data.append("option_mark_data")
@@ -2895,12 +3113,20 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
     )
     assignment_risk_level = _max_option_risk(assignment_risk_values)
     exercise_risk_level = _max_option_risk(exercise_risk_values)
-    assignment_risk_summary = (
-        f"Highest short-leg assignment risk: {assignment_risk_level}. Informational only; no assignment is automated."
-    )
-    exercise_risk_summary = (
-        f"Highest long-leg exercise risk: {exercise_risk_level}. Informational only; no exercise is automated."
-    )
+    if is_index_option:
+        assignment_risk_summary = (
+            f"Highest short-leg cash-settlement risk: {assignment_risk_level}. Informational only; no share delivery is modeled."
+        )
+        exercise_risk_summary = (
+            f"Highest long-leg cash-settlement risk: {exercise_risk_level}. Informational only; no live exercise is modeled."
+        )
+    else:
+        assignment_risk_summary = (
+            f"Highest short-leg assignment risk: {assignment_risk_level}. Informational only; no assignment is automated."
+        )
+        exercise_risk_summary = (
+            f"Highest long-leg exercise risk: {exercise_risk_level}. Informational only; no exercise is automated."
+        )
 
     max_profit = _round_money(_finite_float(position.max_profit))
     max_loss = _round_money(_finite_float(position.max_loss))
@@ -2980,6 +3206,11 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         settlement_available=settlement_available,
         settlement_blocked=settlement_blocked_missing_underlying,
     )
+    if is_index_option:
+        if settlement_available:
+            expiration_action_summary = "Expired index option paper structure can be manually cash-settled from intrinsic value. Paper-only settlement; no broker action."
+        elif expiration_status in {"expires_today", "expiration_warning", "expired_unsettled"}:
+            expiration_action_summary = "Index option expiration risk is cash-settlement review only. No share delivery, exercise automation, assignment automation, roll, or broker action occurs."
     max_profit_near = estimated_net_pnl is not None and max_profit is not None and max_profit > 0 and estimated_net_pnl >= max_profit * 0.9
     max_loss_near = estimated_net_pnl is not None and max_loss is not None and max_loss > 0 and estimated_net_pnl <= -max_loss * 0.9
     profitable = estimated_net_pnl is not None and estimated_net_pnl > 0
@@ -3011,10 +3242,19 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         profitable=profitable,
         losing=losing,
     )
+    action_summary = _option_structure_review_summary(action, symbol or "Option", warnings)
+    if is_index_option and action in {"assignment_risk_review", "exercise_risk_review", "expiration_due"}:
+        action_summary = (
+            f"{symbol} index option structure needs cash-settlement expiration review. "
+            "Paper-only; no share delivery, live exercise, assignment, roll, or broker order is automated."
+        )
 
     return OptionPaperStructureReview(
         structure_id=position.id,
         underlying_symbol=symbol,
+        underlying_asset_type=str(asset_metadata["underlying_asset_type"] or "unknown"),
+        settlement_style=asset_metadata["settlement_style"],
+        deliverable_type=asset_metadata["deliverable_type"],
         strategy_type=structure_type or "unknown",
         side=_option_structure_side(structure_type),
         opened_at=position.opened_at,
@@ -3050,7 +3290,7 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         settlement_preview=settlement_preview,
         expiration_status=expiration_status,
         action_classification=action,
-        action_summary=_option_structure_review_summary(action, symbol or "Option", warnings),
+        action_summary=action_summary,
         warnings=warnings,
         missing_data=sorted(set(missing_data)),
         provenance={
@@ -3070,6 +3310,9 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
             "no_automatic_adjustment": True,
             "deterministic_engine_owns": ["action_classification", "risk_calendar", "payoff_context"],
             "reviewed_at": _iso_or_none(now),
+            "underlying_asset_type": asset_metadata["underlying_asset_type"],
+            "settlement_style": asset_metadata["settlement_style"],
+            "deliverable_type": asset_metadata["deliverable_type"],
         },
         legs=leg_reviews,
     )
@@ -3545,6 +3788,7 @@ def analysis_setup(
             "vega_context": -0.11,
             "event_blockers": ["Avoid binary events inside 7 DTE window", "Review earnings/macro event calendar"],
         }
+        option_structure = _apply_research_contract_resolution(symbol, option_structure, as_of=analysis_as_of)
         payload["option_structure"] = option_structure
         payload["expected_range"] = _build_options_expected_range(
             latest_close=latest.close,
@@ -3575,6 +3819,7 @@ def analysis_setup(
             "dte_as_of": expiration_context["as_of"],
             "iv_snapshot": iv_snapshot,
         }
+        option_structure = _apply_research_contract_resolution(symbol, option_structure, as_of=analysis_as_of)
         payload["option_structure"] = option_structure
         payload["expected_range"] = _build_options_expected_range(
             latest_close=latest.close,
@@ -3605,6 +3850,7 @@ def analysis_setup(
             "dte_as_of": expiration_context["as_of"],
             "iv_snapshot": iv_snapshot,
         }
+        option_structure = _apply_research_contract_resolution(symbol, option_structure, as_of=analysis_as_of)
         payload["option_structure"] = option_structure
         payload["expected_range"] = _build_options_expected_range(
             latest_close=latest.close,
@@ -4558,6 +4804,7 @@ def _options_data_readiness() -> dict[str, object]:
         "sample_underlying": probe_payload.get("sample_underlying") or "SPY",
         "sample_option_symbol": probe_payload.get("sample_option_symbol"),
         "sample_selection_method": probe_payload.get("sample_selection_method") or "unavailable",
+        "sample_mark_method": probe_payload.get("sample_mark_method") or "unavailable",
         "latency_ms": probe_payload.get("latency_ms"),
         "last_success_at": probe_payload.get("last_success_at"),
         "readiness_scope": "options_research_marks_only",

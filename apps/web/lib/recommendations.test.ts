@@ -648,6 +648,66 @@ describe("research preview helpers", () => {
     });
   });
 
+  it("carries listed option contract selection into paper open requests", () => {
+    const availability = getOptionsPaperOpenAvailability({
+      symbol: "SPY",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        net_credit: 2.4,
+        max_profit: 240,
+        max_loss: 260,
+        contract_resolution_status: "resolved",
+        paper_persistence_allowed: true,
+        legs: [
+          {
+            action: "buy",
+            right: "put",
+            strike: 660,
+            premium: 0,
+            option_symbol: "O:SPY260516P00660000",
+            target_strike: 661.77,
+            contract_selection: { selected_listed_strike: 660, contract_selection_method: "provider_reference_exact_expiration" },
+          },
+          { action: "sell", right: "put", strike: 665, premium: 1.2, option_symbol: "O:SPY260516P00665000", target_strike: 664.2 },
+          { action: "sell", right: "call", strike: 700, premium: 1.2, option_symbol: "O:SPY260516C00700000", target_strike: 699.8 },
+          { action: "buy", right: "call", strike: 705, premium: 0, option_symbol: "O:SPY260516C00705000", target_strike: 704.9 },
+        ],
+      },
+    });
+
+    expect(availability.reason).toBeNull();
+    expect(availability.request?.legs[0].option_symbol).toBe("O:SPY260516P00660000");
+    expect(availability.request?.legs[0].target_strike).toBe(661.77);
+    expect(availability.request?.legs[0].contract_selection?.contract_selection_method).toBe("provider_reference_exact_expiration");
+  });
+
+  it("blocks paper open when listed contract resolution failed", () => {
+    const availability = getOptionsPaperOpenAvailability({
+      symbol: "SPY",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        net_credit: 2.4,
+        max_profit: 240,
+        max_loss: 260,
+        contract_resolution_status: "unresolved",
+        paper_persistence_allowed: false,
+        contract_resolution_summary: "Unable to resolve listed contracts; paper position cannot be marked.",
+        legs: [{ action: "buy", right: "put", strike: 661.77, premium: 0 }],
+      },
+    });
+
+    expect(availability.request).toBeNull();
+    expect(availability.reason).toContain("Unable to resolve listed contracts");
+  });
+
   it("posts paper option close requests through the same-origin helper", async () => {
     fetchWorkflowApiMock.mockResolvedValue({
       ok: true,

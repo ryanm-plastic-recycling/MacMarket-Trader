@@ -76,8 +76,21 @@ Provider-backed option mark support:
   `/v3/snapshot/options/{underlying}/{option}` when Polygon/Massive is the
   configured market data provider and the account plan permits options
   snapshots
-- option symbols are generated in Polygon OCC-style form, for example
-  `O:AAPL260515C00205000`
+- new options research and paper-open paths resolve theoretical target strikes
+  against provider reference contract data before persistence. The selected
+  leg carries the real provider contract symbol, listed strike, selected
+  expiration, original `target_strike`, snap distance, and contract-selection
+  method.
+- if listed contracts cannot be resolved while provider-backed options data is
+  configured, the paper-open path blocks persistence instead of saving
+  synthetic/unmarkable option symbols. Local fallback/demo research can still
+  label contract resolution as unavailable, but it must not present synthetic
+  marks as provider-backed marks.
+- older paper structures that were saved before listed-contract resolution may
+  remain unmarkable. If Polygon/Massive returns a 404/ticker-not-found for a
+  saved leg, review aggregates one structure-level warning that the saved
+  contract may be an older synthetic/generated strike and that a fresh
+  provider-resolved paper structure should be created.
 - leg mark precedence is deterministic:
   1. valid bid/ask midpoint (`quote_mid`)
   2. valid latest trade (`last_trade`)
@@ -97,6 +110,13 @@ Provider-backed option mark support:
 - repeated provider entitlement failures are aggregated at the structure level
   as "Option marks unavailable" while leg-level missing-data codes remain
   available for audit/debug review
+- SPX index options are treated as index/cash-settled research instruments.
+  Provider reference contract resolution uses the raw underlying (`SPX`);
+  option snapshot paths use the provider index underlying form (`I:SPX`).
+  Review labels `underlying_asset_type=index`, `settlement_style=cash_settled`,
+  and `deliverable_type=cash_index`, and uses cash-settlement/no-share-delivery
+  wording. This remains paper-only and does not model live exercise,
+  assignment, broker routing, rolls, or adjustments.
 
 DTE policy:
 

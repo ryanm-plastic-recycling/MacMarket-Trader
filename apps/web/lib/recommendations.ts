@@ -82,6 +82,12 @@ export type OptionsResearchLeg = {
   quantity?: number | null;
   multiplier?: number | null;
   label?: string | null;
+  option_symbol?: string | null;
+  target_strike?: number | null;
+  selected_listed_strike?: number | null;
+  strike_snap_distance?: number | null;
+  contract_selection_method?: string | null;
+  contract_selection?: Record<string, unknown> | null;
 };
 
 export type OptionsResearchStructure = {
@@ -101,6 +107,10 @@ export type OptionsResearchStructure = {
   theta_context?: number | null;
   vega_context?: number | null;
   event_blockers?: string[] | null;
+  contract_resolution_status?: string | null;
+  contract_resolution_summary?: string | null;
+  contract_resolution_warnings?: string[] | null;
+  paper_persistence_allowed?: boolean | null;
 };
 
 export type OptionsExpectedRange = {
@@ -234,6 +244,9 @@ export type OptionsPaperLegRequest = {
   quantity: number;
   multiplier: number;
   label?: string | null;
+  option_symbol?: string | null;
+  target_strike?: number | null;
+  contract_selection?: Record<string, unknown> | null;
 };
 
 export type OptionsPaperOpenRequest = {
@@ -263,6 +276,9 @@ export type OptionsPaperPositionLeg = {
   exit_premium?: number | null;
   status: string;
   label?: string | null;
+  option_symbol?: string | null;
+  target_strike?: number | null;
+  contract_selection?: Record<string, unknown> | null;
 };
 
 export type OptionsPaperOpenResponse = {
@@ -316,6 +332,9 @@ export type OptionsPaperTradeLeg = {
   leg_commission?: number | null;
   leg_net_pnl?: number | null;
   label?: string | null;
+  option_symbol?: string | null;
+  target_strike?: number | null;
+  contract_selection?: Record<string, unknown> | null;
 };
 
 export type OptionsPaperLifecycleSummaryLeg = {
@@ -332,6 +351,9 @@ export type OptionsPaperLifecycleSummaryLeg = {
   leg_gross_pnl?: number | null;
   leg_commission?: number | null;
   leg_net_pnl?: number | null;
+  option_symbol?: string | null;
+  target_strike?: number | null;
+  contract_selection?: Record<string, unknown> | null;
 };
 
 export type OptionsPaperLifecycleSummary = {
@@ -413,6 +435,9 @@ type NormalizedOptionsStructureLeg = {
   quantity: number;
   multiplier: number;
   label: string | null;
+  option_symbol?: string | null;
+  target_strike?: number | null;
+  contract_selection?: Record<string, unknown> | null;
 };
 
 export const OPTIONS_COMMISSION_NOT_PER_SHARE_TEXT = "Not per share. Do not multiply by 100.";
@@ -607,6 +632,9 @@ function buildNormalizedOptionsLegsFromExplicitPremiums(
       quantity: toPositiveInteger(leg.quantity, 1),
       multiplier: toPositiveInteger(leg.multiplier, 100),
       label: typeof leg.label === "string" && leg.label.trim() ? leg.label.trim() : null,
+      option_symbol: typeof leg.option_symbol === "string" && leg.option_symbol.trim() ? leg.option_symbol.trim().toUpperCase() : null,
+      target_strike: toFiniteNumber(leg.target_strike),
+      contract_selection: leg.contract_selection && typeof leg.contract_selection === "object" ? leg.contract_selection : null,
     } satisfies NormalizedOptionsStructureLeg;
   });
   return mapped.every(Boolean) ? (mapped as NormalizedOptionsStructureLeg[]) : null;
@@ -631,6 +659,9 @@ function buildNormalizedOptionsLegsFromStructureAssumptions(
       quantity: toPositiveInteger(leg.quantity, 1),
       multiplier: toPositiveInteger(leg.multiplier, 100),
       label: typeof leg.label === "string" && leg.label.trim() ? leg.label.trim() : null,
+      option_symbol: typeof leg.option_symbol === "string" && leg.option_symbol.trim() ? leg.option_symbol.trim().toUpperCase() : null,
+      target_strike: toFiniteNumber(leg.target_strike),
+      contract_selection: leg.contract_selection && typeof leg.contract_selection === "object" ? leg.contract_selection : null,
     };
   });
   if (!mappedBase.every(Boolean)) return null;
@@ -688,7 +719,24 @@ function buildNormalizedOptionsStructureLegs(
 function mapNormalizedLegsToReplayPreviewRequest(
   legs: NormalizedOptionsStructureLeg[],
 ): OptionsReplayPreviewLegRequest[] {
-  return legs.map((leg) => ({ ...leg }));
+  return legs.map((leg) => stripEmptyContractFields({ ...leg }));
+}
+
+function stripEmptyContractFields<T extends {
+  option_symbol?: string | null;
+  target_strike?: number | null;
+  contract_selection?: Record<string, unknown> | null;
+}>(leg: T): T {
+  if (!leg.option_symbol) {
+    delete leg.option_symbol;
+  }
+  if (leg.target_strike == null) {
+    delete leg.target_strike;
+  }
+  if (leg.contract_selection == null) {
+    delete leg.contract_selection;
+  }
+  return leg;
 }
 
 function extractOptionsStructureBreakevens(structure: OptionsResearchStructure | null | undefined): number[] {
@@ -790,6 +838,12 @@ export function getOptionsPaperOpenAvailability(
   if (!expiration) {
     return { request: null, reason: "Paper option open requires a visible expiration for every leg." };
   }
+  if (structure.paper_persistence_allowed === false || structure.contract_resolution_status === "unresolved") {
+    return {
+      request: null,
+      reason: structure.contract_resolution_summary ?? "Unable to resolve listed contracts; paper position cannot be marked.",
+    };
+  }
   const normalizedStructureType = normalizeOptionsReplayStructureType(structureType);
   if (!normalizedStructureType) {
     return { request: null, reason: "Paper option open structure type is unsupported." };
@@ -801,6 +855,12 @@ export function getOptionsPaperOpenAvailability(
       reason: "Paper option open requires complete legs plus usable debit/credit or premium assumptions from the current research contract.",
     };
   }
+  if (structure.contract_resolution_status === "resolved" && legs.some((leg) => !leg.option_symbol)) {
+    return {
+      request: null,
+      reason: "Paper option open requires listed provider contract symbols for every resolved leg.",
+    };
+  }
   return {
     request: {
       market_mode: "options",
@@ -808,7 +868,7 @@ export function getOptionsPaperOpenAvailability(
       underlying_symbol: normalizeResearchSymbol(setup.symbol) ?? setup.symbol,
       expiration,
       legs: legs.map((leg) => ({
-        ...leg,
+        ...stripEmptyContractFields({ ...leg }),
         expiration,
       })),
       net_debit: toFiniteNumber(structure.net_debit),

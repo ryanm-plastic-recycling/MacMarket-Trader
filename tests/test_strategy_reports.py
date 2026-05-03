@@ -5,6 +5,8 @@ from sqlalchemy import select
 
 from macmarket_trader.api.main import app
 from macmarket_trader.api.routes import admin as admin_routes
+from macmarket_trader.config import settings
+from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider, MarketProviderHealth, OptionContractResolution
 from macmarket_trader.domain.enums import MarketMode
 from macmarket_trader.domain.models import AppUserModel, StrategyReportRunModel
 from macmarket_trader.domain.schemas import ExpectedRange
@@ -157,6 +159,62 @@ def test_analysis_setup_accepts_market_mode_and_returns_setup_for_options(monkey
     assert payload['expected_range']['status'] == 'computed'
     assert payload['expected_range']['method'] == 'iv_1sigma'
     assert payload['expected_range']['lower_bound'] < payload['expected_range']['upper_bound']
+
+
+def test_analysis_setup_snaps_options_research_legs_to_provider_contracts(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    class StubMarketDataService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):
+            return {"underlying": symbol, "expiry": "2026-05-16", "calls": [], "puts": [], "source": "test"}
+
+        def resolve_option_contract(self, *, underlying_symbol: str, expiration, option_type: str, target_strike: float):
+            selected = round(target_strike)
+            right = "C" if option_type == "call" else "P"
+            return OptionContractResolution(
+                requested_underlying=underlying_symbol.upper(),
+                underlying_asset_type="equity",
+                target_expiration=expiration,
+                selected_expiration=expiration,
+                option_type=option_type,
+                target_strike=target_strike,
+                selected_strike=float(selected),
+                option_symbol=f"O:{underlying_symbol.upper()}260516{right}{int(selected * 1000):08d}",
+                provider="polygon",
+                contract_selection_method="provider_reference_exact_expiration",
+                strike_snap_distance=abs(float(selected) - target_strike),
+            )
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data", mode="polygon", status="ok",
+                details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol,
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    _seed_and_approve_user()
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "AAPL", "market_mode": "options", "strategy": "Iron Condor"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    structure = resp.json()["option_structure"]
+    assert structure["contract_resolution_status"] == "resolved"
+    assert structure["paper_persistence_allowed"] is True
+    assert structure["contract_resolution_summary"] == "Selected listed contracts from provider chain."
+    assert all(leg["option_symbol"].startswith("O:AAPL260516") for leg in structure["legs"])
+    assert all(leg["target_strike"] != leg["strike"] for leg in structure["legs"])
 
 
 def test_analysis_setup_invalid_strategy_for_market_mode_returns_400_with_supported_labels() -> None:

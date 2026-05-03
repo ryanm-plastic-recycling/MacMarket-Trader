@@ -56,6 +56,9 @@ def prepare_option_paper_structure(
             quantity=leg.quantity,
             multiplier=leg.multiplier,
             label=leg.label.strip() if isinstance(leg.label, str) and leg.label.strip() else None,
+            option_symbol=leg.option_symbol,
+            target_strike=leg.target_strike,
+            contract_selection=dict(leg.contract_selection or {}),
         )
         for leg in structure.legs
     )

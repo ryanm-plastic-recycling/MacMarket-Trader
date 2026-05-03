@@ -461,6 +461,35 @@ def test_options_position_review_aggregates_repeated_entitlement_warnings(monkey
     assert all("provider_option_snapshot_not_entitled" in leg["missing_data"] for leg in review["legs"])
 
 
+def test_options_position_review_aggregates_old_synthetic_contract_not_found(monkeypatch) -> None:
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    _open_iron_condor(symbol="spy", quantity=1, days_to_expiration=30)
+
+    class NotFoundService(_StubOptionMarkService):
+        def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
+            return unavailable_option_contract_snapshot(
+                underlying_symbol=underlying_symbol,
+                option_symbol=option_symbol,
+                provider="polygon",
+                endpoint="/v3/snapshot/options/{underlying}/{option}",
+                missing_fields=["provider_option_snapshot_not_found"],
+                provider_error="Polygon returned 404 - ticker not found",
+            )
+
+    monkeypatch.setattr(admin_routes, "market_data_service", NotFoundService({}))
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    review = response.json()["items"][0]
+
+    synthetic_warnings = [item for item in review["warnings"] if "older synthetic/generated strike" in item]
+    assert synthetic_warnings == [
+        "Saved leg contract was not found by provider. This may be an older synthetic/generated strike. Create a fresh paper options structure after provider contract resolution."
+    ]
+    assert all("provider_option_snapshot_not_found" in leg["missing_data"] for leg in review["legs"])
+    assert not any("ticker not found" in item.lower() for item in review["warnings"])
+
+
 def test_options_position_review_adds_expiration_warning_without_auto_close() -> None:
     _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
     _open_vertical_position(symbol="aapl", days_to_expiration=5)
@@ -489,6 +518,26 @@ def test_options_position_review_active_iron_condor_has_active_expiration_status
     assert review["days_to_expiration"] == 30
     assert review["settlement_required"] is False
     assert review["underlying_mark_price"] == 100.0
+
+
+def test_options_position_review_spx_uses_index_cash_settlement_language(monkeypatch) -> None:
+    _approve_user(headers=_USER_AUTH, external_auth_user_id="clerk_user")
+    _open_iron_condor(symbol="spx", days_to_expiration=5)
+    monkeypatch.setattr(admin_routes, "market_data_service", _StubOptionMarkService({}, {"SPX": 5000.0}))
+
+    response = client.get("/user/options/paper-structures/review", headers=_USER_AUTH)
+    assert response.status_code == 200, response.text
+    review = response.json()["items"][0]
+
+    assert review["underlying_symbol"] == "SPX"
+    assert review["underlying_asset_type"] == "index"
+    assert review["settlement_style"] == "cash_settled"
+    assert review["deliverable_type"] == "cash_index"
+    assert "Cash-settled. No share delivery modeled." in " ".join(review["warnings"])
+    assert "cash-settlement" in review["assignment_risk_summary"]
+    assert "cash-settlement" in review["expiration_action_summary"]
+    assert "share assignment" not in review["assignment_risk_summary"].lower()
+    assert review["provenance"]["settlement_style"] == "cash_settled"
 
 
 def test_options_position_review_expires_today_uses_expiration_due_classification(monkeypatch) -> None:

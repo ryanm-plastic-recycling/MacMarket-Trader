@@ -488,6 +488,7 @@ def test_options_data_health_uses_discovered_near_money_sample(monkeypatch) -> N
     assert health["sample_underlying"] == "SPY"
     assert health["sample_option_symbol"] == chosen
     assert health["sample_selection_method"] == "discovered"
+    assert health["sample_mark_method"] == "quote_mid"
     assert attempted == [chosen]
 
 
@@ -518,6 +519,7 @@ def test_options_data_health_static_sample_fallback_is_labeled(monkeypatch) -> N
     assert health["sample_underlying"] == OPTIONS_HEALTH_STATIC_SAMPLE_UNDERLYING
     assert health["sample_option_symbol"] == OPTIONS_HEALTH_STATIC_SAMPLE_OPTION
     assert health["sample_selection_method"] == "static_sample"
+    assert health["sample_mark_method"] == "quote_mid"
 
 
 def test_options_data_health_discovery_entitlement_is_clear_and_sanitized(monkeypatch) -> None:
@@ -744,6 +746,7 @@ def test_provider_health_reports_options_data_probe_ok(monkeypatch) -> None:
                 "sample_underlying": sample_symbol,
                 "sample_option_symbol": "O:AAPL260515C00205000",
                 "sample_selection_method": "discovered",
+                "sample_mark_method": "quote_mid",
                 "latency_ms": 14.2,
                 "last_success_at": "2026-05-03T20:00:00+00:00",
             }
@@ -762,6 +765,7 @@ def test_provider_health_reports_options_data_probe_ok(monkeypatch) -> None:
     assert entry["sample_option_symbol"] == "O:AAPL260515C00205000"
     assert entry["sample_underlying"] == "SPY"
     assert entry["sample_selection_method"] == "discovered"
+    assert entry["sample_mark_method"] == "quote_mid"
     assert "does not enable live trading" in str(entry["operational_impact"])
 
 
@@ -1171,6 +1175,79 @@ def test_options_chain_preview_returns_calls_and_puts(monkeypatch) -> None:
     assert isinstance(result["puts"], list)
     assert len(result["puts"]) == 2
     assert "reason" not in result or result.get("reason") is None
+
+
+def test_resolve_option_contract_selects_nearest_listed_strike(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    expiration = datetime(2026, 5, 16, tzinfo=UTC).date()
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        assert path == "/v3/reference/options/contracts"
+        assert query["underlying_ticker"] == "SPY"
+        assert query["expiration_date"] == "2026-05-16"
+        assert query["contract_type"] == "put"
+        return {
+            "results": [
+                {"ticker": "O:SPY260516P00660000", "contract_type": "put", "strike_price": 660.0, "expiration_date": "2026-05-16"},
+                {"ticker": "O:SPY260516P00665000", "contract_type": "put", "strike_price": 665.0, "expiration_date": "2026-05-16"},
+            ]
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+
+    result = provider.resolve_option_contract(
+        underlying_symbol="SPY",
+        expiration=expiration,
+        option_type="put",
+        target_strike=661.77,
+    )
+
+    assert result.resolved is True
+    assert result.option_symbol == "O:SPY260516P00660000"
+    assert result.selected_strike == 660.0
+    assert result.strike_snap_distance == 1.77
+    assert result.contract_selection_method == "provider_reference_exact_expiration"
+
+
+def test_spx_option_paths_use_index_snapshot_and_unprefixed_reference(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    provider = PolygonMarketDataProvider()
+    seen: list[tuple[str, dict[str, str]]] = []
+
+    def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
+        seen.append((path, query))
+        if path == "/v3/reference/options/contracts":
+            assert query["underlying_ticker"] == "SPX"
+            return {
+                "results": [
+                    {"ticker": "O:SPX260516C05000000", "contract_type": "call", "strike_price": 5000.0, "expiration_date": "2026-05-16"}
+                ]
+            }
+        assert path == "/v3/snapshot/options/I:SPX/O:SPX260516C05000000"
+        return {
+            "results": {
+                "last_quote": {"bid": 10.0, "ask": 11.0, "sip_timestamp": 1778943600000000000},
+                "last_trade": {"price": 10.5, "sip_timestamp": 1778943600000000000},
+                "underlying_asset": {"value": 5005.0},
+            }
+        }
+
+    monkeypatch.setattr(provider, "_request_json", fake_request_json)
+
+    resolution = provider.resolve_option_contract(
+        underlying_symbol="SPX",
+        expiration=datetime(2026, 5, 16, tzinfo=UTC).date(),
+        option_type="call",
+        target_strike=4998.0,
+    )
+    snapshot = provider.fetch_option_contract_snapshot("SPX", "O:SPX260516C05000000")
+
+    assert resolution.underlying_asset_type == "index"
+    assert resolution.option_symbol == "O:SPX260516C05000000"
+    assert snapshot.endpoint == "/v3/snapshot/options/I:SPX/O:SPX260516C05000000"
+    assert snapshot.mark_method == "quote_mid"
+    assert seen[0][1]["underlying_ticker"] == "SPX"
 
 
 def test_options_chain_preview_null_when_no_results(monkeypatch) -> None:

@@ -2,6 +2,35 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Listed Options Contracts, SPX Review Support, And Deployed Release Gate
+Options research and paper-open paths now resolve generated target strikes
+against Polygon/Massive listed option contracts before persistence when
+provider-backed options data is configured. The selected legs carry the real
+provider contract symbol, listed strike, original target strike, snap distance,
+and contract-selection provenance. If listed contracts cannot be resolved in
+provider-backed mode, MacMarket blocks paper persistence instead of saving a
+synthetic/unmarkable option symbol.
+
+Options Position Review still treats older saved structures honestly. If a
+saved leg returns provider `ticker not found`, the review marks the leg with
+`provider_option_snapshot_not_found` and aggregates one structure-level warning
+that the saved contract may be an older synthetic/generated strike. It does not
+fabricate option marks or rewrite historical records.
+
+SPX index options now have first-pass index metadata and provider path support:
+reference contract resolution uses raw `SPX`, option snapshot lookups use
+`I:SPX`, and review labels SPX structures as `underlying_asset_type=index`,
+`settlement_style=cash_settled`, and `deliverable_type=cash_index`. UI/review
+copy uses cash-settlement and no-share-delivery wording. This remains
+paper/research-only with no live trading, broker routing, automatic exercise,
+assignment, exits, rolls, or adjustments.
+
+The release gate now supports deployed/non-git folders with
+`python scripts/run_release_gate.py --quick --deployed`. In deployed mode it
+continues file scans and evidence/archive checks while marking git-only steps
+not applicable. Running the gate outside the source repo root without
+`--deployed` now fails with a concise source-vs-deployed path message.
+
 ## 2026-05-03 Update - Options Data Provider-Health Sample Discovery
 Options Data provider health now prefers a discovered Polygon/Massive sample
 contract instead of relying first on a hardcoded option ticker. The readiness

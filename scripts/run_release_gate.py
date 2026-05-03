@@ -116,6 +116,17 @@ def run_command(args: list[str], *, cwd: Path, timeout: int) -> dict[str, object
     }
 
 
+def is_git_repo(path: Path) -> bool:
+    result = run_command(["git", "rev-parse", "--show-toplevel"], cwd=path, timeout=20)
+    if result.get("returncode") != 0:
+        return False
+    top_level = Path(str(result.get("stdout") or "").strip())
+    try:
+        return top_level.resolve() == path.resolve()
+    except OSError:
+        return False
+
+
 def step(
     name: str,
     status: str,
@@ -268,12 +279,59 @@ def run_release_gate(
     screenshots: str = "",
     skip_release_evidence_npm_audit: bool = True,
     progress: bool = False,
+    deployed: bool = False,
 ) -> dict[str, object]:
     root = repo_root.resolve()
     evidence = evidence_dir if evidence_dir.is_absolute() else root / evidence_dir
     evidence.mkdir(parents=True, exist_ok=True)
     stamp = timestamp()
     steps: list[dict[str, object]] = []
+    git_available = is_git_repo(root)
+
+    if not git_available and not deployed:
+        message = "This path is not a Git repository. Run from source repo or pass --deployed."
+        steps.append(
+            step(
+                "git_repository_check",
+                "failed",
+                hard_failure=True,
+                details={"message": message, "repo_root": str(root)},
+            )
+        )
+        release_evidence: dict[str, object] = {
+            "evidence_json": "",
+            "evidence_markdown": "",
+            "deployed_mode": deployed,
+        }
+        archive_report: dict[str, object] = {"archive_path": "", "passed": False, "not_run_reason": "not_a_git_repository"}
+        result: dict[str, object] = {
+            "timestamp": now_iso(),
+            "repo_root": str(root),
+            "platform": platform.platform(),
+            "dry_run": dry_run,
+            "quick": quick,
+            "mock_commands": mock_commands,
+            "deployed": deployed,
+            "git_available": git_available,
+            "status": "failed",
+            "steps": steps,
+            "failure_reason": message,
+        }
+        json_path, md_path = write_gate_reports(evidence_dir=evidence, stamp=stamp, result=result)
+        manifest_path = write_manifest(
+            evidence_dir=evidence,
+            gate_json=json_path,
+            gate_markdown=md_path,
+            release_evidence=release_evidence,
+            clean_archive=archive_report,
+            screenshots=screenshots,
+        )
+        result["evidence_json"] = str(json_path)
+        result["evidence_markdown"] = str(md_path)
+        result["evidence_manifest"] = str(manifest_path)
+        json_path.write_text(json.dumps(redact_payload(result), indent=2, sort_keys=True), encoding="utf-8")
+        _progress(progress, message)
+        return redact_payload(result)
 
     started = _start_step(progress, "conflict_marker_scan")
     conflict_findings = scan_conflict_markers(root)
@@ -306,22 +364,49 @@ def run_release_gate(
     )
 
     started = _start_step(progress, "git_diff_check")
-    if dry_run and mock_commands:
+    if deployed and not git_available:
+        diff_result = {
+            "command": ["git", "diff", "--check"],
+            "returncode": None,
+            "stdout": "",
+            "stderr": "",
+            "skipped_reason": "deployed_non_git_folder",
+        }
+        steps.append(
+            _finish_step(
+                progress,
+                step("git_diff_check", "skipped", hard_failure=False, details=diff_result),
+                started,
+            )
+        )
+    elif dry_run and mock_commands:
         diff_result = {"command": ["git", "diff", "--check"], "returncode": 0, "stdout": "", "stderr": ""}
+        steps.append(
+            _finish_step(
+                progress,
+                step(
+                    "git_diff_check",
+                    "passed",
+                    hard_failure=False,
+                    details=diff_result,
+                ),
+                started,
+            )
+        )
     else:
         diff_result = run_command(["git", "diff", "--check"], cwd=root, timeout=60)
-    steps.append(
-        _finish_step(
-            progress,
-            step(
-                "git_diff_check",
-                "passed" if diff_result.get("returncode") == 0 else "failed",
-                hard_failure=diff_result.get("returncode") != 0,
-                details=diff_result,
-            ),
-            started,
+        steps.append(
+            _finish_step(
+                progress,
+                step(
+                    "git_diff_check",
+                    "passed" if diff_result.get("returncode") == 0 else "failed",
+                    hard_failure=diff_result.get("returncode") != 0,
+                    details=diff_result,
+                ),
+                started,
+            )
         )
-    )
 
     command_steps = (
         [
@@ -347,29 +432,46 @@ def run_release_gate(
             ("frontend_tsc", ["npx", "tsc", "--noEmit"], root / "apps" / "web", 900),
         ]
     )
-    for name, command, cwd, timeout in command_steps:
-        started = _start_step(progress, name)
-        if dry_run:
-            details = {"command": command, "skipped_reason": "dry_run"}
-            if mock_commands:
-                details["mocked_returncode"] = 0
-                steps.append(_finish_step(progress, step(name, "passed", details=details), started))
-            else:
-                steps.append(_finish_step(progress, step(name, "skipped", details=details), started))
-            continue
-        command_result = run_command(command, cwd=cwd, timeout=timeout)
+    if quick and deployed and not git_available:
+        started = _start_step(progress, "targeted_compliance_pytest")
         steps.append(
             _finish_step(
                 progress,
                 step(
-                    name,
-                    "passed" if command_result.get("returncode") == 0 else "failed",
-                    hard_failure=command_result.get("returncode") != 0,
-                    details=command_result,
+                    "targeted_compliance_pytest",
+                    "skipped",
+                    details={
+                        "command": command_steps[0][1],
+                        "skipped_reason": "deployed_non_git_folder",
+                    },
                 ),
                 started,
             )
         )
+    else:
+        for name, command, cwd, timeout in command_steps:
+            started = _start_step(progress, name)
+            if dry_run:
+                details = {"command": command, "skipped_reason": "dry_run"}
+                if mock_commands:
+                    details["mocked_returncode"] = 0
+                    steps.append(_finish_step(progress, step(name, "passed", details=details), started))
+                else:
+                    steps.append(_finish_step(progress, step(name, "skipped", details=details), started))
+                continue
+            command_result = run_command(command, cwd=cwd, timeout=timeout)
+            steps.append(
+                _finish_step(
+                    progress,
+                    step(
+                        name,
+                        "passed" if command_result.get("returncode") == 0 else "failed",
+                        hard_failure=command_result.get("returncode") != 0,
+                        details=command_result,
+                    ),
+                    started,
+                )
+            )
 
     started = _start_step(progress, "npm_audit_report_only")
     if quick:
@@ -460,6 +562,7 @@ def run_release_gate(
         evidence_dir=evidence,
         screenshot_path=screenshots,
         skip_npm_audit=skip_release_evidence_npm_audit,
+        deployed=deployed and not git_available,
     )
     steps.append(
         _finish_step(
@@ -484,6 +587,8 @@ def run_release_gate(
         "dry_run": dry_run,
         "quick": quick,
         "mock_commands": mock_commands,
+        "deployed": deployed,
+        "git_available": git_available,
         "status": "failed" if hard_failed else "passed",
         "steps": steps,
     }
@@ -515,6 +620,7 @@ def main() -> int:
     )
     parser.add_argument("--mock-commands", action="store_true", help="Mock command results for tests/CI-safe dry runs")
     parser.add_argument("--quiet", action="store_true", help="Suppress progress output")
+    parser.add_argument("--deployed", "--no-git", action="store_true", help="Run from a deployed non-git folder and skip git-only checks")
     parser.add_argument(
         "--audit-fail-level",
         default="high",
@@ -538,6 +644,7 @@ def main() -> int:
         screenshots=args.screenshots,
         skip_release_evidence_npm_audit=not args.include_release_evidence_npm_audit,
         progress=not args.quiet,
+        deployed=args.deployed,
     )
     print(json.dumps({"status": result["status"], "evidence_json": result["evidence_json"]}, indent=2))
     return 1 if result["status"] == "failed" else 0

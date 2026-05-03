@@ -13,6 +13,11 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
   from persisted lifecycle data and provider-backed option snapshots when
   available. It exposes missing or stale option marks rather than estimating
   them with an unapproved pricing model.
+- Options research and paper-open persistence resolve target strikes to listed
+  provider contracts when provider-backed options data is configured. Original
+  theoretical targets, selected listed strikes, provider symbols, and snap
+  distances are retained as provenance; unresolvable contracts are blocked
+  rather than silently persisted as markable positions.
 - Options expiration review uses deterministic intrinsic-value, moneyness,
   assignment-risk, exercise-risk, and paper-only settlement-preview logic.
   Manual expiration settlement requires explicit confirmation and does not
@@ -69,6 +74,8 @@ LLMs, live providers, broker APIs, or order-routing paths.
 - Options Position Review and options lifecycle integrity tests.
 - Provider-backed option snapshot mark precedence and Options Position Review
   mark-to-open P&L tests.
+- Listed option contract resolution, old synthetic-contract warning, and SPX
+  index/cash-settlement review tests.
 - Options expiration review and manual paper settlement tests.
 - LLM validation and fallback tests.
 - Model validation evidence generator tests.

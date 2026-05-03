@@ -56,7 +56,27 @@ def redact_value(key: str, value: Any) -> Any:
     return value
 
 
-def git_summary(repo_root: Path) -> dict[str, object]:
+def is_git_repo(repo_root: Path) -> bool:
+    result = run_command(["git", "rev-parse", "--show-toplevel"], cwd=repo_root)
+    if result.get("returncode") != 0:
+        return False
+    top_level = Path(str(result.get("stdout") or "").strip())
+    try:
+        return top_level.resolve() == repo_root.resolve()
+    except OSError:
+        return False
+
+
+def git_summary(repo_root: Path, *, deployed: bool = False) -> dict[str, object]:
+    if deployed or not is_git_repo(repo_root):
+        return {
+            "branch": None,
+            "commit": None,
+            "dirty": None,
+            "dirty_summary": [],
+            "available": False,
+            "not_applicable_reason": "deployed_non_git_folder" if deployed else "not_a_git_repository",
+        }
     branch = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_root)
     commit = run_command(["git", "rev-parse", "HEAD"], cwd=repo_root)
     status = run_command(["git", "status", "--short"], cwd=repo_root)
@@ -68,6 +88,7 @@ def git_summary(repo_root: Path) -> dict[str, object]:
         "commit": commit.get("stdout") if commit.get("returncode") == 0 else None,
         "dirty": bool(dirty_lines),
         "dirty_summary": dirty_lines[:100],
+        "available": True,
     }
 
 
@@ -141,12 +162,14 @@ def generate_release_evidence(
     evidence_dir: Path = DEFAULT_EVIDENCE_DIR,
     screenshot_path: str | None = None,
     skip_npm_audit: bool = False,
+    deployed: bool = False,
 ) -> dict[str, object]:
     stamp = timestamp()
     report: dict[str, object] = {
         "timestamp": datetime.now(tz=UTC).isoformat(),
         "repo_root": str(repo_root.resolve()),
-        "git": git_summary(repo_root),
+        "git": git_summary(repo_root, deployed=deployed),
+        "deployed_mode": deployed,
         "runtime": {
             "python": platform.python_version(),
             "platform": platform.platform(),
@@ -203,12 +226,14 @@ def main() -> int:
     parser.add_argument("--evidence-dir", default=str(DEFAULT_EVIDENCE_DIR), help="Evidence output directory")
     parser.add_argument("--screenshots", default="", help="Optional browser smoke screenshot directory/path")
     parser.add_argument("--skip-npm-audit", action="store_true", help="Do not run npm audit")
+    parser.add_argument("--deployed", "--no-git", action="store_true", help="Generate evidence from a deployed non-git folder")
     args = parser.parse_args()
     report = generate_release_evidence(
         repo_root=Path(args.repo_root),
         evidence_dir=Path(args.evidence_dir),
         screenshot_path=args.screenshots,
         skip_npm_audit=args.skip_npm_audit,
+        deployed=args.deployed,
     )
     print(json.dumps({"status": "ok", "evidence_json": report["evidence_json"]}, indent=2))
     return 0
