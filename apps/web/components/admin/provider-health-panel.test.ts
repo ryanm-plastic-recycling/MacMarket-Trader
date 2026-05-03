@@ -38,9 +38,17 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("sample method");
     expect(source).toContain("sample_mark_method");
     expect(source).toContain("mark method");
+    expect(source).toContain("sample symbol");
+    expect(source).toContain("sample series");
+    expect(source).toContain("credentials present");
+    expect(source).toContain("paper routing enabled");
+    expect(source).toContain("paper account status");
+    expect(source).toContain("account probe");
+    expect(source).toContain("order route probe");
     expect(source).toContain("entitlement_state");
     expect(source).toContain("Options marks unavailable");
     expect(source).toContain("provider plan is not entitled");
+    expect(source).toContain("Order routing is not enabled");
     expect(source).not.toContain("live probe:");
     expect(source).not.toContain("live probe: configured");
     expect(source).not.toContain("OPENAI_API_KEY");

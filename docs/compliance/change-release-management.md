@@ -56,6 +56,9 @@ suite.
   `python scripts/scan_secrets.py --root .`
 - Backend tests:
   `python -m pytest --basetemp .pytest-tmp`
+- Release gate backend test steps use the ignored `.tmp/release-gate-pytest`
+  temp directory so evidence runs are not blocked by stale local `.pytest-tmp`
+  workspace artifacts.
 - Frontend tests:
   `npm test`
 - TypeScript:

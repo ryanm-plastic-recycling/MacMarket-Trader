@@ -252,6 +252,9 @@ def test_release_gate_progress_output_and_quick_mode(tmp_path: Path, capsys) -> 
     assert "targeted_compliance_pytest" in step_names
     assert "backend_pytest" not in step_names
     assert "frontend_npm_test" not in step_names
+    pytest_step = next(step for step in result["steps"] if step["name"] == "targeted_compliance_pytest")
+    assert module.PYTEST_BASETEMP in pytest_step["details"]["command"]
+    assert ".pytest-tmp" not in pytest_step["details"]["command"]
     audit_step = next(step for step in result["steps"] if step["name"] == "npm_audit_report_only")
     assert audit_step["status"] == "skipped"
     assert audit_step["details"]["skipped_reason"] == "quick_mode"

@@ -29,7 +29,16 @@ The release gate now supports deployed/non-git folders with
 `python scripts/run_release_gate.py --quick --deployed`. In deployed mode it
 continues file scans and evidence/archive checks while marking git-only steps
 not applicable. Running the gate outside the source repo root without
-`--deployed` now fails with a concise source-vs-deployed path message.
+`--deployed` now fails with a concise source-vs-deployed path message. Release
+gate pytest steps write to `.tmp/release-gate-pytest` so stale local
+`.pytest-tmp` artifacts do not block evidence generation.
+
+Provider Health now runs live-safe readiness probes for optional providers only
+when that provider is selected: FRED fetches one `DGS10` observation, Polygon
+news fetches one AAPL news item, and Alpaca paper uses only read-only
+`GET /v2/account`. Mock-mode Alpaca keeps paper routing disabled and skips the
+account probe. Probe failures are sanitized and do not imply live trading,
+broker routing, or provider execution readiness.
 
 ## 2026-05-03 Update - Options Data Provider-Health Sample Discovery
 Options Data provider health now prefers a discovered Polygon/Massive sample

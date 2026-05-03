@@ -484,7 +484,7 @@ def test_options_position_review_aggregates_old_synthetic_contract_not_found(mon
 
     synthetic_warnings = [item for item in review["warnings"] if "older synthetic/generated strike" in item]
     assert synthetic_warnings == [
-        "Saved leg contract was not found by provider. This may be an older synthetic/generated strike. Create a fresh paper options structure after provider contract resolution."
+        "Saved leg contract was not found by provider. This may be an older synthetic/generated strike. Create a fresh paper options structure after listed-contract resolution."
     ]
     assert all("provider_option_snapshot_not_found" in leg["missing_data"] for leg in review["legs"])
     assert not any("ticker not found" in item.lower() for item in review["warnings"])

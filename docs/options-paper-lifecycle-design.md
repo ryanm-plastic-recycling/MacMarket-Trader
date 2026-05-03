@@ -90,7 +90,7 @@ Provider-backed option mark support:
   remain unmarkable. If Polygon/Massive returns a 404/ticker-not-found for a
   saved leg, review aggregates one structure-level warning that the saved
   contract may be an older synthetic/generated strike and that a fresh
-  provider-resolved paper structure should be created.
+  listed-contract-resolved paper structure should be created.
 - leg mark precedence is deterministic:
   1. valid bid/ask midpoint (`quote_mid`)
   2. valid latest trade (`last_trade`)

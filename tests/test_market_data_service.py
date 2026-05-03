@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
@@ -25,6 +26,33 @@ from macmarket_trader.data.providers.market_data import (
     build_polygon_option_ticker,
     normalize_polygon_ticker,
 )
+
+
+class _FakeProviderHealthProbeResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def read(self, _size: int = -1) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+def _ok_provider_health_urlopen(request, timeout: float = 8.0):  # noqa: ANN001
+    url = request.full_url
+    if "/v2/account" in url:
+        return _FakeProviderHealthProbeResponse({"status": "ACTIVE"})
+    if "/series/observations" in url:
+        return _FakeProviderHealthProbeResponse(
+            {"observations": [{"date": "2026-05-01", "value": "4.20"}]}
+        )
+    if "/v2/reference/news" in url:
+        return _FakeProviderHealthProbeResponse({"results": [{"id": "n1", "title": "AAPL headline"}]})
+    raise AssertionError(f"unexpected provider-health probe URL: {url}")
 
 
 def test_market_data_fallback_when_polygon_disabled(monkeypatch) -> None:
@@ -596,6 +624,7 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     monkeypatch.setattr(settings, "news_provider", "polygon")
     monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
     monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    monkeypatch.setattr(admin_routes, "urlopen", _ok_provider_health_urlopen)
 
     client = TestClient(app)
     from macmarket_trader.domain.models import AppUserModel
@@ -614,31 +643,35 @@ def test_provider_health_result_structure(monkeypatch) -> None:
     payload = response.json()
 
     alpaca_entry = next(item for item in payload["providers"] if item["provider"] == "alpaca_paper")
-    assert alpaca_entry["status"] == "configured"
+    assert alpaca_entry["status"] == "ok"
     assert alpaca_entry["config_state"] == "configured"
-    assert alpaca_entry["probe_state"] == "unavailable"
+    assert alpaca_entry["probe_state"] == "ok"
     assert alpaca_entry["configured"] is True
     assert alpaca_entry["selected_provider"] == "alpaca"
-    assert alpaca_entry["probe_status"] == "unavailable"
+    assert alpaca_entry["probe_status"] == "ok"
     assert alpaca_entry["readiness_scope"] == "paper_provider"
+    assert alpaca_entry["paper_routing_enabled"] is False
+    assert alpaca_entry["order_route_probe"] == "not_performed"
 
     fred_entry = next(item for item in payload["providers"] if item["provider"] == "fred")
-    assert fred_entry["status"] == "configured"
+    assert fred_entry["status"] == "ok"
     assert fred_entry["config_state"] == "configured"
-    assert fred_entry["probe_state"] == "unavailable"
+    assert fred_entry["probe_state"] == "ok"
     assert fred_entry["configured"] is True
     assert fred_entry["selected_provider"] == "fred"
-    assert fred_entry["probe_status"] == "unavailable"
+    assert fred_entry["probe_status"] == "ok"
     assert fred_entry["readiness_scope"] == "macro_context"
+    assert fred_entry["sample_series"] == "DGS10"
 
     news_entry = next(item for item in payload["providers"] if item["provider"] == "news")
-    assert news_entry["status"] == "configured"
+    assert news_entry["status"] == "ok"
     assert news_entry["config_state"] == "configured"
-    assert news_entry["probe_state"] == "unavailable"
+    assert news_entry["probe_state"] == "ok"
     assert news_entry["configured"] is True
     assert news_entry["selected_provider"] == "polygon"
-    assert news_entry["probe_status"] == "unavailable"
+    assert news_entry["probe_status"] == "ok"
     assert news_entry["readiness_scope"] == "news_context"
+    assert news_entry["sample_symbol"] == "AAPL"
 
     market_entry = next(item for item in payload["providers"] if item["provider"] == "market_data")
     assert market_entry["configured_provider"] == "polygon"
@@ -696,21 +729,22 @@ def test_provider_health_separates_config_state_from_probe_state_for_optional_pr
     monkeypatch.setattr(settings, "news_provider", "polygon")
     monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
     monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    monkeypatch.setattr(admin_routes, "urlopen", _ok_provider_health_urlopen)
 
     alpaca_entry = admin_routes._alpaca_paper_readiness()
     fred_entry = admin_routes._fred_readiness()
     news_entry = admin_routes._news_readiness()
 
     assert alpaca_entry["config_state"] == "configured"
-    assert alpaca_entry["probe_state"] == "unavailable"
+    assert alpaca_entry["probe_state"] == "skipped"
     assert alpaca_entry["selected_provider"] == "mock"
     assert "mock broker mode" in str(alpaca_entry["operational_impact"])
     assert fred_entry["config_state"] == "configured"
-    assert fred_entry["probe_state"] == "unavailable"
-    assert fred_entry["status"] == "configured"
+    assert fred_entry["probe_state"] == "ok"
+    assert fred_entry["status"] == "ok"
     assert news_entry["config_state"] == "configured"
-    assert news_entry["probe_state"] == "unavailable"
-    assert news_entry["status"] == "configured"
+    assert news_entry["probe_state"] == "ok"
+    assert news_entry["status"] == "ok"
 
 
 def test_provider_health_reports_missing_config_separately_from_probe(monkeypatch) -> None:
@@ -723,6 +757,72 @@ def test_provider_health_reports_missing_config_separately_from_probe(monkeypatc
     assert fred_entry["status"] == "unconfigured"
     assert fred_entry["config_state"] == "missing_config"
     assert fred_entry["probe_state"] == "unavailable"
+
+
+def test_provider_health_optional_probe_errors_are_sanitized(monkeypatch) -> None:
+    fred_secret = "fred-secret-live-probe"
+    polygon_secret = "polygon-secret-live-probe"
+    alpaca_secret = "alpaca-secret-live-probe"
+    alpaca_key = "alpaca-key-live-probe"
+
+    monkeypatch.setattr(settings, "broker_provider", "alpaca")
+    monkeypatch.setattr(settings, "alpaca_api_key_id", alpaca_key)
+    monkeypatch.setattr(settings, "alpaca_api_secret_key", alpaca_secret)
+    monkeypatch.setattr(settings, "alpaca_paper_base_url", "https://paper-api.alpaca.markets")
+    monkeypatch.setattr(settings, "macro_calendar_provider", "fred")
+    monkeypatch.setattr(settings, "fred_api_key", fred_secret)
+    monkeypatch.setattr(settings, "fred_base_url", "https://api.stlouisfed.org/fred")
+    monkeypatch.setattr(settings, "news_provider", "polygon")
+    monkeypatch.setattr(settings, "polygon_api_key", polygon_secret)
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    def failing_urlopen(request, timeout: float = 8.0):  # noqa: ANN001
+        raise RuntimeError(
+            f"failed request {request.full_url} {fred_secret} {polygon_secret} {alpaca_key} {alpaca_secret}"
+        )
+
+    monkeypatch.setattr(admin_routes, "urlopen", failing_urlopen)
+
+    entries = [
+        admin_routes._alpaca_paper_readiness(),
+        admin_routes._fred_readiness(),
+        admin_routes._news_readiness(),
+    ]
+
+    for entry in entries:
+        assert entry["probe_state"] == "failed"
+        assert entry["status"] == "degraded"
+        text = str(entry)
+        assert fred_secret not in text
+        assert polygon_secret not in text
+        assert alpaca_secret not in text
+        assert alpaca_key not in text
+        assert "[redacted]" in text
+
+
+def test_alpaca_paper_probe_is_read_only_and_does_not_enable_routing(monkeypatch) -> None:
+    seen_urls: list[str] = []
+
+    monkeypatch.setattr(settings, "broker_provider", "alpaca")
+    monkeypatch.setattr(settings, "alpaca_api_key_id", "alpaca-key")
+    monkeypatch.setattr(settings, "alpaca_api_secret_key", "alpaca-secret")
+    monkeypatch.setattr(settings, "alpaca_paper_base_url", "https://paper-api.alpaca.markets")
+
+    def fake_urlopen(request, timeout: float = 8.0):  # noqa: ANN001
+        seen_urls.append(request.full_url)
+        return _FakeProviderHealthProbeResponse({"status": "ACTIVE"})
+
+    monkeypatch.setattr(admin_routes, "urlopen", fake_urlopen)
+
+    entry = admin_routes._alpaca_paper_readiness()
+
+    assert entry["probe_state"] == "ok"
+    assert entry["account_probe_endpoint"] == "/v2/account"
+    assert entry["paper_routing_enabled"] is False
+    assert entry["order_route_probe"] == "not_performed"
+    assert seen_urls == ["https://paper-api.alpaca.markets/v2/account"]
+    assert "/v2/orders" not in str(entry)
+    assert "does not enable live trading or broker routing" in str(entry["details"])
 
 
 def test_provider_health_reports_options_data_probe_ok(monkeypatch) -> None:

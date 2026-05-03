@@ -11,6 +11,10 @@ certification.
 - Auth/approval model documented and tested.
 - Provider Health separates configuration and probe state.
 - Provider Health includes options-data readiness for paper review marks.
+- Provider Health includes live-safe selected-provider probes for FRED macro
+  context, Polygon news context, and Alpaca paper account readiness. The
+  Alpaca probe is read-only account status only and does not imply live trading
+  or broker routing.
 - LLM explanation-only boundary documented and tested.
 - Paper equity lifecycle integrity test exists.
 - Options position review and options lifecycle integrity tests exist.

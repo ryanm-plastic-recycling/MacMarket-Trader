@@ -25,6 +25,7 @@ from scan_secrets import redact_text, scan_secrets  # noqa: E402
 
 
 DEFAULT_EVIDENCE_DIR = Path(".tmp") / "evidence"
+PYTEST_BASETEMP = ".tmp/release-gate-pytest"
 COMPLIANCE_REQUIRED_DOCS = [
     "README.md",
     "control-matrix.md",
@@ -419,7 +420,7 @@ def run_release_gate(
                     "tests/test_compliance_readiness.py",
                     "tests/test_operational_evidence.py",
                     "--basetemp",
-                    ".pytest-tmp",
+                    PYTEST_BASETEMP,
                 ],
                 root,
                 300,
@@ -427,7 +428,7 @@ def run_release_gate(
         ]
         if quick
         else [
-            ("backend_pytest", ["python", "-m", "pytest", "--basetemp", ".pytest-tmp"], root, 900),
+            ("backend_pytest", ["python", "-m", "pytest", "--basetemp", PYTEST_BASETEMP], root, 900),
             ("frontend_npm_test", ["npm", "test"], root / "apps" / "web", 900),
             ("frontend_tsc", ["npx", "tsc", "--noEmit"], root / "apps" / "web", 900),
         ]

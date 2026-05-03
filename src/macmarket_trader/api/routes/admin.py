@@ -1,9 +1,13 @@
 """Admin approval and operator routes."""
 
+import json
 import logging
 import math
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
 
@@ -2312,7 +2316,7 @@ def _build_position_review(position, *, app_user_id: int, user, recent_rows: lis
 _SUPPORTED_OPTION_REVIEW_STRATEGIES = {"long_call", "long_put", "vertical_debit_spread", "iron_condor"}
 _SYNTHETIC_OPTION_NOT_FOUND_WARNING = (
     "Saved leg contract was not found by provider. This may be an older synthetic/generated strike. "
-    "Create a fresh paper options structure after provider contract resolution."
+    "Create a fresh paper options structure after listed-contract resolution."
 )
 
 
@@ -4636,6 +4640,25 @@ def _readiness_status(*, config_state: str, probe_state: str) -> str:
     return "configured"
 
 
+def _readiness_json_probe(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout_seconds: float = 8.0,
+) -> tuple[dict[str, object], float]:
+    started = perf_counter()
+    request = Request(url, headers=headers or {})
+    with urlopen(request, timeout=timeout_seconds) as response:
+        raw = response.read(32768)
+    elapsed_ms = round((perf_counter() - started) * 1000, 1)
+    if not raw:
+        return {}, elapsed_ms
+    payload = json.loads(raw.decode("utf-8"))
+    if isinstance(payload, dict):
+        return payload, elapsed_ms
+    return {"payload": payload}, elapsed_ms
+
+
 def _masked_invite_token(token: str | None) -> str | None:
     if not token:
         return None
@@ -4653,19 +4676,47 @@ def _alpaca_paper_readiness() -> dict[str, object]:
     configured = api_key_present and api_secret_present and base_url_present
     config_state = _config_state(configured=configured)
     probe_state = "unavailable"
+    latency_ms: float | None = None
+    account_status: str | None = None
     selected_note = (
         "BROKER_PROVIDER is currently alpaca paper."
         if broker_mode == "alpaca"
         else "Paper routing disabled / mock broker mode. Alpaca credentials may be present, but BROKER_PROVIDER=mock keeps paper routing on the deterministic mock broker."
     )
     details = (
-        "Alpaca paper credentials and base URL appear present. "
-        "This surface reports paper-provider readiness only and does not enable live trading or order routing. "
-        f"{selected_note}"
-        if configured
-        else "Alpaca paper readiness is incomplete: API key, secret, or paper base URL is missing. "
+        "Alpaca paper readiness is incomplete: API key, secret, or paper base URL is missing. "
         "This surface reports readiness only and does not enable live trading or order routing."
     )
+    if configured and broker_mode != "alpaca":
+        probe_state = "skipped"
+        details = (
+            "Alpaca paper credentials and base URL appear present, but BROKER_PROVIDER=mock keeps paper routing "
+            "on the deterministic mock broker. Read-only paper account probe skipped in mock broker mode."
+        )
+    elif configured:
+        try:
+            payload, latency_ms = _readiness_json_probe(
+                f"{settings.alpaca_paper_base_url.rstrip('/')}/v2/account",
+                headers={
+                    "APCA-API-KEY-ID": settings.alpaca_api_key_id.strip(),
+                    "APCA-API-SECRET-KEY": settings.alpaca_api_secret_key.strip(),
+                    "Accept": "application/json",
+                },
+                timeout_seconds=float(settings.market_data_request_timeout_seconds),
+            )
+            account_status = str(payload.get("status") or payload.get("account_status") or "available")
+            probe_state = "ok"
+            details = (
+                "Read-only Alpaca paper account probe succeeded. This probe used GET /v2/account only; "
+                "no order route was called. It does not enable live trading or broker routing. "
+                f"{selected_note}"
+            )
+        except Exception as exc:
+            probe_state = "failed"
+            details = (
+                "Read-only Alpaca paper account probe failed. No order route was called. "
+                f"Sanitized error: {_sanitize_provider_error(exc)}"
+            )
     return {
         "provider": "alpaca_paper",
         "mode": broker_mode,
@@ -4677,10 +4728,16 @@ def _alpaca_paper_readiness() -> dict[str, object]:
         "selected_provider": broker_mode,
         "probe_status": probe_state,
         "readiness_scope": "paper_provider",
+        "credentials_present": api_key_present and api_secret_present,
+        "paper_routing_enabled": False,
+        "account_probe_endpoint": "/v2/account" if configured and broker_mode == "alpaca" else None,
+        "order_route_probe": "not_performed",
+        "account_status": account_status,
+        "latency_ms": latency_ms,
         "operational_impact": (
             "Paper routing disabled / mock broker mode. This is a readiness gate only and does not activate brokerage execution."
             if broker_mode != "alpaca"
-            else "Use this as a paper-provider readiness gate before deeper provider expansion. It does not activate live brokerage execution."
+            else "Use this as a paper-provider readiness gate before deeper provider expansion. It does not activate live brokerage execution or broker order routing."
         ),
     }
 
@@ -4692,18 +4749,39 @@ def _fred_readiness() -> dict[str, object]:
     configured = api_key_present and base_url_present
     config_state = _config_state(configured=configured)
     probe_state = "unavailable"
+    latency_ms: float | None = None
     selected_note = (
         "MACRO_CALENDAR_PROVIDER is currently fred."
         if macro_mode == "fred"
         else "MACRO_CALENDAR_PROVIDER is currently mock; FRED remains a readiness gate only."
     )
-    details = (
-        "FRED API key and base URL appear present. This surface currently reports configuration readiness only; "
-        f"no dedicated lightweight live probe exists here. {selected_note}"
-        if configured
-        else "FRED readiness is incomplete: API key or base URL is missing. "
-        "This surface currently reports configuration readiness only."
-    )
+    details = "FRED readiness is incomplete: API key or base URL is missing."
+    if configured and macro_mode != "fred":
+        probe_state = "skipped"
+        details = "FRED API key and base URL appear present. Live probe skipped because MACRO_CALENDAR_PROVIDER is not fred."
+    elif configured:
+        query = urlencode(
+            {
+                "series_id": "DGS10",
+                "api_key": settings.fred_api_key.strip(),
+                "file_type": "json",
+                "sort_order": "desc",
+                "limit": "1",
+            }
+        )
+        try:
+            payload, latency_ms = _readiness_json_probe(
+                f"{settings.fred_base_url.rstrip('/')}/series/observations?{query}",
+                timeout_seconds=float(settings.fred_timeout_seconds),
+            )
+            observations = payload.get("observations")
+            if not isinstance(observations, list) or not observations:
+                raise ValueError("FRED probe returned no observations for DGS10")
+            probe_state = "ok"
+            details = "FRED read-only observation probe succeeded for DGS10. " + selected_note
+        except Exception as exc:
+            probe_state = "failed"
+            details = f"FRED read-only observation probe failed. Sanitized error: {_sanitize_provider_error(exc)}"
     return {
         "provider": "fred",
         "mode": macro_mode,
@@ -4715,6 +4793,8 @@ def _fred_readiness() -> dict[str, object]:
         "selected_provider": macro_mode,
         "probe_status": probe_state,
         "readiness_scope": "macro_context",
+        "sample_series": "DGS10" if configured else None,
+        "latency_ms": latency_ms,
         "operational_impact": (
             "Use this to verify macro-calendar input readiness before broader provider expansion. "
             "It does not affect brokerage execution."
@@ -4729,18 +4809,31 @@ def _news_readiness() -> dict[str, object]:
     configured = polygon_key_present and base_url_present
     config_state = _config_state(configured=configured)
     probe_state = "unavailable"
+    latency_ms: float | None = None
     selected_note = (
         "NEWS_PROVIDER is currently polygon."
         if news_mode == "polygon"
         else "NEWS_PROVIDER is currently mock; provider-backed news remains a readiness gate only."
     )
-    details = (
-        "Provider-backed news configuration appears present via Polygon API key and base URL. "
-        f"This surface currently reports configuration readiness only. {selected_note}"
-        if configured
-        else "Provider-backed news readiness is incomplete: Polygon API key or base URL is missing. "
-        "This surface currently reports configuration readiness only."
-    )
+    details = "Provider-backed news readiness is incomplete: Polygon API key or base URL is missing."
+    if configured and news_mode != "polygon":
+        probe_state = "skipped"
+        details = "Provider-backed news configuration appears present. Live probe skipped because NEWS_PROVIDER is not polygon."
+    elif configured:
+        query = urlencode({"ticker": "AAPL", "limit": "1", "apiKey": settings.polygon_api_key.strip()})
+        try:
+            payload, latency_ms = _readiness_json_probe(
+                f"{settings.polygon_base_url.rstrip('/')}/v2/reference/news?{query}",
+                timeout_seconds=float(settings.polygon_timeout_seconds),
+            )
+            results = payload.get("results")
+            if not isinstance(results, list):
+                raise ValueError("Polygon news probe returned malformed results")
+            probe_state = "ok"
+            details = "Polygon news read-only probe succeeded for AAPL with limit=1. " + selected_note
+        except Exception as exc:
+            probe_state = "failed"
+            details = f"Polygon news read-only probe failed. Sanitized error: {_sanitize_provider_error(exc)}"
     return {
         "provider": "news",
         "mode": news_mode,
@@ -4752,6 +4845,8 @@ def _news_readiness() -> dict[str, object]:
         "selected_provider": news_mode,
         "probe_status": probe_state,
         "readiness_scope": "news_context",
+        "sample_symbol": "AAPL" if configured else None,
+        "latency_ms": latency_ms,
         "operational_impact": (
             "Use this to verify provider-backed news context readiness before deeper provider expansion. "
             "Recommendation, replay, and orders remain paper-only."

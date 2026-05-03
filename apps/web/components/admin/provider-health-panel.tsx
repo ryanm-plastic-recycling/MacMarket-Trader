@@ -20,8 +20,14 @@ type ProviderHealth = {
     config_state?: "configured" | "missing_config" | "disabled" | string;
     probe_state?: "ok" | "failed" | "skipped" | "unavailable" | string;
     configured?: boolean;
+    credentials_present?: boolean;
+    paper_routing_enabled?: boolean;
+    account_probe_endpoint?: string | null;
+    account_status?: string | null;
+    order_route_probe?: string | null;
     feed?: string;
     sample_symbol?: string;
+    sample_series?: string | null;
     sample_underlying?: string | null;
     sample_option_symbol?: string | null;
     sample_selection_method?: string | null;
@@ -262,6 +268,19 @@ export function ProviderHealthPanel() {
                     <span style={muted}>configured: </span>{p.configured ? "yes" : "no"}
                   </div>
                 ) : null}
+                {p.credentials_present !== undefined ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>credentials present: </span>{p.credentials_present ? "yes" : "no"}
+                  </div>
+                ) : null}
+                {p.paper_routing_enabled !== undefined ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>paper routing enabled: </span>{p.paper_routing_enabled ? "yes" : "no"}
+                  </div>
+                ) : null}
+                {p.account_status ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>paper account status: </span>{p.account_status}</div> : null}
+                {p.account_probe_endpoint ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>account probe: </span>{p.account_probe_endpoint}</div> : null}
+                {p.order_route_probe ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>order route probe: </span>{p.order_route_probe}</div> : null}
                 {p.selected_provider ? (
                   <div style={{ fontSize: "0.8rem" }}>
                     <span style={muted}>selected mode: </span>{p.selected_provider}
@@ -289,6 +308,8 @@ export function ProviderHealthPanel() {
                   </div>
                 ) : null}
                 {p.feed ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>feed: </span>{p.feed}</div> : null}
+                {p.sample_symbol ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample symbol: </span>{p.sample_symbol}</div> : null}
+                {p.sample_series ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample series: </span>{p.sample_series}</div> : null}
                 {p.sample_underlying ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample underlying: </span>{p.sample_underlying}</div> : null}
                 {p.sample_option_symbol ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample option: </span>{p.sample_option_symbol}</div> : null}
                 {p.sample_selection_method ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample method: </span>{p.sample_selection_method}</div> : null}
