@@ -388,6 +388,16 @@ class MarketDataProvider:
     def fetch_option_contract_snapshot(self, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
         raise NotImplementedError
 
+    def fetch_option_contracts(
+        self,
+        *,
+        underlying_symbol: str,
+        expiration: date | None = None,
+        option_type: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
     def resolve_option_contract(
         self,
         *,
@@ -1280,6 +1290,29 @@ class MarketDataService:
             expiration=expiration,
             option_type=normalized_type,
             target_strike=target,
+        )
+
+    def option_contracts(
+        self,
+        *,
+        underlying_symbol: str,
+        expiration: date | None = None,
+        option_type: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        normalized_underlying = option_reference_underlying_ticker(underlying_symbol)
+        if not isinstance(self._provider, PolygonMarketDataProvider):
+            return []
+        if not self._provider.is_configured():
+            return []
+        fetcher = getattr(self._provider, "fetch_option_contracts", None)
+        if not callable(fetcher):
+            return []
+        return fetcher(
+            underlying_symbol=normalized_underlying,
+            expiration=expiration,
+            option_type=option_type,
+            limit=limit,
         )
 
     def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:

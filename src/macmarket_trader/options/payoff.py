@@ -238,8 +238,8 @@ def analyze_iron_condor(
             raise OptionPayoffValidationError("iron_condor_requires_positive_net_credit")
 
         widest_wing = max(put_width, call_width)
-        if net_credit > widest_wing:
-            raise OptionPayoffValidationError("iron_condor_credit_exceeds_widest_wing")
+        if net_credit >= widest_wing:
+            raise OptionPayoffValidationError("iron_condor_credit_must_be_less_than_widest_wing")
 
         breakevens = (
             _clean_number(short_put.strike - net_credit),

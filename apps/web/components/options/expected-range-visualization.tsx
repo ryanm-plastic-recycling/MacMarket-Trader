@@ -155,6 +155,8 @@ export function ExpectedRangeVisualization({
 
   const lower = Math.min(lowerRaw, upperRaw);
   const upper = Math.max(lowerRaw, upperRaw);
+  const safeMaxProfit = finiteNumber(maxProfit);
+  const safeMaxLoss = finiteNumber(maxLoss);
   const absoluteMove = finiteNumber(expectedRange?.absolute_move);
   const explicitReferencePrice = finiteNumber(referencePrice);
   const explicitCurrentPrice = finiteNumber(currentPrice);
@@ -302,8 +304,8 @@ export function ExpectedRangeVisualization({
           {referenceMarker == null ? "Unavailable" : formatCurrency(referenceMarker.value)}
         </div>
         <div><strong>Breakevens:</strong> {breakevenValues.length > 0 ? breakevenValues.map((value) => formatCurrency(value)).join(" / ") : "Unavailable"}</div>
-        <div><strong>Max profit:</strong> {formatCurrency(maxProfit)}</div>
-        <div><strong>Max loss:</strong> {formatCurrency(maxLoss)}</div>
+        <div><strong>Max profit:</strong> {safeMaxProfit != null && safeMaxProfit >= 0 ? formatCurrency(safeMaxProfit) : "Unavailable"}</div>
+        <div><strong>Max loss:</strong> {safeMaxLoss != null && safeMaxLoss > 0 ? formatCurrency(safeMaxLoss) : "Unavailable"}</div>
       </div>
 
       {outsideBreakevens.length > 0 ? (

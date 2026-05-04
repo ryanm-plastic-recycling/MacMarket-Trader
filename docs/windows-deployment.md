@@ -49,6 +49,11 @@ AI worktrees, pytest scratch folders, or generated TypeScript incremental
 state into the runtime folder. Current Robocopy exclusions include `.claude/`,
 `.pytest-tmp/`, `.tmp/`, and `*.tsbuildinfo`.
 
+`scripts/deploy_windows.bat` recreates an ignored runtime `.tmp/` folder after
+mirroring and runs backend pytest with a deployment-local basetemp under
+`.tmp/pytest-deploy`. This keeps deployment tests independent from stale source
+scratch folders and from machine-wide pytest temp-directory permissions.
+
 ## Fail-fast behavior
 
 Critical commands are guarded with `|| goto :fail` and deployment stops immediately on failure.

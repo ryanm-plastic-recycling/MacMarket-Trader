@@ -44,6 +44,17 @@ output. Quick deployed mode also marks source-only targeted pytest checks not
 applicable, because deployed runtime folders may intentionally omit the test
 suite.
 
+The operational evidence regression tests are deploy-mode aware. When the same
+tests run from the non-git Windows mirror, dry-run/mock gate checks that are
+expected to pass call the release gate in deployed mode, while dedicated tests
+still prove that non-git folders without `--deployed` fail clearly and that a
+real Git source fixture runs `git diff --check`.
+
+The Windows deployment script creates an ignored `.tmp/` folder in the runtime
+mirror and runs backend pytest with `--basetemp .tmp\pytest-deploy` so deploy
+tests do not depend on source checkout temp folders or machine-wide pytest
+temp directories.
+
 - Git status reviewed and expected.
 - No conflict markers:
   `git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- .`
@@ -56,9 +67,10 @@ suite.
   `python scripts/scan_secrets.py --root .`
 - Backend tests:
   `python -m pytest --basetemp .pytest-tmp`
-- Release gate backend test steps use the ignored `.tmp/release-gate-pytest`
-  temp directory so evidence runs are not blocked by stale local `.pytest-tmp`
-  workspace artifacts.
+- Release gate backend test steps use ignored timestamped
+  `.tmp/release-gate-pytest-*` temp directories so evidence runs are not
+  blocked by stale local `.pytest-tmp` or prior release-gate workspace
+  artifacts.
 - Frontend tests:
   `npm test`
 - TypeScript:

@@ -110,6 +110,9 @@ export type OptionsResearchStructure = {
   contract_resolution_status?: string | null;
   contract_resolution_summary?: string | null;
   contract_resolution_warnings?: string[] | null;
+  structure_validation_status?: string | null;
+  structure_validation_summary?: string | null;
+  structure_validation_warnings?: string[] | null;
   paper_persistence_allowed?: boolean | null;
 };
 
@@ -744,6 +747,23 @@ function extractOptionsStructureBreakevens(structure: OptionsResearchStructure |
   return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 }
 
+function getOptionsStructureBlockedReason(structure: OptionsResearchStructure | null | undefined): string | null {
+  if (!structure) return null;
+  if (
+    structure.paper_persistence_allowed === false
+    || structure.contract_resolution_status === "unresolved"
+    || structure.contract_resolution_status === "invalid"
+    || structure.structure_validation_status === "invalid"
+  ) {
+    return (
+      structure.structure_validation_summary
+      ?? structure.contract_resolution_summary
+      ?? "Contract selection incomplete; options research preview and paper lifecycle actions stay blocked."
+    );
+  }
+  return null;
+}
+
 export function getOptionsReplayPreviewAvailability(
   setup: OptionsResearchSetup | null | undefined,
 ): OptionsReplayPreviewAvailability {
@@ -759,6 +779,10 @@ export function getOptionsReplayPreviewAvailability(
   }
   if (!structure.legs || structure.legs.length === 0) {
     return { request: null, reason: "Replay payoff preview requires visible option legs." };
+  }
+  const blockedReason = getOptionsStructureBlockedReason(structure);
+  if (blockedReason) {
+    return { request: null, reason: blockedReason };
   }
   const structureType = normalizeOptionsReplayStructureType(structure.type);
   if (!structureType || structureType === "custom_defined_risk") {
@@ -838,11 +862,9 @@ export function getOptionsPaperOpenAvailability(
   if (!expiration) {
     return { request: null, reason: "Paper option open requires a visible expiration for every leg." };
   }
-  if (structure.paper_persistence_allowed === false || structure.contract_resolution_status === "unresolved") {
-    return {
-      request: null,
-      reason: structure.contract_resolution_summary ?? "Unable to resolve listed contracts; paper position cannot be marked.",
-    };
+  const blockedReason = getOptionsStructureBlockedReason(structure);
+  if (blockedReason) {
+    return { request: null, reason: blockedReason };
   }
   const normalizedStructureType = normalizeOptionsReplayStructureType(structureType);
   if (!normalizedStructureType) {
@@ -1053,9 +1075,20 @@ export function formatOptionsLegLabel(leg: OptionsResearchLeg): string {
   const right = typeof leg.right === "string" && leg.right.trim() ? leg.right.trim().toUpperCase() : null;
   const strike = typeof leg.strike === "number" && Number.isFinite(leg.strike) ? formatResearchValue(leg.strike) : null;
   const label = typeof leg.label === "string" && leg.label.trim() ? leg.label.trim() : null;
+  const targetStrike = typeof leg.target_strike === "number" && Number.isFinite(leg.target_strike) ? leg.target_strike : null;
+  const selectedStrike = typeof leg.selected_listed_strike === "number" && Number.isFinite(leg.selected_listed_strike) ? leg.selected_listed_strike : null;
+  const snapDistance = typeof leg.strike_snap_distance === "number" && Number.isFinite(leg.strike_snap_distance) ? leg.strike_snap_distance : null;
+  const optionSymbol = typeof leg.option_symbol === "string" && leg.option_symbol.trim() ? leg.option_symbol.trim().toUpperCase() : null;
   const summary = [action, right, strike].filter(Boolean).join(" ");
-  if (summary && label) return `${summary} — ${label}`;
-  return summary || label || "Unavailable";
+  const selectionParts = [
+    optionSymbol ? `listed ${optionSymbol}` : null,
+    targetStrike != null && selectedStrike != null
+      ? `target ${formatResearchValue(targetStrike)} → listed ${formatResearchValue(selectedStrike)}`
+      : null,
+    snapDistance != null ? `snap ${formatResearchValue(snapDistance)}` : null,
+  ].filter(Boolean);
+  const base = summary && label ? `${summary} — ${label}` : summary || label || "Unavailable";
+  return selectionParts.length > 0 ? `${base} (${selectionParts.join("; ")})` : base;
 }
 
 export function getOptionsPremiumLabel(structure: OptionsResearchStructure | null | undefined): "Net credit" | "Net debit" | "Net premium" {

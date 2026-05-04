@@ -2,6 +2,24 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Strict Listed-Contract Options Structure Validation
+Options research preview and paper-open paths now treat listed-contract
+resolution as a readiness gate for iron condors when provider-backed options
+data is configured. The resolver selects all four legs together from provider
+reference contracts, enforces two puts, two calls, one shared expiration, four
+distinct ordered strikes, and preserves the original target strike, selected
+listed strike, snap distance, provider contract symbol, and selection method on
+each leg.
+
+Invalid or incomplete chains are blocked before the setup can be treated as
+ready. If the provider returns only calls or only puts, the workbench reports
+`Cannot build iron condor: provider returned incomplete chain` with the missing
+side, clears max-profit/max-loss/breakeven display values, blocks Expected
+Range visualization, and disables replay/paper lifecycle actions. Payoff math
+also rejects iron condors whose credit would make max loss zero or negative.
+Older saved synthetic structures are not migrated; Options Position Review
+continues to show them as unmarkable with clean missing-data warnings.
+
 ## 2026-05-03 Update - Listed Options Contracts, SPX Review Support, And Deployed Release Gate
 Options research and paper-open paths now resolve generated target strikes
 against Polygon/Massive listed option contracts before persistence when
@@ -30,8 +48,9 @@ The release gate now supports deployed/non-git folders with
 continues file scans and evidence/archive checks while marking git-only steps
 not applicable. Running the gate outside the source repo root without
 `--deployed` now fails with a concise source-vs-deployed path message. Release
-gate pytest steps write to `.tmp/release-gate-pytest` so stale local
-`.pytest-tmp` artifacts do not block evidence generation.
+gate pytest steps write to timestamped `.tmp/release-gate-pytest-*` folders so
+stale local `.pytest-tmp` or prior release-gate temp artifacts do not block
+evidence generation.
 
 Provider Health now runs live-safe readiness probes for optional providers only
 when that provider is selected: FRED fetches one `DGS10` observation, Polygon
@@ -39,6 +58,16 @@ news fetches one AAPL news item, and Alpaca paper uses only read-only
 `GET /v2/account`. Mock-mode Alpaca keeps paper routing disabled and skips the
 account probe. Probe failures are sanitized and do not imply live trading,
 broker routing, or provider execution readiness.
+
+Operational evidence tests now explicitly distinguish source Git checkouts
+from non-Git deployment mirrors. Dry-run/mock tests that are expected to pass
+from `C:\Dashboard\MacMarket-Trader` opt into deployed mode when `.git` is
+absent, while a separate temp Git fixture still proves source-mode
+`git_diff_check` behavior. The deployment mirror remains intentionally
+non-Git. The Windows deploy script also creates a local ignored `.tmp/`
+runtime scratch folder and runs backend pytest with `.tmp\pytest-deploy` as
+its basetemp, keeping deployment tests away from stale source or global pytest
+temp directories.
 
 ## 2026-05-03 Update - Options Data Provider-Health Sample Discovery
 Options Data provider health now prefers a discovered Polygon/Massive sample

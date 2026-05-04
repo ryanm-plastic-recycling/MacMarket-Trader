@@ -109,6 +109,27 @@ describe("ExpectedRangeVisualization", () => {
     expect(html).not.toContain("Infinity");
   });
 
+  it("does not display negative max loss from an invalid options structure", () => {
+    const html = renderToStaticMarkup(
+      <ExpectedRangeVisualization
+        expectedRange={{
+          status: "computed",
+          method: "iv_1sigma",
+          absolute_move: 5,
+          lower_bound: 95,
+          upper_bound: 105,
+        }}
+        breakevens={[]}
+        maxProfit={452}
+        maxLoss={-452}
+      />,
+    );
+
+    expect(html).toContain("<strong>Max loss:</strong> Unavailable");
+    expect(html).not.toContain("-$452.00");
+    expect(html).not.toContain("Breakeven 1");
+  });
+
   it("keeps safety copy research-only without probability or routing claims", () => {
     const html = renderToStaticMarkup(
       <ExpectedRangeVisualization

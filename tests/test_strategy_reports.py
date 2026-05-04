@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -215,6 +215,187 @@ def test_analysis_setup_snaps_options_research_legs_to_provider_contracts(monkey
     assert structure["contract_resolution_summary"] == "Selected listed contracts from provider chain."
     assert all(leg["option_symbol"].startswith("O:AAPL260516") for leg in structure["legs"])
     assert all(leg["target_strike"] != leg["strike"] for leg in structure["legs"])
+
+
+def test_analysis_setup_blocks_iron_condor_when_provider_chain_missing_puts(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    class CallsOnlyOptionsService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):
+            return {
+                "underlying": symbol,
+                "expiry": "2026-05-16",
+                "calls": [{"ticker": "O:QQQ260516C00480000", "strike": 480.0, "expiry": "2026-05-16", "option_type": "call"}],
+                "puts": None,
+                "source": "test",
+            }
+
+        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, limit: int = 1000):
+            del underlying_symbol, expiration, option_type, limit
+            return [
+                {"ticker": "O:QQQ260516C00480000", "contract_type": "call", "strike_price": 480.0, "expiration_date": "2026-05-16"},
+                {"ticker": "O:QQQ260516C00485000", "contract_type": "call", "strike_price": 485.0, "expiration_date": "2026-05-16"},
+            ]
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(provider="market_data", mode="polygon", status="ok", details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol)
+
+    monkeypatch.setattr(admin_routes, "market_data_service", CallsOnlyOptionsService())
+    _seed_and_approve_user()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "QQQ", "market_mode": "options", "strategy": "Iron Condor"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    structure = payload["option_structure"]
+    assert structure["paper_persistence_allowed"] is False
+    assert structure["contract_resolution_status"] == "unresolved"
+    assert structure["contract_resolution_summary"] == "Cannot build iron condor: provider returned incomplete chain; puts missing."
+    assert structure["max_profit"] is None
+    assert structure["max_loss"] is None
+    assert structure["breakeven_low"] is None
+    assert structure["breakeven_high"] is None
+    assert payload["expected_range"]["status"] == "blocked"
+
+
+def test_analysis_setup_rejects_all_four_iron_condor_legs_at_same_strike(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    class CollisionResolvingService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):
+            return {"underlying": symbol, "expiry": "2026-05-16", "calls": [], "puts": [], "source": "test"}
+
+        def resolve_option_contract(self, *, underlying_symbol: str, expiration, option_type: str, target_strike: float):
+            right = "C" if option_type == "call" else "P"
+            return OptionContractResolution(
+                requested_underlying=underlying_symbol.upper(),
+                underlying_asset_type="etf",
+                target_expiration=expiration,
+                selected_expiration=expiration,
+                option_type=option_type,
+                target_strike=target_strike,
+                selected_strike=480.0,
+                option_symbol=f"O:{underlying_symbol.upper()}260516{right}00480000",
+                provider="polygon",
+                contract_selection_method="provider_reference_exact_expiration",
+                strike_snap_distance=abs(480.0 - target_strike),
+            )
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(provider="market_data", mode="polygon", status="ok", details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol)
+
+    monkeypatch.setattr(admin_routes, "market_data_service", CollisionResolvingService())
+    _seed_and_approve_user()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "SPY", "market_mode": "options", "strategy": "Iron Condor"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    structure = resp.json()["option_structure"]
+    assert structure["paper_persistence_allowed"] is False
+    assert structure["structure_validation_status"] == "invalid"
+    assert structure["structure_validation_summary"] == "iron_condor_requires_ordered_strikes"
+    assert {leg["strike"] for leg in structure["legs"]} == {480.0}
+    assert structure["max_loss"] is None
+
+
+def test_analysis_setup_selects_distinct_ordered_listed_iron_condor_contracts(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    expiration = date(2026, 5, 16)
+
+    def _row(right: str, strike: float) -> dict[str, object]:
+        suffix = "C" if right == "call" else "P"
+        return {
+            "ticker": f"O:AAPL260516{suffix}{int(strike * 1000):08d}",
+            "contract_type": right,
+            "strike_price": strike,
+            "expiration_date": expiration.isoformat(),
+            "open_interest": 100,
+        }
+
+    class ListedContractService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):
+            return {
+                "underlying": symbol,
+                "expiry": expiration.isoformat(),
+                "calls": [{"ticker": "O:AAPL260516C00110000", "strike": 110.0, "expiry": expiration.isoformat()}],
+                "puts": [{"ticker": "O:AAPL260516P00095000", "strike": 95.0, "expiry": expiration.isoformat()}],
+                "source": "test",
+            }
+
+        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, limit: int = 1000):
+            del underlying_symbol, option_type, limit
+            assert expiration == date(2026, 5, 16)
+            return [
+                _row("put", 90.0),
+                _row("put", 95.0),
+                _row("put", 100.0),
+                _row("call", 105.0),
+                _row("call", 110.0),
+                _row("call", 115.0),
+            ]
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(provider="market_data", mode="polygon", status="ok", details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol)
+
+    monkeypatch.setattr(admin_routes, "market_data_service", ListedContractService())
+    _seed_and_approve_user()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "AAPL", "market_mode": "options", "strategy": "Iron Condor"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    structure = payload["option_structure"]
+    strikes = [leg["strike"] for leg in structure["legs"]]
+    assert structure["contract_resolution_status"] == "resolved"
+    assert structure["structure_validation_status"] == "valid"
+    assert structure["paper_persistence_allowed"] is True
+    assert strikes == sorted(strikes)
+    assert len(set(strikes)) == 4
+    assert all(leg["option_symbol"].startswith("O:AAPL260516") for leg in structure["legs"])
+    assert all(leg["contract_selection"]["contract_selection_method"] == "provider_reference_exact_expiration" for leg in structure["legs"])
+    assert all(leg["target_strike"] is not None for leg in structure["legs"])
+    assert structure["max_loss"] > 0
+    assert structure["breakeven_low"] < structure["breakeven_high"]
+    assert payload["expected_range"]["status"] == "computed"
 
 
 def test_analysis_setup_invalid_strategy_for_market_mode_returns_400_with_supported_labels() -> None:

@@ -25,7 +25,7 @@ from scan_secrets import redact_text, scan_secrets  # noqa: E402
 
 
 DEFAULT_EVIDENCE_DIR = Path(".tmp") / "evidence"
-PYTEST_BASETEMP = ".tmp/release-gate-pytest"
+PYTEST_BASETEMP_PREFIX = ".tmp/release-gate-pytest"
 COMPLIANCE_REQUIRED_DOCS = [
     "README.md",
     "control-matrix.md",
@@ -286,6 +286,7 @@ def run_release_gate(
     evidence = evidence_dir if evidence_dir.is_absolute() else root / evidence_dir
     evidence.mkdir(parents=True, exist_ok=True)
     stamp = timestamp()
+    pytest_basetemp = f"{PYTEST_BASETEMP_PREFIX}-{stamp}"
     steps: list[dict[str, object]] = []
     git_available = is_git_repo(root)
 
@@ -420,7 +421,7 @@ def run_release_gate(
                     "tests/test_compliance_readiness.py",
                     "tests/test_operational_evidence.py",
                     "--basetemp",
-                    PYTEST_BASETEMP,
+                    pytest_basetemp,
                 ],
                 root,
                 300,
@@ -428,7 +429,7 @@ def run_release_gate(
         ]
         if quick
         else [
-            ("backend_pytest", ["python", "-m", "pytest", "--basetemp", PYTEST_BASETEMP], root, 900),
+            ("backend_pytest", ["python", "-m", "pytest", "--basetemp", pytest_basetemp], root, 900),
             ("frontend_npm_test", ["npm", "test"], root / "apps" / "web", 900),
             ("frontend_tsc", ["npx", "tsc", "--noEmit"], root / "apps" / "web", 900),
         ]

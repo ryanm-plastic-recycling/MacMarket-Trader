@@ -38,6 +38,10 @@ import type {
   OptionsReplayPreviewResponse,
   OptionsResearchSetup,
 } from "@/lib/recommendations";
+import {
+  getOptionsPaperOpenAvailability,
+  getOptionsReplayPreviewAvailability,
+} from "@/lib/recommendations";
 
 const require = createRequire(import.meta.url);
 const { renderToStaticMarkup } = require("react-dom/server") as {
@@ -425,6 +429,79 @@ describe("OptionsResearchPreview", () => {
     expect(html).not.toContain("Infinity");
     expect(html).not.toContain("live trading");
     expect(html).not.toContain("broker execution");
+  });
+
+  it("shows blocked state and disables lifecycle actions for invalid listed-contract structures", () => {
+    const setup: OptionsResearchSetup = {
+      symbol: "QQQ",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        dte: 13,
+        net_credit: 4.52,
+        max_profit: null,
+        max_loss: null,
+        breakeven_low: null,
+        breakeven_high: null,
+        contract_resolution_status: "unresolved",
+        contract_resolution_summary: "Cannot build iron condor: provider returned incomplete chain; puts missing.",
+        structure_validation_status: "invalid",
+        structure_validation_summary: "Cannot build iron condor: provider returned incomplete chain; puts missing.",
+        paper_persistence_allowed: false,
+        legs: [
+          { action: "buy", right: "put", strike: 480, label: "lower long put" },
+          { action: "sell", right: "put", strike: 480, label: "short put" },
+          { action: "sell", right: "call", strike: 480, label: "short call" },
+          { action: "buy", right: "call", strike: 480, label: "higher long call" },
+        ],
+      },
+      expected_range: {
+        status: "blocked",
+        method: null,
+        reference_price_type: "underlying_last",
+        lower_bound: null,
+        upper_bound: null,
+        absolute_move: null,
+        horizon_value: 13,
+        horizon_unit: "calendar_days",
+        reason: "Cannot build iron condor: provider returned incomplete chain; puts missing.",
+      },
+      options_chain_preview: {
+        underlying: "QQQ",
+        expiry: "2026-05-16",
+        calls: [{ strike: 480, expiry: "2026-05-16", last_price: null, volume: null }],
+        puts: null,
+        source: "polygon_options_basic",
+      },
+    };
+
+    expect(getOptionsReplayPreviewAvailability(setup).request).toBeNull();
+    expect(getOptionsPaperOpenAvailability(setup).request).toBeNull();
+
+    const lifecycleHtml = renderToStaticMarkup(
+      <OptionsPaperLifecyclePanel
+        setup={setup}
+        loadCommissionOnMount={false}
+      />,
+    );
+    const riskHtml = renderToStaticMarkup(
+      <OptionsStructureRiskSummary
+        setup={setup}
+        replayPreview={null}
+        paperOpenResult={null}
+        paperCloseResult={null}
+      />,
+    );
+
+    expect(lifecycleHtml).toContain("Cannot build iron condor: provider returned incomplete chain; puts missing.");
+    expect(lifecycleHtml).toContain("disabled");
+    expect(lifecycleHtml).not.toContain("-$452.00");
+    expect(riskHtml).toContain("Expected Range blocked");
+    expect(riskHtml).toContain("Unavailable. Cannot build iron condor: provider returned incomplete chain; puts missing.");
+    expect(riskHtml).not.toContain("Breakeven 1");
   });
 });
 

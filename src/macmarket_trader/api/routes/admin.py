@@ -3,7 +3,8 @@
 import json
 import logging
 import math
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from time import perf_counter
 from typing import Any
 from urllib.parse import urlencode
@@ -68,6 +69,7 @@ from macmarket_trader.llm.openai_provider import OpenAICompatibleLLMClient, get_
 from macmarket_trader.options.paper_close import OptionPaperCloseError, close_paper_option_structure, settle_paper_option_expiration
 from macmarket_trader.options.paper_contracts import OptionPaperContractError
 from macmarket_trader.options.paper_open import open_paper_option_structure
+from macmarket_trader.options.payoff import OptionLegInput, analyze_option_structure
 from macmarket_trader.options.replay_preview import build_options_replay_preview
 from macmarket_trader.ranking_engine import DeterministicRankingEngine
 from macmarket_trader.replay.engine import ReplayEngine
@@ -2365,6 +2367,502 @@ def _resolved_contract_dict(resolution) -> dict[str, object]:
     return dict(resolution) if isinstance(resolution, dict) else {"resolved": False}
 
 
+@dataclass(frozen=True)
+class _ListedOptionContract:
+    option_symbol: str
+    option_type: str
+    expiration: date
+    strike: float
+    liquidity: float = 0.0
+
+
+def _parse_option_expiration(value: object) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.strip()).date()
+        except ValueError:
+            return None
+    return None
+
+
+def _chain_side_missing_reason(chain_preview: object) -> str | None:
+    if not isinstance(chain_preview, dict) or chain_preview.get("reason"):
+        return None
+    has_calls = isinstance(chain_preview.get("calls"), list) and len(chain_preview.get("calls") or []) > 0
+    has_puts = isinstance(chain_preview.get("puts"), list) and len(chain_preview.get("puts") or []) > 0
+    if has_calls and not has_puts:
+        return "Cannot build iron condor: provider returned incomplete chain; puts missing."
+    if has_puts and not has_calls:
+        return "Cannot build iron condor: provider returned incomplete chain; calls missing."
+    return None
+
+
+def _fetch_option_contract_rows(
+    *,
+    symbol: str,
+    expiration: date | None,
+    option_type: str | None = None,
+) -> tuple[list[dict[str, object]] | None, str | None]:
+    fetcher = getattr(market_data_service, "option_contracts", None)
+    if not callable(fetcher):
+        fetcher = getattr(market_data_service, "fetch_option_contracts", None)
+    if not callable(fetcher):
+        return None, "Listed option contract chain resolver is unavailable."
+    try:
+        rows = fetcher(
+            underlying_symbol=symbol,
+            expiration=expiration,
+            option_type=option_type,
+            limit=1000,
+        )
+    except TypeError:
+        try:
+            rows = fetcher(symbol=symbol, expiration=expiration, option_type=option_type, limit=1000)
+        except Exception as exc:
+            return None, str(exc)[:300]
+    except Exception as exc:
+        return None, str(exc)[:300]
+    return [dict(row) for row in rows or [] if isinstance(row, dict)], None
+
+
+def _listed_contract_from_row(row: dict[str, object]) -> _ListedOptionContract | None:
+    option_symbol = str(row.get("ticker") or row.get("option_symbol") or "").upper().strip()
+    option_type = str(row.get("contract_type") or row.get("option_type") or "").lower().strip()
+    expiration = _parse_option_expiration(row.get("expiration_date") or row.get("expiry") or row.get("expiration"))
+    strike = _finite_float(row.get("strike_price") or row.get("strike"))
+    if option_type not in {"call", "put"} or not option_symbol or expiration is None or strike is None:
+        return None
+    liquidity = max(
+        _finite_float(row.get("open_interest")) or 0.0,
+        _finite_float(row.get("volume")) or 0.0,
+    )
+    return _ListedOptionContract(
+        option_symbol=option_symbol,
+        option_type=option_type,
+        expiration=expiration,
+        strike=round(float(strike), 4),
+        liquidity=liquidity,
+    )
+
+
+def _iron_condor_role(leg: dict[str, object]) -> str | None:
+    action = str(leg.get("action") or "").strip().lower()
+    right = str(leg.get("right") or "").strip().lower()
+    if action == "buy" and right == "put":
+        return "lower_long_put"
+    if action == "sell" and right == "put":
+        return "short_put"
+    if action == "sell" and right == "call":
+        return "short_call"
+    if action == "buy" and right == "call":
+        return "higher_long_call"
+    return None
+
+
+def _top_contracts_near(
+    contracts: list[_ListedOptionContract],
+    target: float,
+    *,
+    limit: int = 24,
+) -> list[_ListedOptionContract]:
+    return sorted(
+        contracts,
+        key=lambda item: (abs(item.strike - target), -item.liquidity, item.strike, item.option_symbol),
+    )[:limit]
+
+
+def _contract_selection_payload(
+    *,
+    symbol: str,
+    asset_type: str,
+    target_expiration: date,
+    option_type: str,
+    role: str,
+    target_strike: float,
+    contract: _ListedOptionContract,
+    method: str,
+    warnings: list[str],
+) -> dict[str, object]:
+    return {
+        "resolved": True,
+        "requested_underlying": symbol.upper(),
+        "underlying_asset_type": asset_type,
+        "target_expiration": target_expiration.isoformat(),
+        "selected_expiration": contract.expiration.isoformat(),
+        "option_type": option_type,
+        "leg_role": role,
+        "target_strike": round(float(target_strike), 4),
+        "selected_listed_strike": contract.strike,
+        "strike_snap_distance": round(abs(contract.strike - float(target_strike)), 4),
+        "provider": "polygon",
+        "provider_contract_symbol": contract.option_symbol,
+        "contract_selection_method": method,
+        "unavailable_reason": None,
+        "warnings": warnings,
+    }
+
+
+def _apply_leg_selection(leg: dict[str, object], selection: dict[str, object]) -> dict[str, object]:
+    selected_strike = _finite_float(selection.get("selected_listed_strike"))
+    selected_expiration = _parse_option_expiration(selection.get("selected_expiration"))
+    updated = dict(leg)
+    target = _finite_float(updated.get("target_strike") if updated.get("target_strike") is not None else updated.get("strike"))
+    if target is not None:
+        updated["target_strike"] = target
+    if selected_strike is not None:
+        updated["strike"] = selected_strike
+        updated["selected_listed_strike"] = selected_strike
+    if selected_expiration is not None:
+        updated["expiration"] = selected_expiration.isoformat()
+    updated["option_symbol"] = selection.get("provider_contract_symbol")
+    updated["strike_snap_distance"] = selection.get("strike_snap_distance")
+    updated["contract_selection_method"] = selection.get("contract_selection_method")
+    updated["contract_selection"] = selection
+    return updated
+
+
+def _block_option_structure(
+    option_structure: dict[str, object],
+    *,
+    reason: str,
+    warnings: list[str] | None = None,
+    status: str = "invalid",
+) -> dict[str, object]:
+    warning_values = sorted({str(item) for item in (warnings or []) if str(item).strip()} | {reason})
+    option_structure["contract_resolution_status"] = status
+    option_structure["structure_validation_status"] = "invalid"
+    option_structure["structure_validation_summary"] = reason
+    option_structure["contract_resolution_summary"] = reason
+    option_structure["paper_persistence_allowed"] = False
+    option_structure["contract_resolution_warnings"] = warning_values
+    option_structure["structure_validation_warnings"] = warning_values
+    option_structure["max_profit"] = None
+    option_structure["max_loss"] = None
+    option_structure["breakeven_low"] = None
+    option_structure["breakeven_high"] = None
+    return option_structure
+
+
+def _select_iron_condor_contracts_from_rows(
+    *,
+    symbol: str,
+    expiration: date,
+    legs: list[dict[str, object]],
+    rows: list[dict[str, object]],
+    method: str,
+    warnings: list[str],
+) -> tuple[dict[str, dict[str, object]] | None, str | None]:
+    role_legs: dict[str, dict[str, object]] = {}
+    for leg in legs:
+        role = _iron_condor_role(leg)
+        if role is None or role in role_legs:
+            return None, "Cannot build iron condor: exactly one long put, short put, short call, and long call are required."
+        role_legs[role] = leg
+    required_roles = {"lower_long_put", "short_put", "short_call", "higher_long_call"}
+    if set(role_legs) != required_roles:
+        return None, "Cannot build iron condor: exactly two puts and two calls are required."
+
+    targets: dict[str, float] = {}
+    for role, leg in role_legs.items():
+        target = _finite_float(leg.get("target_strike") if leg.get("target_strike") is not None else leg.get("strike"))
+        if target is None:
+            return None, "Cannot build iron condor: every leg needs a target strike."
+        targets[role] = target
+
+    candidates = [candidate for row in rows if (candidate := _listed_contract_from_row(row)) is not None]
+    if not candidates:
+        return None, "Cannot build iron condor: provider returned no listed contracts."
+
+    exact_candidates = [candidate for candidate in candidates if candidate.expiration == expiration]
+    if exact_candidates:
+        candidates = exact_candidates
+        selection_method = method
+    else:
+        expirations = sorted({candidate.expiration for candidate in candidates}, key=lambda item: abs((item - expiration).days))
+        selected_expiration = next((item for item in expirations if any(c.option_type == "call" and c.expiration == item for c in candidates) and any(c.option_type == "put" and c.expiration == item for c in candidates)), None)
+        if selected_expiration is None:
+            selected_expiration = expirations[0]
+        candidates = [candidate for candidate in candidates if candidate.expiration == selected_expiration]
+        selection_method = "provider_reference_nearest_expiration"
+        warnings.append("Exact expiration was unavailable; selected closest listed expiration from provider reference data.")
+
+    puts = sorted([candidate for candidate in candidates if candidate.option_type == "put"], key=lambda item: item.strike)
+    calls = sorted([candidate for candidate in candidates if candidate.option_type == "call"], key=lambda item: item.strike)
+    if not puts and calls:
+        return None, "Cannot build iron condor: provider returned incomplete chain; puts missing."
+    if not calls and puts:
+        return None, "Cannot build iron condor: provider returned incomplete chain; calls missing."
+    if not puts and not calls:
+        return None, "Cannot build iron condor: provider returned no listed call or put contracts."
+
+    long_put_pool = _top_contracts_near(puts, targets["lower_long_put"])
+    short_put_pool = _top_contracts_near(puts, targets["short_put"])
+    short_call_pool = _top_contracts_near(calls, targets["short_call"])
+    long_call_pool = _top_contracts_near(calls, targets["higher_long_call"])
+    best: tuple[float, _ListedOptionContract, _ListedOptionContract, _ListedOptionContract, _ListedOptionContract] | None = None
+    for long_put in long_put_pool:
+        for short_put in short_put_pool:
+            if not long_put.strike < short_put.strike:
+                continue
+            for short_call in short_call_pool:
+                if not short_put.strike < short_call.strike:
+                    continue
+                for long_call in long_call_pool:
+                    if not short_call.strike < long_call.strike:
+                        continue
+                    score = (
+                        abs(long_put.strike - targets["lower_long_put"])
+                        + abs(short_put.strike - targets["short_put"])
+                        + abs(short_call.strike - targets["short_call"])
+                        + abs(long_call.strike - targets["higher_long_call"])
+                        + abs((short_put.strike - long_put.strike) - (long_call.strike - short_call.strike)) * 0.01
+                        - (long_put.liquidity + short_put.liquidity + short_call.liquidity + long_call.liquidity) * 0.000001
+                    )
+                    if best is None or score < best[0]:
+                        best = (score, long_put, short_put, short_call, long_call)
+    if best is None:
+        return None, "Cannot build iron condor: no valid four-leg listed contract combination matched ordered strikes."
+
+    _score, long_put, short_put, short_call, long_call = best
+    asset_type = option_underlying_asset_type(symbol)
+    selections = {
+        "lower_long_put": _contract_selection_payload(
+            symbol=symbol,
+            asset_type=asset_type,
+            target_expiration=expiration,
+            option_type="put",
+            role="lower_long_put",
+            target_strike=targets["lower_long_put"],
+            contract=long_put,
+            method=selection_method,
+            warnings=warnings,
+        ),
+        "short_put": _contract_selection_payload(
+            symbol=symbol,
+            asset_type=asset_type,
+            target_expiration=expiration,
+            option_type="put",
+            role="short_put",
+            target_strike=targets["short_put"],
+            contract=short_put,
+            method=selection_method,
+            warnings=warnings,
+        ),
+        "short_call": _contract_selection_payload(
+            symbol=symbol,
+            asset_type=asset_type,
+            target_expiration=expiration,
+            option_type="call",
+            role="short_call",
+            target_strike=targets["short_call"],
+            contract=short_call,
+            method=selection_method,
+            warnings=warnings,
+        ),
+        "higher_long_call": _contract_selection_payload(
+            symbol=symbol,
+            asset_type=asset_type,
+            target_expiration=expiration,
+            option_type="call",
+            role="higher_long_call",
+            target_strike=targets["higher_long_call"],
+            contract=long_call,
+            method=selection_method,
+            warnings=warnings,
+        ),
+    }
+    return selections, None
+
+
+def _resolve_iron_condor_contracts_from_provider(
+    symbol: str,
+    option_structure: dict[str, object],
+    *,
+    expiration: date,
+    chain_preview: object = None,
+) -> dict[str, object] | None:
+    legs = [dict(leg) for leg in option_structure.get("legs", []) if isinstance(leg, dict)]
+    if len(legs) != 4:
+        return _block_option_structure(
+            option_structure,
+            reason="Cannot build iron condor: four legs are required.",
+        )
+
+    exact_rows, exact_error = _fetch_option_contract_rows(symbol=symbol, expiration=expiration)
+    all_rows = exact_rows
+    selection_method = "provider_reference_exact_expiration"
+    warnings: list[str] = []
+    if exact_rows is None:
+        incomplete_reason = _chain_side_missing_reason(chain_preview)
+        if incomplete_reason:
+            return _block_option_structure(option_structure, reason=incomplete_reason, status="unresolved")
+        return None
+    if not exact_rows:
+        all_rows, all_error = _fetch_option_contract_rows(symbol=symbol, expiration=None)
+        if all_rows is None:
+            reason = exact_error or all_error or "Cannot build iron condor: provider reference data unavailable."
+            return _block_option_structure(option_structure, reason=reason, status="unresolved")
+        selection_method = "provider_reference_nearest_expiration"
+        warnings.append("Exact expiration was unavailable; selected closest listed expiration from provider reference data.")
+
+    selections, reason = _select_iron_condor_contracts_from_rows(
+        symbol=symbol,
+        expiration=expiration,
+        legs=legs,
+        rows=all_rows or [],
+        method=selection_method,
+        warnings=warnings,
+    )
+    if selections is None:
+        return _block_option_structure(
+            option_structure,
+            reason=reason or "Cannot build iron condor: listed contract selection failed.",
+            status="unresolved",
+        )
+
+    updated_legs: list[dict[str, object]] = []
+    for leg in legs:
+        role = _iron_condor_role(leg)
+        if role is None or role not in selections:
+            return _block_option_structure(
+                option_structure,
+                reason="Cannot build iron condor: every leg must map to a listed provider contract.",
+                status="unresolved",
+            )
+        updated_legs.append(_apply_leg_selection(leg, selections[role]))
+
+    expirations = {str(leg.get("expiration")) for leg in updated_legs if leg.get("expiration")}
+    option_structure["legs"] = updated_legs
+    if len(expirations) == 1:
+        option_structure["expiration"] = next(iter(expirations))
+    option_structure["contract_resolution_status"] = "resolved"
+    option_structure["contract_resolution_summary"] = "Selected listed contracts from provider chain."
+    option_structure["contract_resolution_warnings"] = sorted({item for item in warnings if item})
+    option_structure["paper_persistence_allowed"] = True
+    return option_structure
+
+
+def _research_payoff_legs(option_structure: dict[str, object]) -> tuple[list[OptionLegInput] | None, str | None]:
+    structure_type = str(option_structure.get("type") or "").strip().lower()
+    raw_legs = [leg for leg in option_structure.get("legs", []) if isinstance(leg, dict)]
+    if not raw_legs:
+        return None, "option_structure_legs_required"
+
+    net_credit = _finite_float(option_structure.get("net_credit"))
+    net_debit = _finite_float(option_structure.get("net_debit"))
+    short_count = sum(1 for leg in raw_legs if str(leg.get("action") or "").strip().lower() == "sell")
+    payoff_legs: list[OptionLegInput] = []
+    for leg in raw_legs:
+        action = str(leg.get("action") or "").strip().lower()
+        right = str(leg.get("right") or "").strip().lower()
+        strike = _finite_float(leg.get("strike"))
+        if action not in {"buy", "sell"} or right not in {"call", "put"} or strike is None:
+            return None, "option_structure_legs_incomplete"
+        premium = _finite_float(leg.get("premium"))
+        if premium is None:
+            if structure_type == "iron_condor":
+                if net_credit is None or net_credit <= 0 or short_count <= 0:
+                    return None, "iron_condor_requires_positive_net_credit"
+                premium = round(float(net_credit) / short_count, 4) if action == "sell" else 0.0
+            elif structure_type in {"bull_call_debit_spread", "bear_put_debit_spread", "vertical_debit_spread"}:
+                if net_debit is None or net_debit <= 0:
+                    return None, "vertical_debit_requires_positive_net_debit"
+                premium = float(net_debit) if action == "buy" else 0.0
+            else:
+                return None, "option_structure_premium_required"
+        payoff_legs.append(
+            OptionLegInput(
+                action=action,  # type: ignore[arg-type]
+                right=right,  # type: ignore[arg-type]
+                strike=float(strike),
+                premium=float(premium),
+                quantity=max(1, _finite_int(leg.get("quantity")) or 1),
+                multiplier=max(1, _finite_int(leg.get("multiplier")) or 100),
+                label=str(leg.get("label") or "") or None,
+            )
+        )
+    return payoff_legs, None
+
+
+def _validate_research_option_structure(option_structure: dict[str, object], *, as_of: datetime) -> dict[str, object]:
+    if option_structure.get("paper_persistence_allowed") is False or option_structure.get("contract_resolution_status") in {"unresolved", "invalid"}:
+        return option_structure
+    structure_type = str(option_structure.get("type") or "").strip().lower()
+    normalized_type = "vertical_debit_spread" if structure_type in {"bull_call_debit_spread", "bear_put_debit_spread"} else structure_type
+    if normalized_type not in {"long_call", "long_put", "vertical_debit_spread", "iron_condor"}:
+        return option_structure
+
+    payoff_legs, leg_error = _research_payoff_legs(option_structure)
+    if payoff_legs is None:
+        return _block_option_structure(
+            option_structure,
+            reason=leg_error or "option_structure_invalid",
+        )
+    result = analyze_option_structure(payoff_legs, structure_type=normalized_type)  # type: ignore[arg-type]
+    if result.is_blocked:
+        return _block_option_structure(
+            option_structure,
+            reason=str(result.blocked_reason or "invalid_option_structure"),
+        )
+
+    if normalized_type == "iron_condor":
+        if result.net_credit is None or result.net_credit <= 0:
+            return _block_option_structure(option_structure, reason="iron_condor_requires_positive_net_credit")
+        if result.max_loss is None or result.max_loss <= 0:
+            return _block_option_structure(option_structure, reason="iron_condor_requires_positive_max_loss")
+        if result.max_profit is None or result.max_profit < 0:
+            return _block_option_structure(option_structure, reason="iron_condor_requires_non_negative_max_profit")
+        if len(result.breakevens) != 2 or not result.breakevens[0] < result.breakevens[1]:
+            return _block_option_structure(option_structure, reason="iron_condor_requires_ordered_breakevens")
+
+    option_structure["structure_validation_status"] = "valid"
+    option_structure["structure_validation_summary"] = "Listed-contract structure validated."
+    option_structure["max_profit"] = _round_money(result.max_profit)
+    option_structure["max_loss"] = _round_money(result.max_loss)
+    if result.net_credit is not None:
+        option_structure["net_credit"] = _round_money(result.net_credit)
+    if result.net_debit is not None:
+        option_structure["net_debit"] = _round_money(result.net_debit)
+    if len(result.breakevens) >= 1:
+        if normalized_type == "iron_condor":
+            option_structure["breakeven_low"] = _round_money(result.breakevens[0])
+            option_structure["breakeven_high"] = _round_money(result.breakevens[1])
+        elif "put" in structure_type:
+            option_structure["breakeven_low"] = _round_money(result.breakevens[0])
+        else:
+            option_structure["breakeven_high"] = _round_money(result.breakevens[0])
+    if option_structure.get("contract_resolution_status") == "resolved":
+        option_structure["paper_persistence_allowed"] = True
+    if option_structure.get("expiration"):
+        option_structure["dte"] = calendar_days_to_expiration(str(option_structure["expiration"]), as_of=as_of)
+        option_structure["dte_as_of"] = as_of.isoformat()
+    return option_structure
+
+
+def _option_structure_blocks_ready(option_structure: dict[str, object]) -> bool:
+    return (
+        option_structure.get("paper_persistence_allowed") is False
+        or option_structure.get("contract_resolution_status") in {"unresolved", "invalid"}
+        or option_structure.get("structure_validation_status") == "invalid"
+    )
+
+
+def _blocked_options_expected_range(*, option_structure: dict[str, object], as_of: datetime) -> ExpectedRange:
+    return ExpectedRange(
+        status="blocked",
+        reason=str(option_structure.get("structure_validation_summary") or option_structure.get("contract_resolution_summary") or "contract_selection_incomplete"),
+        horizon_value=_finite_int(option_structure.get("dte")) or 0,
+        horizon_unit="calendar_days",
+        reference_price_type="underlying_last",
+        snapshot_timestamp=as_of,
+        provenance_notes="Expected Range visualization is blocked until the options structure resolves to a valid listed-contract setup.",
+    )
+
+
 def _refresh_research_option_payoff(option_structure: dict[str, object], *, as_of: datetime) -> None:
     structure_type = str(option_structure.get("type") or "")
     legs = [leg for leg in option_structure.get("legs", []) if isinstance(leg, dict)]
@@ -2400,16 +2898,31 @@ def _refresh_research_option_payoff(option_structure: dict[str, object], *, as_o
             option_structure["breakeven_low"] = _round_money(strikes[-1] - debit)
 
 
-def _apply_research_contract_resolution(symbol: str, option_structure: dict[str, object], *, as_of: datetime) -> dict[str, object]:
+def _apply_research_contract_resolution(
+    symbol: str,
+    option_structure: dict[str, object],
+    *,
+    as_of: datetime,
+    chain_preview: object = None,
+) -> dict[str, object]:
     required = _option_contract_resolution_required()
     expiration_raw = option_structure.get("expiration")
-    try:
-        expiration = datetime.fromisoformat(str(expiration_raw)).date()
-    except (TypeError, ValueError):
+    expiration = _parse_option_expiration(expiration_raw)
+    if expiration is None:
         return option_structure
     legs = option_structure.get("legs")
     if not isinstance(legs, list) or not legs:
         return option_structure
+
+    if str(option_structure.get("type") or "").strip().lower() == "iron_condor" and required:
+        resolved_structure = _resolve_iron_condor_contracts_from_provider(
+            symbol,
+            option_structure,
+            expiration=expiration,
+            chain_preview=chain_preview,
+        )
+        if resolved_structure is not None:
+            return _validate_research_option_structure(resolved_structure, as_of=as_of)
 
     resolved_count = 0
     warnings: list[str] = []
@@ -2468,12 +2981,73 @@ def _apply_research_contract_resolution(symbol: str, option_structure: dict[str,
         option_structure["contract_resolution_summary"] = "Listed contract resolution is unavailable in the current local provider mode."
         option_structure["paper_persistence_allowed"] = True
         option_structure["contract_resolution_warnings"] = sorted(set(warnings))
-    return option_structure
+    return _validate_research_option_structure(option_structure, as_of=as_of)
 
 
 def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) -> OptionPaperStructureInput:
     if not _option_contract_resolution_required():
         return req
+    if req.structure_type == "iron_condor":
+        option_structure: dict[str, object] = {
+            "type": "iron_condor",
+            "expiration": req.expiration.isoformat() if req.expiration else None,
+            "legs": [
+                {
+                    "action": leg.action,
+                    "right": leg.right,
+                    "strike": leg.target_strike if leg.target_strike is not None else leg.strike,
+                    "premium": leg.premium,
+                    "quantity": leg.quantity,
+                    "multiplier": leg.multiplier,
+                    "label": leg.label,
+                    "target_strike": leg.target_strike,
+                    "option_symbol": leg.option_symbol,
+                    "contract_selection": dict(leg.contract_selection or {}),
+                }
+                for leg in req.legs
+            ],
+            "net_credit": req.net_credit,
+            "net_debit": req.net_debit,
+        }
+        expiration = req.expiration
+        if expiration is None:
+            expirations = {leg.expiration for leg in req.legs}
+            if len(expirations) == 1:
+                expiration = next(iter(expirations))
+        if expiration is None:
+            raise OptionPaperContractError("structure_expiration_required")
+        resolved_structure = _resolve_iron_condor_contracts_from_provider(
+            req.underlying_symbol,
+            option_structure,
+            expiration=expiration,
+        )
+        if resolved_structure is None or _option_structure_blocks_ready(resolved_structure):
+            raise OptionPaperContractError("listed_option_contract_resolution_required")
+        updated_legs = []
+        for original, resolved_leg in zip(req.legs, resolved_structure.get("legs", []), strict=False):
+            if not isinstance(resolved_leg, dict):
+                raise OptionPaperContractError("listed_option_contract_resolution_required")
+            selected_strike = _finite_float(resolved_leg.get("strike"))
+            selected_expiration = _parse_option_expiration(resolved_leg.get("expiration"))
+            option_symbol = resolved_leg.get("option_symbol")
+            if selected_strike is None or selected_expiration is None or not option_symbol:
+                raise OptionPaperContractError("listed_option_contract_resolution_required")
+            target_strike = _finite_float(resolved_leg.get("target_strike"))
+            updated_legs.append(
+                original.model_copy(
+                    update={
+                        "strike": selected_strike,
+                        "expiration": selected_expiration,
+                        "option_symbol": str(option_symbol),
+                        "target_strike": target_strike,
+                        "contract_selection": dict(resolved_leg.get("contract_selection") or {}),
+                    }
+                )
+            )
+        expirations = {leg.expiration for leg in updated_legs}
+        resolved_expiration = next(iter(expirations)) if len(expirations) == 1 else expiration
+        return req.model_copy(update={"legs": updated_legs, "expiration": resolved_expiration})
+
     resolved_legs = []
     failures: list[str] = []
     for leg in req.legs:
@@ -3792,13 +4366,22 @@ def analysis_setup(
             "vega_context": -0.11,
             "event_blockers": ["Avoid binary events inside 7 DTE window", "Review earnings/macro event calendar"],
         }
-        option_structure = _apply_research_contract_resolution(symbol, option_structure, as_of=analysis_as_of)
-        payload["option_structure"] = option_structure
-        payload["expected_range"] = _build_options_expected_range(
-            latest_close=latest.close,
-            iv_snapshot=iv_snapshot,
-            dte=option_structure["dte"],
+        option_structure = _apply_research_contract_resolution(
+            symbol,
+            option_structure,
             as_of=analysis_as_of,
+            chain_preview=payload.get("options_chain_preview"),
+        )
+        payload["option_structure"] = option_structure
+        payload["expected_range"] = (
+            _blocked_options_expected_range(option_structure=option_structure, as_of=analysis_as_of)
+            if _option_structure_blocks_ready(option_structure)
+            else _build_options_expected_range(
+                latest_close=latest.close,
+                iv_snapshot=iv_snapshot,
+                dte=option_structure["dte"],
+                as_of=analysis_as_of,
+            )
         ).model_dump(mode="json")
     elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bull_call_debit_spread":
         iv_snapshot = 0.25
@@ -3823,13 +4406,22 @@ def analysis_setup(
             "dte_as_of": expiration_context["as_of"],
             "iv_snapshot": iv_snapshot,
         }
-        option_structure = _apply_research_contract_resolution(symbol, option_structure, as_of=analysis_as_of)
-        payload["option_structure"] = option_structure
-        payload["expected_range"] = _build_options_expected_range(
-            latest_close=latest.close,
-            iv_snapshot=iv_snapshot,
-            dte=option_structure["dte"],
+        option_structure = _apply_research_contract_resolution(
+            symbol,
+            option_structure,
             as_of=analysis_as_of,
+            chain_preview=payload.get("options_chain_preview"),
+        )
+        payload["option_structure"] = option_structure
+        payload["expected_range"] = (
+            _blocked_options_expected_range(option_structure=option_structure, as_of=analysis_as_of)
+            if _option_structure_blocks_ready(option_structure)
+            else _build_options_expected_range(
+                latest_close=latest.close,
+                iv_snapshot=iv_snapshot,
+                dte=option_structure["dte"],
+                as_of=analysis_as_of,
+            )
         ).model_dump(mode="json")
     elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bear_put_debit_spread":
         iv_snapshot = 0.25
@@ -3854,13 +4446,22 @@ def analysis_setup(
             "dte_as_of": expiration_context["as_of"],
             "iv_snapshot": iv_snapshot,
         }
-        option_structure = _apply_research_contract_resolution(symbol, option_structure, as_of=analysis_as_of)
-        payload["option_structure"] = option_structure
-        payload["expected_range"] = _build_options_expected_range(
-            latest_close=latest.close,
-            iv_snapshot=iv_snapshot,
-            dte=option_structure["dte"],
+        option_structure = _apply_research_contract_resolution(
+            symbol,
+            option_structure,
             as_of=analysis_as_of,
+            chain_preview=payload.get("options_chain_preview"),
+        )
+        payload["option_structure"] = option_structure
+        payload["expected_range"] = (
+            _blocked_options_expected_range(option_structure=option_structure, as_of=analysis_as_of)
+            if _option_structure_blocks_ready(option_structure)
+            else _build_options_expected_range(
+                latest_close=latest.close,
+                iv_snapshot=iv_snapshot,
+                dte=option_structure["dte"],
+                as_of=analysis_as_of,
+            )
         ).model_dump(mode="json")
     elif market_mode == MarketMode.OPTIONS:
         # Covered Call requires inventory modeling — expected range omitted pending that data

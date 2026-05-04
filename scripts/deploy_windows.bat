@@ -24,6 +24,7 @@ set "LOG_DIR=%DST%\logs"
 set "DATA_DIR=%DST%\data"
 set "STORAGE_DIR=%DST%\storage"
 set "UPLOAD_DIR=%DST%\uploads"
+set "TMP_DIR=%DST%\.tmp"
 set "WEB_DIR=%DST%\apps\web"
 set "BACKEND_LOG=%LOG_DIR%\backend.log"
 set "FRONTEND_LOG=%LOG_DIR%\frontend.log"
@@ -71,6 +72,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>&1
 if not exist "%STORAGE_DIR%" mkdir "%STORAGE_DIR%" >nul 2>&1
 if not exist "%UPLOAD_DIR%" mkdir "%UPLOAD_DIR%" >nul 2>&1
+if not exist "%TMP_DIR%" mkdir "%TMP_DIR%" >nul 2>&1
 
 call :CheckNode
 if errorlevel 1 (
@@ -168,7 +170,7 @@ if not exist "%DST%\macmarket_trader.db" (
 
 if "%RUN_TESTS%"=="1" (
   echo [INFO] Running backend tests...
-  pytest -q
+  pytest -q --basetemp "%TMP_DIR%\pytest-deploy"
   if errorlevel 1 (
     echo [ERROR] Backend tests failed.
     set "RC=1"

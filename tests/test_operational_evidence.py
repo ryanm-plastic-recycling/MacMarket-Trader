@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -17,15 +19,29 @@ def _load_script(name: str):
     return module
 
 
+def _deployed_mode_for_current_root(module) -> bool:
+    return not module.is_git_repo(REPO_ROOT)
+
+
+def _write_required_compliance_docs(module, source: Path) -> None:
+    docs = source / "docs" / "compliance"
+    docs.mkdir(parents=True)
+    for filename in module.COMPLIANCE_REQUIRED_DOCS:
+        (docs / filename).write_text(f"# {filename}\n", encoding="utf-8")
+    (source / "apps" / "web").mkdir(parents=True)
+
+
 def test_release_gate_produces_json_markdown_and_manifest_in_dry_run(tmp_path: Path) -> None:
     module = _load_script("run_release_gate.py")
     evidence_dir = tmp_path / "evidence"
+    deployed = _deployed_mode_for_current_root(module)
 
     result = module.run_release_gate(
         repo_root=REPO_ROOT,
         evidence_dir=evidence_dir,
         dry_run=True,
         mock_commands=True,
+        deployed=deployed,
     )
 
     assert result["status"] == "passed"
@@ -44,6 +60,10 @@ def test_release_gate_produces_json_markdown_and_manifest_in_dry_run(tmp_path: P
         "clean_release_archive_dry_run",
         "release_evidence_generation",
     }.issubset(step_names)
+    if deployed:
+        git_step = next(step for step in result["steps"] if step["name"] == "git_diff_check")
+        assert git_step["status"] == "skipped"
+        assert git_step["details"]["skipped_reason"] == "deployed_non_git_folder"
 
     manifest = json.loads(Path(result["evidence_manifest"]).read_text(encoding="utf-8"))
     assert "release_evidence" in manifest["evidence"]
@@ -170,11 +190,7 @@ def test_release_gate_deployed_non_git_mode_skips_git_diff_check(tmp_path: Path)
     source = tmp_path / "deployed"
     source.mkdir()
     (source / "README.md").write_text("# Deployed copy\n", encoding="utf-8")
-    docs = source / "docs" / "compliance"
-    docs.mkdir(parents=True)
-    for filename in module.COMPLIANCE_REQUIRED_DOCS:
-        (docs / filename).write_text(f"# {filename}\n", encoding="utf-8")
-    (source / "apps" / "web").mkdir(parents=True)
+    _write_required_compliance_docs(module, source)
 
     result = module.run_release_gate(
         repo_root=source,
@@ -194,6 +210,34 @@ def test_release_gate_deployed_non_git_mode_skips_git_diff_check(tmp_path: Path)
     pytest_step = next(step for step in result["steps"] if step["name"] == "targeted_compliance_pytest")
     assert pytest_step["status"] == "skipped"
     assert pytest_step["details"]["skipped_reason"] == "deployed_non_git_folder"
+
+
+def test_release_gate_git_repo_mode_runs_git_diff_check(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        import pytest
+
+        pytest.skip("git executable unavailable")
+
+    module = _load_script("run_release_gate.py")
+    source = tmp_path / "source-repo"
+    source.mkdir()
+    subprocess.run(["git", "init"], cwd=source, check=True, capture_output=True, text=True)
+    (source / "README.md").write_text("# Source repo\n", encoding="utf-8")
+    _write_required_compliance_docs(module, source)
+
+    result = module.run_release_gate(
+        repo_root=source,
+        evidence_dir=tmp_path / "evidence",
+        dry_run=True,
+        quick=True,
+        mock_commands=False,
+    )
+
+    assert result["git_available"] is True
+    git_step = next(step for step in result["steps"] if step["name"] == "git_diff_check")
+    assert git_step["status"] == "passed"
+    assert git_step["details"]["command"] == ["git", "diff", "--check"]
+    assert git_step["details"]["returncode"] == 0
 
 
 def test_release_gate_non_git_without_deployed_fails_with_clear_message(tmp_path: Path) -> None:
@@ -221,6 +265,7 @@ def test_release_gate_reports_npm_audit_summary_without_auto_fixing(tmp_path: Pa
         evidence_dir=tmp_path / "evidence",
         dry_run=True,
         mock_commands=True,
+        deployed=_deployed_mode_for_current_root(module),
     )
 
     audit_step = next(step for step in result["steps"] if step["name"] == "npm_audit_report_only")
@@ -233,6 +278,7 @@ def test_release_gate_reports_npm_audit_summary_without_auto_fixing(tmp_path: Pa
 
 def test_release_gate_progress_output_and_quick_mode(tmp_path: Path, capsys) -> None:
     module = _load_script("run_release_gate.py")
+    deployed = _deployed_mode_for_current_root(module)
     result = module.run_release_gate(
         repo_root=REPO_ROOT,
         evidence_dir=tmp_path / "evidence",
@@ -240,6 +286,7 @@ def test_release_gate_progress_output_and_quick_mode(tmp_path: Path, capsys) -> 
         quick=True,
         mock_commands=True,
         progress=True,
+        deployed=deployed,
     )
 
     output = capsys.readouterr().out
@@ -253,8 +300,14 @@ def test_release_gate_progress_output_and_quick_mode(tmp_path: Path, capsys) -> 
     assert "backend_pytest" not in step_names
     assert "frontend_npm_test" not in step_names
     pytest_step = next(step for step in result["steps"] if step["name"] == "targeted_compliance_pytest")
-    assert module.PYTEST_BASETEMP in pytest_step["details"]["command"]
+    assert any(
+        str(item).startswith(module.PYTEST_BASETEMP_PREFIX)
+        for item in pytest_step["details"]["command"]
+    )
     assert ".pytest-tmp" not in pytest_step["details"]["command"]
+    if deployed:
+        assert pytest_step["status"] == "skipped"
+        assert pytest_step["details"]["skipped_reason"] == "deployed_non_git_folder"
     audit_step = next(step for step in result["steps"] if step["name"] == "npm_audit_report_only")
     assert audit_step["status"] == "skipped"
     assert audit_step["details"]["skipped_reason"] == "quick_mode"

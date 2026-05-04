@@ -97,6 +97,23 @@ def _vertical_debit_payload() -> dict[str, object]:
     }
 
 
+def _iron_condor_payload() -> dict[str, object]:
+    expiration = date(2026, 5, 16).isoformat()
+    return {
+        "market_mode": "options",
+        "structure_type": "iron_condor",
+        "underlying_symbol": "qqq",
+        "expiration": expiration,
+        "legs": [
+            {"action": "buy", "right": "put", "strike": 470.0, "expiration": expiration, "premium": 0.5, "label": "lower long put"},
+            {"action": "sell", "right": "put", "strike": 480.0, "expiration": expiration, "premium": 2.0, "label": "short put"},
+            {"action": "sell", "right": "call", "strike": 520.0, "expiration": expiration, "premium": 2.0, "label": "short call"},
+            {"action": "buy", "right": "call", "strike": 530.0, "expiration": expiration, "premium": 0.5, "label": "higher long call"},
+        ],
+        "notes": "paper iron condor open test",
+    }
+
+
 def test_open_option_paper_structure_creates_order_and_position_only() -> None:
     user_id = _approve_default_user(commission_per_contract=0.75)
     before = _counts()
@@ -238,6 +255,34 @@ def test_open_option_paper_structure_blocks_unresolvable_contracts_when_provider
         "/user/options/paper-structures/open",
         headers=_USER_AUTH,
         json=_vertical_debit_payload(),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "listed_option_contract_resolution_required"
+    assert _counts() == before
+
+
+def test_open_option_paper_structure_rejects_iron_condor_when_listed_chain_is_incomplete(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    _approve_default_user()
+    before = _counts()
+
+    class CallsOnlyOptionsService:
+        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, limit: int = 1000):
+            del underlying_symbol, expiration, option_type, limit
+            return [
+                {"ticker": "O:QQQ260516C00520000", "contract_type": "call", "strike_price": 520.0, "expiration_date": "2026-05-16"},
+                {"ticker": "O:QQQ260516C00530000", "contract_type": "call", "strike_price": 530.0, "expiration_date": "2026-05-16"},
+            ]
+
+    monkeypatch.setattr(admin_routes, "market_data_service", CallsOnlyOptionsService())
+
+    response = client.post(
+        "/user/options/paper-structures/open",
+        headers=_USER_AUTH,
+        json=_iron_condor_payload(),
     )
 
     assert response.status_code == 409, response.text

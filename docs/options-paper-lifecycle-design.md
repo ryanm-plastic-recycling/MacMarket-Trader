@@ -81,6 +81,20 @@ Provider-backed option mark support:
   leg carries the real provider contract symbol, listed strike, selected
   expiration, original `target_strike`, snap distance, and contract-selection
   method.
+- iron condor contract selection is structure-level, not independent per-leg
+  ticker construction. The selected listed contracts must satisfy
+  `lower_long_put < short_put < short_call < higher_long_call`, use two puts
+  and two calls, keep all four strikes distinct, share one expiration, and map
+  every leg to a provider-listed ticker.
+- if provider reference data returns only calls or only puts, MacMarket blocks
+  the research setup with an incomplete-chain warning and does not show the
+  structure as ready. It does not reuse one fallback strike for all legs or
+  fabricate missing option tickers.
+- payoff invariants are checked after contract selection. Defined-risk credit
+  condors require positive net credit, non-negative max profit, positive max
+  loss, `width - credit > 0`, and ordered breakevens. Invariant failures clear
+  max-profit/max-loss/breakeven display values and block replay/paper
+  lifecycle actions.
 - if listed contracts cannot be resolved while provider-backed options data is
   configured, the paper-open path blocks persistence instead of saving
   synthetic/unmarkable option symbols. Local fallback/demo research can still

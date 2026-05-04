@@ -180,6 +180,20 @@ def test_iron_condor_rejects_invalid_strike_ordering() -> None:
     assert blocked.blocked_reason == "iron_condor_requires_ordered_strikes"
 
 
+def test_iron_condor_requires_positive_max_loss() -> None:
+    blocked = analyze_iron_condor(
+        [
+            OptionLegInput(action="buy", right="put", strike=90, premium=0),
+            OptionLegInput(action="sell", right="put", strike=95, premium=2.5),
+            OptionLegInput(action="sell", right="call", strike=105, premium=2.5),
+            OptionLegInput(action="buy", right="call", strike=110, premium=0),
+        ]
+    )
+
+    assert blocked.is_blocked
+    assert blocked.blocked_reason == "iron_condor_credit_must_be_less_than_widest_wing"
+
+
 def test_invalid_inputs_block_cleanly() -> None:
     blocked = analyze_option_structure(
         [
