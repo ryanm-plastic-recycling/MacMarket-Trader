@@ -81,6 +81,16 @@ Provider-backed option mark support:
   leg carries the real provider contract symbol, listed strike, selected
   expiration, original `target_strike`, snap distance, and contract-selection
   method.
+- provider reference-contract lookup now requests contracts in the target
+  strike window and follows pagination so a low-strike first page cannot be
+  treated as a complete chain for a near-the-money target.
+- selected strikes must pass snap-distance guardrails before the setup can be
+  treated as ready. Defaults are controlled by
+  `OPTIONS_MAX_STRIKE_SNAP_ABS=5` and
+  `OPTIONS_MAX_STRIKE_SNAP_PCT=0.025`, with the effective allowance set to the
+  smaller of the absolute dollar cap and percentage-of-reference-price cap.
+  If any leg exceeds the allowance, the structure is blocked and the UI shows
+  the target strike, selected strike, snap distance, and allowed snap.
 - iron condor contract selection is structure-level, not independent per-leg
   ticker construction. The selected listed contracts must satisfy
   `lower_long_put < short_put < short_call < higher_long_call`, use two puts
@@ -111,6 +121,15 @@ Provider-backed option mark support:
   3. previous/day close only as an explicitly stale
      `prior_close_fallback`
   4. `unavailable`
+- provider-resolved research setups keep theoretical net credit/debit as
+  context, but fresh `quote_mid` or `last_trade` leg marks are required before
+  a listed-contract setup can be persisted as a paper option position.
+  `prior_close_fallback` is stale context only and is not silently used as an
+  opening paper price.
+- max profit, max loss, and breakevens for provider-resolved structures are
+  recomputed from the selected listed strikes and selected opening price
+  source. If provider marks imply a blocked or non-positive-credit iron
+  condor, readiness and paper persistence are disabled.
 - stale, zero, null, or missing values are not used as fresh marks
 - if any required leg mark is missing or stale, structure-level current mark
   and unrealized P&L remain unavailable and the review stays
@@ -131,6 +150,22 @@ Provider-backed option mark support:
   and `deliverable_type=cash_index`, and uses cash-settlement/no-share-delivery
   wording. This remains paper-only and does not model live exercise,
   assignment, broker routing, rolls, or adjustments.
+- Provider Health exposes a separate `index_options_data` SPX readiness probe
+  next to the broader `options_data` probe. A not-entitled response is treated
+  as "index data entitlement required"; SPX research stays blocked or
+  unavailable and MacMarket does not silently substitute SPY.
+- The SPX readiness probe is diagnostic. It prefers discovered listed
+  contracts 7-45 calendar days out, ranks candidates near the underlying index
+  value, avoids same-day/0DTE samples when later contracts exist, and records a
+  sanitized candidate-attempt list with DTE, strike, option type, mark result,
+  stale flag, bid/ask presence, last-trade presence, prior-close presence, and
+  underlying-index-value availability.
+- Probe outcomes distinguish fresh-mark `ok`, stale prior-close-only `warn`,
+  discovered-but-no-fresh-mark `degraded`, `failed_not_entitled`, and
+  `failed_underlying_index_data`. A `degraded` SPX probe means contracts were
+  discovered but sampled candidates lacked a fresh usable mark; it is not, by
+  itself, proof that Indices Starter is required. Provider not-entitled errors
+  are sanitized and surfaced separately.
 
 DTE policy:
 

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from macmarket_trader.api.main import app
 from macmarket_trader.api.routes import admin as admin_routes
 from macmarket_trader.config import settings
-from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider, MarketProviderHealth, OptionContractResolution
+from macmarket_trader.data.providers.market_data import DeterministicFallbackMarketDataProvider, MarketProviderHealth, OptionContractResolution, OptionContractSnapshot
 from macmarket_trader.domain.enums import MarketMode
 from macmarket_trader.domain.models import AppUserModel, StrategyReportRunModel
 from macmarket_trader.domain.schemas import ExpectedRange
@@ -18,6 +18,22 @@ from macmarket_trader.strategy_reports import StrategyReportService
 from macmarket_trader.data.providers.mock import ConsoleEmailProvider
 
 client = TestClient(app)
+
+
+def _quote_snapshot(option_symbol: str, mark: float) -> OptionContractSnapshot:
+    return OptionContractSnapshot(
+        option_symbol=option_symbol,
+        underlying_symbol="AAPL",
+        provider="polygon",
+        endpoint="/v3/snapshot/options/AAPL/{option}",
+        mark_price=mark,
+        mark_method="quote_mid",
+        as_of=datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc),
+        stale=False,
+        bid=round(mark - 0.05, 2),
+        ask=round(mark + 0.05, 2),
+        missing_fields=[],
+    )
 
 
 def _seed_and_approve_user() -> None:
@@ -195,6 +211,16 @@ def test_analysis_setup_snaps_options_research_legs_to_provider_contracts(monkey
                 strike_snap_distance=abs(float(selected) - target_strike),
             )
 
+        def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str):
+            del underlying_symbol
+            marks = {
+                "O:AAPL260516P00121000": 0.20,
+                "O:AAPL260516P00124000": 0.90,
+                "O:AAPL260516C00136000": 0.85,
+                "O:AAPL260516C00139000": 0.25,
+            }
+            return _quote_snapshot(option_symbol, marks.get(option_symbol, 0.50))
+
         def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
             return MarketProviderHealth(
                 provider="market_data", mode="polygon", status="ok",
@@ -214,6 +240,8 @@ def test_analysis_setup_snaps_options_research_legs_to_provider_contracts(monkey
     assert structure["contract_resolution_status"] == "resolved"
     assert structure["paper_persistence_allowed"] is True
     assert structure["contract_resolution_summary"] == "Selected listed contracts from provider chain."
+    assert structure["fresh_provider_pricing_available"] is True
+    assert structure["opening_price_source"] == "quote_mid"
     assert all(leg["option_symbol"].startswith("O:AAPL260516") for leg in structure["legs"])
     assert all(leg["target_strike"] != leg["strike"] for leg in structure["legs"])
 
@@ -269,6 +297,88 @@ def test_analysis_setup_blocks_iron_condor_when_provider_chain_missing_puts(monk
     assert structure["max_loss"] is None
     assert structure["breakeven_low"] is None
     assert structure["breakeven_high"] is None
+    assert payload["expected_range"]["status"] == "blocked"
+
+
+def test_analysis_setup_blocks_iron_condor_when_listed_contracts_are_far_from_targets(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    expiration = date(2026, 5, 16)
+
+    def _row(right: str, strike: float) -> dict[str, object]:
+        suffix = "C" if right == "call" else "P"
+        return {
+            "ticker": f"O:AAPL260516{suffix}{int(strike * 1000):08d}",
+            "contract_type": right,
+            "strike_price": strike,
+            "expiration_date": expiration.isoformat(),
+            "open_interest": 100,
+        }
+
+    class LowStrikeOnlyService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            bars = DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit)
+            last = bars[-1].model_copy(update={"open": 279.0, "high": 282.0, "low": 278.0, "close": 280.0})
+            return [*bars[:-1], last], "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):
+            snapshot = DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+            return snapshot.__class__(
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe,
+                as_of=snapshot.as_of,
+                open=279.0,
+                high=282.0,
+                low=278.0,
+                close=280.0,
+                volume=snapshot.volume,
+                source=snapshot.source,
+                fallback_mode=snapshot.fallback_mode,
+            )
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):
+            return {
+                "underlying": symbol,
+                "expiry": expiration.isoformat(),
+                "calls": [{"ticker": "O:AAPL260516C00185000", "strike": 185.0, "expiry": expiration.isoformat()}],
+                "puts": [{"ticker": "O:AAPL260516P00180000", "strike": 180.0, "expiry": expiration.isoformat()}],
+                "source": "test",
+            }
+
+        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, strike_gte=None, strike_lte=None, limit: int = 1000):
+            del underlying_symbol, option_type, strike_gte, strike_lte, limit
+            assert expiration == date(2026, 5, 16)
+            return [
+                _row("put", 175.0),
+                _row("put", 180.0),
+                _row("call", 185.0),
+                _row("call", 190.0),
+            ]
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(provider="market_data", mode="polygon", status="ok", details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol)
+
+    monkeypatch.setattr(admin_routes, "market_data_service", LowStrikeOnlyService())
+    _seed_and_approve_user()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "AAPL", "market_mode": "options", "strategy": "Iron Condor"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    structure = payload["option_structure"]
+    assert structure["paper_persistence_allowed"] is False
+    assert structure["contract_resolution_status"] == "unresolved"
+    assert "Unable to resolve listed contract near target strike" in structure["contract_resolution_summary"]
+    assert "snap" in structure["contract_resolution_summary"]
+    assert "exceeds allowed threshold" in structure["contract_resolution_summary"]
+    assert structure["max_profit"] is None
+    assert structure["max_loss"] is None
     assert payload["expected_range"]["status"] == "blocked"
 
 
@@ -353,22 +463,32 @@ def test_analysis_setup_selects_distinct_ordered_listed_iron_condor_contracts(mo
             return {
                 "underlying": symbol,
                 "expiry": expiration.isoformat(),
-                "calls": [{"ticker": "O:AAPL260516C00110000", "strike": 110.0, "expiry": expiration.isoformat()}],
-                "puts": [{"ticker": "O:AAPL260516P00095000", "strike": 95.0, "expiry": expiration.isoformat()}],
+                "calls": [{"ticker": "O:AAPL260516C00140000", "strike": 140.0, "expiry": expiration.isoformat()}],
+                "puts": [{"ticker": "O:AAPL260516P00125000", "strike": 125.0, "expiry": expiration.isoformat()}],
                 "source": "test",
             }
 
-        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, limit: int = 1000):
-            del underlying_symbol, option_type, limit
+        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, strike_gte=None, strike_lte=None, limit: int = 1000):
+            del underlying_symbol, option_type, strike_gte, strike_lte, limit
             assert expiration == date(2026, 5, 16)
             return [
-                _row("put", 90.0),
-                _row("put", 95.0),
-                _row("put", 100.0),
-                _row("call", 105.0),
-                _row("call", 110.0),
-                _row("call", 115.0),
+                _row("put", 120.0),
+                _row("put", 125.0),
+                _row("put", 130.0),
+                _row("call", 135.0),
+                _row("call", 140.0),
+                _row("call", 145.0),
             ]
+
+        def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str):
+            del underlying_symbol
+            marks = {
+                "O:AAPL260516P00120000": 0.20,
+                "O:AAPL260516P00125000": 1.10,
+                "O:AAPL260516C00135000": 1.20,
+                "O:AAPL260516C00140000": 0.30,
+            }
+            return _quote_snapshot(option_symbol, marks.get(option_symbol, 0.50))
 
         def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
             return MarketProviderHealth(provider="market_data", mode="polygon", status="ok", details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol)
@@ -394,9 +514,140 @@ def test_analysis_setup_selects_distinct_ordered_listed_iron_condor_contracts(mo
     assert all(leg["option_symbol"].startswith("O:AAPL260516") for leg in structure["legs"])
     assert all(leg["contract_selection"]["contract_selection_method"] == "provider_reference_exact_expiration" for leg in structure["legs"])
     assert all(leg["target_strike"] is not None for leg in structure["legs"])
+    assert structure["opening_price_source"] == "quote_mid"
+    assert structure["fresh_provider_pricing_available"] is True
+    assert structure["net_credit"] == 1.8
+    assert any(
+        "Provider mark credit differs materially from the theoretical estimate" in item
+        for item in structure["structure_validation_warnings"]
+    )
     assert structure["max_loss"] > 0
     assert structure["breakeven_low"] < structure["breakeven_high"]
     assert payload["expected_range"]["status"] == "computed"
+
+
+def test_analysis_setup_spx_valid_provider_data_builds_index_option_structure(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    expiration = date(2026, 5, 16)
+    fallback = DeterministicFallbackMarketDataProvider()
+
+    def _spx_bars(symbol: str, timeframe: str, limit: int):
+        bars = fallback.fetch_historical_bars(symbol, timeframe, limit)
+        updated = []
+        for idx, bar in enumerate(bars):
+            price = 4880.0 + idx
+            updated.append(
+                bar.model_copy(
+                    update={
+                        "symbol": symbol,
+                        "open": price - 2.0,
+                        "high": price + 12.0,
+                        "low": price - 12.0,
+                        "close": price,
+                    }
+                )
+            )
+        return updated
+
+    def _spx_snapshot(symbol: str, timeframe: str):
+        snapshot = fallback.fetch_latest_snapshot(symbol, timeframe)
+        return snapshot.__class__(
+            symbol=symbol,
+            timeframe=timeframe,
+            as_of=snapshot.as_of,
+            open=4998.0,
+            high=5012.0,
+            low=4988.0,
+            close=5000.0,
+            volume=snapshot.volume,
+            source="polygon",
+            fallback_mode=False,
+        )
+
+    def _row(right: str, strike: float) -> dict[str, object]:
+        suffix = "C" if right == "call" else "P"
+        return {
+            "ticker": f"O:SPX260516{suffix}{int(strike * 1000):08d}",
+            "contract_type": right,
+            "strike_price": strike,
+            "expiration_date": expiration.isoformat(),
+            "open_interest": 500,
+        }
+
+    class SpxOptionsService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            assert symbol == "SPX"
+            return _spx_bars(symbol, timeframe, limit), "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):
+            assert symbol == "SPX"
+            return _spx_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):
+            assert symbol == "SPX"
+            return {
+                "underlying": "SPX",
+                "expiry": expiration.isoformat(),
+                "calls": [{"ticker": "O:SPX260516C05225000", "strike": 5225.0, "expiry": expiration.isoformat(), "option_type": "call"}],
+                "puts": [{"ticker": "O:SPX260516P04775000", "strike": 4775.0, "expiry": expiration.isoformat(), "option_type": "put"}],
+                "source": "test",
+            }
+
+        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, strike_gte=None, strike_lte=None, limit: int = 1000):
+            assert underlying_symbol == "SPX"
+            assert expiration == date(2026, 5, 16)
+            assert strike_gte is not None
+            assert strike_lte is not None
+            del option_type, limit
+            return [
+                _row("put", 4650.0),
+                _row("put", 4775.0),
+                _row("call", 5225.0),
+                _row("call", 5350.0),
+            ]
+
+        def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str):
+            assert underlying_symbol == "SPX"
+            marks = {
+                "O:SPX260516P04650000": 5.0,
+                "O:SPX260516P04775000": 12.0,
+                "O:SPX260516C05225000": 13.0,
+                "O:SPX260516C05350000": 5.0,
+            }
+            return _quote_snapshot(option_symbol, marks[option_symbol])
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(provider="market_data", mode="polygon", status="ok", details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol)
+
+    monkeypatch.setattr(admin_routes, "market_data_service", SpxOptionsService())
+    _seed_and_approve_user()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "SPX", "market_mode": "options", "strategy": "Iron Condor"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    structure = resp.json()["option_structure"]
+    assert structure["underlying_asset_type"] == "index"
+    assert structure["settlement_style"] == "cash_settled"
+    assert structure["deliverable_type"] == "cash_index"
+    assert structure["index_option_notice"] == "Index option research. Cash-settled. No share delivery modeled."
+    assert structure["contract_resolution_status"] == "resolved"
+    assert structure["paper_persistence_allowed"] is True
+    assert all(leg["option_symbol"].startswith("O:SPX260516") for leg in structure["legs"])
+    assert all(leg["contract_selection"]["underlying_asset_type"] == "index" for leg in structure["legs"])
+    assert structure["opening_price_source"] == "quote_mid"
+    assert structure["fresh_provider_pricing_available"] is True
+    assert structure["net_credit"] == 15.0
+    assert structure["max_profit"] == 1500.0
+    assert structure["max_loss"] == 11000.0
+    assert structure["breakeven_low"] == 4760.0
+    assert structure["breakeven_high"] == 5240.0
 
 
 def test_analysis_setup_invalid_strategy_for_market_mode_returns_400_with_supported_labels() -> None:

@@ -32,6 +32,31 @@ type ProviderHealth = {
     sample_option_symbol?: string | null;
     sample_selection_method?: string | null;
     sample_mark_method?: string | null;
+    sample_expiration?: string | null;
+    sample_strike?: number | null;
+    sample_option_type?: string | null;
+    sample_dte?: number | null;
+    sample_has_bid_ask?: boolean | null;
+    sample_has_last_trade?: boolean | null;
+    sample_has_prior_close?: boolean | null;
+    sample_stale?: boolean | null;
+    underlying_index_value_exists?: boolean | null;
+    entitlement_status?: string | null;
+    candidate_attempts?: Array<{
+      option_symbol?: string | null;
+      expiration?: string | null;
+      strike?: number | null;
+      option_type?: string | null;
+      dte?: number | null;
+      result?: string | null;
+      mark_method?: string | null;
+      stale?: boolean | null;
+      has_bid_ask?: boolean | null;
+      has_last_trade?: boolean | null;
+      has_prior_close?: boolean | null;
+      underlying_index_value_exists?: boolean | null;
+      error?: string | null;
+    }>;
     latency_ms?: number | null;
     last_success_at?: string | null;
     selected_provider?: string;
@@ -58,7 +83,7 @@ type ProviderHealth = {
 };
 
 export const OPTIONS_PROVIDER_READINESS_NOTE =
-  "Options/index data note: SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes. Options chain, IV, Greeks, open interest, and option snapshot marks depend on provider coverage. If the plan is not entitled, Options Position Review shows mark_unavailable rather than fake P&L. This readiness view does not enable execution.";
+  "Options/index data note: SPX/NDX may require index data access. Indices Starter may be required if underlying index snapshots return not entitled. MacMarket does not silently substitute SPY/QQQ; no SPY fallback is used for SPX readiness. Use ETF substitutes only as an explicit operator choice. Options chain, IV, Greeks, open interest, and option snapshot marks depend on provider coverage. If the plan is not entitled, Options Position Review shows mark_unavailable rather than fake P&L. This readiness view does not enable execution.";
 
 export function ProviderHealthPanel() {
   const [data, setData] = useState<ProviderHealth | null>(null);
@@ -95,6 +120,7 @@ export function ProviderHealthPanel() {
   const fred = data?.providers.find((p) => p.provider === "fred");
   const news = data?.providers.find((p) => p.provider === "news");
   const optionsData = data?.providers.find((p) => p.provider === "options_data");
+  const indexOptionsData = data?.providers.find((p) => p.provider === "index_options_data");
   const llm = data?.providers.find((p) => p.provider === "llm");
   const workflowBlocked = market?.workflow_execution_mode === "blocked";
   const workflowDemoFallback = market?.workflow_execution_mode === "demo_fallback";
@@ -112,6 +138,8 @@ export function ProviderHealthPanel() {
         return "Unconfigured";
       case "disabled":
         return "Disabled";
+      case "warn":
+        return "Warn";
       default:
         return "Degraded";
     }
@@ -126,6 +154,8 @@ export function ProviderHealthPanel() {
       case "disabled":
         return "neutral";
       case "unconfigured":
+        return "warn";
+      case "warn":
         return "warn";
       default:
         return "warn";
@@ -162,8 +192,16 @@ export function ProviderHealthPanel() {
         return "Probe unavailable";
       case "ok":
         return "Probe OK";
+      case "warn":
+        return "Probe warning";
+      case "degraded":
+        return "Probe degraded";
       case "skipped":
         return "Probe not run";
+      case "failed_not_entitled":
+        return "Not entitled";
+      case "failed_underlying_index_data":
+        return "Underlying index unavailable";
       case "failed":
         return "Probe failed";
       default:
@@ -175,6 +213,10 @@ export function ProviderHealthPanel() {
     switch ((probeState ?? "").toLowerCase()) {
       case "ok":
         return "good";
+      case "warn":
+      case "degraded":
+      case "failed_not_entitled":
+      case "failed_underlying_index_data":
       case "failed":
         return "warn";
       default:
@@ -185,6 +227,18 @@ export function ProviderHealthPanel() {
   function providerDetailCopy(provider: ProviderHealth["providers"][number]): string {
     if (provider.provider === "options_data" && provider.entitlement_state === "not_entitled") {
       return "Options data is configured, but the provider plan is not entitled to option snapshot marks. Options marks remain unavailable; no fake option P&L is shown.";
+    }
+    if (provider.provider === "index_options_data" && provider.entitlement_state === "not_entitled") {
+      return "Index options data is configured, but SPX/index option chain or snapshot access requires additional provider entitlement. SPX research remains unavailable or blocked; no SPY fallback is used.";
+    }
+    if (provider.provider === "index_options_data" && provider.probe_state === "failed_underlying_index_data") {
+      return "SPX underlying index snapshot unavailable. Indices Starter may be required if the provider reports not entitled. No SPY fallback is used.";
+    }
+    if (provider.provider === "index_options_data" && provider.probe_state === "warn") {
+      return "SPX index options access is verified, but sampled contracts only returned stale prior-close marks. Fresh option P&L remains unavailable.";
+    }
+    if (provider.provider === "index_options_data" && provider.probe_state === "degraded") {
+      return "SPX index options discovered, but no fresh usable mark was returned for sampled contracts. This points to sample liquidity/freshness before it proves an index entitlement blocker.";
     }
     if (provider.config_state === "configured" && provider.probe_state === "unavailable") {
       if (provider.provider === "alpaca_paper") {
@@ -227,6 +281,7 @@ export function ProviderHealthPanel() {
           {fred ? <StatusBadge tone="neutral">fred: {formatConfigLabel(fred.config_state)} / {formatProbeLabel(fred.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {news ? <StatusBadge tone="neutral">news: {formatConfigLabel(news.config_state)} / {formatProbeLabel(news.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {optionsData ? <StatusBadge tone={probeTone(optionsData.probe_state)}>options data: {formatConfigLabel(optionsData.config_state)} / {formatProbeLabel(optionsData.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
+          {indexOptionsData ? <StatusBadge tone={probeTone(indexOptionsData.probe_state)}>index options: {formatConfigLabel(indexOptionsData.config_state)} / {formatProbeLabel(indexOptionsData.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {llm ? <StatusBadge tone={statusTone(llm.status)}>LLM provider: {llm.mode} / {formatStatusLabel(llm.status)} / {formatProbeLabel(llm.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
         </div>
         {healthyProvider ? <p style={{ color: "#7ee787", margin: "8px 0 0" }}>Provider-backed market-data mode is active and healthy.</p> : null}
@@ -247,6 +302,16 @@ export function ProviderHealthPanel() {
         {optionsData?.entitlement_state === "not_entitled" ? (
           <p style={{ color: "#f7b267", margin: "6px 0 0" }}>
             Options marks unavailable: provider plan is not entitled to option snapshot data. Options Position Review remains honest and will show mark_unavailable.
+          </p>
+        ) : null}
+        {indexOptionsData?.entitlement_state === "not_entitled" ? (
+          <p style={{ color: "#f7b267", margin: "6px 0 0" }}>
+            Index data entitlement required for SPX/index options. MacMarket keeps SPX blocked or unavailable rather than silently substituting SPY.
+          </p>
+        ) : null}
+        {indexOptionsData?.probe_state === "degraded" ? (
+          <p style={{ color: "#f7b267", margin: "6px 0 0" }}>
+            SPX index options discovered, but no fresh usable mark was returned for sampled contracts. No SPY fallback is used.
           </p>
         ) : null}
       </Card>
@@ -314,6 +379,16 @@ export function ProviderHealthPanel() {
                 {p.sample_option_symbol ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample option: </span>{p.sample_option_symbol}</div> : null}
                 {p.sample_selection_method ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample method: </span>{p.sample_selection_method}</div> : null}
                 {p.sample_mark_method ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>mark method: </span>{p.sample_mark_method}</div> : null}
+                {p.sample_expiration ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample expiration: </span>{p.sample_expiration}</div> : null}
+                {p.sample_strike != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample strike: </span>{p.sample_strike}</div> : null}
+                {p.sample_option_type ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample option type: </span>{p.sample_option_type}</div> : null}
+                {p.sample_dte != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample DTE: </span>{p.sample_dte}</div> : null}
+                {p.sample_has_bid_ask != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>bid/ask exists: </span>{p.sample_has_bid_ask ? "yes" : "no"}</div> : null}
+                {p.sample_has_last_trade != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>last trade exists: </span>{p.sample_has_last_trade ? "yes" : "no"}</div> : null}
+                {p.sample_has_prior_close != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>prior close exists: </span>{p.sample_has_prior_close ? "yes" : "no"}</div> : null}
+                {p.sample_stale != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>stale sample: </span>{p.sample_stale ? "yes" : "no"}</div> : null}
+                {p.underlying_index_value_exists != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>underlying index value: </span>{p.underlying_index_value_exists ? "available" : "unavailable"}</div> : null}
+                {p.entitlement_status ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>entitlement status: </span>{p.entitlement_status}</div> : null}
                 {p.latency_ms != null ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>latency: </span>{p.latency_ms} ms</div> : null}
                 {p.last_success_at ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>last success: </span>{p.last_success_at}</div> : null}
                 {p.failure_reason ? <div style={{ fontSize: "0.8rem", color: "#f7b267" }}>failure: {p.failure_reason}</div> : null}
@@ -326,6 +401,16 @@ export function ProviderHealthPanel() {
                     <div>OpenAI request id: {p.last_openai_error.request_id ?? "-"}</div>
                     <div>OpenAI endpoint: {p.last_openai_error.endpoint ?? "-"}</div>
                     <div>OpenAI message: {p.last_openai_error.message ?? "-"}</div>
+                  </div>
+                ) : null}
+                {p.candidate_attempts?.length ? (
+                  <div style={{ fontSize: "0.78rem", display: "grid", gap: 2, marginTop: 4 }}>
+                    <div style={muted}>candidate attempts:</div>
+                    {p.candidate_attempts.slice(0, 5).map((attempt, index) => (
+                      <div key={`${attempt.option_symbol ?? "attempt"}-${index}`} style={{ color: "#c9d7e5" }}>
+                        {(attempt.option_symbol ?? "unknown option")} · {attempt.expiration ?? "-"} · {attempt.option_type ?? "-"} {attempt.strike ?? "-"} · DTE {attempt.dte ?? "-"} · {attempt.result ?? attempt.mark_method ?? "unknown"}
+                      </div>
+                    ))}
                   </div>
                 ) : null}
                 {providerDetailCopy(p) ? <div style={{ ...muted, fontSize: "0.78rem", marginTop: 2 }}>{providerDetailCopy(p)}</div> : null}

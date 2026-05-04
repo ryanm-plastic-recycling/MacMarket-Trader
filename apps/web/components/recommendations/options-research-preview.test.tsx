@@ -294,8 +294,13 @@ describe("OptionsResearchPreview", () => {
                 strike: 90,
                 label: "Long put wing",
                 option_symbol: "O:SPY260515P00090000",
+                target_strike: 90.25,
+                selected_listed_strike: 90,
+                strike_snap_distance: 0.25,
+                strike_snap_allowed: 5,
                 current_mark_premium: 1.24,
                 mark_method: "quote_mid",
+                premium_source: "quote_mid",
                 implied_volatility: 0.22,
                 open_interest: 1234,
                 delta: -0.18,
@@ -333,6 +338,10 @@ describe("OptionsResearchPreview", () => {
     expect(html).toContain("Selected listed contract snapshots");
     expect(html).toContain("O:SPY260515P00090000");
     expect(html).toContain("quote_mid");
+    expect(html).toContain("target");
+    expect(html).toContain("selected");
+    expect(html).toContain("snap 0.25 / allowed 5");
+    expect(html).toContain("premium source quote_mid");
     expect(html).toContain("IV");
     expect(html).toContain("OI");
     expect(html).toContain("delta");
@@ -522,6 +531,72 @@ describe("OptionsResearchPreview", () => {
     expect(riskHtml).toContain("Expected Range blocked");
     expect(riskHtml).toContain("Unavailable. Cannot build iron condor: provider returned incomplete chain; puts missing.");
     expect(riskHtml).not.toContain("Breakeven 1");
+  });
+
+  it("shows strike snap diagnostics and hides payoff markers when selected contracts are too far", () => {
+    const setup: OptionsResearchSetup = {
+      symbol: "AAPL",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        dte: 13,
+        contract_resolution_status: "unresolved",
+        contract_resolution_summary: "Unable to resolve listed contract near target strike. Target 292.75 selected 185.00, snap 107.75 exceeds allowed threshold 5.00.",
+        structure_validation_status: "invalid",
+        structure_validation_summary: "Unable to resolve listed contract near target strike. Target 292.75 selected 185.00, snap 107.75 exceeds allowed threshold 5.00.",
+        paper_persistence_allowed: false,
+        opening_price_source: "theoretical_estimate",
+        fresh_provider_pricing_available: false,
+        theoretical_net_credit: 1.88,
+        max_profit: null,
+        max_loss: null,
+        legs: [
+          { action: "buy", right: "put", strike: 175, label: "lower long put", option_symbol: "O:AAPL260516P00175000", target_strike: 260.53, selected_listed_strike: 175, strike_snap_distance: 85.53, strike_snap_allowed: 5 },
+          { action: "sell", right: "put", strike: 180, label: "short put", option_symbol: "O:AAPL260516P00180000", target_strike: 267.53, selected_listed_strike: 180, strike_snap_distance: 87.53, strike_snap_allowed: 5 },
+          { action: "sell", right: "call", strike: 185, label: "short call", option_symbol: "O:AAPL260516C00185000", target_strike: 292.75, selected_listed_strike: 185, strike_snap_distance: 107.75, strike_snap_allowed: 5, current_mark_premium: 100.71, mark_method: "quote_mid", premium_source: "quote_mid" },
+          { action: "buy", right: "call", strike: 190, label: "higher long call", option_symbol: "O:AAPL260516C00190000", target_strike: 299.75, selected_listed_strike: 190, strike_snap_distance: 109.75, strike_snap_allowed: 5, current_mark_premium: 92.63, mark_method: "quote_mid", premium_source: "quote_mid" },
+        ],
+      },
+      expected_range: {
+        status: "blocked",
+        method: null,
+        reference_price_type: "underlying_last",
+        lower_bound: null,
+        upper_bound: null,
+        absolute_move: null,
+        horizon_value: 13,
+        horizon_unit: "calendar_days",
+        reason: "Unable to resolve listed contract near target strike. Target 292.75 selected 185.00, snap 107.75 exceeds allowed threshold 5.00.",
+      },
+      options_chain_preview: null,
+    };
+
+    expect(getOptionsReplayPreviewAvailability(setup).request).toBeNull();
+    expect(getOptionsPaperOpenAvailability(setup).request).toBeNull();
+
+    const html = renderToStaticMarkup(
+      <OptionsResearchPreview
+        setup={setup}
+        loading={false}
+        error={null}
+        chartPayload={null}
+        chartStorageKey="test-options-preview-snap-blocked"
+        chartSourceLabel="polygon"
+        chartBlockedByFallback={false}
+      />,
+    );
+
+    expect(html).toContain("Target 292.75 selected 185.00, snap 107.75 exceeds allowed threshold 5.00");
+    expect(html).toContain("snap 107.75 / allowed 5");
+    expect(html).toContain("Opening price source");
+    expect(html).toContain("theoretical_estimate");
+    expect(html).toContain("Fresh quote_mid or last_trade marks are required before paper persistence.");
+    expect(html).toContain("disabled");
+    expect(html).not.toContain("Breakeven 1");
+    expect(html).not.toContain("-$312.00");
   });
 
   it("renders Analysis Packet preview with macro, news, IV, OI, Greeks, and missing fields", () => {
@@ -1312,7 +1387,8 @@ describe("OptionsPaperLifecyclePanel", () => {
     expect(html).toContain("Source unavailable");
     expect(html).toContain("As-of unavailable");
     expect(html).toContain("Chain preview unavailable on current provider plan or payload.");
-    expect(html).toContain("SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.");
+    expect(html).toContain("Index option research. Cash-settled. No share delivery modeled.");
+    expect(html).toContain("Index data entitlement may be required; MacMarket will not silently substitute SPY/QQQ.");
     expect(html).toContain("Expected Range is research context only. It does not modify expiration payoff math.");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");

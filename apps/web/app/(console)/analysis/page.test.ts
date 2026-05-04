@@ -41,7 +41,8 @@ describe("analysis options provider/source/as-of copy", () => {
     expect(source).toContain("workflowSource={setup?.workflow_source ?? source}");
     expect(source).toContain("formatResearchValue(optionsChainPreview.source, \"Source unavailable\")");
     expect(source).toContain("formatResearchTimestamp(optionsChainPreview.data_as_of ?? null)");
-    expect(source).toContain("Provider plan or payload may not include this data. SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes.");
+    expect(source).toContain("Provider plan or payload may not include this data. Index data entitlement may be required for SPX/NDX; MacMarket will not silently substitute SPY/QQQ.");
+    expect(source).toContain("Index data entitlement may be required. MacMarket will not silently fall back to an ETF substitute.");
     expect(source).toContain("Source unavailable. As-of unavailable.");
     expect(source).toContain("appliedMarketMode === \"options\"");
     expect(source).toContain("Create recommendation from setup");

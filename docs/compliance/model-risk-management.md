@@ -18,6 +18,11 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
   theoretical targets, selected listed strikes, provider symbols, and snap
   distances are retained as provenance; unresolvable contracts are blocked
   rather than silently persisted as markable positions.
+- Listed-contract options setups are also blocked when the selected strike is
+  outside the configured snap-distance allowance. Fresh provider `quote_mid` or
+  `last_trade` marks are required for paper-open pricing; theoretical estimates
+  and prior-close fallback marks remain labeled context and are not silently
+  treated as fresh opening prices.
 - Options expiration review uses deterministic intrinsic-value, moneyness,
   assignment-risk, exercise-risk, and paper-only settlement-preview logic.
   Manual expiration settlement requires explicit confirmation and does not

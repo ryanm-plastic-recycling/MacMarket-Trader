@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     market_data_option_snapshot_cache_ttl_seconds: int = 30
     market_data_option_snapshot_stale_seconds: int = 86_400
     market_data_historical_cache_ttl_seconds: int = 120
+    options_max_strike_snap_abs: float = 5.0
+    options_max_strike_snap_pct: float = 0.025
     polygon_enabled: bool = False
     polygon_api_key: str = ""
     polygon_base_url: str = "https://api.polygon.io"

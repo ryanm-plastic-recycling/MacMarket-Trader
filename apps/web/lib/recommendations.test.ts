@@ -21,6 +21,7 @@ import {
   fetchOptionsPaperPositions,
   fetchOptionsReplayPreview,
   formatOptionsLegLabel,
+  formatOptionsOpeningPriceSource,
   formatOptionsReplayToken,
   getExpectedRangeReasonText,
   getOptionsChainIncompleteSideWarning,
@@ -37,6 +38,7 @@ import {
   formatResearchTimestamp,
   formatResearchValue,
   getOptionsPremiumLabel,
+  getOptionsPremiumSourceDetail,
   getOptionsPremiumValue,
   getOptionsResearchDisplayDte,
   formatOptionsExpectedRangeHorizon,
@@ -235,6 +237,22 @@ describe("research preview helpers", () => {
     expect(getOptionsLegDisplayLines({ legs: [] })).toEqual(["Leg detail Unavailable."]);
   });
 
+  it("formats listed-contract strike snap diagnostics", () => {
+    const listedLabel = formatOptionsLegLabel({
+      action: "sell",
+      right: "call",
+      strike: 292.75,
+      label: "short call",
+      option_symbol: "O:AAPL260515C00295000",
+      target_strike: 292.75,
+      selected_listed_strike: 295,
+      strike_snap_distance: 2.25,
+      strike_snap_allowed: 5,
+    });
+    expect(listedLabel).toContain("target 292.75");
+    expect(listedLabel).toContain("snap 2.25; allowed 5");
+  });
+
   it("returns the correct premium label and value for credit and debit structures", () => {
     expect(getOptionsPremiumLabel({ net_credit: 1.25 })).toBe("Net credit");
     expect(getOptionsPremiumValue({ net_credit: 1.25 })).toBe(1.25);
@@ -242,6 +260,13 @@ describe("research preview helpers", () => {
     expect(getOptionsPremiumValue({ net_debit: 2.4 })).toBe(2.4);
     expect(getOptionsPremiumLabel(null)).toBe("Net premium");
     expect(getOptionsPremiumValue(null)).toBeNull();
+    expect(formatOptionsOpeningPriceSource("quote_mid")).toBe("quote_mid");
+    expect(formatOptionsOpeningPriceSource("prior_close_fallback")).toBe("prior_close_fallback stale");
+    expect(getOptionsPremiumSourceDetail({
+      opening_price_source: "theoretical_estimate",
+      theoretical_net_credit: 1.88,
+      fresh_provider_pricing_available: false,
+    })).toContain("Fresh quote_mid or last_trade marks are required before paper persistence.");
   });
 
   it("surfaces blocked and omitted expected-range reasons safely", () => {
@@ -328,6 +353,7 @@ describe("research preview helpers", () => {
         iv_snapshot: null,
         theta_context: null,
         vega_context: null,
+        structure_validation_warnings: ["Provider mark credit differs materially from the theoretical estimate; provider marks drive readiness and paper-open pricing."],
       },
       expected_range: {
         status: "blocked",
@@ -351,9 +377,11 @@ describe("research preview helpers", () => {
     expect(warnings).toContain("IV snapshot unavailable in the current provider plan or payload.");
     expect(warnings).toContain("Greeks context unavailable in the current provider plan or payload.");
     expect(warnings).toContain("Open interest unavailable on the current Recommendations payload.");
+    expect(warnings).toContain("Provider mark credit differs materially from the theoretical estimate; provider marks drive readiness and paper-open pricing.");
     expect(warnings).toContain("Expected Range blocked: Missing IV Snapshot.");
     expect(warnings).toContain("Chain preview unavailable on current provider plan or payload.");
-    expect(warnings).toContain("SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.");
+    expect(warnings).toContain("Index option research. Cash-settled. No share delivery modeled.");
+    expect(warnings).toContain("Index data entitlement may be required; MacMarket will not silently substitute SPY/QQQ.");
   });
 
   it("adds an incomplete-side warning when only one chain side is available", () => {
@@ -706,6 +734,34 @@ describe("research preview helpers", () => {
 
     expect(availability.request).toBeNull();
     expect(availability.reason).toContain("Unable to resolve listed contracts");
+  });
+
+  it("blocks paper open when fresh provider marks are unavailable", () => {
+    const availability = getOptionsPaperOpenAvailability({
+      symbol: "AAPL",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        contract_resolution_status: "resolved",
+        structure_validation_status: "invalid",
+        structure_validation_summary: "fresh_option_mark_required_for_paper_open",
+        paper_persistence_allowed: false,
+        opening_price_source: "prior_close_fallback",
+        fresh_provider_pricing_available: false,
+        legs: [
+          { action: "buy", right: "put", strike: 260, premium: 0.2, option_symbol: "O:AAPL260516P00260000" },
+          { action: "sell", right: "put", strike: 267, premium: 0.9, option_symbol: "O:AAPL260516P00267000" },
+          { action: "sell", right: "call", strike: 293, premium: 0.9, option_symbol: "O:AAPL260516C00293000" },
+          { action: "buy", right: "call", strike: 300, premium: 0.2, option_symbol: "O:AAPL260516C00300000" },
+        ],
+      },
+    });
+
+    expect(availability.request).toBeNull();
+    expect(availability.reason).toBe("fresh_option_mark_required_for_paper_open");
   });
 
   it("posts paper option close requests through the same-origin helper", async () => {

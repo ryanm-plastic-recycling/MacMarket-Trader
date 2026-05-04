@@ -21,6 +21,7 @@ import { SYMBOL_ENTRY_HELP_COPY } from "@/lib/symbol-entry";
 import { WorkflowBanner } from "@/components/workflow-banner";
 import {
   formatResearchCell,
+  formatOptionsOpeningPriceSource,
   formatOptionsExpectedRangeHorizon,
   formatResearchTimestamp,
   formatResearchValue,
@@ -137,12 +138,25 @@ function AnalysisContextPanels({ packet, optionStructure }: { packet?: AnalysisP
         <Card title="Selected contract snapshots">
           <div className="op-table-scroll">
             <table className="op-table">
-              <thead><tr><th>Leg</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
+              <thead><tr><th>Leg</th><th>Strike snap</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
               <tbody>
                 {optionLegs.map((leg, index) => (
                   <tr key={`${leg.option_symbol ?? leg.label ?? "leg"}-${index}`}>
                     <td>{leg.label ?? "leg"}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.option_symbol ?? "Missing from selected contract snapshot"}</span></td>
-                    <td>{formatResearchValue(leg.current_mark_premium, "Missing from selected contract snapshot")}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.mark_method ?? "mark method missing"}</span></td>
+                    <td>
+                      target {formatResearchValue(leg.target_strike, "Unavailable")}<br />
+                      selected {formatResearchValue(leg.selected_listed_strike ?? leg.strike, "Unavailable")}<br />
+                      <span style={{ color: "var(--op-muted, #7a8999)" }}>
+                        snap {formatResearchValue(leg.strike_snap_distance, "Unavailable")} / allowed {formatResearchValue(leg.strike_snap_allowed, "Unavailable")}
+                      </span>
+                    </td>
+                    <td>
+                      {formatResearchValue(leg.current_mark_premium, "Missing from selected contract snapshot")}<br />
+                      <span style={{ color: "var(--op-muted, #7a8999)" }}>
+                        {leg.mark_method ?? "mark method missing"}
+                        {leg.premium_source ? ` | premium source ${formatOptionsOpeningPriceSource(leg.premium_source)}` : ""}
+                      </span>
+                    </td>
                     <td>IV {formatResearchValue(leg.implied_volatility, "Missing from selected contract snapshot")}<br />OI {formatResearchValue(leg.open_interest, "Missing from selected contract snapshot")}</td>
                     <td>
                       delta {formatResearchValue(leg.delta, "Missing from selected contract snapshot")}<br />
@@ -416,7 +430,7 @@ export default function Page() {
         </div>
         <div style={{ fontSize: "0.88rem", color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
           Data not available for <strong>{appliedSymbol}</strong> on current plan.
-          Try <strong>SPY</strong> instead of <strong>SPX</strong>, or <strong>QQQ</strong> instead of <strong>NDX</strong>.
+          Index data entitlement may be required. MacMarket will not silently fall back to an ETF substitute.
         </div>
       </div>
     ) : null}
@@ -552,13 +566,13 @@ export default function Page() {
         {optionsChainPreview?.reason ? (
           <div style={{ display: "grid", gap: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
             <div>{optionsChainUnavailableMessage}</div>
-            <div>Provider plan or payload may not include this data. SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes.</div>
+            <div>Provider plan or payload may not include this data. Index data entitlement may be required for SPX/NDX; MacMarket will not silently substitute SPY/QQQ.</div>
             <div>Source unavailable. As-of unavailable.</div>
           </div>
         ) : optionsChainPreview === null ? (
           <div style={{ display: "grid", gap: 6, color: "var(--op-muted, #7a8999)", fontSize: "0.88rem" }}>
             <div>{optionsChainUnavailableMessage}</div>
-            <div>Provider plan or payload may not include this data. SPX/NDX may require index data access; SPY/QQQ can be practical ETF substitutes.</div>
+            <div>Provider plan or payload may not include this data. Index data entitlement may be required for SPX/NDX; MacMarket will not silently substitute SPY/QQQ.</div>
             <div>Source unavailable. As-of unavailable.</div>
           </div>
         ) : (

@@ -8,7 +8,10 @@ const source = readFileSync(new URL("./provider-health-panel.tsx", import.meta.u
 describe("provider health readiness copy", () => {
   it("keeps options/index provider guidance readiness-only", () => {
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("SPX/NDX may require index data access");
-    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("SPY/QQQ can be practical ETF substitutes");
+    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("Indices Starter may be required if underlying index snapshots return not entitled");
+    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("does not silently substitute SPY/QQQ");
+    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("no SPY fallback is used");
+    expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("explicit operator choice");
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("Options chain, IV, Greeks, open interest, and option snapshot marks depend on provider coverage");
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("mark_unavailable rather than fake P&L");
     expect(OPTIONS_PROVIDER_READINESS_NOTE).toContain("does not enable execution");
@@ -29,6 +32,10 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("probe_state");
     expect(source).toContain("Probe not run");
     expect(source).toContain("Probe OK");
+    expect(source).toContain("Probe warning");
+    expect(source).toContain("Probe degraded");
+    expect(source).toContain("Not entitled");
+    expect(source).toContain("Underlying index unavailable");
     expect(source).toContain("Probe failed");
     expect(source).toContain("probe_llm=true");
     expect(source).toContain("sample option");
@@ -38,6 +45,28 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("sample method");
     expect(source).toContain("sample_mark_method");
     expect(source).toContain("mark method");
+    expect(source).toContain("sample_expiration");
+    expect(source).toContain("sample expiration");
+    expect(source).toContain("sample_strike");
+    expect(source).toContain("sample strike");
+    expect(source).toContain("sample_option_type");
+    expect(source).toContain("sample option type");
+    expect(source).toContain("sample_dte");
+    expect(source).toContain("sample DTE");
+    expect(source).toContain("sample_has_bid_ask");
+    expect(source).toContain("bid/ask exists");
+    expect(source).toContain("sample_has_last_trade");
+    expect(source).toContain("last trade exists");
+    expect(source).toContain("sample_has_prior_close");
+    expect(source).toContain("prior close exists");
+    expect(source).toContain("sample_stale");
+    expect(source).toContain("stale sample");
+    expect(source).toContain("underlying_index_value_exists");
+    expect(source).toContain("underlying index value");
+    expect(source).toContain("entitlement_status");
+    expect(source).toContain("entitlement status");
+    expect(source).toContain("candidate_attempts");
+    expect(source).toContain("candidate attempts");
     expect(source).toContain("sample symbol");
     expect(source).toContain("sample series");
     expect(source).toContain("credentials present");
@@ -47,6 +76,12 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("order route probe");
     expect(source).toContain("entitlement_state");
     expect(source).toContain("Options marks unavailable");
+    expect(source).toContain("index_options_data");
+    expect(source).toContain("Index data entitlement required");
+    expect(source).toContain("SPX index options discovered, but no fresh usable mark was returned for sampled contracts");
+    expect(source).toContain("sample liquidity/freshness");
+    expect(source).toContain("Indices Starter may be required");
+    expect(source).toContain("No SPY fallback is used");
     expect(source).toContain("provider plan is not entitled");
     expect(source).toContain("Order routing is not enabled");
     expect(source).not.toContain("live probe:");

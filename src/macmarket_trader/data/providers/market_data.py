@@ -43,7 +43,25 @@ OPTIONS_HEALTH_DEFAULT_UNDERLYINGS = ("SPY", "AAPL")
 OPTIONS_HEALTH_STATIC_SAMPLE_UNDERLYING = "AAPL"
 OPTIONS_HEALTH_STATIC_SAMPLE_OPTION = "O:AAPL260504C00200000"
 OPTIONS_HEALTH_MAX_DISCOVERED_CANDIDATES = 8
+OPTIONS_HEALTH_MIN_DTE = 7
+OPTIONS_HEALTH_MAX_DTE = 45
 OPTION_INDEX_UNDERLYINGS = {"SPX", "NDX", "RUT", "VIX"}
+OPTION_ETF_UNDERLYINGS = {
+    "DIA",
+    "EEM",
+    "EFA",
+    "GLD",
+    "IWM",
+    "QQQ",
+    "SLV",
+    "SPY",
+    "TLT",
+    "XLE",
+    "XLF",
+    "XLK",
+    "XLV",
+}
+OPTION_CONTRACT_REFERENCE_MAX_PAGES = 8
 
 
 def _finite_float(value: Any) -> float | None:
@@ -102,6 +120,25 @@ def _is_entitlement_error_text(value: object) -> bool:
     return any(marker in text for marker in ("not entitled", "entitlement", "permission", "upgrade plan"))
 
 
+def _redact_provider_text(value: object) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    for secret in (
+        settings.polygon_api_key,
+        settings.alpaca_api_key_id,
+        settings.alpaca_api_secret_key,
+        settings.fred_api_key,
+    ):
+        if secret and secret.strip():
+            text = text.replace(secret.strip(), "[redacted]")
+    if "apiKey=" in text:
+        prefix, _sep, rest = text.partition("apiKey=")
+        suffix = ""
+        if "&" in rest:
+            suffix = "&" + rest.split("&", 1)[1]
+        text = f"{prefix}apiKey=[redacted]{suffix}"
+    return text[:300]
+
+
 def _parse_expiration_date(value: object) -> date | None:
     try:
         return date.fromisoformat(str(value))
@@ -138,7 +175,11 @@ def option_snapshot_underlying_ticker(symbol: str) -> str:
 
 def option_underlying_asset_type(symbol: str) -> str:
     normalized = option_reference_underlying_ticker(symbol)
-    return "index" if normalized in OPTION_INDEX_UNDERLYINGS else "equity"
+    if normalized in OPTION_INDEX_UNDERLYINGS:
+        return "index"
+    if normalized in OPTION_ETF_UNDERLYINGS:
+        return "etf"
+    return "equity"
 
 
 def unavailable_option_contract_snapshot(
@@ -316,6 +357,22 @@ class OptionsHealthSample:
     underlying: str
     option_symbol: str
     selection_method: str
+    expiration: date | None = None
+    strike: float | None = None
+    option_type: str | None = None
+    dte: int | None = None
+    open_interest: int | None = None
+    volume: int | None = None
+
+
+@dataclass(frozen=True)
+class OptionsHealthDiscovery:
+    samples: list[OptionsHealthSample]
+    error: str | None = None
+    entitlement_error: bool = False
+    underlying_price: float | None = None
+    underlying_error: str | None = None
+    underlying_entitlement_error: bool = False
 
 
 @dataclass(frozen=True)
@@ -394,6 +451,8 @@ class MarketDataProvider:
         underlying_symbol: str,
         expiration: date | None = None,
         option_type: str | None = None,
+        strike_gte: float | None = None,
+        strike_lte: float | None = None,
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
         raise NotImplementedError
@@ -669,6 +728,15 @@ class PolygonMarketDataProvider(MarketDataProvider):
         url = f"{self.base_url}{path}?{urlencode(effective_query)}"
         return self._fetch_url(url)
 
+    def _polygon_next_url(self, next_url: object) -> str | None:
+        url = str(next_url or "").strip()
+        if not url:
+            return None
+        if "apiKey=" in url:
+            return url
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}apiKey={self.api_key}"
+
     def _map_polygon_range(self, timeframe: str, limit: int) -> tuple[int, str, str, str, int]:
         tf = timeframe.upper()
         now = datetime.now(tz=UTC)
@@ -823,8 +891,13 @@ class PolygonMarketDataProvider(MarketDataProvider):
             )
         except SymbolNotFoundError:
             return {"underlying": symbol, "reason": f"No options contracts found for {symbol}", "calls": None, "puts": None}
-        except DataNotEntitledError as exc:
-            return {"underlying": symbol, "reason": f"Options endpoint not entitled: {exc}", "calls": None, "puts": None}
+        except DataNotEntitledError:
+            reason = (
+                "Index data entitlement required for SPX/index options reference data."
+                if option_underlying_asset_type(symbol) == "index"
+                else "Options endpoint not entitled to option reference data."
+            )
+            return {"underlying": symbol, "reason": reason, "calls": None, "puts": None}
         except ProviderUnavailableError as exc:
             return {"underlying": symbol, "reason": f"Options endpoint unavailable: {exc}", "calls": None, "puts": None}
         except Exception as exc:
@@ -970,6 +1043,8 @@ class PolygonMarketDataProvider(MarketDataProvider):
         underlying_symbol: str,
         expiration: date | None = None,
         option_type: str | None = None,
+        strike_gte: float | None = None,
+        strike_lte: float | None = None,
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
         query: dict[str, str] = {
@@ -985,8 +1060,21 @@ class PolygonMarketDataProvider(MarketDataProvider):
             normalized_type = str(option_type).strip().lower()
             if normalized_type in {"call", "put"}:
                 query["contract_type"] = normalized_type
+        if strike_gte is not None:
+            query["strike_price.gte"] = str(round(float(strike_gte), 4))
+        if strike_lte is not None:
+            query["strike_price.lte"] = str(round(float(strike_lte), 4))
         payload = self._request_json("/v3/reference/options/contracts", query)
-        return list(payload.get("results") or [])
+        results = list(payload.get("results") or [])
+        page = 0
+        while payload.get("next_url") and page < OPTION_CONTRACT_REFERENCE_MAX_PAGES:
+            next_url = self._polygon_next_url(payload.get("next_url"))
+            if not next_url:
+                break
+            page += 1
+            payload = self._fetch_url(next_url)
+            results.extend(payload.get("results") or [])
+        return results
 
     def resolve_option_contract(
         self,
@@ -1000,6 +1088,9 @@ class PolygonMarketDataProvider(MarketDataProvider):
         normalized_type = "call" if str(option_type).strip().lower().startswith("c") else "put"
         target = float(target_strike)
         asset_type = option_underlying_asset_type(normalized_underlying)
+        strike_window = max(25.0, abs(target) * 0.10)
+        strike_gte = max(0.0, target - strike_window)
+        strike_lte = target + strike_window
 
         def _unresolved(reason: str, *, method: str = "unavailable") -> OptionContractResolution:
             return OptionContractResolution(
@@ -1021,6 +1112,8 @@ class PolygonMarketDataProvider(MarketDataProvider):
                 underlying_symbol=normalized_underlying,
                 expiration=expiration,
                 option_type=normalized_type,
+                strike_gte=strike_gte,
+                strike_lte=strike_lte,
                 limit=1000,
             )
         except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
@@ -1034,6 +1127,8 @@ class PolygonMarketDataProvider(MarketDataProvider):
                     underlying_symbol=normalized_underlying,
                     expiration=None,
                     option_type=normalized_type,
+                    strike_gte=strike_gte,
+                    strike_lte=strike_lte,
                     limit=1000,
                 )
             except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
@@ -1298,6 +1393,8 @@ class MarketDataService:
         underlying_symbol: str,
         expiration: date | None = None,
         option_type: str | None = None,
+        strike_gte: float | None = None,
+        strike_lte: float | None = None,
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
         normalized_underlying = option_reference_underlying_ticker(underlying_symbol)
@@ -1312,6 +1409,8 @@ class MarketDataService:
             underlying_symbol=normalized_underlying,
             expiration=expiration,
             option_type=option_type,
+            strike_gte=strike_gte,
+            strike_lte=strike_lte,
             limit=limit,
         )
 
@@ -1386,71 +1485,163 @@ class MarketDataService:
                 seen.add(symbol)
         return unique
 
-    def _discover_options_health_samples(self, sample_symbol: str) -> tuple[list[OptionsHealthSample], str | None, bool]:
+    def _option_health_sample_from_row(
+        self,
+        *,
+        underlying: str,
+        item: dict[str, Any],
+        selection_method: str,
+        today: date,
+    ) -> OptionsHealthSample | None:
+        expiration = _parse_expiration_date(item.get("expiry") or item.get("expiration_date"))
+        strike = _finite_float(item.get("strike") or item.get("strike_price"))
+        option_symbol = str(item.get("ticker") or "").upper().strip()
+        option_type = str(item.get("option_type") or item.get("contract_type") or "").lower().strip()
+        if not option_symbol or expiration is None or strike is None:
+            return None
+        if expiration < today:
+            return None
+        open_interest_value = _finite_float(item.get("open_interest"))
+        volume_value = _finite_float(item.get("volume"))
+        return OptionsHealthSample(
+            underlying=underlying,
+            option_symbol=option_symbol,
+            selection_method=selection_method,
+            expiration=expiration,
+            strike=round(float(strike), 4),
+            option_type="call" if option_type.startswith("call") else "put" if option_type.startswith("put") else option_type or None,
+            dte=max(0, (expiration - today).days),
+            open_interest=int(open_interest_value) if open_interest_value is not None else None,
+            volume=int(volume_value) if volume_value is not None else None,
+        )
+
+    def _rank_options_health_samples(
+        self,
+        samples: list[OptionsHealthSample],
+        *,
+        underlying_price: float | None,
+    ) -> list[OptionsHealthSample]:
+        if not samples:
+            return []
+        preferred = [item for item in samples if item.dte is not None and OPTIONS_HEALTH_MIN_DTE <= item.dte <= OPTIONS_HEALTH_MAX_DTE]
+        if preferred:
+            candidates = preferred
+        else:
+            future = [item for item in samples if item.dte is not None and item.dte > 0]
+            candidates = future if future else samples
+
+        def _sort_key(item: OptionsHealthSample) -> tuple[int, float, float, int, int, str]:
+            dte = item.dte if item.dte is not None else 9999
+            dte_distance = abs(dte - 21)
+            strike_distance = (
+                abs(float(item.strike) - underlying_price)
+                if item.strike is not None and underlying_price is not None
+                else float("inf")
+            )
+            right_rank = 0 if item.option_type == "call" else 1
+            liquidity = max(item.open_interest or 0, item.volume or 0)
+            return (dte_distance, strike_distance, -liquidity, right_rank, dte, item.option_symbol)
+
+        return sorted(candidates, key=_sort_key)[:OPTIONS_HEALTH_MAX_DISCOVERED_CANDIDATES]
+
+    def _discover_options_health_samples(self, sample_symbol: str) -> OptionsHealthDiscovery:
         if not isinstance(self._provider, PolygonMarketDataProvider):
-            return [], "Options sample discovery requires Polygon/Massive market data.", False
+            return OptionsHealthDiscovery(samples=[], error="Options sample discovery requires Polygon/Massive market data.")
 
         errors: list[str] = []
         today = date.today()
         for underlying in self._options_health_underlyings(sample_symbol):
+            asset_type = option_underlying_asset_type(underlying)
+            underlying_price: float | None = None
+            try:
+                underlying_price = _positive_float(self._provider.fetch_latest_snapshot(underlying, "1D").close)
+            except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+                reason = _redact_provider_text(exc)
+                if _is_entitlement_error_text(reason):
+                    if asset_type == "index":
+                        return OptionsHealthDiscovery(
+                            samples=[],
+                            underlying_error=reason,
+                            underlying_entitlement_error=True,
+                        )
+                    return OptionsHealthDiscovery(samples=[], error=reason, entitlement_error=True)
+                if asset_type == "index":
+                    return OptionsHealthDiscovery(samples=[], underlying_error=reason)
+                errors.append(f"{underlying}: {reason}")
+            if asset_type == "index":
+                if underlying_price is None:
+                    return OptionsHealthDiscovery(samples=[], underlying_error=f"{underlying}: underlying index value unavailable")
+                try:
+                    strike_window = max(250.0, underlying_price * 0.12)
+                    rows = self._provider.fetch_option_contracts(
+                        underlying_symbol=underlying,
+                        expiration=None,
+                        strike_gte=max(0.0, underlying_price - strike_window),
+                        strike_lte=underlying_price + strike_window,
+                        limit=1000,
+                    )
+                except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+                    reason = _redact_provider_text(exc)
+                    if _is_entitlement_error_text(reason):
+                        return OptionsHealthDiscovery(samples=[], error=reason, entitlement_error=True, underlying_price=underlying_price)
+                    return OptionsHealthDiscovery(samples=[], error=reason, underlying_price=underlying_price)
+
+                samples = [
+                    sample
+                    for item in rows or []
+                    if isinstance(item, dict)
+                    if (sample := self._option_health_sample_from_row(
+                        underlying=underlying,
+                        item=item,
+                        selection_method="discovered",
+                        today=today,
+                    )) is not None
+                ]
+                ranked = self._rank_options_health_samples(samples, underlying_price=underlying_price)
+                if ranked:
+                    return OptionsHealthDiscovery(samples=ranked, underlying_price=underlying_price)
+                errors.append(f"{underlying}: no active 7-45DTE index option contracts returned near the underlying value")
+                continue
+
             try:
                 chain = self._provider.fetch_options_chain_preview(symbol=underlying, limit=100) or {}
             except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
-                reason = str(exc)[:300]
+                reason = _redact_provider_text(exc)
                 if _is_entitlement_error_text(reason):
-                    return [], reason, True
+                    return OptionsHealthDiscovery(samples=[], error=reason, entitlement_error=True)
                 errors.append(f"{underlying}: {reason}")
                 continue
 
             reason = chain.get("reason")
             if reason:
-                reason_text = str(reason)[:300]
+                reason_text = _redact_provider_text(reason)
                 if _is_entitlement_error_text(reason_text):
-                    return [], reason_text, True
+                    return OptionsHealthDiscovery(samples=[], error=reason_text, entitlement_error=True)
                 errors.append(f"{underlying}: {reason_text}")
                 continue
 
-            raw_candidates = [
-                item
+            samples = [
+                sample
                 for item in [*(chain.get("calls") or []), *(chain.get("puts") or [])]
                 if isinstance(item, dict) and item.get("ticker")
+                if (sample := self._option_health_sample_from_row(
+                    underlying=underlying,
+                    item=item,
+                    selection_method="discovered",
+                    today=today,
+                )) is not None
             ]
-            candidates: list[dict[str, Any]] = []
-            for item in raw_candidates:
-                expiration = _parse_expiration_date(item.get("expiry") or item.get("expiration_date"))
-                if expiration is not None and expiration < today:
-                    continue
-                candidates.append(item)
-            if not candidates:
+            if not samples:
                 errors.append(f"{underlying}: no active option contracts returned")
                 continue
 
-            underlying_price: float | None = None
-            try:
-                underlying_price = _positive_float(self._provider.fetch_latest_snapshot(underlying, "1D").close)
-            except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError):
-                underlying_price = None
+            ranked = self._rank_options_health_samples(samples, underlying_price=underlying_price)
+            return OptionsHealthDiscovery(samples=ranked, underlying_price=underlying_price)
 
-            def _sort_key(item: dict[str, Any]) -> tuple[date, float, int, float]:
-                expiration = _parse_expiration_date(item.get("expiry") or item.get("expiration_date")) or date.max
-                strike = _finite_float(item.get("strike") or item.get("strike_price"))
-                strike_distance = abs(strike - underlying_price) if strike is not None and underlying_price is not None else float("inf")
-                option_type = str(item.get("option_type") or item.get("contract_type") or "").lower()
-                right_rank = 0 if option_type.startswith("call") else 1
-                liquidity = max(_finite_float(item.get("open_interest")) or 0.0, _finite_float(item.get("volume")) or 0.0)
-                return (expiration, strike_distance, right_rank, -liquidity)
-
-            ordered = sorted(candidates, key=_sort_key)
-            return [
-                OptionsHealthSample(
-                    underlying=underlying,
-                    option_symbol=str(item["ticker"]).upper().strip(),
-                    selection_method="discovered",
-                )
-                for item in ordered[:OPTIONS_HEALTH_MAX_DISCOVERED_CANDIDATES]
-            ], None, False
-
-        return [], "; ".join(errors)[:300] if errors else "No active option contracts returned for sample underlyings.", False
+        return OptionsHealthDiscovery(
+            samples=[],
+            error="; ".join(errors)[:300] if errors else "No active option contracts returned for sample underlyings.",
+        )
 
     def _static_options_health_sample(self) -> OptionsHealthSample:
         return OptionsHealthSample(
@@ -1459,120 +1650,306 @@ class MarketDataService:
             selection_method="static_sample",
         )
 
+    def _option_health_attempt_payload(
+        self,
+        *,
+        sample: OptionsHealthSample,
+        snapshot: OptionContractSnapshot | None = None,
+        error: object | None = None,
+        underlying_index_value_exists: bool | None = None,
+    ) -> dict[str, object]:
+        has_bid_ask = bool(snapshot and snapshot.bid is not None and snapshot.ask is not None)
+        has_last_trade = bool(snapshot and snapshot.latest_trade_price is not None)
+        has_prior_close = bool(snapshot and snapshot.prior_close is not None)
+        if error is not None:
+            sanitized = _redact_provider_text(error)
+            result = "error_not_entitled" if _is_entitlement_error_text(sanitized) else "error"
+        elif snapshot is None:
+            sanitized = None
+            result = "no_mark"
+        elif snapshot.mark_method == "prior_close_fallback":
+            sanitized = None
+            result = "prior_close"
+        elif snapshot.mark_method in {"quote_mid", "last_trade"}:
+            sanitized = None
+            result = snapshot.mark_method
+        else:
+            sanitized = snapshot.provider_error
+            result = "error_not_entitled" if _is_entitlement_error_text(snapshot.provider_error) else "no_mark"
+        payload: dict[str, object] = {
+            "option_symbol": sample.option_symbol,
+            "expiration": sample.expiration.isoformat() if sample.expiration is not None else None,
+            "strike": sample.strike,
+            "option_type": sample.option_type,
+            "dte": sample.dte,
+            "result": result,
+            "mark_method": snapshot.mark_method if snapshot else "unavailable",
+            "stale": bool(snapshot.stale) if snapshot else False,
+            "has_bid_ask": has_bid_ask,
+            "has_last_trade": has_last_trade,
+            "has_prior_close": has_prior_close,
+            "underlying_index_value_exists": underlying_index_value_exists,
+        }
+        if sanitized:
+            payload["error"] = _redact_provider_text(sanitized)
+        return payload
+
+    def _options_health_result(
+        self,
+        *,
+        sample_symbol: str,
+        probe_state: str,
+        details: str,
+        elapsed_ms: float | None,
+        sample: OptionsHealthSample | None = None,
+        snapshot: OptionContractSnapshot | None = None,
+        candidate_attempts: list[dict[str, object]] | None = None,
+        underlying_price: float | None = None,
+        entitlement_status: str = "unknown",
+        sample_selection_method: str | None = None,
+    ) -> dict[str, object]:
+        return {
+            "probe_state": probe_state,
+            "probe_status": probe_state,
+            "details": _redact_provider_text(details),
+            "sample_underlying": sample.underlying if sample else sample_symbol.upper(),
+            "sample_option_symbol": sample.option_symbol if sample else None,
+            "sample_selection_method": sample.selection_method if sample else (sample_selection_method or "unavailable"),
+            "sample_mark_method": snapshot.mark_method if snapshot else "unavailable",
+            "sample_expiration": sample.expiration.isoformat() if sample and sample.expiration is not None else None,
+            "sample_strike": sample.strike if sample else None,
+            "sample_option_type": sample.option_type if sample else None,
+            "sample_dte": sample.dte if sample else None,
+            "sample_has_bid_ask": bool(snapshot and snapshot.bid is not None and snapshot.ask is not None),
+            "sample_has_last_trade": bool(snapshot and snapshot.latest_trade_price is not None),
+            "sample_has_prior_close": bool(snapshot and snapshot.prior_close is not None),
+            "underlying_index_value_exists": underlying_price is not None if option_underlying_asset_type(sample_symbol) == "index" else None,
+            "sample_stale": bool(snapshot.stale) if snapshot else False,
+            "entitlement_status": entitlement_status,
+            "candidate_attempts": candidate_attempts or [],
+            "latency_ms": elapsed_ms,
+            "last_success_at": self._provider._last_success_at.isoformat() if isinstance(self._provider, PolygonMarketDataProvider) and self._provider._last_success_at else None,
+        }
+
     def options_data_health(self, sample_symbol: str = "SPY") -> dict[str, object]:
-        cached = self._options_health_cache.get(f"options_health::{sample_symbol.upper()}")
+        sample_symbol = sample_symbol.upper().strip() or "SPY"
+        is_index_probe = option_underlying_asset_type(sample_symbol) == "index"
+        cached = self._options_health_cache.get(f"options_health::{sample_symbol}")
         if cached is not None:
             return cached
 
         if not settings.polygon_enabled:
-            result = {
-                "probe_state": "skipped",
-                "probe_status": "skipped",
-                "details": "Options data readiness is disabled because Polygon market data is not selected.",
-                "sample_underlying": sample_symbol.upper(),
-                "sample_option_symbol": None,
-                "sample_selection_method": "unavailable",
-                "sample_mark_method": "unavailable",
-                "latency_ms": None,
-                "last_success_at": None,
-            }
-            self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+            result = self._options_health_result(
+                sample_symbol=sample_symbol,
+                probe_state="skipped",
+                details="Options data readiness is disabled because Polygon market data is not selected.",
+                elapsed_ms=None,
+            )
+            self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
             return result
         if not isinstance(self._provider, PolygonMarketDataProvider) or not self._provider.is_configured():
-            result = {
-                "probe_state": "unavailable",
-                "probe_status": "unavailable",
-                "details": "Options data readiness requires Polygon API key and base URL configuration.",
-                "sample_underlying": sample_symbol.upper(),
-                "sample_option_symbol": None,
-                "sample_selection_method": "unavailable",
-                "sample_mark_method": "unavailable",
-                "latency_ms": None,
-                "last_success_at": None,
-            }
-            self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+            result = self._options_health_result(
+                sample_symbol=sample_symbol,
+                probe_state="unavailable",
+                details="Options data readiness requires Polygon API key and base URL configuration.",
+                elapsed_ms=None,
+            )
+            self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
             return result
 
         started = monotonic()
         try:
-            samples, discovery_error, discovery_entitlement = self._discover_options_health_samples(sample_symbol)
-            if discovery_entitlement:
-                elapsed = round((monotonic() - started) * 1000, 2)
-                result = {
-                    "probe_state": "failed",
-                    "probe_status": "failed",
-                    "details": "Options sample discovery is not entitled to option reference data.",
-                    "sample_underlying": sample_symbol.upper(),
-                    "sample_option_symbol": None,
-                    "sample_selection_method": "unavailable",
-                    "sample_mark_method": "unavailable",
-                    "latency_ms": elapsed,
-                    "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
-                }
-                self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+            discovery = self._discover_options_health_samples(sample_symbol)
+            elapsed = round((monotonic() - started) * 1000, 2)
+            if discovery.underlying_error:
+                result = self._options_health_result(
+                    sample_symbol=sample_symbol,
+                    probe_state="failed_underlying_index_data",
+                    details=(
+                        "SPX underlying index snapshot unavailable. "
+                        + (
+                            "Index data entitlement required for SPX/index underlying snapshots."
+                            if discovery.underlying_entitlement_error
+                            else discovery.underlying_error
+                        )
+                    ),
+                    elapsed_ms=elapsed,
+                    underlying_price=discovery.underlying_price,
+                    entitlement_status="not_entitled" if discovery.underlying_entitlement_error else "unknown",
+                )
+                self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
                 return result
-            if not samples:
+            if discovery.entitlement_error:
+                elapsed = round((monotonic() - started) * 1000, 2)
+                result = self._options_health_result(
+                    sample_symbol=sample_symbol,
+                    probe_state="failed_not_entitled",
+                    details="Options sample discovery is not entitled to option reference data.",
+                    elapsed_ms=elapsed,
+                    underlying_price=discovery.underlying_price,
+                    entitlement_status="not_entitled",
+                )
+                self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+                return result
+            samples = discovery.samples
+            if not samples and not is_index_probe:
                 samples = [self._static_options_health_sample()]
+            if not samples:
+                elapsed = round((monotonic() - started) * 1000, 2)
+                result = self._options_health_result(
+                    sample_symbol=sample_symbol,
+                    probe_state="degraded",
+                    details=discovery.error or "SPX index options discovery did not return an active non-expired sample contract.",
+                    elapsed_ms=elapsed,
+                    underlying_price=discovery.underlying_price,
+                    entitlement_status="unknown",
+                )
+                self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+                return result
 
             last_snapshot: OptionContractSnapshot | None = None
+            last_sample: OptionsHealthSample | None = None
+            warn_snapshot: OptionContractSnapshot | None = None
+            warn_sample: OptionsHealthSample | None = None
+            candidate_attempts: list[dict[str, object]] = []
+            underlying_exists = discovery.underlying_price is not None if is_index_probe else None
             for sample in samples:
-                snapshot = self.option_contract_snapshot(
-                    underlying_symbol=sample.underlying,
-                    option_symbol=sample.option_symbol,
-                )
-                last_snapshot = snapshot
-                if snapshot.mark_method == "unavailable":
+                last_sample = sample
+                try:
+                    snapshot = self.option_contract_snapshot(
+                        underlying_symbol=sample.underlying,
+                        option_symbol=sample.option_symbol,
+                    )
+                except DataNotEntitledError as exc:
+                    candidate_attempts.append(
+                        self._option_health_attempt_payload(
+                            sample=sample,
+                            error=exc,
+                            underlying_index_value_exists=underlying_exists,
+                        )
+                    )
+                    elapsed = round((monotonic() - started) * 1000, 2)
+                    result = self._options_health_result(
+                        sample_symbol=sample_symbol,
+                        probe_state="failed_not_entitled",
+                        details="Options snapshot probe is not entitled to sampled option data.",
+                        elapsed_ms=elapsed,
+                        sample=sample,
+                        candidate_attempts=candidate_attempts,
+                        underlying_price=discovery.underlying_price,
+                        entitlement_status="not_entitled",
+                    )
+                    self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+                    return result
+                except (ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+                    candidate_attempts.append(
+                        self._option_health_attempt_payload(
+                            sample=sample,
+                            error=exc,
+                            underlying_index_value_exists=underlying_exists,
+                        )
+                    )
                     continue
+                last_snapshot = snapshot
+                candidate_attempts.append(
+                    self._option_health_attempt_payload(
+                        sample=sample,
+                        snapshot=snapshot,
+                        underlying_index_value_exists=underlying_exists,
+                    )
+                )
+                if snapshot.provider_error and _is_entitlement_error_text(snapshot.provider_error):
+                    elapsed = round((monotonic() - started) * 1000, 2)
+                    result = self._options_health_result(
+                        sample_symbol=sample_symbol,
+                        probe_state="failed_not_entitled",
+                        details="Options snapshot probe is not entitled to sampled option data.",
+                        elapsed_ms=elapsed,
+                        sample=sample,
+                        snapshot=snapshot,
+                        candidate_attempts=candidate_attempts,
+                        underlying_price=discovery.underlying_price,
+                        entitlement_status="not_entitled",
+                    )
+                    self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+                    return result
+                if snapshot.mark_method in {"quote_mid", "last_trade"} and not snapshot.stale:
+                    elapsed = round((monotonic() - started) * 1000, 2)
+                    result = self._options_health_result(
+                        sample_symbol=sample_symbol,
+                        probe_state="ok",
+                        details=f"Polygon options snapshot probe succeeded using {snapshot.mark_method}.",
+                        elapsed_ms=elapsed,
+                        sample=sample,
+                        snapshot=snapshot,
+                        candidate_attempts=candidate_attempts,
+                        underlying_price=discovery.underlying_price,
+                        entitlement_status="entitled",
+                    )
+                    self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+                    return result
+                if snapshot.mark_method == "prior_close_fallback" and warn_snapshot is None:
+                    warn_snapshot = snapshot
+                    warn_sample = sample
+                    continue
+
+            if warn_snapshot is not None and warn_sample is not None:
                 elapsed = round((monotonic() - started) * 1000, 2)
-                result = {
-                    "probe_state": "ok",
-                    "probe_status": "ok",
-                    "details": (
-                        "Access verified; fresh quote/trade mark not available for sample; using prior_close_fallback."
-                        if snapshot.mark_method == "prior_close_fallback"
-                        else f"Polygon options snapshot probe succeeded using {snapshot.mark_method}."
-                    ),
-                    "sample_underlying": sample.underlying,
-                    "sample_option_symbol": sample.option_symbol,
-                    "sample_selection_method": sample.selection_method,
-                    "sample_mark_method": snapshot.mark_method,
-                    "latency_ms": elapsed,
-                    "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
-                }
-                self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+                result = self._options_health_result(
+                    sample_symbol=sample_symbol,
+                    probe_state="warn",
+                    details="Access verified; fresh quote/trade mark was not available for sampled contracts; prior_close_fallback is stale context only.",
+                    elapsed_ms=elapsed,
+                    sample=warn_sample,
+                    snapshot=warn_snapshot,
+                    candidate_attempts=candidate_attempts,
+                    underlying_price=discovery.underlying_price,
+                    entitlement_status="entitled",
+                )
+                self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
                 return result
 
             elapsed = round((monotonic() - started) * 1000, 2)
-            failed_sample = samples[-1]
-            result = {
-                "probe_state": "failed",
-                "probe_status": "failed",
-                "details": (
-                    last_snapshot.provider_error
-                    if last_snapshot and last_snapshot.provider_error
-                    else "Options snapshot probe did not return a usable mark."
-                ),
-                "sample_underlying": failed_sample.underlying,
-                "sample_option_symbol": failed_sample.option_symbol,
-                "sample_selection_method": failed_sample.selection_method,
-                "sample_mark_method": last_snapshot.mark_method if last_snapshot else "unavailable",
-                "latency_ms": elapsed,
-                "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
-            }
+            detail = (
+                "SPX index options discovered, but no fresh usable mark was returned for sampled contracts."
+                if is_index_probe
+                else "Options contracts discovered, but no fresh usable mark was returned for sampled contracts."
+            )
+            if last_snapshot and last_snapshot.provider_error and _is_entitlement_error_text(last_snapshot.provider_error):
+                result = self._options_health_result(
+                    sample_symbol=sample_symbol,
+                    probe_state="failed_not_entitled",
+                    details="Options snapshot probe is not entitled to sampled option data.",
+                    elapsed_ms=elapsed,
+                    sample=last_sample,
+                    snapshot=last_snapshot,
+                    candidate_attempts=candidate_attempts,
+                    underlying_price=discovery.underlying_price,
+                    entitlement_status="not_entitled",
+                )
+            else:
+                result = self._options_health_result(
+                    sample_symbol=sample_symbol,
+                    probe_state="degraded",
+                    details=detail,
+                    elapsed_ms=elapsed,
+                    sample=last_sample,
+                    snapshot=last_snapshot,
+                    candidate_attempts=candidate_attempts,
+                    underlying_price=discovery.underlying_price,
+                    entitlement_status="entitled" if candidate_attempts else "unknown",
+                )
         except (DataNotEntitledError, ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
             elapsed = round((monotonic() - started) * 1000, 2)
-            result = {
-                "probe_state": "failed",
-                "probe_status": "failed",
-                "details": str(exc)[:300],
-                "sample_underlying": sample_symbol.upper(),
-                "sample_option_symbol": None,
-                "sample_selection_method": "unavailable",
-                "sample_mark_method": "unavailable",
-                "latency_ms": elapsed,
-                "last_success_at": self._provider._last_success_at.isoformat() if isinstance(self._provider, PolygonMarketDataProvider) and self._provider._last_success_at else None,
-            }
-        self._options_health_cache.set(f"options_health::{sample_symbol.upper()}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
+            state = "failed_not_entitled" if _is_entitlement_error_text(exc) else "degraded"
+            result = self._options_health_result(
+                sample_symbol=sample_symbol,
+                probe_state=state,
+                details=_redact_provider_text(exc),
+                elapsed_ms=elapsed,
+                entitlement_status="not_entitled" if state == "failed_not_entitled" else "unknown",
+            )
+        self._options_health_cache.set(f"options_health::{sample_symbol}", result, settings.market_data_option_snapshot_cache_ttl_seconds)
         return result
 
     def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:

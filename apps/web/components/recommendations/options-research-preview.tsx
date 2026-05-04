@@ -33,16 +33,19 @@ import {
   getOptionsLegDisplayLines,
   getOptionsResearchDisplayDte,
   getOptionsPaperOpenAvailability,
+  getOptionsPremiumSourceDetail,
   getOptionsPremiumLabel,
   getOptionsPremiumValue,
   getOptionsReplayPreviewAvailability,
   getOptionsReplayPreviewBreakevens,
   getOptionsReplayPreviewPayoffRows,
+  isLikelyIndexOptionsSymbol,
   OPTIONS_COMMISSION_EXAMPLE_TEXT,
   OPTIONS_COMMISSION_FORMULA_TEXT,
   OPTIONS_COMMISSION_NOT_PER_SHARE_TEXT,
   estimateOptionsCommissionForEvents,
   estimateOptionsCommissionPerEvent,
+  formatOptionsOpeningPriceSource,
   type OptionsPaperCloseResponse,
   type OptionsPaperOpenResponse,
   type OptionsReplayPreviewAvailability,
@@ -236,7 +239,7 @@ function OptionsContractSnapshotTable({
       <strong>Selected listed contract snapshots:</strong>
       <div className="op-table-scroll" style={{ marginTop: 6 }}>
         <table className="op-table">
-          <thead><tr><th>Leg</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
+          <thead><tr><th>Leg</th><th>Strike snap</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
           <tbody>
             {legs.map((leg, index) => (
               <tr key={`${leg.option_symbol ?? leg.label ?? "leg"}-${index}`}>
@@ -245,8 +248,18 @@ function OptionsContractSnapshotTable({
                   <span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.option_symbol ?? "Missing from selected contract snapshot"}</span>
                 </td>
                 <td>
+                  target {formatResearchValue(leg.target_strike, "Unavailable")}<br />
+                  selected {formatResearchValue(leg.selected_listed_strike ?? leg.strike, "Unavailable")}<br />
+                  <span style={{ color: "var(--op-muted, #7a8999)" }}>
+                    snap {formatResearchValue(leg.strike_snap_distance, "Unavailable")} / allowed {formatResearchValue(leg.strike_snap_allowed, "Unavailable")}
+                  </span>
+                </td>
+                <td>
                   {formatResearchValue(leg.current_mark_premium, "Missing from selected contract snapshot")}<br />
-                  <span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.mark_method ?? "mark method missing"}</span>
+                  <span style={{ color: "var(--op-muted, #7a8999)" }}>
+                    {leg.mark_method ?? "mark method missing"}
+                    {leg.premium_source ? ` | premium source ${formatOptionsOpeningPriceSource(leg.premium_source)}` : ""}
+                  </span>
                 </td>
                 <td>
                   IV {formatResearchValue(leg.implied_volatility, "Missing from selected contract snapshot")}<br />
@@ -491,6 +504,7 @@ export function OptionsStructureRiskSummary({
 }) {
   const structure = setup.option_structure ?? null;
   const chainPreview = setup.options_chain_preview ?? null;
+  const isIndexOption = structure?.underlying_asset_type === "index" || isLikelyIndexOptionsSymbol(setup.symbol);
   const displayDte = getOptionsResearchDisplayDte(structure, setup.expected_range);
   const structureBreakevens = getStructureBreakevenValues(structure);
   const replayBreakevens = getOptionsReplayPreviewBreakevens(replayPreview);
@@ -503,6 +517,8 @@ export function OptionsStructureRiskSummary({
       ? "Net debit"
       : getOptionsPremiumLabel(structure);
   const premiumValue = replayNetCredit ?? replayNetDebit ?? getOptionsPremiumValue(structure);
+  const openingPriceSource = formatOptionsOpeningPriceSource(structure?.opening_price_source);
+  const premiumSourceDetail = getOptionsPremiumSourceDetail(structure);
   const maxProfit = toFiniteRiskNumber(replayPreview?.max_profit) ?? toFiniteRiskNumber(structure?.max_profit);
   const maxLoss = toFiniteRiskNumber(replayPreview?.max_loss) ?? toFiniteRiskNumber(structure?.max_loss);
   const replayStatus = replayPreview ? formatOptionsReplayToken(replayPreview.status) : "Not run yet";
@@ -567,7 +583,15 @@ export function OptionsStructureRiskSummary({
         <StatusBadge tone={getExpectedRangeTone(setup.expected_range?.status ?? null)}>
           Expected range {expectedRangeStatus}
         </StatusBadge>
+        {isIndexOption ? <StatusBadge tone="neutral">Index option</StatusBadge> : null}
       </div>
+
+      {isIndexOption ? (
+        <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
+          {structure?.index_option_notice ?? "Index option research. Cash-settled. No share delivery modeled."}
+          {" "}Paper-only; no exercise/assignment automation and no broker routing.
+        </div>
+      ) : null}
 
       <div style={{ marginBottom: 6, fontSize: "0.82rem", fontWeight: 600 }}>What this is</div>
       <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
@@ -599,7 +623,12 @@ export function OptionsStructureRiskSummary({
         <RiskMetricCard
           label={premiumLabel}
           value={formatResearchCurrency(premiumValue)}
-          detail={replayPreview ? "Replay values take precedence once a preview has run." : "Read-only research contract."}
+          detail={replayPreview ? "Replay values take precedence once a preview has run." : premiumSourceDetail}
+        />
+        <RiskMetricCard
+          label="Opening price source"
+          value={openingPriceSource}
+          detail={structure?.fresh_provider_pricing_available === false ? "Fresh quote_mid or last_trade marks are required before paper persistence." : "Provider marks drive listed-contract opening estimates when available."}
         />
         <RiskMetricCard
           label="Max profit"
@@ -938,6 +967,7 @@ export function OptionsPaperLifecyclePanel({
           <div><strong>Expiration:</strong> {formatResearchValue(setup.option_structure?.expiration)}</div>
           <div><strong>DTE:</strong> {formatResearchValue(displayDte)}</div>
           <div><strong>{getOptionsPremiumLabel(setup.option_structure)}:</strong> {formatResearchCurrency(getOptionsPremiumValue(setup.option_structure))}</div>
+          <div><strong>Opening price source:</strong> {formatOptionsOpeningPriceSource(setup.option_structure?.opening_price_source)}</div>
           <div><strong><MetricLabel label="Max profit" term="max_profit" />:</strong> {formatResearchCurrency(setup.option_structure?.max_profit)}</div>
           <div><strong><MetricLabel label="Max loss" term="max_loss" />:</strong> {formatResearchCurrency(setup.option_structure?.max_loss)}</div>
         </div>
@@ -976,6 +1006,9 @@ export function OptionsPaperLifecyclePanel({
           {(openAvailability.request?.legs ?? []).map((leg, index) => (
             <div key={`${leg.action}-${leg.right}-${leg.strike}-${index}`} style={{ color: "var(--op-muted, #7a8999)" }}>
               {formatOptionsLegLabel(leg)} | qty {leg.quantity} | multiplier {leg.multiplier} | entry premium {formatResearchCurrency(leg.premium)}
+              {typeof leg.contract_selection?.premium_source === "string"
+                ? ` | premium source ${formatOptionsOpeningPriceSource(leg.contract_selection.premium_source)}`
+                : ""}
               {leg.option_symbol ? ` | ${leg.option_symbol}` : ""}
             </div>
           ))}

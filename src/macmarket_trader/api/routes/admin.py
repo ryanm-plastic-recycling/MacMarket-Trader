@@ -464,11 +464,18 @@ def _workflow_bars(symbol: str, limit: int = 60, timeframe: str = "1D") -> tuple
     try:
         bars, source, fallback_mode = market_data_service.historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
     except DataNotEntitledError:
+        if option_underlying_asset_type(symbol) == "index":
+            entitlement_message = (
+                f"Index data entitlement required for {symbol}. The app will not silently fall back to an ETF substitute; "
+                "use an ETF symbol such as SPY only as an explicit operator choice."
+            )
+        else:
+            entitlement_message = f"Your data plan does not include {symbol}. Provider-backed workflows stay blocked rather than using hidden fallback data."
         raise HTTPException(
             status_code=402,
             detail={
                 "error": "data_not_entitled",
-                "message": f"Your data plan does not include {symbol}. Index bar data (SPX, NDX, VIX) requires a plan upgrade.",
+                "message": entitlement_message,
             },
         )
     except SymbolNotFoundError:
@@ -2523,11 +2530,94 @@ def _chain_side_missing_reason(chain_preview: object) -> str | None:
     return None
 
 
+def _moneyish(value: float | int | None) -> str:
+    if value is None:
+        return "unavailable"
+    return f"{float(value):.2f}"
+
+
+def _iron_condor_target_strikes(legs: list[dict[str, object]]) -> tuple[dict[str, float] | None, str | None]:
+    role_legs: dict[str, dict[str, object]] = {}
+    for leg in legs:
+        role = _iron_condor_role(leg)
+        if role is None or role in role_legs:
+            return None, "Cannot build iron condor: exactly one long put, short put, short call, and long call are required."
+        role_legs[role] = leg
+    required_roles = {"lower_long_put", "short_put", "short_call", "higher_long_call"}
+    if set(role_legs) != required_roles:
+        return None, "Cannot build iron condor: exactly two puts and two calls are required."
+
+    targets: dict[str, float] = {}
+    for role, leg in role_legs.items():
+        target = _finite_float(leg.get("target_strike") if leg.get("target_strike") is not None else leg.get("strike"))
+        if target is None:
+            return None, "Cannot build iron condor: every leg needs a target strike."
+        targets[role] = target
+    return targets, None
+
+
+def _option_reference_price_from_targets(
+    option_structure: dict[str, object],
+    targets: dict[str, float],
+) -> float | None:
+    configured = _finite_float(
+        option_structure.get("underlying_reference_price")
+        or option_structure.get("underlying_mark_price")
+        or option_structure.get("underlying_price")
+    )
+    if configured is not None and configured > 0:
+        return configured
+    short_put = targets.get("short_put")
+    short_call = targets.get("short_call")
+    if short_put is not None and short_call is not None:
+        midpoint = (short_put + short_call) / 2
+        if midpoint > 0:
+            return midpoint
+    if targets:
+        average = sum(targets.values()) / len(targets)
+        if average > 0:
+            return average
+    return None
+
+
+def _allowed_strike_snap(reference_price: float | None) -> float:
+    abs_limit = _finite_float(getattr(settings, "options_max_strike_snap_abs", 5.0)) or 5.0
+    pct_limit = None
+    pct = _finite_float(getattr(settings, "options_max_strike_snap_pct", 0.025))
+    if reference_price is not None and reference_price > 0 and pct is not None and pct > 0:
+        pct_limit = reference_price * pct
+    allowed = min(abs_limit, pct_limit) if pct_limit is not None else abs_limit
+    return round(max(0.01, float(allowed)), 4)
+
+
+def _snap_distance_pct(distance: float, reference_price: float | None) -> float | None:
+    if reference_price is None or reference_price <= 0:
+        return None
+    return round(float(distance) / float(reference_price), 6)
+
+
+def _snap_failure_reason(
+    *,
+    target: float,
+    selected: float | None,
+    allowed: float,
+) -> str:
+    if selected is None:
+        return f"Unable to resolve listed contract near target strike. Target {_moneyish(target)} had no provider-listed contract candidate within allowed threshold {_moneyish(allowed)}."
+    snap = abs(float(selected) - float(target))
+    return (
+        "Unable to resolve listed contract near target strike. "
+        f"Target {_moneyish(target)} selected {_moneyish(selected)}, snap {_moneyish(snap)} exceeds allowed threshold {_moneyish(allowed)}."
+    )
+
+
 def _fetch_option_contract_rows(
     *,
     symbol: str,
     expiration: date | None,
     option_type: str | None = None,
+    strike_gte: float | None = None,
+    strike_lte: float | None = None,
 ) -> tuple[list[dict[str, object]] | None, str | None]:
     fetcher = getattr(market_data_service, "option_contracts", None)
     if not callable(fetcher):
@@ -2539,13 +2629,23 @@ def _fetch_option_contract_rows(
             underlying_symbol=symbol,
             expiration=expiration,
             option_type=option_type,
+            strike_gte=strike_gte,
+            strike_lte=strike_lte,
             limit=1000,
         )
     except TypeError:
         try:
-            rows = fetcher(symbol=symbol, expiration=expiration, option_type=option_type, limit=1000)
+            rows = fetcher(symbol=symbol, expiration=expiration, option_type=option_type, strike_gte=strike_gte, strike_lte=strike_lte, limit=1000)
         except Exception as exc:
-            return None, str(exc)[:300]
+            try:
+                rows = fetcher(underlying_symbol=symbol, expiration=expiration, option_type=option_type, limit=1000)
+            except TypeError:
+                try:
+                    rows = fetcher(symbol=symbol, expiration=expiration, option_type=option_type, limit=1000)
+                except Exception as fallback_exc:
+                    return None, str(fallback_exc)[:300]
+            except Exception as fallback_exc:
+                return None, str(fallback_exc)[:300]
     except Exception as exc:
         return None, str(exc)[:300]
     return [dict(row) for row in rows or [] if isinstance(row, dict)], None
@@ -2608,18 +2708,24 @@ def _contract_selection_payload(
     contract: _ListedOptionContract,
     method: str,
     warnings: list[str],
+    allowed_snap: float,
+    reference_price: float | None,
 ) -> dict[str, object]:
+    snap_distance = round(abs(contract.strike - float(target_strike)), 4)
     return {
         "resolved": True,
         "requested_underlying": symbol.upper(),
         "underlying_asset_type": asset_type,
+        "underlying_reference_price": reference_price,
         "target_expiration": target_expiration.isoformat(),
         "selected_expiration": contract.expiration.isoformat(),
         "option_type": option_type,
         "leg_role": role,
         "target_strike": round(float(target_strike), 4),
         "selected_listed_strike": contract.strike,
-        "strike_snap_distance": round(abs(contract.strike - float(target_strike)), 4),
+        "strike_snap_distance": snap_distance,
+        "strike_snap_distance_pct": _snap_distance_pct(snap_distance, reference_price),
+        "strike_snap_allowed": allowed_snap,
         "provider": "polygon",
         "provider_contract_symbol": contract.option_symbol,
         "contract_selection_method": method,
@@ -2710,6 +2816,145 @@ def _block_option_structure(
     return option_structure
 
 
+_FRESH_OPTION_OPENING_MARK_METHODS = {"quote_mid", "last_trade"}
+
+
+def _mark_option_structure_pricing_blocked(
+    option_structure: dict[str, object],
+    *,
+    reason: str,
+    warnings: list[str],
+    opening_price_source: str = "theoretical_estimate",
+) -> dict[str, object]:
+    warning_values = sorted({str(item) for item in warnings if str(item).strip()} | {reason})
+    option_structure["fresh_provider_pricing_available"] = False
+    option_structure["opening_price_source"] = opening_price_source
+    option_structure["provider_mark_status"] = (
+        "stale"
+        if opening_price_source == "prior_close_fallback"
+        else "fresh"
+        if opening_price_source in _FRESH_OPTION_OPENING_MARK_METHODS
+        else "unavailable"
+    )
+    option_structure["paper_persistence_allowed"] = False
+    option_structure["structure_validation_status"] = "invalid"
+    option_structure["structure_validation_summary"] = reason
+    option_structure["structure_validation_warnings"] = warning_values
+    option_structure["contract_resolution_warnings"] = sorted(
+        set([str(item) for item in (option_structure.get("contract_resolution_warnings") or []) if str(item).strip()] + warning_values)
+    )
+    option_structure["max_profit"] = None
+    option_structure["max_loss"] = None
+    option_structure["breakeven_low"] = None
+    option_structure["breakeven_high"] = None
+    option_structure["net_credit"] = None
+    option_structure["net_debit"] = None
+    return option_structure
+
+
+def _apply_provider_opening_prices(option_structure: dict[str, object]) -> None:
+    structure_type = str(option_structure.get("type") or "").strip().lower()
+    if structure_type not in {"iron_condor", "vertical_debit_spread", "bull_call_debit_spread", "bear_put_debit_spread", "long_call", "long_put"}:
+        return
+
+    if option_structure.get("net_credit") is not None and option_structure.get("theoretical_net_credit") is None:
+        option_structure["theoretical_net_credit"] = option_structure.get("net_credit")
+    if option_structure.get("net_debit") is not None and option_structure.get("theoretical_net_debit") is None:
+        option_structure["theoretical_net_debit"] = option_structure.get("net_debit")
+
+    legs = [leg for leg in option_structure.get("legs", []) if isinstance(leg, dict)]
+    if not legs:
+        return
+
+    invalid_mark_labels: list[str] = []
+    saw_prior_close = False
+    fresh_methods: list[str] = []
+    for leg in legs:
+        method = str(leg.get("mark_method") or "").strip().lower()
+        mark = _finite_float(leg.get("current_mark_premium"))
+        stale = bool(leg.get("stale"))
+        if method == "prior_close_fallback":
+            saw_prior_close = True
+        if method not in _FRESH_OPTION_OPENING_MARK_METHODS or mark is None or stale:
+            label = str(leg.get("label") or leg.get("option_symbol") or "leg")
+            invalid_mark_labels.append(label)
+            continue
+        leg["premium"] = round(float(mark), 4)
+        leg["premium_source"] = method
+        fresh_methods.append(method)
+
+    if invalid_mark_labels:
+        source = "prior_close_fallback" if saw_prior_close else "theoretical_estimate"
+        reason = "fresh_option_mark_required_for_paper_open"
+        warnings = [
+            "Fresh provider option marks are required before this listed-contract setup can be treated as ready.",
+            "Prior-close fallback marks are stale context only and are not used as fresh paper-open pricing.",
+            f"Unpriced or stale legs: {', '.join(sorted(invalid_mark_labels))}.",
+        ]
+        _mark_option_structure_pricing_blocked(
+            option_structure,
+            reason=reason,
+            warnings=warnings,
+            opening_price_source=source,
+        )
+        return
+
+    sell_total = sum(float(leg.get("premium") or 0.0) for leg in legs if str(leg.get("action") or "").strip().lower() == "sell")
+    buy_total = sum(float(leg.get("premium") or 0.0) for leg in legs if str(leg.get("action") or "").strip().lower() == "buy")
+    net_credit = round(sell_total - buy_total, 4)
+    net_debit = round(buy_total - sell_total, 4)
+    source = "quote_mid" if fresh_methods and all(method == "quote_mid" for method in fresh_methods) else "last_trade"
+    option_structure["fresh_provider_pricing_available"] = True
+    option_structure["opening_price_source"] = source
+    option_structure["provider_mark_status"] = "fresh"
+    price_warnings = [
+        str(item)
+        for item in (option_structure.get("structure_validation_warnings") or [])
+        if str(item).strip()
+    ]
+
+    normalized = "vertical_debit_spread" if structure_type in {"bull_call_debit_spread", "bear_put_debit_spread"} else structure_type
+    if normalized == "iron_condor":
+        option_structure["provider_mark_net_credit"] = net_credit
+        option_structure["provider_mark_net_debit"] = None
+        theoretical_credit = _finite_float(option_structure.get("theoretical_net_credit"))
+        if theoretical_credit is not None and abs(theoretical_credit - net_credit) > max(0.25, abs(theoretical_credit) * 0.25):
+            price_warnings.append(
+                "Provider mark credit differs materially from the theoretical estimate; provider marks drive readiness and paper-open pricing."
+            )
+        if net_credit <= 0:
+            _mark_option_structure_pricing_blocked(
+                option_structure,
+                reason="provider_marks_do_not_form_positive_iron_condor_credit",
+                warnings=["Selected listed contracts have fresh marks, but they do not produce a positive credit iron condor."],
+                opening_price_source=source,
+            )
+            return
+        option_structure["net_credit"] = _round_money(net_credit)
+        option_structure["net_debit"] = None
+    else:
+        option_structure["provider_mark_net_credit"] = net_credit if net_credit > 0 else None
+        option_structure["provider_mark_net_debit"] = net_debit if net_debit > 0 else None
+        theoretical_debit = _finite_float(option_structure.get("theoretical_net_debit"))
+        theoretical_credit = _finite_float(option_structure.get("theoretical_net_credit"))
+        if theoretical_debit is not None and net_debit > 0 and abs(theoretical_debit - net_debit) > max(0.25, abs(theoretical_debit) * 0.25):
+            price_warnings.append(
+                "Provider mark debit differs materially from the theoretical estimate; provider marks drive readiness and paper-open pricing."
+            )
+        if theoretical_credit is not None and net_credit > 0 and abs(theoretical_credit - net_credit) > max(0.25, abs(theoretical_credit) * 0.25):
+            price_warnings.append(
+                "Provider mark credit differs materially from the theoretical estimate; provider marks drive readiness and paper-open pricing."
+            )
+        if net_debit > 0:
+            option_structure["net_debit"] = _round_money(net_debit)
+            option_structure["net_credit"] = None
+        elif net_credit > 0:
+            option_structure["net_credit"] = _round_money(net_credit)
+            option_structure["net_debit"] = None
+    if price_warnings:
+        option_structure["structure_validation_warnings"] = sorted(set(price_warnings))
+
+
 def _select_iron_condor_contracts_from_rows(
     *,
     symbol: str,
@@ -2718,23 +2963,11 @@ def _select_iron_condor_contracts_from_rows(
     rows: list[dict[str, object]],
     method: str,
     warnings: list[str],
+    underlying_reference_price: float | None,
 ) -> tuple[dict[str, dict[str, object]] | None, str | None]:
-    role_legs: dict[str, dict[str, object]] = {}
-    for leg in legs:
-        role = _iron_condor_role(leg)
-        if role is None or role in role_legs:
-            return None, "Cannot build iron condor: exactly one long put, short put, short call, and long call are required."
-        role_legs[role] = leg
-    required_roles = {"lower_long_put", "short_put", "short_call", "higher_long_call"}
-    if set(role_legs) != required_roles:
-        return None, "Cannot build iron condor: exactly two puts and two calls are required."
-
-    targets: dict[str, float] = {}
-    for role, leg in role_legs.items():
-        target = _finite_float(leg.get("target_strike") if leg.get("target_strike") is not None else leg.get("strike"))
-        if target is None:
-            return None, "Cannot build iron condor: every leg needs a target strike."
-        targets[role] = target
+    targets, target_error = _iron_condor_target_strikes(legs)
+    if targets is None:
+        return None, target_error
 
     candidates = [candidate for row in rows if (candidate := _listed_contract_from_row(row)) is not None]
     if not candidates:
@@ -2762,10 +2995,33 @@ def _select_iron_condor_contracts_from_rows(
     if not puts and not calls:
         return None, "Cannot build iron condor: provider returned no listed call or put contracts."
 
-    long_put_pool = _top_contracts_near(puts, targets["lower_long_put"])
-    short_put_pool = _top_contracts_near(puts, targets["short_put"])
-    short_call_pool = _top_contracts_near(calls, targets["short_call"])
-    long_call_pool = _top_contracts_near(calls, targets["higher_long_call"])
+    allowed_snap = _allowed_strike_snap(underlying_reference_price)
+
+    def _near_pool(
+        source: list[_ListedOptionContract],
+        role: str,
+    ) -> tuple[list[_ListedOptionContract] | None, str | None]:
+        target = targets[role]
+        nearest = _top_contracts_near(source, target)
+        filtered = [item for item in nearest if abs(item.strike - target) <= allowed_snap + 1e-9]
+        if filtered:
+            return filtered, None
+        selected = nearest[0].strike if nearest else None
+        return None, _snap_failure_reason(target=target, selected=selected, allowed=allowed_snap)
+
+    long_put_pool, long_put_reason = _near_pool(puts, "lower_long_put")
+    if long_put_pool is None:
+        return None, long_put_reason
+    short_put_pool, short_put_reason = _near_pool(puts, "short_put")
+    if short_put_pool is None:
+        return None, short_put_reason
+    short_call_pool, short_call_reason = _near_pool(calls, "short_call")
+    if short_call_pool is None:
+        return None, short_call_reason
+    long_call_pool, long_call_reason = _near_pool(calls, "higher_long_call")
+    if long_call_pool is None:
+        return None, long_call_reason
+
     best: tuple[float, _ListedOptionContract, _ListedOptionContract, _ListedOptionContract, _ListedOptionContract] | None = None
     for long_put in long_put_pool:
         for short_put in short_put_pool:
@@ -2803,6 +3059,8 @@ def _select_iron_condor_contracts_from_rows(
             contract=long_put,
             method=selection_method,
             warnings=warnings,
+            allowed_snap=allowed_snap,
+            reference_price=underlying_reference_price,
         ),
         "short_put": _contract_selection_payload(
             symbol=symbol,
@@ -2814,6 +3072,8 @@ def _select_iron_condor_contracts_from_rows(
             contract=short_put,
             method=selection_method,
             warnings=warnings,
+            allowed_snap=allowed_snap,
+            reference_price=underlying_reference_price,
         ),
         "short_call": _contract_selection_payload(
             symbol=symbol,
@@ -2825,6 +3085,8 @@ def _select_iron_condor_contracts_from_rows(
             contract=short_call,
             method=selection_method,
             warnings=warnings,
+            allowed_snap=allowed_snap,
+            reference_price=underlying_reference_price,
         ),
         "higher_long_call": _contract_selection_payload(
             symbol=symbol,
@@ -2836,6 +3098,8 @@ def _select_iron_condor_contracts_from_rows(
             contract=long_call,
             method=selection_method,
             warnings=warnings,
+            allowed_snap=allowed_snap,
+            reference_price=underlying_reference_price,
         ),
     }
     return selections, None
@@ -2855,7 +3119,26 @@ def _resolve_iron_condor_contracts_from_provider(
             reason="Cannot build iron condor: four legs are required.",
         )
 
-    exact_rows, exact_error = _fetch_option_contract_rows(symbol=symbol, expiration=expiration)
+    targets, target_error = _iron_condor_target_strikes(legs)
+    if targets is None:
+        return _block_option_structure(
+            option_structure,
+            reason=target_error or "Cannot build iron condor: every leg needs a target strike.",
+            status="unresolved",
+        )
+    underlying_reference_price = _option_reference_price_from_targets(option_structure, targets)
+    allowed_snap = _allowed_strike_snap(underlying_reference_price)
+    strike_gte = min(targets.values()) - allowed_snap
+    strike_lte = max(targets.values()) + allowed_snap
+    option_structure["underlying_reference_price"] = underlying_reference_price
+    option_structure["strike_snap_allowed"] = allowed_snap
+
+    exact_rows, exact_error = _fetch_option_contract_rows(
+        symbol=symbol,
+        expiration=expiration,
+        strike_gte=strike_gte,
+        strike_lte=strike_lte,
+    )
     all_rows = exact_rows
     selection_method = "provider_reference_exact_expiration"
     warnings: list[str] = []
@@ -2865,7 +3148,12 @@ def _resolve_iron_condor_contracts_from_provider(
             return _block_option_structure(option_structure, reason=incomplete_reason, status="unresolved")
         return None
     if not exact_rows:
-        all_rows, all_error = _fetch_option_contract_rows(symbol=symbol, expiration=None)
+        all_rows, all_error = _fetch_option_contract_rows(
+            symbol=symbol,
+            expiration=None,
+            strike_gte=strike_gte,
+            strike_lte=strike_lte,
+        )
         if all_rows is None:
             reason = exact_error or all_error or "Cannot build iron condor: provider reference data unavailable."
             return _block_option_structure(option_structure, reason=reason, status="unresolved")
@@ -2879,6 +3167,7 @@ def _resolve_iron_condor_contracts_from_provider(
         rows=all_rows or [],
         method=selection_method,
         warnings=warnings,
+        underlying_reference_price=underlying_reference_price,
     )
     if selections is None:
         return _block_option_structure(
@@ -3014,6 +3303,21 @@ def _option_structure_blocks_ready(option_structure: dict[str, object]) -> bool:
     )
 
 
+def _paper_option_contract_error(option_structure: dict[str, object]) -> str:
+    summary = str(
+        option_structure.get("structure_validation_summary")
+        or option_structure.get("contract_resolution_summary")
+        or ""
+    )
+    if (
+        option_structure.get("fresh_provider_pricing_available") is False
+        or "fresh_option_mark_required_for_paper_open" in summary
+        or str(option_structure.get("opening_price_source") or "") == "prior_close_fallback"
+    ):
+        return "fresh_option_mark_required_for_paper_open"
+    return "listed_option_contract_resolution_required"
+
+
 def _blocked_options_expected_range(*, option_structure: dict[str, object], as_of: datetime) -> ExpectedRange:
     return ExpectedRange(
         status="blocked",
@@ -3068,6 +3372,12 @@ def _apply_research_contract_resolution(
     as_of: datetime,
     chain_preview: object = None,
 ) -> dict[str, object]:
+    asset_metadata = _option_asset_metadata(symbol)
+    option_structure["underlying_asset_type"] = asset_metadata["underlying_asset_type"]
+    option_structure["settlement_style"] = asset_metadata["settlement_style"]
+    option_structure["deliverable_type"] = asset_metadata["deliverable_type"]
+    if asset_metadata["underlying_asset_type"] == "index":
+        option_structure["index_option_notice"] = "Index option research. Cash-settled. No share delivery modeled."
     required = _option_contract_resolution_required()
     expiration_raw = option_structure.get("expiration")
     expiration = _parse_option_expiration(expiration_raw)
@@ -3085,7 +3395,15 @@ def _apply_research_contract_resolution(
             chain_preview=chain_preview,
         )
         if resolved_structure is not None:
-            return _validate_research_option_structure(resolved_structure, as_of=as_of)
+            validated = _validate_research_option_structure(resolved_structure, as_of=as_of)
+            if (
+                validated.get("contract_resolution_status") == "resolved"
+                and not _option_structure_blocks_ready(validated)
+            ):
+                _apply_provider_opening_prices(validated)
+                if not _option_structure_blocks_ready(validated):
+                    return _validate_research_option_structure(validated, as_of=as_of)
+            return validated
 
     resolved_count = 0
     warnings: list[str] = []
@@ -3145,12 +3463,22 @@ def _apply_research_contract_resolution(
         option_structure["contract_resolution_summary"] = "Listed contract resolution is unavailable in the current local provider mode."
         option_structure["paper_persistence_allowed"] = True
         option_structure["contract_resolution_warnings"] = sorted(set(warnings))
-    return _validate_research_option_structure(option_structure, as_of=as_of)
+    validated = _validate_research_option_structure(option_structure, as_of=as_of)
+    if (
+        _option_contract_resolution_required()
+        and validated.get("contract_resolution_status") == "resolved"
+        and not _option_structure_blocks_ready(validated)
+    ):
+        _apply_provider_opening_prices(validated)
+        if not _option_structure_blocks_ready(validated):
+            return _validate_research_option_structure(validated, as_of=as_of)
+    return validated
 
 
 def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) -> OptionPaperStructureInput:
     if not _option_contract_resolution_required():
         return req
+    as_of = utc_now()
     if req.structure_type == "iron_condor":
         option_structure: dict[str, object] = {
             "type": "iron_condor",
@@ -3187,6 +3515,15 @@ def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) ->
         )
         if resolved_structure is None or _option_structure_blocks_ready(resolved_structure):
             raise OptionPaperContractError("listed_option_contract_resolution_required")
+        resolved_structure = _validate_research_option_structure(resolved_structure, as_of=as_of)
+        if _option_structure_blocks_ready(resolved_structure):
+            raise OptionPaperContractError(_paper_option_contract_error(resolved_structure))
+        _apply_provider_opening_prices(resolved_structure)
+        if _option_structure_blocks_ready(resolved_structure):
+            raise OptionPaperContractError(_paper_option_contract_error(resolved_structure))
+        resolved_structure = _validate_research_option_structure(resolved_structure, as_of=as_of)
+        if _option_structure_blocks_ready(resolved_structure):
+            raise OptionPaperContractError(_paper_option_contract_error(resolved_structure))
         updated_legs = []
         for original, resolved_leg in zip(req.legs, resolved_structure.get("legs", []), strict=False):
             if not isinstance(resolved_leg, dict):
@@ -3194,9 +3531,20 @@ def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) ->
             selected_strike = _finite_float(resolved_leg.get("strike"))
             selected_expiration = _parse_option_expiration(resolved_leg.get("expiration"))
             option_symbol = resolved_leg.get("option_symbol")
-            if selected_strike is None or selected_expiration is None or not option_symbol:
+            premium = _finite_float(resolved_leg.get("premium"))
+            if selected_strike is None or selected_expiration is None or not option_symbol or premium is None:
                 raise OptionPaperContractError("listed_option_contract_resolution_required")
             target_strike = _finite_float(resolved_leg.get("target_strike"))
+            contract_selection = dict(resolved_leg.get("contract_selection") or {})
+            contract_selection.update(
+                {
+                    "premium_source": resolved_leg.get("premium_source"),
+                    "current_mark_premium": resolved_leg.get("current_mark_premium"),
+                    "mark_method": resolved_leg.get("mark_method"),
+                    "mark_as_of": resolved_leg.get("mark_as_of"),
+                    "stale": resolved_leg.get("stale"),
+                }
+            )
             updated_legs.append(
                 original.model_copy(
                     update={
@@ -3204,13 +3552,32 @@ def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) ->
                         "expiration": selected_expiration,
                         "option_symbol": str(option_symbol),
                         "target_strike": target_strike,
-                        "contract_selection": dict(resolved_leg.get("contract_selection") or {}),
+                        "premium": premium,
+                        "contract_selection": contract_selection,
                     }
                 )
             )
         expirations = {leg.expiration for leg in updated_legs}
         resolved_expiration = next(iter(expirations)) if len(expirations) == 1 else expiration
-        return req.model_copy(update={"legs": updated_legs, "expiration": resolved_expiration})
+        breakevens = [
+            value
+            for value in (
+                _finite_float(resolved_structure.get("breakeven_low")),
+                _finite_float(resolved_structure.get("breakeven_high")),
+            )
+            if value is not None
+        ]
+        return req.model_copy(
+            update={
+                "legs": updated_legs,
+                "expiration": resolved_expiration,
+                "net_credit": _finite_float(resolved_structure.get("net_credit")),
+                "net_debit": _finite_float(resolved_structure.get("net_debit")),
+                "max_profit": _finite_float(resolved_structure.get("max_profit")),
+                "max_loss": _finite_float(resolved_structure.get("max_loss")),
+                "breakevens": breakevens,
+            }
+        )
 
     resolved_legs = []
     failures: list[str] = []
@@ -3230,6 +3597,45 @@ def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) ->
         if selected_strike is None or not isinstance(selected_expiration, str) or not option_symbol:
             failures.append("listed_option_contract_incomplete")
             continue
+        snap_distance = _finite_float(selection.get("strike_snap_distance"))
+        if snap_distance is None:
+            snap_distance = abs(selected_strike - target_strike)
+        allowed_snap = _allowed_strike_snap(target_strike)
+        if snap_distance > allowed_snap + 1e-9:
+            failures.append(_snap_failure_reason(target=target_strike, selected=selected_strike, allowed=allowed_snap))
+            continue
+        selection["strike_snap_allowed"] = allowed_snap
+        selection["strike_snap_distance"] = round(float(snap_distance), 4)
+        selection["strike_snap_distance_pct"] = _snap_distance_pct(float(snap_distance), target_strike)
+        enriched_leg = _apply_leg_selection(
+            req.underlying_symbol,
+            {
+                "action": leg.action,
+                "right": leg.right,
+                "strike": leg.strike,
+                "premium": leg.premium,
+                "quantity": leg.quantity,
+                "multiplier": leg.multiplier,
+                "label": leg.label,
+                "target_strike": target_strike,
+            },
+            selection,
+        )
+        mark_method = str(enriched_leg.get("mark_method") or "").strip().lower()
+        mark = _finite_float(enriched_leg.get("current_mark_premium"))
+        if mark_method not in _FRESH_OPTION_OPENING_MARK_METHODS or mark is None or bool(enriched_leg.get("stale")):
+            failures.append("fresh_option_mark_required_for_paper_open")
+            continue
+        contract_selection = dict(enriched_leg.get("contract_selection") or {})
+        contract_selection.update(
+            {
+                "premium_source": mark_method,
+                "current_mark_premium": mark,
+                "mark_method": mark_method,
+                "mark_as_of": enriched_leg.get("mark_as_of"),
+                "stale": enriched_leg.get("stale"),
+            }
+        )
         resolved_legs.append(
             leg.model_copy(
                 update={
@@ -3237,11 +3643,14 @@ def _resolve_paper_option_structure_contracts(req: OptionPaperStructureInput) ->
                     "expiration": datetime.fromisoformat(selected_expiration).date(),
                     "option_symbol": str(option_symbol),
                     "target_strike": target_strike,
-                    "contract_selection": selection,
+                    "premium": mark,
+                    "contract_selection": contract_selection,
                 }
             )
         )
     if failures or len(resolved_legs) != len(req.legs):
+        if any(str(item) == "fresh_option_mark_required_for_paper_open" for item in failures):
+            raise OptionPaperContractError("fresh_option_mark_required_for_paper_open")
         raise OptionPaperContractError("listed_option_contract_resolution_required")
     expirations = {leg.expiration for leg in resolved_legs}
     resolved_expiration = next(iter(expirations)) if len(expirations) == 1 else req.expiration
@@ -4511,6 +4920,7 @@ def analysis_setup(
         option_structure = {
             "type": "iron_condor",
             "expiration": expiration_context["expiration"],
+            "underlying_reference_price": latest.close,
             "legs": [
                 {"action": "buy", "right": "put", "strike": long_put, "label": "lower long put"},
                 {"action": "sell", "right": "put", "strike": short_put, "label": "short put"},
@@ -5416,7 +5826,9 @@ def _config_state(*, enabled: bool = True, configured: bool) -> str:
 def _readiness_status(*, config_state: str, probe_state: str) -> str:
     if probe_state == "ok":
         return "ok"
-    if probe_state == "failed":
+    if probe_state == "warn":
+        return "warn"
+    if probe_state in {"failed", "degraded", "failed_not_entitled", "failed_underlying_index_data"}:
         return "degraded"
     if config_state == "disabled":
         return "disabled"
@@ -5639,17 +6051,24 @@ def _news_readiness() -> dict[str, object]:
     }
 
 
-def _options_data_readiness() -> dict[str, object]:
+def _options_data_readiness(
+    *,
+    provider_name: str = "options_data",
+    sample_symbol: str = "SPY",
+    readiness_scope: str = "options_research_marks_only",
+    index_probe: bool = False,
+) -> dict[str, object]:
     mode = "polygon" if settings.polygon_enabled else "disabled"
     configured = bool(settings.polygon_enabled and settings.polygon_api_key.strip() and settings.polygon_base_url.strip())
     config_state = _config_state(enabled=settings.polygon_enabled, configured=configured)
     probe_state = "skipped" if not settings.polygon_enabled else "unavailable"
     probe_payload: dict[str, object] = {}
+    sample_symbol = sample_symbol.upper().strip() or "SPY"
     if configured:
         health_fn = getattr(market_data_service, "options_data_health", None)
         if callable(health_fn):
             try:
-                probe_payload = dict(health_fn(sample_symbol="SPY") or {})
+                probe_payload = dict(health_fn(sample_symbol=sample_symbol) or {})
                 probe_state = str(probe_payload.get("probe_state") or probe_payload.get("probe_status") or "unavailable")
             except Exception as exc:
                 probe_state = "failed"
@@ -5660,19 +6079,72 @@ def _options_data_readiness() -> dict[str, object]:
     details = str(
         probe_payload.get("details")
         or (
-            "Options data readiness requires Polygon/Massive option contract snapshot access."
+            (
+                "Index options data readiness requires Polygon/Massive SPX option reference and snapshot access."
+                if index_probe
+                else "Options data readiness requires Polygon/Massive option contract snapshot access."
+            )
             if settings.polygon_enabled
-            else "Options data readiness is disabled because Polygon/Massive market data is not selected."
+            else (
+                "Index options data readiness is disabled because Polygon/Massive market data is not selected."
+                if index_probe
+                else "Options data readiness is disabled because Polygon/Massive market data is not selected."
+            )
         )
     )
-    if probe_state == "failed":
+    if probe_state in {"failed", "failed_not_entitled", "failed_underlying_index_data"}:
         details = _sanitize_provider_error(details)
-    entitlement_blocked = probe_state == "failed" and _is_option_snapshot_entitlement_error(details)
+    entitlement_status = str(probe_payload.get("entitlement_status") or "unknown")
+    entitlement_blocked = (
+        entitlement_status == "not_entitled"
+        or probe_state == "failed_not_entitled"
+        or (probe_state in {"failed", "failed_underlying_index_data"} and _is_option_snapshot_entitlement_error(details))
+    )
     if entitlement_blocked:
-        details = "Option marks unavailable: provider plan is not entitled to option snapshot data."
+        details = (
+            "Index data entitlement required for SPX/index options chain or snapshot data."
+            if index_probe
+            else "Option marks unavailable: provider plan is not entitled to option snapshot data."
+        )
+    elif index_probe and probe_state == "failed_underlying_index_data":
+        details = "SPX underlying index snapshot unavailable; index-options readiness cannot choose a near-ATM sample."
+    elif index_probe and probe_state == "degraded":
+        details = "SPX index options discovered, but no fresh usable mark was returned for sampled contracts."
+    elif index_probe and probe_state == "warn":
+        details = "SPX index options access is verified, but sampled contracts only returned stale prior-close marks."
+
+    if index_probe and entitlement_blocked:
+        operational_prefix = (
+            "SPX index-options readiness is configured, but index data entitlement is required. "
+            "SPX research stays blocked or unavailable; MacMarket does not silently substitute SPY. "
+        )
+    elif index_probe and probe_state == "degraded":
+        operational_prefix = (
+            "SPX index options were discovered, but sampled contracts did not return a fresh usable mark. "
+            "This points to sample liquidity/freshness or delayed snapshot coverage before it proves an index entitlement blocker. "
+        )
+    elif index_probe and probe_state == "failed_underlying_index_data":
+        operational_prefix = (
+            "SPX underlying index snapshot readiness is unavailable, so the probe cannot choose a near-ATM sample. "
+            "SPX research stays blocked or unavailable; MacMarket does not silently substitute SPY. "
+        )
+    elif index_probe and probe_state == "warn":
+        operational_prefix = (
+            "SPX index options access is verified, but sampled contracts only returned stale prior-close marks. "
+            "Fresh option mark/P&L readiness remains unavailable. "
+        )
+    elif index_probe:
+        operational_prefix = "Index options snapshot readiness can populate SPX listed-contract research and cash-settled paper review only. "
+    elif entitlement_blocked:
+        operational_prefix = (
+            "Options data is configured, but snapshot marks are unavailable because the provider plan is not entitled. "
+            "Options Position Review will show mark_unavailable rather than fake P&L. "
+        )
+    else:
+        operational_prefix = "Options snapshot readiness can populate paper Options Position Review marks only. "
 
     return {
-        "provider": "options_data",
+        "provider": provider_name,
         "mode": mode,
         "status": _readiness_status(config_state=config_state, probe_state=probe_state),
         "details": details,
@@ -5681,24 +6153,37 @@ def _options_data_readiness() -> dict[str, object]:
         "configured": configured,
         "selected_provider": "polygon" if settings.polygon_enabled else "none",
         "probe_status": probe_state,
-        "sample_underlying": probe_payload.get("sample_underlying") or "SPY",
+        "sample_underlying": probe_payload.get("sample_underlying") or sample_symbol,
         "sample_option_symbol": probe_payload.get("sample_option_symbol"),
         "sample_selection_method": probe_payload.get("sample_selection_method") or "unavailable",
         "sample_mark_method": probe_payload.get("sample_mark_method") or "unavailable",
+        "sample_expiration": probe_payload.get("sample_expiration"),
+        "sample_strike": probe_payload.get("sample_strike"),
+        "sample_option_type": probe_payload.get("sample_option_type"),
+        "sample_dte": probe_payload.get("sample_dte"),
+        "sample_has_bid_ask": probe_payload.get("sample_has_bid_ask"),
+        "sample_has_last_trade": probe_payload.get("sample_has_last_trade"),
+        "sample_has_prior_close": probe_payload.get("sample_has_prior_close"),
+        "sample_stale": probe_payload.get("sample_stale"),
+        "underlying_index_value_exists": probe_payload.get("underlying_index_value_exists"),
+        "candidate_attempts": probe_payload.get("candidate_attempts") or [],
         "latency_ms": probe_payload.get("latency_ms"),
         "last_success_at": probe_payload.get("last_success_at"),
-        "readiness_scope": "options_research_marks_only",
-        "operational_impact": (
-            (
-                "Options data is configured, but snapshot marks are unavailable because the provider plan is not entitled. "
-                "Options Position Review will show mark_unavailable rather than fake P&L. "
-            )
-            if entitlement_blocked
-            else "Options snapshot readiness can populate paper Options Position Review marks only. "
-        )
+        "readiness_scope": readiness_scope,
+        "operational_impact": operational_prefix
         + "It does not enable live trading, broker routing, automatic exits, rolls, or adjustments.",
         "entitlement_state": "not_entitled" if entitlement_blocked else None,
+        "entitlement_status": "not_entitled" if entitlement_blocked else entitlement_status,
     }
+
+
+def _index_options_data_readiness() -> dict[str, object]:
+    return _options_data_readiness(
+        provider_name="index_options_data",
+        sample_symbol="SPX",
+        readiness_scope="index_options_research_marks_only",
+        index_probe=True,
+    )
 
 
 def _sanitize_provider_error(value: object) -> str:
@@ -5848,6 +6333,7 @@ def provider_health(
             _fred_readiness(),
             _news_readiness(),
             _options_data_readiness(),
+            _index_options_data_readiness(),
             _llm_readiness(probe=probe_llm),
             {
                 "provider": "market_data",

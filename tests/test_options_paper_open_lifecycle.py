@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from macmarket_trader.api.main import app
 from macmarket_trader.api.routes import admin as admin_routes
 from macmarket_trader.config import settings
-from macmarket_trader.data.providers.market_data import OptionContractResolution
+from macmarket_trader.data.providers.market_data import OptionContractResolution, OptionContractSnapshot
 from macmarket_trader.domain.models import (
     AppUserModel,
     OrderModel,
@@ -27,6 +27,29 @@ from macmarket_trader.storage.db import SessionLocal
 
 client = TestClient(app)
 _USER_AUTH = {"Authorization": "Bearer user-token"}
+
+
+def _option_snapshot(
+    option_symbol: str,
+    mark: float | None,
+    *,
+    method: str = "quote_mid",
+    stale: bool = False,
+) -> OptionContractSnapshot:
+    return OptionContractSnapshot(
+        option_symbol=option_symbol,
+        underlying_symbol="AAPL",
+        provider="polygon",
+        endpoint="/v3/snapshot/options/AAPL/{option}",
+        mark_price=mark,
+        mark_method=method,
+        as_of=datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc),
+        stale=stale,
+        bid=round(mark - 0.05, 2) if mark is not None else None,
+        ask=round(mark + 0.05, 2) if mark is not None else None,
+        prior_close=mark if method == "prior_close_fallback" else None,
+        missing_fields=[] if mark is not None else ["fresh_option_mark"],
+    )
 
 
 def _approve_default_user(*, commission_per_contract: float | None = None) -> int:
@@ -201,6 +224,14 @@ def test_open_option_paper_structure_snaps_to_listed_contracts_when_provider_con
                 strike_snap_distance=abs(selected - target_strike),
             )
 
+        def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
+            del underlying_symbol
+            marks = {
+                "O:AAPL260515C00206000": 4.0,
+                "O:AAPL260515C00216000": 1.2,
+            }
+            return _option_snapshot(option_symbol, marks[option_symbol])
+
     monkeypatch.setattr(admin_routes, "market_data_service", ContractResolvingService())
 
     response = client.post(
@@ -215,7 +246,11 @@ def test_open_option_paper_structure_snaps_to_listed_contracts_when_provider_con
     assert payload["legs"][0]["option_symbol"] == "O:AAPL260515C00206000"
     assert payload["legs"][0]["strike"] == 206.0
     assert payload["legs"][0]["target_strike"] == 205.0
+    assert payload["legs"][0]["entry_premium"] == 4.0
+    assert payload["opening_net_debit"] == 2.8
+    assert payload["max_loss"] == 280.0
     assert payload["legs"][0]["contract_selection"]["selected_listed_strike"] == 206.0
+    assert payload["legs"][0]["contract_selection"]["premium_source"] == "quote_mid"
 
     with SessionLocal() as session:
         position_leg = session.execute(
@@ -224,6 +259,7 @@ def test_open_option_paper_structure_snaps_to_listed_contracts_when_provider_con
         assert position_leg.option_symbol == "O:AAPL260515C00206000"
         assert position_leg.target_strike == 205.0
         assert position_leg.contract_selection["contract_selection_method"] == "provider_reference_exact_expiration"
+        assert position_leg.contract_selection["premium_source"] == "quote_mid"
 
 
 def test_open_option_paper_structure_blocks_unresolvable_contracts_when_provider_configured(monkeypatch) -> None:
@@ -259,6 +295,47 @@ def test_open_option_paper_structure_blocks_unresolvable_contracts_when_provider
 
     assert response.status_code == 409, response.text
     assert response.json()["detail"] == "listed_option_contract_resolution_required"
+    assert _counts() == before
+
+
+def test_open_option_paper_structure_rejects_stale_provider_marks_when_provider_configured(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    _approve_default_user()
+    before = _counts()
+
+    class StalePricingService:
+        def resolve_option_contract(self, *, underlying_symbol: str, expiration, option_type: str, target_strike: float):
+            right = "C" if option_type == "call" else "P"
+            return OptionContractResolution(
+                requested_underlying=underlying_symbol.upper(),
+                underlying_asset_type="equity",
+                target_expiration=expiration,
+                selected_expiration=expiration,
+                option_type=option_type,
+                target_strike=target_strike,
+                selected_strike=target_strike,
+                option_symbol=f"O:AAPL260515{right}{int(target_strike * 1000):08d}",
+                provider="polygon",
+                contract_selection_method="provider_reference_exact_expiration",
+                strike_snap_distance=0.0,
+            )
+
+        def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
+            del underlying_symbol
+            return _option_snapshot(option_symbol, 2.5, method="prior_close_fallback", stale=True)
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StalePricingService())
+
+    response = client.post(
+        "/user/options/paper-structures/open",
+        headers=_USER_AUTH,
+        json=_vertical_debit_payload(),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "fresh_option_mark_required_for_paper_open"
     assert _counts() == before
 
 

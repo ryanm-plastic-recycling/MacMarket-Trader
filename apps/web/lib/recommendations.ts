@@ -176,8 +176,11 @@ export type OptionsResearchLeg = {
   target_strike?: number | null;
   selected_listed_strike?: number | null;
   strike_snap_distance?: number | null;
+  strike_snap_distance_pct?: number | null;
+  strike_snap_allowed?: number | null;
   contract_selection_method?: string | null;
   contract_selection?: Record<string, unknown> | null;
+  premium_source?: string | null;
   bid?: number | null;
   ask?: number | null;
   latest_trade_price?: number | null;
@@ -200,6 +203,10 @@ export type OptionsResearchStructure = {
   type?: string | null;
   expiration?: string | null;
   legs?: OptionsResearchLeg[] | null;
+  underlying_asset_type?: "equity" | "etf" | "index" | "unknown" | string | null;
+  settlement_style?: string | null;
+  deliverable_type?: string | null;
+  index_option_notice?: string | null;
   net_credit?: number | null;
   net_debit?: number | null;
   max_profit?: number | null;
@@ -209,9 +216,18 @@ export type OptionsResearchStructure = {
   dte?: number | null;
   dte_as_of?: string | null;
   dte_policy?: string | null;
+  underlying_reference_price?: number | null;
+  strike_snap_allowed?: number | null;
   iv_snapshot?: number | null;
   theta_context?: number | null;
   vega_context?: number | null;
+  theoretical_net_credit?: number | null;
+  theoretical_net_debit?: number | null;
+  provider_mark_net_credit?: number | null;
+  provider_mark_net_debit?: number | null;
+  fresh_provider_pricing_available?: boolean | null;
+  opening_price_source?: string | null;
+  provider_mark_status?: string | null;
   event_blockers?: string[] | null;
   contract_resolution_status?: string | null;
   contract_resolution_summary?: string | null;
@@ -856,6 +872,12 @@ function extractOptionsStructureBreakevens(structure: OptionsResearchStructure |
 
 function getOptionsStructureBlockedReason(structure: OptionsResearchStructure | null | undefined): string | null {
   if (!structure) return null;
+  if (structure.fresh_provider_pricing_available === false) {
+    return (
+      structure.structure_validation_summary
+      ?? "Fresh quote_mid or last_trade option marks are required before paper lifecycle actions."
+    );
+  }
   if (
     structure.paper_persistence_allowed === false
     || structure.contract_resolution_status === "unresolved"
@@ -1182,9 +1204,11 @@ export function formatOptionsLegLabel(leg: OptionsResearchLeg): string {
   const right = typeof leg.right === "string" && leg.right.trim() ? leg.right.trim().toUpperCase() : null;
   const strike = typeof leg.strike === "number" && Number.isFinite(leg.strike) ? formatResearchValue(leg.strike) : null;
   const label = typeof leg.label === "string" && leg.label.trim() ? leg.label.trim() : null;
-  const targetStrike = typeof leg.target_strike === "number" && Number.isFinite(leg.target_strike) ? leg.target_strike : null;
-  const selectedStrike = typeof leg.selected_listed_strike === "number" && Number.isFinite(leg.selected_listed_strike) ? leg.selected_listed_strike : null;
-  const snapDistance = typeof leg.strike_snap_distance === "number" && Number.isFinite(leg.strike_snap_distance) ? leg.strike_snap_distance : null;
+  const selection = leg.contract_selection && typeof leg.contract_selection === "object" ? leg.contract_selection : null;
+  const targetStrike = toFiniteNumber(leg.target_strike) ?? toFiniteNumber(selection?.target_strike);
+  const selectedStrike = toFiniteNumber(leg.selected_listed_strike) ?? toFiniteNumber(selection?.selected_listed_strike);
+  const snapDistance = toFiniteNumber(leg.strike_snap_distance) ?? toFiniteNumber(selection?.strike_snap_distance);
+  const allowedSnap = toFiniteNumber(leg.strike_snap_allowed) ?? toFiniteNumber(selection?.strike_snap_allowed);
   const optionSymbol = typeof leg.option_symbol === "string" && leg.option_symbol.trim() ? leg.option_symbol.trim().toUpperCase() : null;
   const summary = [action, right, strike].filter(Boolean).join(" ");
   const selectionParts = [
@@ -1193,6 +1217,7 @@ export function formatOptionsLegLabel(leg: OptionsResearchLeg): string {
       ? `target ${formatResearchValue(targetStrike)} → listed ${formatResearchValue(selectedStrike)}`
       : null,
     snapDistance != null ? `snap ${formatResearchValue(snapDistance)}` : null,
+    allowedSnap != null ? `allowed ${formatResearchValue(allowedSnap)}` : null,
   ].filter(Boolean);
   const base = summary && label ? `${summary} — ${label}` : summary || label || "Unavailable";
   return selectionParts.length > 0 ? `${base} (${selectionParts.join("; ")})` : base;
@@ -1208,6 +1233,32 @@ export function getOptionsPremiumValue(structure: OptionsResearchStructure | nul
   if (structure?.net_credit != null && Number.isFinite(structure.net_credit)) return structure.net_credit;
   if (structure?.net_debit != null && Number.isFinite(structure.net_debit)) return structure.net_debit;
   return null;
+}
+
+export function formatOptionsOpeningPriceSource(source: string | null | undefined): string {
+  const normalized = typeof source === "string" ? source.trim().toLowerCase() : "";
+  if (normalized === "quote_mid") return "quote_mid";
+  if (normalized === "last_trade") return "last_trade";
+  if (normalized === "prior_close_fallback") return "prior_close_fallback stale";
+  if (normalized === "theoretical_estimate") return "theoretical_estimate";
+  return "unavailable";
+}
+
+export function getOptionsPremiumSourceDetail(structure: OptionsResearchStructure | null | undefined): string {
+  const source = formatOptionsOpeningPriceSource(structure?.opening_price_source);
+  const parts = [`Opening price source: ${source}.`];
+  const theoreticalCredit = toFiniteNumber(structure?.theoretical_net_credit);
+  const theoreticalDebit = toFiniteNumber(structure?.theoretical_net_debit);
+  const providerCredit = toFiniteNumber(structure?.provider_mark_net_credit);
+  const providerDebit = toFiniteNumber(structure?.provider_mark_net_debit);
+  if (providerCredit != null) parts.push(`Provider mark credit: ${formatResearchCurrency(providerCredit)}.`);
+  if (providerDebit != null) parts.push(`Provider mark debit: ${formatResearchCurrency(providerDebit)}.`);
+  if (theoreticalCredit != null) parts.push(`Theoretical estimate: ${formatResearchCurrency(theoreticalCredit)} credit.`);
+  if (theoreticalDebit != null) parts.push(`Theoretical estimate: ${formatResearchCurrency(theoreticalDebit)} debit.`);
+  if (structure?.fresh_provider_pricing_available === false) {
+    parts.push("Fresh quote_mid or last_trade marks are required before paper persistence.");
+  }
+  return parts.join(" ");
 }
 
 export function getOptionsLegDisplayLines(structure: OptionsResearchStructure | null | undefined): string[] {
@@ -1265,10 +1316,10 @@ export function getOptionsChainPreviewNotes(
   ];
 }
 
-function isLikelyIndexOptionsSymbol(symbol: string | null | undefined): boolean {
+export function isLikelyIndexOptionsSymbol(symbol: string | null | undefined): boolean {
   const normalized = normalizeResearchSymbol(symbol);
   if (!normalized) return false;
-  return normalized === "SPX" || normalized.startsWith("SPXW") || normalized === "NDX";
+  return normalized === "SPX" || normalized.startsWith("SPXW") || normalized === "NDX" || normalized === "RUT" || normalized === "VIX";
 }
 
 function hasIncompleteResearchLeg(leg: OptionsResearchLeg | null | undefined): boolean {
@@ -1319,6 +1370,12 @@ export function getOptionsResearchDataQualityWarnings(
       warnings.add("Greeks context unavailable in the current provider plan or payload.");
     }
     warnings.add("Open interest unavailable on the current Recommendations payload.");
+    for (const item of structure.contract_resolution_warnings ?? []) {
+      if (typeof item === "string" && item.trim()) warnings.add(item.trim());
+    }
+    for (const item of structure.structure_validation_warnings ?? []) {
+      if (typeof item === "string" && item.trim()) warnings.add(item.trim());
+    }
   }
 
   if (!expectedRange) {
@@ -1362,7 +1419,8 @@ export function getOptionsResearchDataQualityWarnings(
   }
 
   if (isLikelyIndexOptionsSymbol(setup.symbol)) {
-    warnings.add("SPX/NDX may require index data; SPY/QQQ can be practical ETF substitutes.");
+    warnings.add("Index option research. Cash-settled. No share delivery modeled.");
+    warnings.add("Index data entitlement may be required; MacMarket will not silently substitute SPY/QQQ.");
   }
 
   return [...warnings];

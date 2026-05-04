@@ -2,6 +2,58 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - SPX Index-Options Probe Diagnostics
+`index_options_data` Provider Health now distinguishes SPX/index option
+readiness failures by cause instead of collapsing them into a generic probe
+failure. The SPX probe avoids same-day/0DTE samples when 7-45 calendar day
+contracts exist, ranks discovered contracts near the underlying index value,
+tries multiple candidates, and reports sanitized candidate attempts with
+expiration, strike, option type, DTE, mark result, stale flag, and whether
+bid/ask, last trade, prior close, and underlying index value were available.
+
+Probe states now separate fresh-mark `ok`, stale prior-close-only `warn`,
+discovered-but-no-fresh-mark `degraded`, `failed_not_entitled`, and
+`failed_underlying_index_data`. Provider Health copy makes clear that
+`degraded` means SPX options were discovered but sampled contracts did not
+return a fresh usable mark; it does not by itself prove that Indices Starter is
+required. If the provider reports not entitled for index snapshots, the UI
+states that index data entitlement may be required. No SPY fallback, live
+trading, broker routing, automatic exits, rolls, or adjustments are enabled.
+
+## 2026-05-03 Update - SPX Index-Options Readiness
+SPX/index-options support now has an explicit readiness layer without assuming
+an additional provider entitlement. Options reference-contract lookup continues
+to use raw `SPX`, option snapshot paths use `I:SPX`, and research payloads
+carry `underlying_asset_type=index`, `settlement_style=cash_settled`, and
+`deliverable_type=cash_index`. The UI labels SPX as cash-settled index option
+research with no share-delivery model, no exercise/assignment automation, and
+no broker routing.
+
+Provider Health now includes a separate `index_options_data` SPX probe in
+addition to the broad `options_data` probe. If the provider returns a
+not-entitled response, the app reports that index data entitlement is required
+and keeps SPX research blocked or unavailable rather than silently falling back
+to SPY. If SPX data is available, the existing listed-contract, snap-distance,
+fresh `quote_mid`/`last_trade`, and paper-open guardrails remain unchanged.
+
+## 2026-05-03 Update - Options Contract Snap And Premium Consistency
+Options listed-contract resolution now fetches provider reference contracts in
+the target strike region instead of trusting a low-strike first page, while
+still following Polygon/Massive pagination. Iron condor selection applies a
+snap-distance readiness gate with default limits of the smaller of `$5.00` or
+`2.5%` of the underlying/target reference price. If any selected contract is
+too far from its target, the setup is blocked, Expected Range payoff markers
+are suppressed, and replay/paper lifecycle actions stay disabled.
+
+Options research now distinguishes theoretical premium estimates from
+provider opening prices. Fresh `quote_mid` or `last_trade` marks are required
+before a provider-resolved listed-contract setup can be persisted as a paper
+option position. `prior_close_fallback` remains stale context only, and missing
+or stale leg marks block paper persistence rather than silently carrying
+theoretical premiums into a saved structure. The UI now shows target strike,
+selected listed strike, snap distance, allowed snap, opening price source, and
+provider/theoretical premium context.
+
 ## 2026-05-03 Update - Operator Analysis Packet Preview And Export
 Recommendations now expose a user-scoped Analysis Packet export endpoint at
 `GET /user/recommendations/{recommendation_id}/analysis-packet`, with the

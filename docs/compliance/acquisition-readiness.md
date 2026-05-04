@@ -32,6 +32,10 @@ certification.
 - Options paper structures now preserve listed-contract selection provenance
   when provider-backed options data is configured, including original target
   strike, selected listed strike, provider symbol, and snap distance.
+- Options contract-readiness evidence now includes strike-snap guardrails and
+  premium-source separation: fresh `quote_mid`/`last_trade` marks are required
+  for paper-open pricing, while theoretical estimates and prior-close fallback
+  marks remain explicitly labeled context.
 - SPX/index-options review uses cash-settled/no-share-delivery labeling and
   provider path tests for index reference/snapshot behavior.
 - Options expiration review and manual paper settlement evidence exists.
