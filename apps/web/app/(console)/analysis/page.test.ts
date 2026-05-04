@@ -26,6 +26,14 @@ describe("analysis options provider/source/as-of copy", () => {
     expect(source).toContain("getOptionsResearchDisplayDte(optionStructure, expectedRange)");
     expect(source).toContain("formatOptionsExpectedRangeHorizon(expectedRange, optionStructure)");
     expect(source).toContain("formatExpectedMoveSummary(expectedRange, expectedRangeHorizon)");
+    expect(source).toContain("function AnalysisContextPanels");
+    expect(source).toContain('Card title="Macro Context"');
+    expect(source).toContain('Card title="News Context"');
+    expect(source).toContain('Card title="Selected contract snapshots"');
+    expect(source).toContain("Missing from selected contract snapshot");
+    expect(source).toContain("Not available from provider");
+    expect(source).toContain("leg.implied_volatility");
+    expect(source).toContain("leg.open_interest");
     expect(source).toContain("<ExpectedRangeVisualization");
     expect(source).toContain("expectedRange={expectedRange}");
     expect(source).toContain("expectedRange={null}");

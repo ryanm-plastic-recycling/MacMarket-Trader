@@ -22,6 +22,15 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
   assignment-risk, exercise-risk, and paper-only settlement-preview logic.
   Manual expiration settlement requires explicit confirmation and does not
   automate exercise, assignment, rolling, adjustment, or broker routing.
+- Analysis Packet context aggregates deterministic setup fields with
+  provider-supplied macro/news/options snapshot context for UI and email. FRED
+  series, Polygon/Massive news, IV, open interest, Greeks, and option marks are
+  displayed only when supplied by configured providers; missing values remain
+  explicit `missing_data`.
+- Operator Analysis Packet preview/export exposes the same sanitized packet as
+  JSON, Markdown, and email-safe HTML for stored recommendations. The export is
+  a context snapshot only; it does not recalculate rankings, alter strategy
+  fields, create paper orders, or send broker instructions.
 
 ## LLM Boundary
 
@@ -29,6 +38,9 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
 - LLMs cannot alter approval, side, entry, stop, target, sizing, risk-calendar
   decision, order creation, or paper action classification.
 - OpenAI output is schema validated and can fall back to deterministic mock.
+- LLM summaries may use backend-supplied macro/news context only as
+  explanation input. They must not invent headlines, macro values, option
+  marks, Greeks, IV, or open interest.
 
 ## Versioning Gap
 
@@ -77,6 +89,12 @@ LLMs, live providers, broker APIs, or order-routing paths.
 - Listed option contract resolution, old synthetic-contract warning, and SPX
   index/cash-settlement review tests.
 - Options expiration review and manual paper settlement tests.
+- Analysis Packet and email/export context tests for FRED macro summaries,
+  Polygon/Massive news mapping, option IV/OI/Greeks display, missing-data
+  handling, and paper-only disclaimers.
+- Recommendation Analysis Packet preview/export tests for user scoping,
+  Markdown/HTML rendering, secret redaction, unavailable provider fields, and
+  paper-only/no-routing disclaimers.
 - LLM validation and fallback tests.
 - Model validation evidence generator tests.
 

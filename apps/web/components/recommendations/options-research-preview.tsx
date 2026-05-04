@@ -224,6 +224,129 @@ function RiskMetricCard({
   );
 }
 
+function OptionsContractSnapshotTable({
+  structure,
+}: {
+  structure: OptionsResearchSetup["option_structure"] | null | undefined;
+}) {
+  const legs = structure?.legs ?? [];
+  if (legs.length === 0) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <strong>Selected listed contract snapshots:</strong>
+      <div className="op-table-scroll" style={{ marginTop: 6 }}>
+        <table className="op-table">
+          <thead><tr><th>Leg</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
+          <tbody>
+            {legs.map((leg, index) => (
+              <tr key={`${leg.option_symbol ?? leg.label ?? "leg"}-${index}`}>
+                <td>
+                  {leg.label ?? "leg"}<br />
+                  <span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.option_symbol ?? "Missing from selected contract snapshot"}</span>
+                </td>
+                <td>
+                  {formatResearchValue(leg.current_mark_premium, "Missing from selected contract snapshot")}<br />
+                  <span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.mark_method ?? "mark method missing"}</span>
+                </td>
+                <td>
+                  IV {formatResearchValue(leg.implied_volatility, "Missing from selected contract snapshot")}<br />
+                  OI {formatResearchValue(leg.open_interest, "Missing from selected contract snapshot")}
+                </td>
+                <td>
+                  delta {formatResearchValue(leg.delta, "Missing from selected contract snapshot")}<br />
+                  gamma {formatResearchValue(leg.gamma, "Missing from selected contract snapshot")} · theta {formatResearchValue(leg.theta, "Missing from selected contract snapshot")} · vega {formatResearchValue(leg.vega, "Missing from selected contract snapshot")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function OptionsAnalysisPacketPreview({
+  packet,
+}: {
+  packet?: OptionsResearchSetup["analysis_packet"] | null;
+}) {
+  if (!packet) return null;
+  const macroSeries = packet.macro_context?.series ?? [];
+  const headlines = packet.news_context?.headlines ?? [];
+  const options = packet.options ?? null;
+  const legs = options?.legs ?? [];
+  return (
+    <Card title="Preview Analysis Packet">
+      <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+        <StatusBadge tone="neutral">Paper-only packet</StatusBadge>
+        <StatusBadge tone="neutral">No broker routing</StatusBadge>
+        <StatusBadge tone="neutral">No automatic exits</StatusBadge>
+      </div>
+      <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
+        Same rich context used by exports and strategy-report emails. Missing provider fields stay marked as unavailable; no option marks, IV, OI, or Greeks are fabricated.
+      </div>
+      <div className="op-grid-2" style={{ gap: 12 }}>
+        <div>
+          <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4 }}>Macro Context</div>
+          {macroSeries.length > 0 ? macroSeries.slice(0, 4).map((point) => (
+            <div key={point.series_id}>
+              {point.label}: {formatResearchValue(point.latest_value, "Not available from provider")}
+              {point.latest_date ? ` · ${point.latest_date}` : ""}
+            </div>
+          )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider</div>}
+        </div>
+        <div>
+          <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4 }}>News Context</div>
+          {headlines.length > 0 ? headlines.slice(0, 3).map((item, index) => (
+            <div key={`${item.title}-${index}`}>
+              <div>{item.title}</div>
+              <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                {[item.publisher, item.published_utc?.slice(0, 10), item.sentiment].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+          )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider</div>}
+        </div>
+      </div>
+      {options ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4 }}>Options Details</div>
+          <div>
+            {formatResearchValue(options.strategy_type)} · Exp {formatResearchValue(options.expiration)} · DTE {formatResearchValue(options.days_to_expiration)}
+          </div>
+          <div style={{ marginTop: 6 }}>
+            Max profit {formatResearchValue(options.max_profit)} · Max loss {formatResearchValue(options.max_loss)} · Breakevens {formatResearchValue(options.breakevens)}
+          </div>
+          {legs.length > 0 ? (
+            <div className="op-table-scroll" style={{ marginTop: 8 }}>
+              <table className="op-table">
+                <thead><tr><th>Leg</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
+                <tbody>
+                  {legs.map((leg, index) => {
+                    const row = leg as Record<string, unknown>;
+                    return (
+                      <tr key={`${formatResearchValue(row.option_symbol, "leg")}-${index}`}>
+                        <td>{formatResearchValue(row.role ?? row.label)}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{formatResearchValue(row.option_symbol, "Missing from selected contract snapshot")}</span></td>
+                        <td>{formatResearchValue(row.current_mark_premium, "Missing from selected contract snapshot")}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{formatResearchValue(row.mark_method, "mark method missing")}</span></td>
+                        <td>IV {formatResearchValue(row.implied_volatility, "Missing from selected contract snapshot")}<br />OI {formatResearchValue(row.open_interest, "Missing from selected contract snapshot")}</td>
+                        <td>delta {formatResearchValue(row.delta, "Missing from selected contract snapshot")} · gamma {formatResearchValue(row.gamma, "Missing from selected contract snapshot")} · theta {formatResearchValue(row.theta, "Missing from selected contract snapshot")} · vega {formatResearchValue(row.vega, "Missing from selected contract snapshot")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {packet.missing_data?.length ? (
+        <div style={{ marginTop: 10, color: "var(--op-warn, #f2a03f)" }}>
+          Missing data: {packet.missing_data.join("; ")}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 function getOptionsWorkflowCurrentStep(args: {
   replayPreview: OptionsReplayPreviewResponse | null;
   paperOpenResult: OptionsPaperOpenResponse | null;
@@ -1331,6 +1454,8 @@ export function OptionsResearchPreview({
         paperCloseResult={paperCloseResult}
       />
 
+      <OptionsAnalysisPacketPreview packet={setup.analysis_packet} />
+
       <div className="op-grid-2">
         <Card title="Research contract">
           <div><strong>Underlying:</strong> {formatResearchValue(setup.symbol)}</div>
@@ -1356,6 +1481,7 @@ export function OptionsResearchPreview({
               ))}
             </div>
           </div>
+          <OptionsContractSnapshotTable structure={structure} />
           {structure?.event_blockers && structure.event_blockers.length > 0 ? (
             <div style={{ marginTop: 8 }}>
               <strong>Event blockers:</strong>

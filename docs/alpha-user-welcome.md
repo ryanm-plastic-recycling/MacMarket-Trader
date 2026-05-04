@@ -24,11 +24,15 @@ no broker routing, and no real-money execution.
 1. Check **Provider Health**.
 2. Check **Market Risk Today**.
 3. Review **Charts** and **Analysis**.
-4. Refresh the **Recommendations** queue.
-5. Compare candidates with **Opportunity Intelligence**.
-6. Promote only candidates worth tracking.
-7. Stage a paper order with risk-at-stop and max paper order value checks.
-8. Manage open positions from **Orders** and **Active Position Review**.
+4. In **Analysis**, check Macro Context, News Context, workflow source, and
+   any options selected-contract snapshot fields.
+5. Refresh the **Recommendations** queue.
+6. Compare candidates with **Opportunity Intelligence**.
+7. Promote only candidates worth tracking.
+8. Preview or export the recommendation's **Analysis Packet** when you need a
+   shareable Markdown/JSON context snapshot.
+9. Stage a paper order with risk-at-stop and max paper order value checks.
+10. Manage open positions from **Orders** and **Active Position Review**.
 
 ### Equity paper
 
@@ -40,7 +44,9 @@ paper order value caps the dollars committed to that staged paper order.
 Options research preview is read-only. The options paper lifecycle is
 persisted once you intentionally save a supported structure. Option marks
 require provider entitlement; `mark_unavailable` means MacMarket did not fake
-option P&L.
+option P&L. When provider snapshots include IV, open interest, and Greeks, the
+console surfaces them as selected-contract context; missing fields stay
+explicitly unavailable.
 
 ### LLM
 
@@ -56,7 +62,8 @@ No automatic adjustments. No automatic exercise or assignment.
 ### Red flags
 
 Provider degraded, stale data, risk-calendar `restricted` or `no_trade`,
-option mark unavailable, missing lineage, or missing evidence.
+option mark unavailable, missing macro/news context, missing selected-contract
+snapshot fields, missing lineage, or missing evidence.
 
 ### Where to go
 
@@ -122,7 +129,9 @@ Two workflow styles also matter:
 3. Choose the correct market mode.
 4. Review chart context, workflow source, strategy rationale, and levels.
    Intraday 1H/4H charts are regular-trading-hours normalized.
-5. Continue based on mode.
+5. Review Macro Context and News Context. These are provider-supplied context
+   panels, not trade-decision engines.
+6. Continue based on mode.
 
 ### Equities flow
 
@@ -134,13 +143,16 @@ Two workflow styles also matter:
 5. Use Opportunity Intelligence to compare selected queue candidates when
    OpenAI is configured; deterministic ranking and approval still own the
    trade fields.
-6. Run **Replay** to validate the path.
-7. If the replay is stageable, continue into **Orders**.
-8. Stage the paper order with risk budget at stop and max paper order value
+6. In stored recommendation detail, use **Preview analysis packet**, **Copy
+   Markdown**, **Download Markdown**, or **Download JSON** to inspect or share
+   the same macro/news/risk/provider context used by strategy-report emails.
+7. Run **Replay** to validate the path.
+8. If the replay is stageable, continue into **Orders**.
+9. Stage the paper order with risk budget at stop and max paper order value
    checks.
-9. Use **Active Position Review** for open equity paper positions, including
+10. Use **Active Position Review** for open equity paper positions, including
    already-open awareness when the same symbol reappears in Recommendations.
-10. Close manually when ready and review realized paper results.
+11. Close manually when ready and review realized paper results.
 
 ### Options flow
 
@@ -151,7 +163,11 @@ Two workflow styles also matter:
    - expiration / DTE
    - expected range status
    - chain preview when available
+   - selected listed contract marks, IV, open interest, and Greeks when the
+     provider snapshot supplies them
 3. In **Recommendations**, use:
+   - **Preview Analysis Packet** to inspect the setup's macro/news/provider
+     and selected-contract context when available
    - **Guided options workflow** to stay oriented through structure review,
      payoff preview, paper save, manual close, and result review
    - **Structure risk** for a compact view of max profit/loss, breakevens,
@@ -300,6 +316,33 @@ archive dry-run, and evidence generation. The full release gate adds backend
 tests, frontend tests, TypeScript, and npm audit report-only. These gates are
 evidence and deployment hygiene tools; they do not call live brokers or enable
 trading.
+
+## 7A. Analysis Packet preview and export
+
+Stored recommendation detail now exposes an operator-facing **Analysis Packet**
+preview/export flow. Use it when you need to inspect or share the same context
+that appears in richer strategy-report emails:
+
+- **Preview analysis packet** renders a readable context snapshot in the
+  Recommendations detail pane.
+- **Copy Markdown** copies the packet for notes or a diligence thread.
+- **Download Markdown** creates a human-readable local export.
+- **Download JSON** creates a structured export for evidence review or future
+  automation.
+
+The packet includes top summary, equity or options details, Macro Context,
+News Context, Market Risk Calendar state, provider/source/session context,
+LLM provenance when present, warnings, and missing-data disclosure. Options
+packets include selected listed contracts, marks, mark method, IV, open
+interest, and Greeks only when the provider supplies them.
+
+Ad hoc "email to me" is intentionally deferred until there is a dedicated
+rate-limited and audit-logged user email action. Scheduled strategy reports
+remain the current email delivery channel.
+
+Every packet/export is a context snapshot, not a trading instruction. Missing
+macro, news, option marks, IV, open interest, Greeks, or lineage should stay
+visible as missing data.
 
 ## 8. Symbol discovery and watchlists
 

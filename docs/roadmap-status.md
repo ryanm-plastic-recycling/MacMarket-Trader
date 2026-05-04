@@ -2,6 +2,45 @@
 
 Last updated: 2026-05-03
 
+## 2026-05-03 Update - Operator Analysis Packet Preview And Export
+Recommendations now expose a user-scoped Analysis Packet export endpoint at
+`GET /user/recommendations/{recommendation_id}/analysis-packet`, with the
+Next proxy at `/api/user/recommendations/{recommendationId}/analysis-packet`.
+The endpoint returns sanitized packet JSON plus Markdown and email-safe HTML
+renderings. The renderers include top summary, equity/options details,
+provider context, FRED macro context, Polygon/Massive news context, risk
+calendar state, LLM provenance/boundaries, warnings, missing-data disclosure,
+and explicit paper-only/no-live-trading/no-broker-routing/no-automatic-exits
+language.
+
+The Recommendations detail view now has operator controls to preview the
+packet, copy Markdown, download Markdown, and download JSON. Options research
+preview also shows an Analysis Packet preview card when the setup contract
+contains packet context. Ad hoc "email to me" remains deferred until a
+dedicated rate-limited and audit-logged user email action is added; scheduled
+strategy-report email continues to use the richer Analysis Packet payload.
+
+## 2026-05-03 Update - Analysis Packet, Macro/News Context, And Richer Email Detail
+Analysis and recommendation surfaces now expose a reusable `AnalysisPacket`
+contract for UI/email/export readiness. The packet aggregates deterministic
+setup fields, provider/source/session provenance, paper-only safety flags,
+Market Risk Calendar summary, already-open paper lifecycle context, FRED macro
+series summaries when configured, Polygon/Massive news headlines when
+available, and options selected-contract mark/IV/OI/Greeks context when
+provider snapshots supply those fields.
+
+Scheduled strategy-report email now includes an Analysis Packet Context
+section in HTML and plain text with top summary, macro/news context,
+provider/data limitations, optional options leg details, and explicit
+paper-only/no-live-trading/no-broker-routing/no-automatic-exits language. The
+email/export packet path redacts secret-like values and reports missing data
+instead of fabricating macro, news, Greeks, IV, open interest, or option marks.
+
+/analysis and /recommendations now render compact Macro Context and News
+Context panels. Options research previews also show selected listed contract
+snapshot fields compactly where available. Missing provider fields are shown as
+not available from provider or missing from the selected contract snapshot.
+
 ## 2026-05-03 Update - Strict Listed-Contract Options Structure Validation
 Options research preview and paper-open paths now treat listed-contract
 resolution as a readiness gate for iron condors when provider-backed options

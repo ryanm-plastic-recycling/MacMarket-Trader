@@ -4,6 +4,11 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from macmarket_trader.config import settings as _app_settings
+from macmarket_trader.analysis_packets import (
+    build_analysis_packet,
+    build_macro_context_summary,
+    build_provider_context_summary,
+)
 from macmarket_trader.data.providers.base import EmailMessage, EmailProvider
 from macmarket_trader.data.providers.registry import build_market_data_service
 from macmarket_trader.domain.enums import MarketMode
@@ -100,6 +105,59 @@ class StrategyReportService:
             "queue": ranking["queue"],
             "summary": ranking["summary"],
         }
+        macro_context = build_macro_context_summary()
+        analysis_packets: list[dict[str, object]] = []
+        for candidate in list(ranking["top_candidates"])[: min(top_n, 5)]:
+            symbol = str(candidate.get("symbol") or "").upper()
+            if not symbol:
+                continue
+            candidate_payload = {
+                **candidate,
+                "symbol": symbol,
+                "side": candidate.get("side") or "long",
+                "strategy": candidate.get("strategy"),
+                "thesis": candidate.get("thesis"),
+                "entry_zone": candidate.get("entry_zone"),
+                "invalidation": candidate.get("invalidation"),
+                "targets": candidate.get("targets"),
+                "quality": {
+                    "score": candidate.get("score"),
+                    "confidence": candidate.get("confidence"),
+                    "expected_rr": candidate.get("expected_rr"),
+                },
+                "workflow": {
+                    "market_mode": market_mode.value,
+                    "timeframe": "1D",
+                    "market_data_source": candidate.get("workflow_source") or last_source,
+                    "fallback_mode": bool(last_fallback),
+                    "session_policy": None,
+                    "ranking_provenance": {
+                        "rank": candidate.get("rank"),
+                        "score": candidate.get("score"),
+                        "confidence": candidate.get("confidence"),
+                        "expected_rr": candidate.get("expected_rr"),
+                        "strategy": candidate.get("strategy"),
+                    },
+                },
+            }
+            packet = build_analysis_packet(
+                symbol=symbol,
+                market_mode=market_mode.value,
+                timeframe="1D",
+                source_payload=candidate_payload,
+                market_data_source=str(candidate.get("workflow_source") or last_source),
+                fallback_mode=bool(last_fallback),
+                session_policy=None,
+                macro_context=macro_context,
+                provider_context=build_provider_context_summary(
+                    market_data_source=str(candidate.get("workflow_source") or last_source),
+                    fallback_mode=bool(last_fallback),
+                    session_policy=None,
+                    market_mode=market_mode.value,
+                ),
+            )
+            analysis_packets.append(packet.model_dump(mode="json"))
+        payload["analysis_packets"] = analysis_packets
         run_row = self.report_repo.create_run(
             schedule_id=schedule.id,
             status="sent",
@@ -140,6 +198,7 @@ class StrategyReportService:
             watchlist_only=list(payload.get("watchlist_only") or []),
             no_trade=list(payload.get("no_trade") or []),
             summary=dict(payload.get("summary") or {}),
+            analysis_packets=list(payload.get("analysis_packets") or []),
         )
         email_text = render_strategy_report_text(
             schedule_name=schedule.name,
@@ -149,6 +208,7 @@ class StrategyReportService:
             watchlist_only=list(payload.get("watchlist_only") or []),
             no_trade=list(payload.get("no_trade") or []),
             summary=dict(payload.get("summary") or {}),
+            analysis_packets=list(payload.get("analysis_packets") or []),
         )
         message_id = self.email_provider.send(
             EmailMessage(

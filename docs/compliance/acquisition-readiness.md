@@ -15,6 +15,17 @@ certification.
   context, Polygon news context, and Alpaca paper account readiness. The
   Alpaca probe is read-only account status only and does not imply live trading
   or broker routing.
+- Analysis Packet context is now available for UI/email/export readiness,
+  including provider/source/session provenance, FRED macro summaries, Polygon
+  news headlines, paper-only safety flags, already-open context, and
+  provider-supplied options mark/IV/OI/Greeks fields where available.
+- Strategy-report emails include a richer Analysis Packet Context section in
+  HTML and plain text while preserving redaction and paper-only/no-routing
+  disclaimers.
+- Stored recommendation detail now supports on-demand Analysis Packet preview
+  and export as sanitized JSON, Markdown, and email-safe HTML. Ad hoc packet
+  email remains deferred until a dedicated rate-limited and audit-logged user
+  email action exists.
 - LLM explanation-only boundary documented and tested.
 - Paper equity lifecycle integrity test exists.
 - Options position review and options lifecycle integrity tests exist.
@@ -63,6 +74,12 @@ certification.
 - Clearly label paper-only and no broker-routing scope in every product demo.
 - Treat `scripts/run_model_validation.py` output as a preliminary internal
   evidence packet, not as live trading performance or a public marketing claim.
+- Treat Analysis Packet and email outputs as evidence snapshots of displayed
+  context, not as certification or performance validation. Missing macro,
+  news, IV, open interest, Greeks, or option marks must remain explicit.
+- Treat on-demand Analysis Packet exports as operator review artifacts. They
+  should not be represented as investment advice, model validation, or live
+  execution readiness.
 - Label options review evidence as paper-only and provider-mark dependent.
   Current options marks use provider snapshots when plan coverage exists; no
   Black-Scholes model, internally calculated Greeks, live routing, automatic

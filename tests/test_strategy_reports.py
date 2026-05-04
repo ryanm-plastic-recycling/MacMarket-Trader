@@ -51,6 +51,7 @@ def test_strategy_schedule_create_and_run_now() -> None:
     assert run_now.status_code == 200
     payload = run_now.json()
     assert 'top_candidates' in payload
+    assert 'analysis_packets' in payload
     assert 'watchlist_only' in payload
     assert 'no_trade' in payload
     assert 'queue' in payload

@@ -67,6 +67,96 @@ export type StoredRecommendation = {
   active_review_action_classification?: string | null;
   active_review_summary?: string | null;
   open_position_review_path?: string | null;
+  analysis_packet?: AnalysisPacket | null;
+};
+
+export type MacroSeriesPoint = {
+  series_id: string;
+  label: string;
+  latest_value?: number | null;
+  latest_date?: string | null;
+  recent_change?: number | null;
+  stale?: boolean;
+  missing_data?: string[];
+};
+
+export type MacroContextSummary = {
+  provider?: string | null;
+  mode?: string | null;
+  series?: MacroSeriesPoint[];
+  missing_data?: string[];
+  warnings?: string[];
+};
+
+export type NewsArticleSummary = {
+  title: string;
+  publisher?: string | null;
+  published_utc?: string | null;
+  article_url?: string | null;
+  tickers?: string[];
+  description?: string | null;
+  sentiment?: string | null;
+  insights?: string[];
+};
+
+export type NewsContextSummary = {
+  provider?: string | null;
+  symbol?: string | null;
+  headlines?: NewsArticleSummary[];
+  count?: number;
+  newest_article_age_minutes?: number | null;
+  sentiment_summary?: string | null;
+  missing_data?: string[];
+  warnings?: string[];
+};
+
+export type AnalysisPacket = {
+  packet_id?: string;
+  symbol: string;
+  market_mode: string;
+  timeframe?: string | null;
+  provider?: string | null;
+  source?: string | null;
+  session_policy?: string | null;
+  paper_only?: boolean;
+  review_only?: boolean;
+  no_live_trading?: boolean;
+  no_broker_routing?: boolean;
+  no_automatic_exits?: boolean;
+  missing_data?: string[];
+  warnings?: string[];
+  macro_context?: MacroContextSummary | null;
+  news_context?: NewsContextSummary | null;
+  provider_context?: Record<string, unknown> | null;
+  risk_calendar?: Record<string, unknown> | null;
+  paper_lifecycle?: Record<string, unknown> | null;
+  equity?: Record<string, unknown> | null;
+  options?: {
+    strategy_type?: string | null;
+    expiration?: string | null;
+    days_to_expiration?: number | null;
+    structure_status?: string | null;
+    listed_contract_validation_status?: string | null;
+    legs?: OptionsResearchLeg[] | null;
+    max_profit?: number | null;
+    max_loss?: number | null;
+    breakevens?: number[];
+    missing_data?: string[];
+    warnings?: string[];
+  } | null;
+};
+
+export type AnalysisPacketExport = {
+  recommendation_id?: number | string;
+  recommendation_uid?: string | null;
+  display_id?: string | null;
+  formats?: string[];
+  packet: AnalysisPacket;
+  markdown: string;
+  html: string;
+  email_send_available?: boolean;
+  email_send_status?: string | null;
+  email_send_reason?: string | null;
 };
 
 export type RecommendationSearchPrefill = {
@@ -88,6 +178,22 @@ export type OptionsResearchLeg = {
   strike_snap_distance?: number | null;
   contract_selection_method?: string | null;
   contract_selection?: Record<string, unknown> | null;
+  bid?: number | null;
+  ask?: number | null;
+  latest_trade_price?: number | null;
+  current_mark_premium?: number | null;
+  mark_method?: string | null;
+  implied_volatility?: number | null;
+  open_interest?: number | null;
+  delta?: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
+  mark_as_of?: string | null;
+  stale?: boolean | null;
+  market_data_source?: string | null;
+  market_data_fallback_mode?: boolean | null;
+  missing_data?: string[] | null;
 };
 
 export type OptionsResearchStructure = {
@@ -157,6 +263,7 @@ export type OptionsResearchSetup = {
   option_structure?: OptionsResearchStructure | null;
   expected_range?: OptionsExpectedRange | null;
   options_chain_preview?: OptionsChainPreview | null;
+  analysis_packet?: AnalysisPacket | null;
 };
 
 export type OptionsReplayPreviewStructureType =

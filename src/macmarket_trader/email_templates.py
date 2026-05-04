@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import html as _html
 import os
+import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -391,6 +392,189 @@ def _empty_state_row(message: str) -> str:
     )
 
 
+def _fmt_compact_value(value: object) -> str:
+    if value is None or value == "":
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.4g}"
+    return str(value)
+
+
+_SECRETISH_RE = re.compile(r"(?i)(sk-[A-Za-z0-9_-]{6,}|pk_[A-Za-z0-9_-]{6,}|rk_[A-Za-z0-9_-]{6,}|key-[A-Za-z0-9_-]{6,})")
+
+
+def _redact_packet_text(value: object) -> str:
+    return _SECRETISH_RE.sub("[redacted]", str(value))
+
+
+def _packet_macro_lines(packet: dict) -> list[str]:
+    macro = packet.get("macro_context") if isinstance(packet.get("macro_context"), dict) else {}
+    series = macro.get("series") if isinstance(macro.get("series"), list) else []
+    lines: list[str] = []
+    for item in series[:4]:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or item.get("series_id") or "").strip()
+        value = _fmt_compact_value(item.get("latest_value"))
+        latest_date = str(item.get("latest_date") or "").strip()
+        if label:
+            lines.append(f"{label}: {value}{f' ({latest_date})' if latest_date else ''}")
+    missing = macro.get("missing_data") if isinstance(macro.get("missing_data"), list) else []
+    if not lines and missing:
+        lines.append("Macro context unavailable: " + ", ".join(_redact_packet_text(item) for item in missing[:3]))
+    return lines
+
+
+def _packet_news_lines(packet: dict) -> list[str]:
+    news = packet.get("news_context") if isinstance(packet.get("news_context"), dict) else {}
+    headlines = news.get("headlines") if isinstance(news.get("headlines"), list) else []
+    lines: list[str] = []
+    for item in headlines[:3]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        publisher = str(item.get("publisher") or "").strip()
+        published = str(item.get("published_utc") or "").strip()
+        if title:
+            suffix = " | ".join(part for part in (publisher, published[:10]) if part)
+            lines.append(f"{title}{f' ({suffix})' if suffix else ''}")
+    missing = news.get("missing_data") if isinstance(news.get("missing_data"), list) else []
+    if not lines and missing:
+        lines.append("News context unavailable: " + ", ".join(_redact_packet_text(item) for item in missing[:3]))
+    return lines
+
+
+def _packet_options_html(packet: dict) -> str:
+    options = packet.get("options") if isinstance(packet.get("options"), dict) else None
+    if not options:
+        return ""
+    legs = options.get("legs") if isinstance(options.get("legs"), list) else []
+    rows: list[str] = []
+    for leg in legs[:6]:
+        if not isinstance(leg, dict):
+            continue
+        label = str(leg.get("role") or "leg")
+        option_type = str(leg.get("option_type") or "").upper()
+        side = str(leg.get("side") or "")
+        strike = _fmt_compact_value(leg.get("selected_listed_strike"))
+        symbol = str(leg.get("option_symbol") or "symbol unavailable")
+        mark = _fmt_compact_value(leg.get("current_mark_premium"))
+        iv = _fmt_compact_value(leg.get("implied_volatility"))
+        oi = _fmt_compact_value(leg.get("open_interest"))
+        greeks = " / ".join(
+            f"{key} {_fmt_compact_value(leg.get(key))}"
+            for key in ("delta", "gamma", "theta", "vega")
+            if leg.get(key) is not None
+        ) or "Greeks missing"
+        rows.append(
+            f'<tr><td style="padding:5px 0;border-bottom:1px solid {_BORDER};font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_SECONDARY};">'
+            f'{_e(label)}: {_e(side)} {_e(option_type)} {_e(strike)} - {_e(symbol)} | mark {_e(mark)} | IV {_e(iv)} | OI {_e(oi)} | {_e(greeks)}'
+            f'</td></tr>'
+        )
+    missing = options.get("missing_data") if isinstance(options.get("missing_data"), list) else []
+    warnings = options.get("warnings") if isinstance(options.get("warnings"), list) else []
+    if not rows and missing:
+        rows.append(
+            f'<tr><td style="padding:5px 0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};">'
+            f'Option details unavailable: {_e(", ".join(str(item) for item in missing[:4]))}</td></tr>'
+        )
+    return (
+        f'<p style="margin:8px 0 4px 0;font-family:Arial,sans-serif;font-size:10px;font-weight:700;color:{_TEXT_SECONDARY};text-transform:uppercase;">Options structure</p>'
+        f'<p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};">'
+        f'{_e(str(options.get("strategy_type") or "options"))} | expiration {_e(_fmt_compact_value(options.get("expiration")))} | DTE {_e(_fmt_compact_value(options.get("days_to_expiration")))} | max profit {_e(_fmt_compact_value(options.get("max_profit")))} | max loss {_e(_fmt_compact_value(options.get("max_loss")))}</p>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{"".join(rows)}</table>'
+        + (
+            f'<p style="margin:5px 0 0 0;font-family:Arial,sans-serif;font-size:10px;color:{_YELLOW};">Warnings: {_e(", ".join(_redact_packet_text(item) for item in warnings[:3]))}</p>'
+            if warnings
+            else ""
+        )
+    )
+
+
+def _analysis_packet_section(analysis_packets: list[dict] | None) -> str:
+    packets = [item for item in (analysis_packets or []) if isinstance(item, dict)]
+    if not packets:
+        return ""
+    packet_rows: list[str] = []
+    for packet in packets[:5]:
+        symbol = str(packet.get("symbol") or "")
+        market_mode = str(packet.get("market_mode") or "")
+        timeframe = str(packet.get("timeframe") or "")
+        provider = str(packet.get("provider") or packet.get("source") or "provider unavailable")
+        missing = packet.get("missing_data") if isinstance(packet.get("missing_data"), list) else []
+        macro_lines = _packet_macro_lines(packet)
+        news_lines = _packet_news_lines(packet)
+        packet_rows.append(
+            f'<tr><td style="background-color:{_BG_CARD_ALT};padding:14px 28px;border-bottom:1px solid {_BORDER};">'
+            f'<p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:14px;font-weight:700;color:{_TEXT_PRIMARY};">{_e(symbol)}'
+            f' <span style="font-size:10px;color:{_TEXT_SECONDARY};font-weight:400;">{_e(market_mode)} | {_e(timeframe)} | {_e(provider)}</span></p>'
+            f'<p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:10px;font-weight:700;color:{_TEXT_SECONDARY};text-transform:uppercase;">Macro Context</p>'
+            f'<p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};line-height:1.5;">{_e("; ".join(macro_lines) or "Not available from provider")}</p>'
+            f'<p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:10px;font-weight:700;color:{_TEXT_SECONDARY};text-transform:uppercase;">News Context</p>'
+            f'<p style="margin:0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};line-height:1.5;">{_e("; ".join(news_lines) or "Not available from provider")}</p>'
+            + _packet_options_html(packet)
+            + (
+                f'<p style="margin:8px 0 0 0;font-family:Arial,sans-serif;font-size:10px;color:{_YELLOW};">Missing data: {_e(", ".join(_redact_packet_text(item) for item in missing[:6]))}</p>'
+                if missing
+                else ""
+            )
+            + f'</td></tr>'
+        )
+    return (
+        _section_label("Analysis Packet Context")
+        + "".join(packet_rows)
+        + f'<tr><td style="background-color:{_BG_PAGE};padding:8px 28px 18px 28px;">'
+        f'<p style="margin:0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};line-height:1.5;">'
+        f'Paper only. No live trading. No broker routing. No automatic exits. '
+        f'LLM context can explain only; deterministic engines own approvals, levels, sizing, risk gates, and paper order creation.'
+        f'</p></td></tr>'
+    )
+
+
+def _analysis_packet_text(analysis_packets: list[dict] | None) -> list[str]:
+    packets = [item for item in (analysis_packets or []) if isinstance(item, dict)]
+    if not packets:
+        return []
+    lines = ["ANALYSIS PACKET CONTEXT", "-" * 58]
+    for packet in packets[:5]:
+        symbol = packet.get("symbol", "")
+        market_mode = packet.get("market_mode", "")
+        timeframe = packet.get("timeframe", "")
+        provider = packet.get("provider") or packet.get("source") or "provider unavailable"
+        lines.append(f"{symbol} | {market_mode} | {timeframe} | {provider}")
+        macro_lines = _packet_macro_lines(packet)
+        news_lines = _packet_news_lines(packet)
+        lines.append("  Macro: " + ("; ".join(macro_lines) if macro_lines else "Not available from provider"))
+        lines.append("  News: " + ("; ".join(news_lines) if news_lines else "Not available from provider"))
+        options = packet.get("options") if isinstance(packet.get("options"), dict) else None
+        if options:
+            lines.append(
+                "  Options: "
+                + f"{options.get('strategy_type') or 'options'} exp {options.get('expiration') or '-'} "
+                + f"DTE {options.get('days_to_expiration') if options.get('days_to_expiration') is not None else '-'} "
+                + f"max profit {options.get('max_profit') if options.get('max_profit') is not None else '-'} "
+                + f"max loss {options.get('max_loss') if options.get('max_loss') is not None else '-'}"
+            )
+            for leg in (options.get("legs") or [])[:6]:
+                if isinstance(leg, dict):
+                    lines.append(
+                        "    "
+                        + f"{leg.get('role') or 'leg'} {leg.get('side') or ''} {leg.get('option_type') or ''} "
+                        + f"{leg.get('selected_listed_strike') if leg.get('selected_listed_strike') is not None else '-'} "
+                        + f"{leg.get('option_symbol') or 'symbol unavailable'} | mark {leg.get('current_mark_premium') if leg.get('current_mark_premium') is not None else '-'} "
+                        + f"| IV {leg.get('implied_volatility') if leg.get('implied_volatility') is not None else '-'} "
+                        + f"| OI {leg.get('open_interest') if leg.get('open_interest') is not None else '-'}"
+                    )
+        missing = packet.get("missing_data") if isinstance(packet.get("missing_data"), list) else []
+        if missing:
+            lines.append("  Missing data: " + ", ".join(_redact_packet_text(item) for item in missing[:6]))
+        lines.append("")
+    lines.append("Paper only. No live trading. No broker routing. No automatic exits.")
+    lines.append("LLM context can explain only; deterministic engines own approvals, levels, sizing, risk gates, and paper order creation.")
+    lines.append("")
+    return lines
+
+
 def _footer(ran_at: str) -> str:
     try:
         dt = datetime.fromisoformat(ran_at.replace("Z", "+00:00"))
@@ -407,7 +591,7 @@ def _footer(ran_at: str) -> str:
         f'</p>'
         f'<p style="margin:8px 0 0 0;font-family:Arial,sans-serif;font-size:10px;'
         f'color:#2d3748;text-align:center;">'
-        f'This is not financial advice. For operator review only.'
+        f'This is not financial advice. Paper only. No live trading, broker routing, or automatic exits.'
         f'</p>'
         f'</td></tr>'
     )
@@ -426,6 +610,7 @@ def render_strategy_report_html(
     watchlist_only: list[dict],
     no_trade: list[dict],
     summary: dict,
+    analysis_packets: list[dict] | None = None,
 ) -> str:
     """Return a complete HTML email string for a strategy report run."""
     tier_counts: Counter[str] = Counter(
@@ -456,6 +641,7 @@ def render_strategy_report_html(
         )
         + _section_label("Top Candidates")
         + candidate_rows
+        + _analysis_packet_section(analysis_packets)
         + _watchlist_section(watchlist_only)
         + _no_trade_section(no_trade)
         + _footer(ran_at)
@@ -494,6 +680,7 @@ def render_strategy_report_text(
     watchlist_only: list[dict],
     no_trade: list[dict],
     summary: dict,
+    analysis_packets: list[dict] | None = None,
 ) -> str:
     """Return a plain-text fallback for the strategy report email."""
     try:
@@ -548,6 +735,8 @@ def render_strategy_report_text(
             lines.append(f"  {c.get('symbol', '')}  {c.get('strategy', '')}  {score_str}")
         lines.append("")
 
+    lines.extend(_analysis_packet_text(analysis_packets))
+
     if no_trade:
         syms = ", ".join(str(c.get("symbol", "")) for c in no_trade if c.get("symbol"))
         lines += ["NO TRADE", f"  {syms}", ""]
@@ -555,7 +744,7 @@ def render_strategy_report_text(
     lines += [
         "=" * 58,
         f"Generated by MacMarket Trader  |  {date_str}",
-        "This is not financial advice. For operator review only.",
+        "This is not financial advice. Paper only. No live trading, broker routing, or automatic exits.",
     ]
 
     return "\n".join(lines)

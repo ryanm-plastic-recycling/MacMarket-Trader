@@ -6,6 +6,7 @@ import { GLOSSARY_TERMS } from "@/lib/glossary";
 const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const previewProxySource = readFileSync(new URL("../../api/user/symbol-universe/preview/route.ts", import.meta.url), "utf8");
 const opportunityProxySource = readFileSync(new URL("../../api/user/recommendations/opportunity-intelligence/route.ts", import.meta.url), "utf8");
+const packetProxySource = readFileSync(new URL("../../api/user/recommendations/[recommendationId]/analysis-packet/route.ts", import.meta.url), "utf8");
 
 describe("recommendations metric help rollout", () => {
   it("adds clearer manual symbol-entry guidance and parsed preview wiring", () => {
@@ -137,6 +138,28 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("deterministic risk gate");
     expect(source).toContain("Promotion blocked by deterministic risk calendar");
     expect(source).toContain("Risk calendar requires explicit handling before promotion");
+    expect(source).toContain("function AnalysisPacketContext");
+    expect(source).toContain("Macro Context");
+    expect(source).toContain("News Context");
+    expect(source).toContain("selectedRecommendation.analysis_packet");
+    expect(source).toContain("Not available from provider");
+  });
+
+  it("adds operator Analysis Packet preview and export controls to recommendation detail", () => {
+    expect(source).toContain("type AnalysisPacketExport");
+    expect(source).toContain("AnalysisPacketPreviewPanel");
+    expect(source).toContain("ANALYSIS PACKET EXPORT");
+    expect(source).toContain("Preview analysis packet");
+    expect(source).toContain("Copy Markdown");
+    expect(source).toContain("Download Markdown");
+    expect(source).toContain("Download JSON");
+    expect(source).toContain("loadAnalysisPacketExport");
+    expect(source).toContain('`/api/user/recommendations/${selectedRecommendation.id}/analysis-packet`');
+    expect(source).toContain("Macro Context");
+    expect(source).toContain("News Context");
+    expect(source).toContain("Missing from selected contract snapshot");
+    expect(packetProxySource).toContain("analysis-packet");
+    expect(packetProxySource).toContain("proxyWorkflowRequest");
   });
 
   it("renders already-open paper position awareness without auto scale-in language", () => {

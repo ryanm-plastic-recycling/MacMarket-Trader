@@ -31,14 +31,20 @@ class PolygonNewsProvider(NewsProvider):
 
     def _normalize_article(self, article: dict[str, Any], symbol: str) -> dict[str, object]:
         publisher = article.get("publisher") or {}
+        insights = article.get("insights") if isinstance(article.get("insights"), list) else []
         return {
             "id": str(article.get("id") or ""),
             "symbol": symbol.upper(),
+            "title": str(article.get("title") or ""),
             "headline": str(article.get("title") or ""),
             "published_utc": str(article.get("published_utc") or ""),
+            "publisher": str(publisher.get("name") or ""),
             "source": str(publisher.get("name") or ""),
+            "article_url": str(article.get("article_url") or ""),
             "url": str(article.get("article_url") or ""),
             "description": str(article.get("description") or ""),
+            "tickers": [str(ticker).upper() for ticker in (article.get("tickers") or []) if str(ticker).strip()],
+            "insights": insights,
             "keywords": list(article.get("keywords") or []),
         }
 

@@ -288,7 +288,21 @@ describe("OptionsResearchPreview", () => {
             breakeven_low: 92.5,
             breakeven_high: 107.5,
             legs: [
-              { action: "buy", right: "put", strike: 90, label: "Long put wing" },
+              {
+                action: "buy",
+                right: "put",
+                strike: 90,
+                label: "Long put wing",
+                option_symbol: "O:SPY260515P00090000",
+                current_mark_premium: 1.24,
+                mark_method: "quote_mid",
+                implied_volatility: 0.22,
+                open_interest: 1234,
+                delta: -0.18,
+                gamma: 0.02,
+                theta: -0.04,
+                vega: 0.11,
+              },
               { action: "sell", right: "put", strike: 95, label: "Short put body" },
               { action: "sell", right: "call", strike: 105, label: "Short call body" },
               { action: "buy", right: "call", strike: 110, label: "Long call wing" },
@@ -316,6 +330,12 @@ describe("OptionsResearchPreview", () => {
     );
 
     expect(html).toContain("Expected range is research context only. It does not change expiration payoff math or enable execution.");
+    expect(html).toContain("Selected listed contract snapshots");
+    expect(html).toContain("O:SPY260515P00090000");
+    expect(html).toContain("quote_mid");
+    expect(html).toContain("IV");
+    expect(html).toContain("OI");
+    expect(html).toContain("delta");
     expect(html).toContain("missing_iv_snapshot");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("null");
@@ -502,6 +522,90 @@ describe("OptionsResearchPreview", () => {
     expect(riskHtml).toContain("Expected Range blocked");
     expect(riskHtml).toContain("Unavailable. Cannot build iron condor: provider returned incomplete chain; puts missing.");
     expect(riskHtml).not.toContain("Breakeven 1");
+  });
+
+  it("renders Analysis Packet preview with macro, news, IV, OI, Greeks, and missing fields", () => {
+    const html = renderToStaticMarkup(
+      <OptionsResearchPreview
+        setup={{
+          symbol: "SPY",
+          market_mode: "options",
+          workflow_source: "polygon",
+          strategy: "Iron Condor",
+          option_structure: {
+            type: "iron_condor",
+            expiration: "2026-05-16",
+            dte: 13,
+            legs: [
+              {
+                action: "sell",
+                right: "call",
+                strike: 520,
+                label: "short call",
+                option_symbol: "O:SPY260516C00520000",
+                current_mark_premium: 1.24,
+                mark_method: "quote_mid",
+                implied_volatility: 0.22,
+                open_interest: 1234,
+                delta: 0.18,
+              },
+            ],
+          },
+          expected_range: null,
+          options_chain_preview: null,
+          analysis_packet: {
+            symbol: "SPY",
+            market_mode: "options",
+            timeframe: "1D",
+            provider: "polygon",
+            macro_context: {
+              series: [{ series_id: "DGS10", label: "10Y Treasury yield", latest_value: 4.5, latest_date: "2026-05-01" }],
+            },
+            news_context: {
+              headlines: [{ title: "SPY macro desk update", publisher: "Example Wire", published_utc: "2026-05-03T14:00:00Z" }],
+            },
+            options: {
+              strategy_type: "iron_condor",
+              expiration: "2026-05-16",
+              days_to_expiration: 13,
+              legs: [
+                {
+                  label: "short call",
+                  action: "sell",
+                  right: "call",
+                  option_symbol: "O:SPY260516C00520000",
+                  current_mark_premium: 1.24,
+                  mark_method: "quote_mid",
+                  implied_volatility: 0.22,
+                  open_interest: 1234,
+                  delta: 0.18,
+                },
+              ],
+            },
+            missing_data: ["options:option_snapshot_marks"],
+          },
+        }}
+        loading={false}
+        error={null}
+        chartPayload={null}
+        chartStorageKey="test-options-preview"
+        chartSourceLabel="polygon"
+        chartBlockedByFallback={false}
+      />,
+    );
+
+    expect(html).toContain("Preview Analysis Packet");
+    expect(html).toContain("Macro Context");
+    expect(html).toContain("News Context");
+    expect(html).toContain("10Y Treasury yield");
+    expect(html).toContain("SPY macro desk update");
+    expect(html).toContain("IV");
+    expect(html).toContain("OI");
+    expect(html).toContain("delta");
+    expect(html).toContain("Missing from selected contract snapshot");
+    expect(html).toContain("Missing data: options:option_snapshot_marks");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toContain("NaN");
   });
 });
 

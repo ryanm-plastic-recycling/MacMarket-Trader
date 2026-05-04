@@ -10,6 +10,9 @@ describe("dashboard market risk card", () => {
     expect(source).toContain("recommended_action");
     expect(source).toContain("Active events");
     expect(source).toContain("Missing evidence");
+    expect(source).toContain("Macro Context");
+    expect(source).toContain("macro_context");
+    expect(source).toContain("Not available from provider");
     expect(source.toLowerCase()).not.toContain("broker routing");
     expect(source.toLowerCase()).not.toContain("live trading");
   });

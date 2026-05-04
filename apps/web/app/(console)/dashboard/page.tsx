@@ -8,6 +8,7 @@ import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge }
 import { GUIDED_ENTRY_PATH, GUIDED_FLOW_LABEL } from "@/lib/guided-workflow";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { WorkflowBanner } from "@/components/workflow-banner";
+import { formatResearchValue, type MacroContextSummary } from "@/lib/recommendations";
 
 type Recommendation = { id: number; symbol: string; created_at: string; payload: any };
 type AuditEvent = { event_type: string; timestamp: string | null; detail: string; status: string };
@@ -30,6 +31,7 @@ type DashboardPayload = {
   account: { app_role: string; approval_status: string };
   provider_health: { summary: string; auth: string; email: string; market_data: string; configured_provider: string; effective_read_mode: string; workflow_execution_mode: string; failure_reason?: string };
   risk_calendar?: RiskCalendarDecision;
+  macro_context?: MacroContextSummary;
   latest_market_snapshot?: { symbol: string; as_of: string; close: number; source: string; fallback_mode: boolean };
   active_recommendations: Recommendation[];
   recent_replay_runs: Array<{ id: number; symbol: string; recommendation_count: number; approved_count: number; created_at: string }>;
@@ -82,6 +84,8 @@ export default function Page() {
 
   const latest = useMemo(() => data?.active_recommendations[0] ?? null, [data]);
   const riskDecision = data?.risk_calendar?.decision;
+  const macroSeries = data?.macro_context?.series ?? [];
+  const macroMissing = data?.macro_context?.missing_data ?? [];
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
@@ -173,6 +177,27 @@ export default function Page() {
             Missing evidence: {riskDecision.missing_evidence.join("; ")}
           </div>
         ) : null}
+      </Card>
+
+      <Card title="Macro Context">
+        {macroSeries.length > 0 ? (
+          <div className="op-grid-2">
+            {macroSeries.slice(0, 6).map((point) => (
+              <div key={point.series_id}>
+                <strong>{point.label}</strong>
+                <div style={{ color: "#9fb0c3", marginTop: 4 }}>
+                  {formatResearchValue(point.latest_value, "Not available from provider")}
+                  {point.latest_date ? ` · ${point.latest_date}` : ""}
+                  {point.stale ? " · stale" : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: "#9fb0c3" }}>
+            Not available from provider{macroMissing.length ? `: ${macroMissing.join(", ")}` : ""}
+          </div>
+        )}
       </Card>
 
       <div className="op-grid-2">

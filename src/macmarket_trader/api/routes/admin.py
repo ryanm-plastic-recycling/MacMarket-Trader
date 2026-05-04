@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from macmarket_trader.analysis_packets import (
+    PaperLifecycleSummary,
+    analysis_packet_to_safe_dict,
+    build_analysis_packet,
+    build_macro_context_summary,
+    build_news_context_summary,
+    build_provider_context_summary,
+    render_analysis_packet_html,
+    render_analysis_packet_markdown,
+)
 from macmarket_trader.api.deps.auth import current_user, require_admin, require_approved_user
 from macmarket_trader.api.routes.workflow_lineage import extract_recommendation_key_levels, extract_recommendation_strategy
 from macmarket_trader.api.security import (
@@ -696,6 +706,7 @@ def dashboard(user=Depends(require_approved_user)):
     provider_health = provider_health_summary()
     latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
     risk_calendar = risk_calendar_service.assess(symbol="SPY", timeframe="1D")
+    macro_context = build_macro_context_summary()
 
     # Operational audit events — combine email logs, approval events, and schedule runs
     email_events = [
@@ -739,6 +750,7 @@ def dashboard(user=Depends(require_approved_user)):
         },
         "market_regime": "event-driven / deterministic-eval",
         "risk_calendar": risk_calendar.model_dump(mode="json"),
+        "macro_context": macro_context.model_dump(mode="json"),
         "provider_health": provider_health,
         "latest_market_snapshot": {
             "symbol": latest_snapshot.symbol,
@@ -803,6 +815,90 @@ def risk_calendar_today(symbol: str = "SPY", timeframe: str = "1D", _user=Depend
     return assessment.model_dump(mode="json")
 
 
+def _analysis_packet_for_payload(
+    *,
+    symbol: str,
+    market_mode: str,
+    timeframe: str | None,
+    payload: dict[str, Any],
+    market_data_source: str | None,
+    fallback_mode: bool,
+    session_policy: str | None,
+    already_open: dict[str, object] | None = None,
+    macro_context=None,
+):
+    paper_lifecycle = None
+    if already_open:
+        paper_lifecycle = PaperLifecycleSummary(
+            already_open=bool(already_open.get("already_open")),
+            open_position_id=_finite_int(already_open.get("open_position_id")),
+            active_review_action_classification=str(already_open.get("active_review_action_classification") or "") or None,
+            active_review_summary=str(already_open.get("active_review_summary") or "") or None,
+        )
+    packet = build_analysis_packet(
+        symbol=symbol,
+        market_mode=market_mode,
+        timeframe=timeframe,
+        source_payload=payload,
+        market_data_source=market_data_source,
+        fallback_mode=fallback_mode,
+        session_policy=session_policy,
+        macro_context=macro_context,
+        news_context=build_news_context_summary(symbol),
+        provider_context=build_provider_context_summary(
+            market_data_source=market_data_source,
+            fallback_mode=fallback_mode,
+            session_policy=session_policy,
+            market_mode=market_mode,
+        ),
+        risk_calendar=payload.get("risk_calendar") if isinstance(payload.get("risk_calendar"), dict) else None,
+        paper_lifecycle=paper_lifecycle,
+    )
+    return analysis_packet_to_safe_dict(packet)
+
+
+def _workflow_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    workflow = payload.get("workflow")
+    return workflow if isinstance(workflow, dict) else {}
+
+
+def _recommendation_payload_row(
+    row,
+    *,
+    already_open_by_symbol: dict[str, dict[str, object]],
+    macro_context=None,
+) -> dict[str, object]:
+    payload = dict(row.payload or {})
+    workflow = _workflow_payload(payload)
+    already_open = _already_open_context(row.symbol, already_open_by_symbol)
+    market_mode = str(workflow.get("market_mode") or MarketMode.EQUITIES.value)
+    timeframe = str(workflow.get("timeframe") or "1D")
+    market_data_source = workflow.get("market_data_source")
+    fallback_mode = bool(workflow.get("fallback_mode", False))
+    return {
+        "id": row.id,
+        "created_at": row.created_at,
+        "symbol": row.symbol,
+        "recommendation_id": row.recommendation_id,
+        "display_id": display_id_or_fallback(row.display_id, row.recommendation_id),
+        "payload": row.payload,
+        "market_data_source": market_data_source,
+        "fallback_mode": fallback_mode,
+        **already_open,
+        "analysis_packet": _analysis_packet_for_payload(
+            symbol=row.symbol,
+            market_mode=market_mode,
+            timeframe=timeframe,
+            payload=payload,
+            market_data_source=str(market_data_source) if market_data_source is not None else None,
+            fallback_mode=fallback_mode,
+            session_policy=str(workflow.get("session_policy") or "") or None,
+            already_open=already_open,
+            macro_context=macro_context,
+        ),
+    }
+
+
 @user_router.get("/recommendations")
 def list_recommendations(_user=Depends(require_approved_user)):
     rows = recommendation_repo.list_recent(app_user_id=_user.id)
@@ -812,18 +908,9 @@ def list_recommendations(_user=Depends(require_approved_user)):
         recent_rows=rows,
         include_review=True,
     )
+    macro_context = build_macro_context_summary()
     return [
-        {
-            "id": row.id,
-            "created_at": row.created_at,
-            "symbol": row.symbol,
-            "recommendation_id": row.recommendation_id,
-            "display_id": display_id_or_fallback(row.display_id, row.recommendation_id),
-            "payload": row.payload,
-            "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
-            "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
-            **_already_open_context(row.symbol, already_open_by_symbol),
-        }
+        _recommendation_payload_row(row, already_open_by_symbol=already_open_by_symbol, macro_context=macro_context)
         for row in rows
     ]
 
@@ -1274,16 +1361,51 @@ def recommendation_detail(recommendation_id: int, _user=Depends(require_approved
         user=_user,
         include_review=True,
     )
+    return _recommendation_payload_row(
+        row,
+        already_open_by_symbol=already_open_by_symbol,
+        macro_context=build_macro_context_summary(),
+    )
+
+
+@user_router.get("/recommendations/{recommendation_id}/analysis-packet")
+def recommendation_analysis_packet_export(recommendation_id: int, _user=Depends(require_approved_user)):
+    row = recommendation_repo.get_by_id(recommendation_id, app_user_id=_user.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    payload = dict(row.payload or {})
+    workflow = _workflow_payload(payload)
+    market_mode = str(workflow.get("market_mode") or MarketMode.EQUITIES.value)
+    timeframe = str(workflow.get("timeframe") or "1D")
+    market_data_source = workflow.get("market_data_source")
+    already_open_by_symbol = _open_paper_position_context_by_symbol(
+        app_user_id=_user.id,
+        user=_user,
+        include_review=True,
+    )
+    packet = _analysis_packet_for_payload(
+        symbol=row.symbol,
+        market_mode=market_mode,
+        timeframe=timeframe,
+        payload=payload,
+        market_data_source=str(market_data_source) if market_data_source is not None else None,
+        fallback_mode=bool(workflow.get("fallback_mode", False)),
+        session_policy=str(workflow.get("session_policy") or "") or None,
+        already_open=_already_open_context(row.symbol, already_open_by_symbol),
+        macro_context=build_macro_context_summary(),
+    )
+    safe_packet = analysis_packet_to_safe_dict(packet)
     return {
-        "id": row.id,
-        "created_at": row.created_at,
-        "symbol": row.symbol,
-        "recommendation_id": row.recommendation_id,
+        "recommendation_id": row.id,
+        "recommendation_uid": row.recommendation_id,
         "display_id": display_id_or_fallback(row.display_id, row.recommendation_id),
-        "payload": row.payload,
-        "market_data_source": (row.payload or {}).get("workflow", {}).get("market_data_source"),
-        "fallback_mode": bool((row.payload or {}).get("workflow", {}).get("fallback_mode", False)),
-        **_already_open_context(row.symbol, already_open_by_symbol),
+        "formats": ["json", "markdown", "html"],
+        "packet": safe_packet,
+        "markdown": render_analysis_packet_markdown(safe_packet),
+        "html": render_analysis_packet_html(safe_packet),
+        "email_send_available": False,
+        "email_send_status": "deferred",
+        "email_send_reason": "Ad hoc packet email needs explicit rate-limit and audit-log plumbing before enabling.",
     }
 
 
@@ -2506,7 +2628,48 @@ def _contract_selection_payload(
     }
 
 
-def _apply_leg_selection(leg: dict[str, object], selection: dict[str, object]) -> dict[str, object]:
+def _enrich_research_leg_with_snapshot(symbol: str, leg: dict[str, object]) -> dict[str, object]:
+    def _append_missing(code: str) -> None:
+        missing = [str(item) for item in (leg.get("missing_data") or []) if str(item).strip()]
+        missing.append(code)
+        leg["missing_data"] = sorted(set(missing))
+
+    option_symbol = str(leg.get("option_symbol") or "").upper().strip()
+    if not option_symbol:
+        _append_missing("option_symbol")
+        return leg
+    snapshot_fetcher = getattr(market_data_service, "option_contract_snapshot", None)
+    if not callable(snapshot_fetcher):
+        _append_missing("option_snapshot_provider")
+        return leg
+    try:
+        snapshot = snapshot_fetcher(underlying_symbol=symbol, option_symbol=option_symbol)
+    except Exception as exc:  # noqa: BLE001
+        _append_missing("option_snapshot")
+        leg["snapshot_error"] = _sanitize_provider_error(exc)
+        return leg
+    leg["current_mark_premium"] = snapshot.mark_price
+    leg["mark_method"] = snapshot.mark_method
+    leg["bid"] = snapshot.bid
+    leg["ask"] = snapshot.ask
+    leg["latest_trade_price"] = snapshot.latest_trade_price
+    leg["implied_volatility"] = snapshot.implied_volatility
+    leg["open_interest"] = snapshot.open_interest
+    leg["delta"] = snapshot.delta
+    leg["gamma"] = snapshot.gamma
+    leg["theta"] = snapshot.theta
+    leg["vega"] = snapshot.vega
+    leg["mark_as_of"] = snapshot.as_of.isoformat() if snapshot.as_of is not None else None
+    leg["stale"] = snapshot.stale
+    missing = [str(item) for item in (leg.get("missing_data") or []) if str(item).strip()]
+    missing.extend(str(item) for item in snapshot.missing_fields if str(item).strip())
+    leg["missing_data"] = sorted(set(missing))
+    leg["market_data_source"] = snapshot.provider
+    leg["market_data_fallback_mode"] = snapshot.fallback_mode
+    return leg
+
+
+def _apply_leg_selection(symbol: str, leg: dict[str, object], selection: dict[str, object]) -> dict[str, object]:
     selected_strike = _finite_float(selection.get("selected_listed_strike"))
     selected_expiration = _parse_option_expiration(selection.get("selected_expiration"))
     updated = dict(leg)
@@ -2522,7 +2685,7 @@ def _apply_leg_selection(leg: dict[str, object], selection: dict[str, object]) -
     updated["strike_snap_distance"] = selection.get("strike_snap_distance")
     updated["contract_selection_method"] = selection.get("contract_selection_method")
     updated["contract_selection"] = selection
-    return updated
+    return _enrich_research_leg_with_snapshot(symbol, updated)
 
 
 def _block_option_structure(
@@ -2733,7 +2896,7 @@ def _resolve_iron_condor_contracts_from_provider(
                 reason="Cannot build iron condor: every leg must map to a listed provider contract.",
                 status="unresolved",
             )
-        updated_legs.append(_apply_leg_selection(leg, selections[role]))
+        updated_legs.append(_apply_leg_selection(symbol, leg, selections[role]))
 
     expirations = {str(leg.get("expiration")) for leg in updated_legs if leg.get("expiration")}
     option_structure["legs"] = updated_legs
@@ -2949,6 +3112,7 @@ def _apply_research_contract_resolution(
             leg["strike_snap_distance"] = selection.get("strike_snap_distance")
             leg["contract_selection_method"] = selection.get("contract_selection_method")
             leg["contract_selection"] = selection
+            leg = _enrich_research_leg_with_snapshot(symbol, leg)
             warnings.extend(str(item) for item in selection.get("warnings") or [] if item)
         else:
             leg["target_strike"] = target_strike
@@ -4485,6 +4649,26 @@ def analysis_setup(
             "open_interest": "unavailable",
             "liquidation_buffer_pct": 6.5,
         }
+    risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe=timeframe, bars=bars)
+    payload["risk_calendar"] = risk_calendar.model_dump(mode="json")
+    payload["analysis_packet"] = analysis_packet_to_safe_dict(build_analysis_packet(
+        symbol=symbol,
+        market_mode=market_mode.value,
+        timeframe=timeframe,
+        source_payload=payload,
+        market_data_source=source,
+        fallback_mode=fallback_mode,
+        session_policy=session_metadata.get("session_policy"),
+        macro_context=build_macro_context_summary(),
+        news_context=build_news_context_summary(symbol),
+        provider_context=build_provider_context_summary(
+            market_data_source=source,
+            fallback_mode=fallback_mode,
+            session_policy=session_metadata.get("session_policy"),
+            market_mode=market_mode.value,
+        ),
+        risk_calendar=payload["risk_calendar"],
+    ))
     return payload
 
 

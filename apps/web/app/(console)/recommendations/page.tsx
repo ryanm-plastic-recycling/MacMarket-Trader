@@ -27,6 +27,8 @@ import {
   isReadOnlyResearchMode,
   parseRecommendationSearchParams,
   shouldShowRecommendationExecutionCtas,
+  type AnalysisPacket,
+  type AnalysisPacketExport,
   type OptionsResearchSetup,
   type QueueCandidate,
   type StoredRecommendation,
@@ -76,6 +78,148 @@ function asText(value: unknown): string {
   if (value === null || value === undefined) return "-";
   if (typeof value === "string") return value;
   return JSON.stringify(value);
+}
+
+function AnalysisPacketContext({ packet }: { packet?: AnalysisPacket | null }) {
+  const macroSeries = packet?.macro_context?.series ?? [];
+  const macroMissing = packet?.macro_context?.missing_data ?? [];
+  const headlines = packet?.news_context?.headlines ?? [];
+  const newsMissing = packet?.news_context?.missing_data ?? [];
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: 1, color: "var(--op-muted, #7a8999)" }}>Macro Context</div>
+        {macroSeries.length > 0 ? macroSeries.slice(0, 6).map((point) => (
+          <div key={point.series_id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <span>{point.label}</span>
+            <span style={{ color: "var(--op-muted, #7a8999)" }}>
+              {formatResearchValue(point.latest_value, "Not available from provider")}
+              {point.latest_date ? ` · ${point.latest_date}` : ""}
+            </span>
+          </div>
+        )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider{macroMissing.length ? `: ${macroMissing.join(", ")}` : ""}</div>}
+      </div>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: 1, color: "var(--op-muted, #7a8999)" }}>News Context</div>
+        {headlines.length > 0 ? headlines.slice(0, 5).map((item, index) => (
+          <div key={`${item.title}-${index}`}>
+            <div>{item.title}</div>
+            <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+              {[item.publisher, item.published_utc?.slice(0, 10), item.sentiment].filter(Boolean).join(" · ")}
+            </div>
+          </div>
+        )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider{newsMissing.length ? `: ${newsMissing.join(", ")}` : ""}</div>}
+      </div>
+    </div>
+  );
+}
+
+function packetValue(value: unknown, fallback = "Unavailable"): string {
+  return formatResearchValue(value, fallback);
+}
+
+function downloadTextFile(filename: string, contents: string, mimeType: string) {
+  const blob = new Blob([contents], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function packetExportFilename(recommendation: StoredRecommendation, extension: "json" | "md"): string {
+  const label = recommendation.display_id ?? recommendation.recommendation_id ?? `recommendation-${recommendation.id}`;
+  return `${String(label).replace(/[^A-Za-z0-9_.-]+/g, "-").toLowerCase()}-analysis-packet.${extension}`;
+}
+
+function AnalysisPacketPreviewPanel({
+  packet,
+  markdown,
+}: {
+  packet?: AnalysisPacket | null;
+  markdown?: string | null;
+}) {
+  if (!packet) {
+    return (
+      <div style={{ color: "var(--op-muted, #7a8999)" }}>
+        Analysis Packet preview unavailable for this recommendation.
+      </div>
+    );
+  }
+  const options = packet.options ?? null;
+  const equity = packet.equity as Record<string, unknown> | null | undefined;
+  const optionLegs = options?.legs ?? [];
+  const missing = packet.missing_data ?? [];
+  return (
+    <div className="op-stack" style={{ gap: 12 }}>
+      <div className="op-row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <StatusBadge tone="neutral">Paper-only packet</StatusBadge>
+        <StatusBadge tone="neutral">No live trading</StatusBadge>
+        <StatusBadge tone="neutral">No broker routing</StatusBadge>
+        <StatusBadge tone="neutral">No automatic exits</StatusBadge>
+      </div>
+      <div>
+        <strong>{packet.symbol}</strong> · {packetValue(packet.market_mode)} · {packetValue(packet.timeframe)} · {packetValue(packet.provider ?? packet.source)}
+      </div>
+      <div style={{ color: "var(--op-muted, #7a8999)", lineHeight: 1.5 }}>
+        LLM context can explain only; deterministic engines own approval, entry, stop, target, sizing, risk gates, and paper order creation.
+      </div>
+      {equity ? (
+        <div>
+          <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)", marginBottom: 4 }}>EQUITY DETAILS</div>
+          <div>Setup: {packetValue(equity["setup_name"])}</div>
+          <div>Thesis: {packetValue(equity["thesis"])}</div>
+          <div>Entry: {packetValue(equity["entry_zone"])} · Stop: {packetValue(equity["stop"])} · Targets: {packetValue(equity["targets"])}</div>
+        </div>
+      ) : null}
+      {options ? (
+        <div>
+          <div style={{ fontSize: "0.78rem", color: "var(--op-muted, #7a8999)", marginBottom: 4 }}>OPTIONS DETAILS</div>
+          <div>
+            {packetValue(options.strategy_type)} · Exp {packetValue(options.expiration)} · DTE {packetValue(options.days_to_expiration)}
+          </div>
+          <div>
+            Max profit {packetValue(options.max_profit)} · Max loss {packetValue(options.max_loss)} · Breakevens {packetValue(options.breakevens)}
+          </div>
+          {optionLegs.length ? (
+            <div className="op-table-scroll" style={{ marginTop: 8 }}>
+              <table className="op-table">
+                <thead><tr><th>Leg</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
+                <tbody>
+                  {optionLegs.map((leg, index) => {
+                    const row = leg as Record<string, unknown>;
+                    return (
+                      <tr key={`${packetValue(row.option_symbol, "leg")}-${index}`}>
+                        <td>{packetValue(row.role ?? row.label)}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{packetValue(row.option_symbol, "Missing from selected contract snapshot")}</span></td>
+                        <td>{packetValue(row.current_mark_premium)}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{packetValue(row.mark_method)}</span></td>
+                        <td>IV {packetValue(row.implied_volatility)}<br />OI {packetValue(row.open_interest)}</td>
+                        <td>delta {packetValue(row.delta)} · gamma {packetValue(row.gamma)} · theta {packetValue(row.theta)} · vega {packetValue(row.vega)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <AnalysisPacketContext packet={packet} />
+      {missing.length ? (
+        <div style={{ color: "var(--op-warn, #f2a03f)" }}>
+          Missing data: {missing.join("; ")}
+        </div>
+      ) : null}
+      {markdown ? (
+        <details>
+          <summary style={{ cursor: "pointer" }}>Markdown snapshot</summary>
+          <pre style={{ whiteSpace: "pre-wrap", overflowX: "auto", marginTop: 8, color: "var(--op-muted, #7a8999)" }}>{markdown}</pre>
+        </details>
+      ) : null}
+    </div>
+  );
 }
 
 function toNum(v: unknown): number | null {
@@ -303,6 +447,9 @@ export default function RecommendationsPage() {
   const [opportunityMemo, setOpportunityMemo] = useState<OpportunityComparisonMemo | null>(null);
   const [includeBetterElsewhere, setIncludeBetterElsewhere] = useState(true);
   const [opportunityFeedback, setOpportunityFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
+  const [analysisPacketExport, setAnalysisPacketExport] = useState<AnalysisPacketExport | null>(null);
+  const [analysisPacketPreviewOpen, setAnalysisPacketPreviewOpen] = useState(false);
+  const [analysisPacketFeedback, setAnalysisPacketFeedback] = useState<{ state: "idle" | "loading" | "success" | "error"; message: string }>({ state: "idle", message: "" });
 
   const prefill = useMemo(() => parseRecommendationSearchParams(searchParams), [searchParams]);
   const guidedState = useMemo(() => parseGuidedFlowState(searchParams), [searchParams]);
@@ -320,6 +467,11 @@ export default function RecommendationsPage() {
     () => rows.find((item) => item.id === selectedRecommendationId) ?? null,
     [rows, selectedRecommendationId],
   );
+  useEffect(() => {
+    setAnalysisPacketExport(null);
+    setAnalysisPacketPreviewOpen(false);
+    setAnalysisPacketFeedback({ state: "idle", message: "" });
+  }, [selectedRecommendationId]);
   const fallbackDerived = isFallbackWorkflow(selectedQueue, selectedRecommendation);
   const selectedSource = selectedRecommendation
     ? `${selectedRecommendation.market_data_source ?? asText((selectedRecommendation.payload.workflow as Record<string, unknown> | undefined)?.market_data_source)}`
@@ -571,6 +723,68 @@ export default function RecommendationsPage() {
     }
     setFeedback({ state: "success", message: approved ? "Recommendation approved." : "Recommendation rejected." });
     await loadRecommendations({ selectRecommendationUid: selectedRecommendation.recommendation_id });
+  }
+
+  async function loadAnalysisPacketExport(): Promise<AnalysisPacketExport | null> {
+    if (!selectedRecommendation) return null;
+    if (analysisPacketExport && String(analysisPacketExport.recommendation_id) === String(selectedRecommendation.id)) {
+      return analysisPacketExport;
+    }
+    setAnalysisPacketFeedback({ state: "loading", message: "Loading Analysis Packet export..." });
+    const result = await fetchWorkflowApi<AnalysisPacketExport>(
+      `/api/user/recommendations/${selectedRecommendation.id}/analysis-packet`,
+    );
+    if (!result.ok || !result.data) {
+      const message = result.error ?? "Unable to load Analysis Packet export.";
+      setAnalysisPacketFeedback({ state: "error", message });
+      return null;
+    }
+    setAnalysisPacketExport(result.data);
+    setAnalysisPacketFeedback({
+      state: "success",
+      message: result.data.email_send_available
+        ? "Analysis Packet export loaded."
+        : "Analysis Packet export loaded. Email-to-me is deferred for this pass.",
+    });
+    return result.data;
+  }
+
+  async function previewAnalysisPacket() {
+    const exportPayload = await loadAnalysisPacketExport();
+    if (exportPayload) {
+      setAnalysisPacketPreviewOpen(true);
+    }
+  }
+
+  async function copyAnalysisPacketMarkdown() {
+    const exportPayload = await loadAnalysisPacketExport();
+    if (!exportPayload) return;
+    try {
+      await navigator.clipboard.writeText(exportPayload.markdown);
+      setAnalysisPacketFeedback({ state: "success", message: "Analysis Packet Markdown copied." });
+    } catch {
+      setAnalysisPacketFeedback({ state: "error", message: "Clipboard unavailable. Use Download Markdown instead." });
+    }
+  }
+
+  async function downloadAnalysisPacketMarkdown() {
+    if (!selectedRecommendation) return;
+    const exportPayload = await loadAnalysisPacketExport();
+    if (!exportPayload) return;
+    downloadTextFile(packetExportFilename(selectedRecommendation, "md"), exportPayload.markdown, "text/markdown;charset=utf-8");
+    setAnalysisPacketFeedback({ state: "success", message: "Analysis Packet Markdown downloaded." });
+  }
+
+  async function downloadAnalysisPacketJson() {
+    if (!selectedRecommendation) return;
+    const exportPayload = await loadAnalysisPacketExport();
+    if (!exportPayload) return;
+    downloadTextFile(
+      packetExportFilename(selectedRecommendation, "json"),
+      JSON.stringify(exportPayload.packet, null, 2),
+      "application/json;charset=utf-8",
+    );
+    setAnalysisPacketFeedback({ state: "success", message: "Analysis Packet JSON downloaded." });
   }
 
   function toggleOpportunitySelection(recommendationId: string) {
@@ -1371,6 +1585,7 @@ export default function RecommendationsPage() {
         <Card title="Stored recommendation detail + lineage">
           {!selectedRecommendation ? <EmptyState title="No stored recommendation selected" hint="Select a stored recommendation row to inspect persisted lineage." /> : (() => {
             const p = selectedRecommendation.payload as Record<string, unknown>;
+            const analysisPacket = selectedRecommendation.analysis_packet ?? (p.analysis_packet as AnalysisPacket | undefined) ?? null;
             const catalyst = p.catalyst as Record<string, unknown> | undefined;
             const regime = p.regime as Record<string, unknown> | undefined;
             const entry = p.entry as Record<string, unknown> | undefined;
@@ -1395,6 +1610,35 @@ export default function RecommendationsPage() {
                   <button onClick={() => void setApproval(false)} disabled={loading.approve || p.approved === false} style={{ padding: "2px 10px", fontSize: "0.8rem" }}>Reject</button>
                 </div>
                 <div><strong>source:</strong> {selectedRecommendation.market_data_source ?? "-"}{selectedRecommendation.fallback_mode ? " (fallback)" : ""}</div>
+                <div style={sep}>
+                  <AnalysisPacketContext packet={analysisPacket} />
+                </div>
+                <div style={sep}>
+                  <div style={label}>ANALYSIS PACKET EXPORT</div>
+                  <div className="op-row" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <button className="op-btn op-btn-primary" onClick={() => void previewAnalysisPacket()} disabled={analysisPacketFeedback.state === "loading"}>
+                      Preview analysis packet
+                    </button>
+                    <button className="op-btn op-btn-secondary" onClick={() => void copyAnalysisPacketMarkdown()} disabled={analysisPacketFeedback.state === "loading"}>
+                      Copy Markdown
+                    </button>
+                    <button className="op-btn op-btn-secondary" onClick={() => void downloadAnalysisPacketMarkdown()} disabled={analysisPacketFeedback.state === "loading"}>
+                      Download Markdown
+                    </button>
+                    <button className="op-btn op-btn-secondary" onClick={() => void downloadAnalysisPacketJson()} disabled={analysisPacketFeedback.state === "loading"}>
+                      Download JSON
+                    </button>
+                  </div>
+                  <InlineFeedback state={analysisPacketFeedback.state} message={analysisPacketFeedback.message} />
+                  {analysisPacketPreviewOpen ? (
+                    <div style={{ marginTop: 10, padding: 12, borderRadius: 10, border: "1px solid var(--op-border, #1e2d3d)", background: "rgba(18, 28, 40, 0.28)" }}>
+                      <AnalysisPacketPreviewPanel
+                        packet={analysisPacketExport?.packet ?? analysisPacket}
+                        markdown={analysisPacketExport?.markdown}
+                      />
+                    </div>
+                  ) : null}
+                </div>
 
                 {/* Thesis */}
                 {p.thesis ? <div style={{ paddingTop: 4 }}><strong>thesis:</strong> {asText(p.thesis)}</div> : null}

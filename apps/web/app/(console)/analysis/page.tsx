@@ -32,6 +32,7 @@ import {
   getOptionsPremiumValue,
   getOptionsResearchDisplayDte,
   isReadOnlyResearchMode,
+  type AnalysisPacket,
   type OptionsResearchStructure,
 } from "@/lib/recommendations";
 
@@ -80,10 +81,83 @@ type SetupPayload = {
     source?: string | null;
     reason?: string | null;
   };
+  analysis_packet?: AnalysisPacket | null;
 };
 
 const STORAGE_KEY = "macmarket-indicators-analysis";
 const PROVIDER_BLOCKED_HINT = "Configured provider unavailable. Workflows are blocked from silently falling back. For local demo testing only, set WORKFLOW_DEMO_FALLBACK=true and restart backend.";
+
+function AnalysisContextPanels({ packet, optionStructure }: { packet?: AnalysisPacket | null; optionStructure?: OptionsResearchStructure | null }) {
+  const macroSeries = packet?.macro_context?.series ?? [];
+  const macroMissing = packet?.macro_context?.missing_data ?? [];
+  const headlines = packet?.news_context?.headlines ?? [];
+  const newsMissing = packet?.news_context?.missing_data ?? [];
+  const optionLegs = optionStructure?.legs ?? [];
+  return (
+    <div className="op-grid-2">
+      <Card title="Macro Context">
+        {macroSeries.length > 0 ? (
+          <div style={{ display: "grid", gap: 6 }}>
+            {macroSeries.slice(0, 6).map((point) => (
+              <div key={point.series_id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span>{point.label}</span>
+                <span style={{ color: "var(--op-muted, #7a8999)" }}>
+                  {formatResearchValue(point.latest_value, "Not available from provider")}
+                  {point.latest_date ? ` · ${point.latest_date}` : ""}
+                  {point.stale ? " · stale" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: "var(--op-muted, #7a8999)" }}>
+            Not available from provider{macroMissing.length > 0 ? `: ${macroMissing.join(", ")}` : ""}
+          </div>
+        )}
+      </Card>
+      <Card title="News Context">
+        {headlines.length > 0 ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            {headlines.slice(0, 5).map((item, index) => (
+              <div key={`${item.title}-${index}`}>
+                <div style={{ fontWeight: 600 }}>{item.title}</div>
+                <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
+                  {[item.publisher, item.published_utc?.slice(0, 10), item.sentiment].filter(Boolean).join(" · ")}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: "var(--op-muted, #7a8999)" }}>
+            Not available from provider{newsMissing.length > 0 ? `: ${newsMissing.join(", ")}` : ""}
+          </div>
+        )}
+      </Card>
+      {optionLegs.length > 0 ? (
+        <Card title="Selected contract snapshots">
+          <div className="op-table-scroll">
+            <table className="op-table">
+              <thead><tr><th>Leg</th><th>Mark</th><th>IV / OI</th><th>Greeks</th></tr></thead>
+              <tbody>
+                {optionLegs.map((leg, index) => (
+                  <tr key={`${leg.option_symbol ?? leg.label ?? "leg"}-${index}`}>
+                    <td>{leg.label ?? "leg"}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.option_symbol ?? "Missing from selected contract snapshot"}</span></td>
+                    <td>{formatResearchValue(leg.current_mark_premium, "Missing from selected contract snapshot")}<br /><span style={{ color: "var(--op-muted, #7a8999)" }}>{leg.mark_method ?? "mark method missing"}</span></td>
+                    <td>IV {formatResearchValue(leg.implied_volatility, "Missing from selected contract snapshot")}<br />OI {formatResearchValue(leg.open_interest, "Missing from selected contract snapshot")}</td>
+                    <td>
+                      delta {formatResearchValue(leg.delta, "Missing from selected contract snapshot")}<br />
+                      gamma {formatResearchValue(leg.gamma, "Missing from selected contract snapshot")} · theta {formatResearchValue(leg.theta, "Missing from selected contract snapshot")} · vega {formatResearchValue(leg.vega, "Missing from selected contract snapshot")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
 
 export default function Page() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -283,6 +357,7 @@ export default function Page() {
   );
   const createRecommendationDisabled = isReadOnlyResearchMode(appliedMarketMode);
   const optionStructure = setup?.option_structure ?? null;
+  const analysisPacket = setup?.analysis_packet ?? null;
   const optionPremiumLabel = getOptionsPremiumLabel(optionStructure);
   const optionPremiumValue = getOptionsPremiumValue(optionStructure);
   const researchPreviewQuery = buildGuidedQuery({
@@ -469,6 +544,8 @@ export default function Page() {
         )}
       </Card>
     </div>
+
+    {setup ? <AnalysisContextPanels packet={analysisPacket} optionStructure={optionStructure} /> : null}
 
     {appliedMarketMode === "options" && setup?.options_chain_preview !== undefined ? (
       <Card title="Options chain preview">
