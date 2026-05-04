@@ -19,6 +19,7 @@ EXCLUDED_DIRS = {
     "logs",
     "backups",
     "release",
+    ".auth",
     ".claude",
     ".pytest-tmp",
     ".pytest_cache",

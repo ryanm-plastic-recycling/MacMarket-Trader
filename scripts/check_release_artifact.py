@@ -17,6 +17,7 @@ from create_clean_release_archive import create_clean_release_archive  # noqa: E
 
 REQUIRED_EXCLUSION_CATEGORIES: dict[str, tuple[str, ...]] = {
     "env_files": (".env", ".env.local"),
+    "auth_storage": (".auth",),
     "claude": (".claude",),
     "tmp": (".tmp",),
     "node_modules": ("node_modules",),

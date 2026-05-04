@@ -170,6 +170,31 @@ This local/demo seed path adds a minimal-but-usable dataset for the operator das
   2. Promote local role in DB (`app_role=admin`, `approval_status=approved`) once.
   3. Subsequent logins preserve local `app_role`/`approval_status` (source-of-truth rule).
 
+## Deployed browser smoke auth
+
+Hosted `https://macmarket.io` is expected to sit behind Cloudflare Access and
+Clerk. Do not use personal credentials for automated browser smoke. Use either:
+
+- a Cloudflare Access service token plus a dedicated approved Clerk test-user
+  Playwright storage state, or
+- a Playwright storage state captured after signing in through Cloudflare
+  Access and Clerk as the dedicated test user.
+
+Set local-only environment variables before running the deployed smoke:
+
+```powershell
+$env:SMOKE_BASE_URL = "https://macmarket.io"
+$env:CF_ACCESS_CLIENT_ID = "<client id>"
+$env:CF_ACCESS_CLIENT_SECRET = "<client secret>"
+$env:SMOKE_AUTH_STORAGE_STATE = "C:\Users\ryanm\.macmarket\macmarket-smoke-storage.json"
+cd apps\web
+npm run smoke:deployed
+```
+
+If smoke auth is missing, the test writes skipped evidence under
+`.tmp/evidence/` and exits without weakening production auth. See
+`docs/compliance/deployed-smoke-testing.md` for setup and evidence review.
+
 ## Test suite
 
 ```bash

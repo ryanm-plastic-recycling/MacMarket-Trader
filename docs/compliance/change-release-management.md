@@ -80,6 +80,12 @@ temp directories.
 - Clean artifact dry-run:
   `python scripts/check_release_artifact.py --source .`
 - Browser smoke audit for UI/runtime changes.
+- Deployed browser smoke for Cloudflare Access protected UI when smoke auth is
+  configured:
+  `cd apps/web; npm run smoke:deployed`.
+  The smoke is non-mutating by default, writes JSON/Markdown/screenshots under
+  `.tmp/evidence/`, and skips cleanly when neither a Cloudflare Access service
+  token nor Playwright storage state is configured.
 - Lifecycle integrity audit for paper workflow changes.
 - Security regression tests for auth, ownership, origin, payload, or rate-limit changes.
 - Deploy exclusion review for `.env`, DB, logs, `.tmp`, `.claude`, `.pytest-tmp`, and `*.tsbuildinfo`.
@@ -109,6 +115,7 @@ Before deploy, review the Markdown report and machine-readable JSON for:
 - unresolved conflict or secret findings,
 - dependency audit severity,
 - skipped manual evidence such as browser smoke screenshots,
+- deployed smoke skip reasons or auth-gate findings,
 - explicit exceptions and owners.
 
 ## Rollback Plan Template

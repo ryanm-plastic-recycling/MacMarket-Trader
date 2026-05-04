@@ -90,6 +90,8 @@ def test_clean_release_archive_excludes_local_state_and_secret_files(tmp_path: P
     (source / "apps").mkdir()
     (source / "apps" / "web").mkdir(parents=True, exist_ok=True)
     (source / "apps" / "web" / "tsconfig.tsbuildinfo").write_text("{}", encoding="utf-8")
+    (source / ".auth").mkdir()
+    (source / ".auth" / "macmarket-smoke.json").write_text("{}", encoding="utf-8")
     (source / ".claude").mkdir()
     (source / ".claude" / "note.txt").write_text("local", encoding="utf-8")
     (source / ".tmp").mkdir()
@@ -106,6 +108,7 @@ def test_clean_release_archive_excludes_local_state_and_secret_files(tmp_path: P
         "macmarket.db",
         "debug.log",
         "apps/web/tsconfig.tsbuildinfo",
+        ".auth",
         ".claude",
         ".tmp",
         "test-results",

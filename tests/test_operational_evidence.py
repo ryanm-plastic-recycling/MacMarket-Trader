@@ -112,6 +112,7 @@ def test_release_artifact_check_excludes_required_paths(tmp_path: Path) -> None:
     source.mkdir()
     (source / "README.md").write_text("# ok\n", encoding="utf-8")
     (source / ".env.local").write_text("SECRET=do-not-package\n", encoding="utf-8")
+    (source / ".auth").mkdir()
     (source / ".claude").mkdir()
     (source / ".tmp").mkdir()
     (source / "logs").mkdir()
@@ -127,6 +128,7 @@ def test_release_artifact_check_excludes_required_paths(tmp_path: Path) -> None:
     assert report["passed"] is True
     for category in [
         "env_files",
+        "auth_storage",
         "claude",
         "tmp",
         "node_modules",

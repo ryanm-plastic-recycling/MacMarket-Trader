@@ -2,6 +2,22 @@
 
 Last updated: 2026-05-04
 
+## 2026-05-04 Update - Deployed Browser Smoke Auth Path
+Deployed UI smoke testing now has a safe authenticated path for the
+Cloudflare Access protected `macmarket.io` console. The new Playwright smoke
+uses either Cloudflare Access service-token headers or a local Playwright
+storage state for a dedicated approved test user, writes screenshots plus
+JSON/Markdown evidence under `.tmp/evidence/deployed-ui-smoke-*`, and skips
+cleanly when smoke auth is not configured.
+
+The smoke is non-mutating by default and requires an explicit
+`SMOKE_ALLOW_MUTATION=true` flag for any future record-changing checks.
+Documentation now covers local secret storage, storage-state capture, release
+evidence review, and deployment hygiene for `.auth/` storage-state files. No
+Cloudflare Access policy was weakened, no personal credentials are used, and
+no live trading, broker routing, automatic exits, rolls, or adjustments were
+added.
+
 ## 2026-05-04 Update - Indices Starter Validation Integration
 Provider Health now includes an `indices_data` readiness probe for
 SPX/NDX/RUT/VIX snapshot values alongside the existing `index_options_data`

@@ -40,19 +40,37 @@ Root-level batch files are thin wrappers only.
 
 Deploy mirror excludes runtime state from destructive replacement, including:
 - `.env`
+- `.auth/`
 - `logs/`
 - sqlite files (`*.sqlite`, `*.sqlite3`)
 - data/storage/upload directories (`data`, `storage`, `uploads`)
 
 The mirror also excludes local development/test noise so deploys do not copy
 AI worktrees, pytest scratch folders, or generated TypeScript incremental
-state into the runtime folder. Current Robocopy exclusions include `.claude/`,
-`.pytest-tmp/`, `.tmp/`, and `*.tsbuildinfo`.
+state into the runtime folder. Current Robocopy exclusions include `.auth/`,
+`.claude/`, `.pytest-tmp/`, `.tmp/`, and `*.tsbuildinfo`.
 
 `scripts/deploy_windows.bat` recreates an ignored runtime `.tmp/` folder after
 mirroring and runs backend pytest with a deployment-local basetemp under
 `.tmp/pytest-deploy`. This keeps deployment tests independent from stale source
 scratch folders and from machine-wide pytest temp-directory permissions.
+
+## Deployed browser smoke
+
+Authenticated deployed UI smoke is optional release evidence for the
+Cloudflare Access protected app. It should use a dedicated smoke user and local
+secrets only. From the source checkout:
+
+```powershell
+cd apps\web
+npm run smoke:deployed
+```
+
+Set `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` for the Cloudflare Access
+service token and/or `SMOKE_AUTH_STORAGE_STATE` for a Playwright storage state.
+The smoke is non-mutating by default and writes screenshots plus JSON/Markdown
+evidence under `.tmp/evidence/deployed-ui-smoke-*/`. Do not copy `.auth/`
+storage-state files into the deployment mirror.
 
 ## Fail-fast behavior
 
