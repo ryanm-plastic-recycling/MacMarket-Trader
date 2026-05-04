@@ -19,6 +19,11 @@ certification.
   including provider/source/session provenance, FRED macro summaries, Polygon
   news headlines, paper-only safety flags, already-open context, and
   provider-supplied options mark/IV/OI/Greeks fields where available.
+- Market Risk Calendar evidence now includes deterministic SPX/NDX/RUT/VIX
+  index-risk signals when index snapshots are available. The signals are
+  threshold-backed, auditable, and surfaced in dashboard, analysis packet, and
+  scheduled strategy-report context without giving the LLM authority to change
+  risk decisions.
 - Strategy-report emails include a richer Analysis Packet Context section in
   HTML and plain text while preserving redaction and paper-only/no-routing
   disclaimers.
@@ -81,6 +86,9 @@ certification.
 - Treat Analysis Packet and email outputs as evidence snapshots of displayed
   context, not as certification or performance validation. Missing macro,
   news, IV, open interest, Greeks, or option marks must remain explicit.
+- Treat index-risk signals as readiness evidence for deterministic sit-out
+  context, not as validated market-timing performance. Threshold changes should
+  be documented as model-risk changes.
 - Treat on-demand Analysis Packet exports as operator review artifacts. They
   should not be represented as investment advice, model validation, or live
   execution readiness.

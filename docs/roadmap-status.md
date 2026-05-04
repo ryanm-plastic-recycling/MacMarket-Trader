@@ -2,6 +2,22 @@
 
 Last updated: 2026-05-04
 
+## 2026-05-04 Update - Index-Aware Market Risk Calendar
+Market Risk Calendar assessments now consume provider-backed Index Context
+when supplied by workflow routes. A deterministic signal extractor records VIX
+level/change, SPX/NDX/RUT day changes, NDX/RUT relative strength versus SPX,
+broad index direction, dispersion, risk appetite, and stale/missing index-data
+flags. New config thresholds cover VIX caution/restricted levels, VIX spikes,
+SPX downside moves, NDX/RUT underperformance, and stale index data minutes.
+
+Index signals can elevate the calendar to `caution` or `restricted`, but they
+do not create `no_trade` solely from missing data and do not give the LLM any
+decision authority. Dashboard, Analysis Packet, Recommendations detail, and
+scheduled strategy-report email output now surface compact index-risk reasons.
+Opportunity Intelligence continues to receive index context as explanation-only
+provenance. No live trading, broker routing, automated exits, rolls, or
+adjustments were added.
+
 ## 2026-05-04 Update - Deployed Browser Smoke Auth Path
 Deployed UI smoke testing now has a safe authenticated path for the
 Cloudflare Access protected `macmarket.io` console. The new Playwright smoke

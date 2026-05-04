@@ -409,6 +409,28 @@ class RiskGateDecision(BaseModel):
     regular_hours_only: bool = True
 
 
+class IndexRiskSignals(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    vix_level: float | None = None
+    vix_change_pct: float | None = None
+    spx_change_pct: float | None = None
+    ndx_change_pct: float | None = None
+    rut_change_pct: float | None = None
+    ndx_vs_spx_relative_strength: float | None = None
+    rut_vs_spx_relative_strength: float | None = None
+    broad_index_direction: str = "unknown"
+    market_dispersion_state: str = "unknown"
+    risk_appetite_state: str = "unknown"
+    index_data_stale_or_missing: bool = False
+    decision_effect: str = "normal"
+    risk_level_effect: str = "normal"
+    reasons: list[str] = Field(default_factory=list)
+    data_quality_flags: list[str] = Field(default_factory=list)
+    provenance: dict[str, object] = Field(default_factory=dict)
+
+
 class RiskCalendarAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -420,6 +442,7 @@ class RiskCalendarAssessment(BaseModel):
     evidence: list[EventEvidenceBundle] = Field(default_factory=list)
     volatility_flags: list[str] = Field(default_factory=list)
     data_quality_flags: list[str] = Field(default_factory=list)
+    index_risk_signals: IndexRiskSignals | None = None
 
 
 class OpportunityCandidateSummary(BaseModel):

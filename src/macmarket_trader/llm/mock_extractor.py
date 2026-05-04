@@ -137,6 +137,10 @@ class MockLLMClient(LLMClient):
             risk_summary = index_context.get("risk_summary") if isinstance(index_context, dict) else None
             if risk_summary:
                 memo = f"{memo} Index context: {risk_summary}; deterministic gates remain unchanged."
+            signals = index_context.get("index_risk_signals") if isinstance(index_context, dict) else None
+            reasons = signals.get("reasons") if isinstance(signals, dict) and isinstance(signals.get("reasons"), list) else []
+            if reasons:
+                memo = f"{memo} Index risk reasons: {'; '.join(str(item) for item in reasons[:2])}; explanation only."
         comparison_rows = [
             {
                 "candidate_id": candidate.recommendation_id,

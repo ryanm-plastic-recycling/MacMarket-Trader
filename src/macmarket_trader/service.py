@@ -84,6 +84,7 @@ class RecommendationService:
         app_user_id: int | None = None,
         risk_dollars: float | None = None,
         timeframe: str = "1D",
+        index_context: object | None = None,
     ) -> TradeRecommendation:
         # Pass 4 — `risk_dollars` overrides settings.risk_dollars_per_trade
         # when the caller (route handler) has resolved the per-user override.
@@ -215,18 +216,26 @@ class RecommendationService:
                 historical_analog_refs=[],
             ),
         )
-        rec = self._apply_risk_calendar(rec, bars=bars, timeframe=timeframe)
+        rec = self._apply_risk_calendar(rec, bars=bars, timeframe=timeframe, index_context=index_context)
         rec.ai_explanation, rec.llm_provenance = self._build_ai_explanation(rec)
         self.audit_engine.record(rec)
         if self.persist_audit:
             self.recommendation_repository.create(rec, app_user_id=app_user_id)
         return rec
 
-    def _apply_risk_calendar(self, rec: TradeRecommendation, *, bars: list, timeframe: str = "1D") -> TradeRecommendation:
+    def _apply_risk_calendar(
+        self,
+        rec: TradeRecommendation,
+        *,
+        bars: list,
+        timeframe: str = "1D",
+        index_context: object | None = None,
+    ) -> TradeRecommendation:
         assessment = self.risk_calendar_service.assess(
             symbol=rec.symbol,
             timeframe=timeframe,
             bars=bars,
+            index_context=index_context,
         )
         decision = assessment.decision
         if decision.decision_state in {"no_trade", "requires_event_evidence", "data_quality_block"}:

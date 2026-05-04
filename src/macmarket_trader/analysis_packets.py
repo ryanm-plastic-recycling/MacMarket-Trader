@@ -22,7 +22,9 @@ from pydantic import BaseModel, Field
 
 from macmarket_trader.config import settings
 from macmarket_trader.data.providers.registry import build_news_provider
+from macmarket_trader.domain.schemas import IndexRiskSignals
 from macmarket_trader.domain.time import utc_now
+from macmarket_trader.index_risk import extract_index_risk_signals
 
 
 FRED_MACRO_SERIES: tuple[tuple[str, str], ...] = (
@@ -100,6 +102,7 @@ class IndexContextSummary(BaseModel):
     generated_at: datetime = Field(default_factory=utc_now)
     indices: list[IndexContextPoint] = Field(default_factory=list)
     risk_summary: str | None = None
+    index_risk_signals: IndexRiskSignals | None = None
     missing_data: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -122,6 +125,7 @@ class RiskCalendarSummary(BaseModel):
     recommended_action: str | None = None
     warning_summary: str | None = None
     block_reason: str | None = None
+    index_risk_signals: dict[str, Any] | None = None
     missing_data: list[str] = Field(default_factory=list)
 
 
@@ -389,6 +393,18 @@ def _packet_index_lines(packet: dict[str, Any], *, limit: int = 5) -> list[str]:
     risk_summary = str(index_context.get("risk_summary") or "").strip()
     if risk_summary:
         lines.append(f"Deterministic risk-on/risk-off summary: {redact_analysis_packet_text(risk_summary)}")
+    signals = index_context.get("index_risk_signals") if isinstance(index_context.get("index_risk_signals"), dict) else {}
+    if signals:
+        state = str(signals.get("decision_effect") or "normal")
+        appetite = str(signals.get("risk_appetite_state") or "unknown")
+        direction = str(signals.get("broad_index_direction") or "unknown")
+        lines.append(
+            "Index risk signals: "
+            f"{redact_analysis_packet_text(state)} | appetite {redact_analysis_packet_text(appetite)} | broad direction {redact_analysis_packet_text(direction)}"
+        )
+        reasons = signals.get("reasons") if isinstance(signals.get("reasons"), list) else []
+        for reason in reasons[:3]:
+            lines.append(f"Index risk reason: {redact_analysis_packet_text(reason)}")
     return lines
 
 
@@ -805,6 +821,7 @@ def build_index_context_summary(
         for item in point.missing_data:
             summary.missing_data.append(f"{point.symbol}:{item}")
     summary.missing_data = sorted(set(summary.missing_data))
+    summary.index_risk_signals = extract_index_risk_signals(summary, now=current)
     summary.risk_summary = _index_risk_summary(summary.indices)
     if not summary.indices:
         summary.missing_data.append("index_context")
@@ -843,12 +860,14 @@ def risk_calendar_summary_from_payload(value: object) -> RiskCalendarSummary | N
     if not isinstance(value, dict):
         return None
     decision = value.get("decision") if isinstance(value.get("decision"), dict) else {}
+    signals = value.get("index_risk_signals") if isinstance(value.get("index_risk_signals"), dict) else None
     return RiskCalendarSummary(
         decision_state=str(decision.get("decision_state") or "") or None,
         risk_level=str(decision.get("risk_level") or "") or None,
         recommended_action=str(decision.get("recommended_action") or "") or None,
         warning_summary=str(decision.get("warning_summary") or "") or None,
         block_reason=str(decision.get("block_reason") or "") or None,
+        index_risk_signals=signals,
         missing_data=[str(item) for item in decision.get("missing_evidence") or [] if str(item).strip()],
     )
 

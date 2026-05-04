@@ -34,6 +34,8 @@ describe("analysis options provider/source/as-of copy", () => {
     expect(source).toContain('Card title="Macro Context"');
     expect(source).toContain('Card title="Index Context"');
     expect(source).toContain('Card title="News Context"');
+    expect(source).toContain("Index risk state");
+    expect(source).toContain("index_data_stale_or_missing");
     expect(source).toContain('Card title="Selected contract snapshots"');
     expect(source).toContain("Missing from selected contract snapshot");
     expect(source).toContain("Not available from provider");

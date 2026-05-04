@@ -809,6 +809,10 @@ def test_opportunity_intelligence_carries_index_context_without_changing_determi
     )
     index_context = {
         "risk_summary": "risk_on",
+        "index_risk_signals": {
+            "decision_effect": "caution",
+            "reasons": ["VIX above caution threshold."],
+        },
         "indices": [{"symbol": "SPX", "latest_value": 5050.0, "day_change_pct": 0.5}],
     }
 
@@ -816,6 +820,7 @@ def test_opportunity_intelligence_carries_index_context_without_changing_determi
 
     assert memo.provenance is not None
     assert memo.provenance.index_context == index_context
+    assert "Index risk reasons" in memo.market_desk_memo
     assert memo.candidates[0].approved is True
     assert set(memo.deterministic_engine_owns) == {
         "approved",

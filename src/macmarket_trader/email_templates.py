@@ -444,6 +444,35 @@ def _packet_news_lines(packet: dict) -> list[str]:
     return lines
 
 
+def _packet_index_lines(packet: dict) -> list[str]:
+    index_context = packet.get("index_context") if isinstance(packet.get("index_context"), dict) else {}
+    indices = index_context.get("indices") if isinstance(index_context.get("indices"), list) else []
+    lines: list[str] = []
+    for item in indices[:4]:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip()
+        label = str(item.get("label") or symbol).strip()
+        if not symbol:
+            continue
+        lines.append(
+            f"{symbol} ({label}): {_fmt_compact_value(item.get('latest_value'))} | "
+            f"{_fmt_compact_value(item.get('day_change_pct'))}%"
+        )
+    signals = index_context.get("index_risk_signals") if isinstance(index_context.get("index_risk_signals"), dict) else {}
+    if signals:
+        state = _fmt_compact_value(signals.get("decision_effect") or "normal")
+        appetite = _fmt_compact_value(signals.get("risk_appetite_state") or "unknown")
+        lines.append(f"Index risk signals: {state} | appetite {appetite}")
+        reasons = signals.get("reasons") if isinstance(signals.get("reasons"), list) else []
+        for reason in reasons[:2]:
+            lines.append(f"Index risk reason: {_redact_packet_text(reason)}")
+    missing = index_context.get("missing_data") if isinstance(index_context.get("missing_data"), list) else []
+    if not lines and missing:
+        lines.append("Index context unavailable: " + ", ".join(_redact_packet_text(item) for item in missing[:3]))
+    return lines
+
+
 def _packet_options_html(packet: dict) -> str:
     options = packet.get("options") if isinstance(packet.get("options"), dict) else None
     if not options:
@@ -503,6 +532,7 @@ def _analysis_packet_section(analysis_packets: list[dict] | None) -> str:
         provider = str(packet.get("provider") or packet.get("source") or "provider unavailable")
         missing = packet.get("missing_data") if isinstance(packet.get("missing_data"), list) else []
         macro_lines = _packet_macro_lines(packet)
+        index_lines = _packet_index_lines(packet)
         news_lines = _packet_news_lines(packet)
         packet_rows.append(
             f'<tr><td style="background-color:{_BG_CARD_ALT};padding:14px 28px;border-bottom:1px solid {_BORDER};">'
@@ -510,6 +540,8 @@ def _analysis_packet_section(analysis_packets: list[dict] | None) -> str:
             f' <span style="font-size:10px;color:{_TEXT_SECONDARY};font-weight:400;">{_e(market_mode)} | {_e(timeframe)} | {_e(provider)}</span></p>'
             f'<p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:10px;font-weight:700;color:{_TEXT_SECONDARY};text-transform:uppercase;">Macro Context</p>'
             f'<p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};line-height:1.5;">{_e("; ".join(macro_lines) or "Not available from provider")}</p>'
+            f'<p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:10px;font-weight:700;color:{_TEXT_SECONDARY};text-transform:uppercase;">Index Risk Context</p>'
+            f'<p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};line-height:1.5;">{_e("; ".join(index_lines) or "Not available from provider")}</p>'
             f'<p style="margin:0 0 4px 0;font-family:Arial,sans-serif;font-size:10px;font-weight:700;color:{_TEXT_SECONDARY};text-transform:uppercase;">News Context</p>'
             f'<p style="margin:0;font-family:Arial,sans-serif;font-size:10px;color:{_TEXT_MUTED};line-height:1.5;">{_e("; ".join(news_lines) or "Not available from provider")}</p>'
             + _packet_options_html(packet)
@@ -543,8 +575,10 @@ def _analysis_packet_text(analysis_packets: list[dict] | None) -> list[str]:
         provider = packet.get("provider") or packet.get("source") or "provider unavailable"
         lines.append(f"{symbol} | {market_mode} | {timeframe} | {provider}")
         macro_lines = _packet_macro_lines(packet)
+        index_lines = _packet_index_lines(packet)
         news_lines = _packet_news_lines(packet)
         lines.append("  Macro: " + ("; ".join(macro_lines) if macro_lines else "Not available from provider"))
+        lines.append("  Index risk: " + ("; ".join(index_lines) if index_lines else "Not available from provider"))
         lines.append("  News: " + ("; ".join(news_lines) if news_lines else "Not available from provider"))
         options = packet.get("options") if isinstance(packet.get("options"), dict) else None
         if options:

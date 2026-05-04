@@ -342,6 +342,16 @@ preview_market_data_provider = DeterministicFallbackMarketDataProvider()
 ranking_engine = DeterministicRankingEngine()
 
 
+def _current_index_context():
+    return build_index_context_summary(service=market_data_service)
+
+
+def _current_index_context_for_risk():
+    if not callable(getattr(market_data_service, "index_snapshot", None)):
+        return None
+    return _current_index_context()
+
+
 def _build_options_expected_range(*, latest_close: float, iv_snapshot: float | None, dte: int, as_of: datetime) -> ExpectedRange:
     reference = round(latest_close, 2)
     if iv_snapshot is None:
@@ -713,9 +723,9 @@ def dashboard(user=Depends(require_approved_user)):
     pending_users = user_repo.list_by_status(ApprovalStatus.PENDING) if is_admin else []
     provider_health = provider_health_summary()
     latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
-    risk_calendar = risk_calendar_service.assess(symbol="SPY", timeframe="1D")
     macro_context = build_macro_context_summary()
-    index_context = build_index_context_summary(service=market_data_service)
+    index_context = _current_index_context()
+    risk_calendar = risk_calendar_service.assess(symbol="SPY", timeframe="1D", index_context=_current_index_context_for_risk())
 
     # Operational audit events — combine email logs, approval events, and schedule runs
     email_events = [
@@ -821,7 +831,7 @@ def dashboard(user=Depends(require_approved_user)):
 
 @user_router.get("/risk-calendar/today")
 def risk_calendar_today(symbol: str = "SPY", timeframe: str = "1D", _user=Depends(require_approved_user)):
-    assessment = risk_calendar_service.assess(symbol=symbol, timeframe=timeframe)
+    assessment = risk_calendar_service.assess(symbol=symbol, timeframe=timeframe, index_context=_current_index_context_for_risk())
     return assessment.model_dump(mode="json")
 
 
@@ -855,7 +865,7 @@ def _analysis_packet_for_payload(
         session_policy=session_policy,
         macro_context=macro_context,
         news_context=build_news_context_summary(symbol),
-        index_context=build_index_context_summary(service=market_data_service),
+        index_context=_current_index_context(),
         provider_context=build_provider_context_summary(
             market_data_source=market_data_source,
             fallback_mode=fallback_mode,
@@ -1111,7 +1121,7 @@ def recommendation_opportunity_intelligence(
     return recommendation_service.generate_opportunity_intelligence(
         candidates=candidates,
         better_elsewhere=better_elsewhere,
-        index_context=build_index_context_summary(service=market_data_service).model_dump(mode="json"),
+        index_context=_current_index_context().model_dump(mode="json"),
     )
 
 
@@ -1148,6 +1158,7 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
         timeframe=timeframe,
         top_n=top_n,
     )
+    index_context = _current_index_context_for_risk()
     already_open_by_symbol = _open_paper_position_context_by_symbol(
         app_user_id=_user.id,
         user=_user,
@@ -1172,6 +1183,7 @@ def ranked_recommendation_queue(req: dict[str, object], _user=Depends(require_ap
                 symbol=symbol,
                 timeframe=timeframe,
                 bars=bars_tuple[0],
+                index_context=index_context,
             )
             item["risk_calendar"] = risk.model_dump(mode="json")
             if not risk.decision.allow_new_entries and item.get("status") == "top_candidate":
@@ -1203,6 +1215,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
     approval_status = getattr(_user.approval_status, "value", _user.approval_status)
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     promote_market_mode = MarketMode(str(req.get("market_mode") or MarketMode.EQUITIES.value))
+    index_context = _current_index_context_for_risk()
     rec = recommendation_service.generate(
         symbol=symbol,
         bars=bars,
@@ -1214,6 +1227,7 @@ def promote_queue_candidate(req: dict[str, object], _user=Depends(require_approv
         app_user_id=_user.id,
         risk_dollars=_effective_risk_dollars(_user),
         timeframe=timeframe,
+        index_context=index_context,
     )
 
     ranking_provenance = {
@@ -1305,6 +1319,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
     user_is_approved = str(approval_status) == ApprovalStatus.APPROVED.value
     bars, source, fallback_mode = _workflow_bars(symbol, timeframe=timeframe)
     session_metadata = _workflow_session_metadata(bars, timeframe=timeframe)
+    index_context = _current_index_context_for_risk()
     rec = recommendation_service.generate(
         symbol=symbol,
         bars=bars,
@@ -1316,6 +1331,7 @@ def generate_recommendations(req: dict[str, object], _user=Depends(require_appro
         app_user_id=_user.id,
         risk_dollars=_effective_risk_dollars(_user),
         timeframe=timeframe,
+        index_context=index_context,
     )
     recommendation_repo.attach_workflow_metadata(
         rec.recommendation_id,
@@ -1926,7 +1942,7 @@ def stage_order(req: dict[str, object], _user=Depends(require_approved_user)):
 
     if not rec.approved:
         raise HTTPException(status_code=409, detail=rec.rejection_reason or "Recommendation was no-trade; order not staged.")
-    order_risk_calendar = risk_calendar_service.assess(symbol=rec.symbol, timeframe="1D")
+    order_risk_calendar = risk_calendar_service.assess(symbol=rec.symbol, timeframe="1D", index_context=_current_index_context_for_risk())
     risk_confirmed = bool(req.get("risk_calendar_confirmed"))
     risk_override_reason = str(req.get("risk_calendar_override_reason") or "").strip()
     try:
@@ -2318,7 +2334,7 @@ def _build_position_review(position, *, app_user_id: int, user, recent_rows: lis
     holding_status = _holding_period_status(days_held, max_holding_days)
     mark_payload = _latest_position_mark(position.symbol)
     mark = _finite_float(mark_payload.get("current_mark_price"))
-    risk_calendar = risk_calendar_service.assess(symbol=position.symbol, timeframe="1D")
+    risk_calendar = risk_calendar_service.assess(symbol=position.symbol, timeframe="1D", index_context=_current_index_context_for_risk())
     ranking_context = _ranked_context_for_symbol(symbol=position.symbol, recent_rows=recent_rows)
 
     warnings = list(mark_payload.get("warnings") or [])
@@ -4248,7 +4264,7 @@ def _build_option_paper_structure_review(position, *, user, now: datetime) -> Op
         warnings.append("Index option research. Cash-settled. No share delivery modeled.")
         warnings.append("Paper-only. No exercise/assignment automation.")
 
-    risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe="1D") if symbol else None
+    risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe="1D", index_context=_current_index_context_for_risk()) if symbol else None
     if risk_calendar is not None:
         if risk_calendar.decision.allow_new_entries is False:
             warnings.append("Risk calendar blocks or restricts new option additions/adjustments; it does not auto-close existing paper structures.")
@@ -5222,7 +5238,8 @@ def analysis_setup(
             "open_interest": "unavailable",
             "liquidation_buffer_pct": 6.5,
         }
-    risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe=timeframe, bars=bars)
+    index_context = _current_index_context()
+    risk_calendar = risk_calendar_service.assess(symbol=symbol, timeframe=timeframe, bars=bars, index_context=_current_index_context_for_risk())
     payload["risk_calendar"] = risk_calendar.model_dump(mode="json")
     payload["analysis_packet"] = analysis_packet_to_safe_dict(build_analysis_packet(
         symbol=symbol,
@@ -5234,7 +5251,7 @@ def analysis_setup(
         session_policy=session_metadata.get("session_policy"),
         macro_context=build_macro_context_summary(),
         news_context=build_news_context_summary(symbol),
-        index_context=build_index_context_summary(service=market_data_service),
+        index_context=index_context,
         provider_context=build_provider_context_summary(
             market_data_source=source,
             fallback_mode=fallback_mode,

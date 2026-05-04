@@ -13,12 +13,14 @@ from macmarket_trader.config import Settings, settings
 from macmarket_trader.domain.schemas import (
     Bar,
     EventEvidenceBundle,
+    IndexRiskSignals,
     MarketRiskEvent,
     RiskCalendarAssessment,
     RiskGateDecision,
     SymbolRiskEvent,
 )
 from macmarket_trader.domain.time import utc_now
+from macmarket_trader.index_risk import extract_index_risk_signals
 
 
 MACRO_EVENT_TYPES = {
@@ -121,6 +123,7 @@ class MarketRiskCalendarService:
         bars: list[Bar] | None = None,
         as_of: datetime | None = None,
         event_evidence: list[EventEvidenceBundle] | None = None,
+        index_context: object | None = None,
     ) -> RiskCalendarAssessment:
         now = self._aware(as_of or utc_now())
         normalized_symbol = symbol.upper() if symbol else None
@@ -158,11 +161,26 @@ class MarketRiskCalendarService:
         missing_evidence: list[str] = []
         volatility_flags = self._volatility_flags(bars or [])
         data_quality_flags = self._session_policy_flags(timeframe=timeframe, bars=bars or [])
+        index_risk_signals = extract_index_risk_signals(
+            index_context,
+            cfg=self.settings,
+            now=now,
+            symbol=normalized_symbol,
+        ) if index_context is not None else None
+        if index_risk_signals is not None:
+            data_quality_flags.extend(
+                f"index:{item}" for item in index_risk_signals.data_quality_flags
+            )
         decision = self._normal_decision(now)
         if data_quality_flags:
             decision = self._stronger(
                 decision,
                 self._session_policy_decision(flags=data_quality_flags, now=now),
+            )
+        if index_risk_signals is not None:
+            decision = self._stronger(
+                decision,
+                self._index_risk_decision(signals=index_risk_signals, now=now),
             )
 
         for event in market_events:
@@ -294,7 +312,8 @@ class MarketRiskCalendarService:
             symbol_events=symbol_events,
             evidence=supplied_evidence,
             volatility_flags=volatility_flags,
-            data_quality_flags=data_quality_flags,
+            data_quality_flags=sorted(set(data_quality_flags)),
+            index_risk_signals=index_risk_signals,
         )
 
     def assert_order_allowed(
@@ -359,6 +378,19 @@ class MarketRiskCalendarService:
 
     def _session_policy_decision(self, *, flags: list[str], now: datetime) -> RiskGateDecision:
         block = self.settings.intraday_rth_violation_mode.strip().lower() == "block"
+        index_only = flags and all(flag.startswith("index:") for flag in flags)
+        if index_only:
+            return RiskGateDecision(
+                decision_state="caution",
+                allow_new_entries=True,
+                requires_confirmation=False,
+                recommended_action="caution",
+                risk_level="elevated",
+                warning_summary="Index data is stale or missing; risk context is warning-only.",
+                missing_evidence=flags,
+                override_allowed=False,
+                assessed_at=now,
+            )
         return RiskGateDecision(
             decision_state="data_quality_block" if block else "caution",
             allow_new_entries=not block,
@@ -372,6 +404,36 @@ class MarketRiskCalendarService:
                 else "Intraday equity session policy is normal."
             ),
             missing_evidence=["regular-hours-normalized intraday bars"],
+            override_allowed=False,
+            assessed_at=now,
+        )
+
+    @staticmethod
+    def _index_risk_decision(*, signals: IndexRiskSignals, now: datetime) -> RiskGateDecision:
+        if not signals.enabled or signals.decision_effect == "normal":
+            return MarketRiskCalendarService._normal_decision(now)
+        summary = "; ".join(signals.reasons[:3]) if signals.reasons else "Index risk context is elevated."
+        if signals.decision_effect == "restricted":
+            return RiskGateDecision(
+                decision_state="restricted",
+                allow_new_entries=True,
+                requires_confirmation=True,
+                recommended_action="reduce_size",
+                risk_level="high",
+                warning_summary=summary,
+                missing_evidence=[],
+                override_allowed=True,
+                override_reason_required=True,
+                assessed_at=now,
+            )
+        return RiskGateDecision(
+            decision_state="caution",
+            allow_new_entries=True,
+            requires_confirmation=False,
+            recommended_action="caution",
+            risk_level="elevated",
+            warning_summary=summary,
+            missing_evidence=[],
             override_allowed=False,
             assessed_at=now,
         )

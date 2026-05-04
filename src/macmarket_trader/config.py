@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     high_vol_intraday_range_threshold: float = 0.04
     high_vol_gap_threshold: float = 0.03
     vix_high_threshold: float = 30.0
+    index_risk_enabled: bool = True
+    vix_caution_level: float = 20.0
+    vix_restricted_level: float = 30.0
+    vix_spike_caution_pct: float = 10.0
+    spx_gap_caution_pct: float = 1.0
+    spx_gap_restricted_pct: float = 2.0
+    rut_underperform_caution_pct: float = -1.0
+    ndx_underperform_caution_pct: float = -1.0
+    index_data_stale_minutes: int = 60
     intraday_rth_session_required: bool = True
     intraday_rth_violation_mode: str = "caution"
 

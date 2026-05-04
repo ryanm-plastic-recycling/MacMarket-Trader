@@ -96,6 +96,26 @@ def _service_with_events(
     )
 
 
+def _index_context(
+    *,
+    spx: float = 0.2,
+    ndx: float = 0.3,
+    rut: float = 0.1,
+    vix_level: float = 18.0,
+    vix_change: float = -2.0,
+    stale: bool = False,
+) -> dict[str, object]:
+    as_of = (_now() - timedelta(minutes=10)).isoformat()
+    return {
+        "indices": [
+            {"symbol": "SPX", "latest_value": 5000.0, "day_change_pct": spx, "as_of": as_of, "stale": stale},
+            {"symbol": "NDX", "latest_value": 18000.0, "day_change_pct": ndx, "as_of": as_of, "stale": stale},
+            {"symbol": "RUT", "latest_value": 2100.0, "day_change_pct": rut, "as_of": as_of, "stale": stale},
+            {"symbol": "VIX", "latest_value": vix_level, "day_change_pct": vix_change, "as_of": as_of, "stale": stale},
+        ]
+    }
+
+
 def _seed_approved_user(token: str = "user-token", external_id: str = "clerk_user") -> int:
     resp = client.get("/user/me", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200, resp.text
@@ -221,6 +241,84 @@ def test_high_volatility_circuit_breaker_restricts_new_entries() -> None:
     assert assessment.decision.risk_level == "high"
     assert assessment.volatility_flags
     assert "VIX data unavailable" in assessment.decision.missing_evidence[0]
+
+
+def test_index_risk_vix_above_caution_creates_calendar_caution(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "vix_caution_level", 20.0)
+    service = _service_with_events([])
+
+    assessment = service.assess(symbol="SPY", as_of=_now(), index_context=_index_context(vix_level=22.5))
+
+    assert assessment.decision.decision_state == "caution"
+    assert assessment.decision.allow_new_entries is True
+    assert assessment.index_risk_signals is not None
+    assert assessment.index_risk_signals.vix_level == 22.5
+    assert any("VIX above caution threshold" in item for item in assessment.index_risk_signals.reasons)
+
+
+def test_index_risk_vix_above_restricted_creates_restricted_warning(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "vix_restricted_level", 30.0)
+    service = _service_with_events([])
+
+    assessment = service.assess(symbol="SPY", as_of=_now(), index_context=_index_context(vix_level=32.0))
+
+    assert assessment.decision.decision_state == "restricted"
+    assert assessment.decision.requires_confirmation is True
+    assert assessment.decision.allow_new_entries is True
+
+
+def test_index_risk_vix_spike_and_spx_down_create_caution(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "vix_spike_caution_pct", 10.0)
+    service = _service_with_events([])
+
+    assessment = service.assess(
+        symbol="SPY",
+        as_of=_now(),
+        index_context=_index_context(spx=-0.8, ndx=-0.7, rut=-0.6, vix_level=19.0, vix_change=12.0),
+    )
+
+    assert assessment.decision.decision_state == "caution"
+    assert any("VIX spike" in item for item in assessment.index_risk_signals.reasons)
+    assert any("SPX down while VIX is rising" in item for item in assessment.index_risk_signals.reasons)
+
+
+def test_index_risk_spx_large_downside_move_can_restrict(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "spx_gap_restricted_pct", 2.0)
+    service = _service_with_events([])
+
+    assessment = service.assess(symbol="SPY", as_of=_now(), index_context=_index_context(spx=-2.4, ndx=-1.8, rut=-1.9, vix_level=24.0, vix_change=5.0))
+
+    assert assessment.decision.decision_state == "restricted"
+    assert any("SPX downside move exceeds restricted threshold" in item for item in assessment.index_risk_signals.reasons)
+
+
+def test_index_risk_rut_and_ndx_underperformance_add_warnings(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "rut_underperform_caution_pct", -1.0)
+    monkeypatch.setattr(settings, "ndx_underperform_caution_pct", -1.0)
+    service = _service_with_events([])
+
+    assessment = service.assess(symbol="QQQ", as_of=_now(), index_context=_index_context(spx=0.4, ndx=-0.8, rut=-1.1, vix_level=18.0, vix_change=-1.0))
+
+    assert assessment.decision.decision_state == "caution"
+    assert assessment.index_risk_signals.ndx_vs_spx_relative_strength == -1.2
+    assert assessment.index_risk_signals.rut_vs_spx_relative_strength == -1.5
+    assert any("RUT underperforming SPX" in item for item in assessment.index_risk_signals.reasons)
+    assert any("NDX underperforming SPX" in item for item in assessment.index_risk_signals.reasons)
+
+
+def test_missing_or_stale_index_data_adds_data_quality_warning_not_no_trade() -> None:
+    service = _service_with_events([])
+
+    assessment = service.assess(
+        symbol="SPY",
+        as_of=_now(),
+        index_context={"indices": [{"symbol": "SPX", "latest_value": 5000.0, "stale": True}]},
+    )
+
+    assert assessment.decision.decision_state == "caution"
+    assert assessment.decision.allow_new_entries is True
+    assert assessment.index_risk_signals.index_data_stale_or_missing is True
+    assert any(item.startswith("index:") for item in assessment.data_quality_flags)
 
 
 def test_rth_normalized_intraday_data_passes_session_policy_check(monkeypatch) -> None:
@@ -433,3 +531,27 @@ def test_opportunity_intelligence_cannot_change_risk_decision_or_add_unscanned_c
         pass
     else:
         raise AssertionError("unscanned deterministic candidates must be rejected")
+
+
+def test_opportunity_intelligence_cannot_override_index_risk_decision(monkeypatch) -> None:
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", False)
+    risk = _service_with_events([]).assess(symbol="SPY", as_of=_now(), index_context=_index_context(vix_level=34.0))
+    candidate = OpportunityCandidateSummary(
+        recommendation_id="queue_spy_index_risk",
+        symbol="SPY",
+        side="long",
+        approved=True,
+        status="top_candidate",
+        risk_calendar=risk,
+    )
+    service = RecommendationService(persist_audit=False)
+
+    memo = service.generate_opportunity_intelligence(
+        candidates=[candidate],
+        index_context={"risk_summary": "risk_off", "index_risk_signals": risk.index_risk_signals.model_dump(mode="json")},
+    )
+
+    decision = memo.candidates[0].risk_calendar.decision
+    assert decision.decision_state == "restricted"
+    assert decision.allow_new_entries is True
+    assert memo.candidates[0].approved is True

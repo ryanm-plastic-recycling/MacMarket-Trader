@@ -1,6 +1,6 @@
 # MacMarket-Trader Operator Welcome Guide
 
-Last updated: 2026-05-03
+Last updated: 2026-05-04
 
 This is the practical welcome/training guide for MacMarket-Trader operators.
 It is written for:
@@ -24,8 +24,8 @@ no broker routing, and no real-money execution.
 1. Check **Provider Health**.
 2. Check **Market Risk Today**.
 3. Review **Charts** and **Analysis**.
-4. In **Analysis**, check Macro Context, News Context, workflow source, and
-   any options selected-contract snapshot fields.
+4. In **Analysis**, check Macro Context, News Context, Index Risk Context,
+   workflow source, and any options selected-contract snapshot fields.
 5. Refresh the **Recommendations** queue.
 6. Compare candidates with **Opportunity Intelligence**.
 7. Promote only candidates worth tracking.
@@ -61,9 +61,10 @@ No automatic adjustments. No automatic exercise or assignment.
 
 ### Red flags
 
-Provider degraded, stale data, risk-calendar `restricted` or `no_trade`,
-option mark unavailable, missing macro/news context, missing selected-contract
-snapshot fields, missing lineage, or missing evidence.
+Provider degraded, stale data, VIX/index-risk warnings, risk-calendar
+`restricted` or `no_trade`, option mark unavailable, missing macro/news/index
+context, missing selected-contract snapshot fields, missing lineage, or missing
+evidence.
 
 ### Where to go
 
@@ -331,10 +332,11 @@ that appears in richer strategy-report emails:
   automation.
 
 The packet includes top summary, equity or options details, Macro Context,
-News Context, Market Risk Calendar state, provider/source/session context,
-LLM provenance when present, warnings, and missing-data disclosure. Options
-packets include selected listed contracts, marks, mark method, IV, open
-interest, and Greeks only when the provider supplies them.
+News Context, Index Risk Context, Market Risk Calendar state,
+provider/source/session context, LLM provenance when present, warnings, and
+missing-data disclosure. Options packets include selected listed contracts,
+marks, mark method, IV, open interest, and Greeks only when the provider
+supplies them.
 
 Ad hoc "email to me" is intentionally deferred until there is a dedicated
 rate-limited and audit-logged user email action. Scheduled strategy reports

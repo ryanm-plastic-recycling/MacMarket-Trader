@@ -141,7 +141,10 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("function AnalysisPacketContext");
     expect(source).toContain("Macro Context");
     expect(source).toContain("Index Context");
+    expect(source).toContain("Index risk state");
+    expect(source).toContain("Index risk reasons");
     expect(source).toContain("News Context");
+    expect(source).toContain("<strong>index risk:</strong>");
     expect(source).toContain("selectedRecommendation.analysis_packet");
     expect(source).toContain("Not available from provider");
   });

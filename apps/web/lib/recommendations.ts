@@ -36,6 +36,13 @@ export type QueueCandidate = {
       requires_confirmation?: boolean;
       missing_evidence?: string[];
     };
+    index_risk_signals?: {
+      decision_effect?: string | null;
+      vix_level?: number | null;
+      spx_change_pct?: number | null;
+      index_data_stale_or_missing?: boolean;
+      reasons?: string[];
+    } | null;
   } | null;
   rejection_reason?: string | null;
   already_open?: boolean;
@@ -123,11 +130,31 @@ export type IndexContextPoint = {
   missing_data?: string[];
 };
 
+export type IndexRiskSignals = {
+  enabled?: boolean;
+  vix_level?: number | null;
+  vix_change_pct?: number | null;
+  spx_change_pct?: number | null;
+  ndx_change_pct?: number | null;
+  rut_change_pct?: number | null;
+  ndx_vs_spx_relative_strength?: number | null;
+  rut_vs_spx_relative_strength?: number | null;
+  broad_index_direction?: string | null;
+  market_dispersion_state?: string | null;
+  risk_appetite_state?: string | null;
+  index_data_stale_or_missing?: boolean;
+  decision_effect?: string | null;
+  risk_level_effect?: string | null;
+  reasons?: string[];
+  data_quality_flags?: string[];
+};
+
 export type IndexContextSummary = {
   provider?: string | null;
   mode?: string | null;
   indices?: IndexContextPoint[];
   risk_summary?: string | null;
+  index_risk_signals?: IndexRiskSignals | null;
   missing_data?: string[];
   warnings?: string[];
 };

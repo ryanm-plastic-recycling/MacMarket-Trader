@@ -15,6 +15,9 @@ describe("dashboard market risk card", () => {
     expect(source).toContain("Index Context");
     expect(source).toContain("index_context");
     expect(source).toContain("Deterministic market backdrop");
+    expect(source).toContain("Index risk");
+    expect(source).toContain("Index risk state");
+    expect(source).toContain("index_data_stale_or_missing");
     expect(source).toContain("Not available from provider");
     expect(source.toLowerCase()).not.toContain("broker routing");
     expect(source.toLowerCase()).not.toContain("live trading");

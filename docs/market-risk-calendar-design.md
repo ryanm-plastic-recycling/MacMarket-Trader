@@ -48,6 +48,44 @@ The gate can evaluate measured conditions where data exists:
 
 If a required data input is unavailable, the assessment reports missing evidence or data quality limitations instead of fabricating a reading.
 
+## Index Risk Signals
+
+When provider-backed index snapshots are available, the risk calendar consumes
+`IndexContextSummary` and extracts deterministic index-risk signals:
+
+- `vix_level` and `vix_change_pct`
+- `spx_change_pct`, `ndx_change_pct`, and `rut_change_pct`
+- NDX/RUT relative strength versus SPX
+- broad index direction
+- market dispersion state
+- risk appetite state
+- stale or missing index-data flags
+
+Default thresholds are configuration-backed:
+
+- `INDEX_RISK_ENABLED=true`
+- `VIX_CAUTION_LEVEL=20`
+- `VIX_RESTRICTED_LEVEL=30`
+- `VIX_SPIKE_CAUTION_PCT=10`
+- `SPX_GAP_CAUTION_PCT=1.0`
+- `SPX_GAP_RESTRICTED_PCT=2.0`
+- `RUT_UNDERPERFORM_CAUTION_PCT=-1.0`
+- `NDX_UNDERPERFORM_CAUTION_PCT=-1.0`
+- `INDEX_DATA_STALE_MINUTES=60`
+
+Index signals are conservative. VIX caution, a VIX spike, SPX down while VIX
+rises, or RUT/NDX underperformance can move the state to `caution`. VIX above
+the restricted threshold or a large SPX downside move can move the state to
+`restricted`, requiring operator confirmation where paper-order staging uses
+restricted risk-calendar handling. Missing or stale index data is reported as a
+data-quality warning and does not automatically create `no_trade`.
+
+For now, symbol relevance is mostly broad-market context. QQQ and tech-heavy
+names should be read as more sensitive to NDX weakness, IWM/small-cap names as
+more sensitive to RUT weakness, and broad-market ETFs as more sensitive to
+SPX/VIX. The app does not silently substitute ETF proxies for missing index
+data.
+
 ## Paper Order Integration
 
 Paper equity order staging re-evaluates the risk gate before staging/filling. `no_trade`, `requires_event_evidence`, and `data_quality_block` block staging. `restricted` requires explicit operator confirmation and a reason. Risk-calendar provenance is recorded in paper-order notes/provenance.
@@ -56,9 +94,9 @@ This is not live trading support, broker routing, or automated execution. It is 
 
 ## UI Expectations
 
-Dashboard shows a "Market Risk Today" card with the current state, top reasons, active events, missing evidence, and recommended action.
+Dashboard shows a "Market Risk Today" card with the current state, top reasons, active events, missing evidence, index-risk reasons, and recommended action. Dashboard Index Context also shows VIX/SPX/NDX/RUT state, stale/missing flags, and deterministic market-backdrop context.
 
-Recommendations show risk-calendar badges and detail context on stored recommendations.
+Analysis and Recommendations show risk-calendar badges and detail context, including index-risk reasons when present.
 
 Orders shows the calendar warning/block context before paper order staging, including explicit "sit this one out" messaging when new entries are blocked and confirmation fields when restricted.
 

@@ -34,6 +34,7 @@ import {
   getOptionsResearchDisplayDte,
   isReadOnlyResearchMode,
   type AnalysisPacket,
+  type IndexContextSummary,
   type OptionsReadinessState,
   type OptionsResearchStructure,
 } from "@/lib/recommendations";
@@ -127,6 +128,8 @@ function AnalysisContextPanels({ packet, optionStructure }: { packet?: AnalysisP
   const newsMissing = packet?.news_context?.missing_data ?? [];
   const indexPoints = packet?.index_context?.indices ?? [];
   const indexMissing = packet?.index_context?.missing_data ?? [];
+  const indexRiskSignals = packet?.index_context?.index_risk_signals ?? (packet?.risk_calendar?.index_risk_signals as IndexContextSummary["index_risk_signals"] | undefined) ?? null;
+  const indexRiskReasons = indexRiskSignals?.reasons ?? [];
   const optionLegs = optionStructure?.legs ?? [];
   return (
     <div className="op-grid-2">
@@ -184,6 +187,16 @@ function AnalysisContextPanels({ packet, optionStructure }: { packet?: AnalysisP
             ))}
             {packet?.index_context?.risk_summary ? (
               <div style={{ color: "var(--op-muted, #7a8999)" }}>Backdrop: {packet.index_context.risk_summary}</div>
+            ) : null}
+            {indexRiskSignals ? (
+              <div style={{ color: indexRiskSignals.index_data_stale_or_missing ? "var(--op-warn, #f2a03f)" : "var(--op-muted, #7a8999)" }}>
+                Index risk state: {indexRiskSignals.decision_effect ?? "normal"} | VIX {formatResearchValue(indexRiskSignals.vix_level, "Not available from provider")} | SPX {formatResearchValue(indexRiskSignals.spx_change_pct, "-")}%
+              </div>
+            ) : null}
+            {indexRiskReasons.length ? (
+              <div style={{ color: "var(--op-muted, #7a8999)" }}>
+                Reasons: {indexRiskReasons.slice(0, 3).join("; ")}
+              </div>
             ) : null}
           </div>
         ) : (

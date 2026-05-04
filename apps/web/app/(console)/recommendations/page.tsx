@@ -29,6 +29,7 @@ import {
   shouldShowRecommendationExecutionCtas,
   type AnalysisPacket,
   type AnalysisPacketExport,
+  type IndexContextSummary,
   type OptionsResearchSetup,
   type QueueCandidate,
   type StoredRecommendation,
@@ -87,6 +88,8 @@ function AnalysisPacketContext({ packet }: { packet?: AnalysisPacket | null }) {
   const newsMissing = packet?.news_context?.missing_data ?? [];
   const indexPoints = packet?.index_context?.indices ?? [];
   const indexMissing = packet?.index_context?.missing_data ?? [];
+  const indexRiskSignals = packet?.index_context?.index_risk_signals ?? (packet?.risk_calendar?.index_risk_signals as IndexContextSummary["index_risk_signals"] | undefined) ?? null;
+  const indexRiskReasons = indexRiskSignals?.reasons ?? [];
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <div style={{ display: "grid", gap: 6 }}>
@@ -125,6 +128,14 @@ function AnalysisPacketContext({ packet }: { packet?: AnalysisPacket | null }) {
         )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider{indexMissing.length ? `: ${indexMissing.join(", ")}` : ""}</div>}
         {packet?.index_context?.risk_summary ? (
           <div style={{ color: "var(--op-muted, #7a8999)" }}>Backdrop: {packet.index_context.risk_summary}</div>
+        ) : null}
+        {indexRiskSignals ? (
+          <div style={{ color: indexRiskSignals.index_data_stale_or_missing ? "var(--op-warn, #f2a03f)" : "var(--op-muted, #7a8999)" }}>
+            Index risk state: {indexRiskSignals.decision_effect ?? "normal"} | VIX {formatResearchValue(indexRiskSignals.vix_level, "Not available from provider")} | SPX {formatResearchValue(indexRiskSignals.spx_change_pct, "-")}%
+          </div>
+        ) : null}
+        {indexRiskReasons.length ? (
+          <div style={{ color: "var(--op-muted, #7a8999)" }}>Index risk reasons: {indexRiskReasons.slice(0, 3).join("; ")}</div>
         ) : null}
       </div>
     </div>
@@ -268,6 +279,7 @@ type RiskCalendarPayload = {
     missing_evidence?: string[];
     active_events?: Array<{ title?: string; event_type?: string; impact?: string }>;
   };
+  index_risk_signals?: IndexContextSummary["index_risk_signals"];
 };
 
 function riskTone(risk?: RiskCalendarPayload | null): "good" | "warn" | "bad" | "neutral" {
@@ -1554,6 +1566,11 @@ export default function RecommendationsPage() {
                       </span>
                     ) : null}
                   </div>
+                  {selectedQueue.risk_calendar?.index_risk_signals?.reasons?.length ? (
+                    <div style={{ color: "var(--op-muted, #7a8999)" }}>
+                      <strong>index risk:</strong> {selectedQueue.risk_calendar.index_risk_signals.reasons.slice(0, 3).join("; ")}
+                    </div>
+                  ) : null}
                   <div><strong><MetricLabel label="score" term="score" />:</strong> {selectedQueue.score}</div>
                   <div><strong><MetricLabel label="expected rr" term="rr" />:</strong> {selectedQueue.expected_rr} &nbsp; <strong><MetricLabel label="confidence" term="confidence" />:</strong> {selectedQueue.confidence}</div>
                   <div><strong>thesis:</strong> {selectedQueue.thesis}</div>

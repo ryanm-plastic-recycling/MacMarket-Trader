@@ -7,6 +7,11 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
 
 - Setup/risk/ranking engines produce structured recommendation fields.
 - Market Risk Calendar owns warning/restriction/block state.
+- Market Risk Calendar now includes deterministic index-risk signals from
+  provider-backed SPX, NDX, RUT, and VIX snapshots when available. VIX level,
+  VIX spikes, SPX downside moves, RUT/NDX relative weakness, dispersion, and
+  stale/missing index data are surfaced as auditable context. Missing index data
+  is a data-quality warning, not fabricated risk input.
 - Paper lifecycle code owns order, fill, position, trade, P&L, and reset state.
 - Active Paper Position Review uses deterministic action classifications.
 - Options Position Review uses deterministic structure-level classifications
@@ -32,6 +37,9 @@ sizing, and paper lifecycle decisions. LLMs are explanation-only.
   series, Polygon/Massive news, IV, open interest, Greeks, and option marks are
   displayed only when supplied by configured providers; missing values remain
   explicit `missing_data`.
+- Analysis Packet and scheduled strategy-report email output include compact
+  index-risk context when present. LLM/Opportunity Intelligence may explain the
+  context, but deterministic risk-calendar fields remain authoritative.
 - Operator Analysis Packet preview/export exposes the same sanitized packet as
   JSON, Markdown, and email-safe HTML for stored recommendations. The export is
   a context snapshot only; it does not recalculate rankings, alter strategy
@@ -86,6 +94,7 @@ LLMs, live providers, broker APIs, or order-routing paths.
 - Unit/integration tests for recommendation contracts.
 - Replay tests.
 - Risk-calendar tests.
+- Index-risk signal extraction and risk-calendar integration tests.
 - Active Paper Position Review tests.
 - Lifecycle integrity test.
 - Options Position Review and options lifecycle integrity tests.
@@ -115,3 +124,6 @@ LLMs, live providers, broker APIs, or order-routing paths.
   Greeks when available, but does not calculate Black-Scholes values or Greeks.
   Missing, stale, or plan-blocked provider marks remain explicit
   `mark_unavailable` evidence.
+- No independently reviewed index-regime threshold validation pack. Current
+  SPX/NDX/RUT/VIX thresholds are conservative defaults and should be tuned only
+  through a documented model-change process.

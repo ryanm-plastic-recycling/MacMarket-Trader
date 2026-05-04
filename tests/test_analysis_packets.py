@@ -119,6 +119,9 @@ def test_index_context_maps_provider_snapshots(monkeypatch) -> None:
     assert summary.mode == "polygon"
     assert {item.symbol for item in summary.indices} == {"SPX", "NDX", "RUT", "VIX"}
     assert summary.risk_summary == "risk_on"
+    assert summary.index_risk_signals is not None
+    assert summary.index_risk_signals.risk_appetite_state == "risk_on"
+    assert summary.index_risk_signals.decision_effect == "normal"
     assert not summary.missing_data
 
 
@@ -212,6 +215,18 @@ def test_strategy_report_email_uses_analysis_packet_and_redacts_secret() -> None
         "provider": "polygon",
         "macro_context": {"series": [{"series_id": "DGS10", "label": "10Y Treasury yield", "latest_value": 4.5, "latest_date": "2026-05-01"}]},
         "news_context": {"headlines": [{"title": "SPY headline", "publisher": "Example Wire", "published_utc": "2026-05-03T14:00:00Z"}]},
+        "index_context": {
+            "indices": [{"symbol": "SPX", "label": "S&P 500", "latest_value": 5050.0, "day_change_pct": -1.2}],
+            "risk_summary": "risk_off",
+            "index_risk_signals": {
+                "decision_effect": "caution",
+                "risk_appetite_state": "risk_off",
+                "broad_index_direction": "down",
+                "vix_level": 24.0,
+                "spx_change_pct": -1.2,
+                "reasons": ["SPX down while VIX is rising."],
+            },
+        },
         "options": {
             "strategy_type": "iron_condor",
             "expiration": "2026-05-16",
@@ -264,6 +279,8 @@ def test_strategy_report_email_uses_analysis_packet_and_redacts_secret() -> None
     assert "Analysis Packet Context" in html
     assert "Macro Context" in html
     assert "News Context" in html
+    assert "Index risk reason" in combined
+    assert "SPX down while VIX is rising" in combined
     assert "SPY headline" in combined
     assert "IV 0.22" in combined
     assert "OI 1234" in combined
@@ -324,6 +341,12 @@ def test_analysis_packet_markdown_html_include_context_and_unavailable_fields() 
                 )
             ],
             risk_summary="risk_on",
+            index_risk_signals={
+                "decision_effect": "normal",
+                "risk_appetite_state": "risk_on",
+                "broad_index_direction": "up",
+                "reasons": [],
+            },
         ),
     )
 
@@ -333,6 +356,7 @@ def test_analysis_packet_markdown_html_include_context_and_unavailable_fields() 
 
     assert "Macro Context" in combined
     assert "Index Context" in combined
+    assert "Index risk signals" in combined
     assert "News Context" in combined
     assert "SPX" in combined
     assert "10Y Treasury yield" in combined

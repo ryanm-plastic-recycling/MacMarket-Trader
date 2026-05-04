@@ -24,6 +24,7 @@ type RiskCalendarDecision = {
     active_events?: Array<{ title?: string; event_type?: string; impact?: string }>;
     missing_evidence?: string[];
   };
+  index_risk_signals?: IndexContextSummary["index_risk_signals"];
 };
 type DashboardPayload = {
   market_regime: string;
@@ -89,6 +90,8 @@ export default function Page() {
   const macroMissing = data?.macro_context?.missing_data ?? [];
   const indexPoints = data?.index_context?.indices ?? [];
   const indexMissing = data?.index_context?.missing_data ?? [];
+  const indexRiskSignals = data?.index_context?.index_risk_signals ?? data?.risk_calendar?.index_risk_signals ?? null;
+  const indexRiskReasons = indexRiskSignals?.reasons ?? [];
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
@@ -180,6 +183,11 @@ export default function Page() {
             Missing evidence: {riskDecision.missing_evidence.join("; ")}
           </div>
         ) : null}
+        {indexRiskReasons.length ? (
+          <div style={{ marginTop: 8, color: "#c7d2df" }}>
+            Index risk: {indexRiskReasons.slice(0, 3).join("; ")}
+          </div>
+        ) : null}
       </Card>
 
       <Card title="Macro Context">
@@ -228,6 +236,15 @@ export default function Page() {
         {data?.index_context?.risk_summary ? (
           <div style={{ marginTop: 8, color: "#c7d2df" }}>
             Deterministic market backdrop: {data.index_context.risk_summary}
+          </div>
+        ) : null}
+        {indexRiskSignals ? (
+          <div style={{ marginTop: 8, color: indexRiskSignals.index_data_stale_or_missing ? "#f7b267" : "#c7d2df" }}>
+            Index risk state: {indexRiskSignals.decision_effect ?? "normal"} Â· VIX {formatResearchValue(indexRiskSignals.vix_level, "Not available from provider")}
+            {" Â· "}SPX {formatResearchValue(indexRiskSignals.spx_change_pct, "-")}%
+            {" Â· "}NDX {formatResearchValue(indexRiskSignals.ndx_change_pct, "-")}%
+            {" Â· "}RUT {formatResearchValue(indexRiskSignals.rut_change_pct, "-")}%
+            {indexRiskSignals.index_data_stale_or_missing ? " Â· index data stale or missing" : ""}
           </div>
         ) : null}
       </Card>
