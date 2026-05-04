@@ -140,6 +140,7 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("Risk calendar requires explicit handling before promotion");
     expect(source).toContain("function AnalysisPacketContext");
     expect(source).toContain("Macro Context");
+    expect(source).toContain("Index Context");
     expect(source).toContain("News Context");
     expect(source).toContain("selectedRecommendation.analysis_packet");
     expect(source).toContain("Not available from provider");
@@ -156,6 +157,7 @@ describe("recommendations metric help rollout", () => {
     expect(source).toContain("loadAnalysisPacketExport");
     expect(source).toContain('`/api/user/recommendations/${selectedRecommendation.id}/analysis-packet`');
     expect(source).toContain("Macro Context");
+    expect(source).toContain("Index Context");
     expect(source).toContain("News Context");
     expect(source).toContain("Missing from selected contract snapshot");
     expect(packetProxySource).toContain("analysis-packet");

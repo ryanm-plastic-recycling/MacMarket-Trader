@@ -6,13 +6,17 @@ from sqlalchemy import select
 from macmarket_trader import analysis_packets
 from macmarket_trader.api.main import app
 from macmarket_trader.analysis_packets import (
+    IndexContextPoint,
+    IndexContextSummary,
     analysis_packet_to_safe_dict,
     build_analysis_packet,
+    build_index_context_summary,
     build_macro_context_summary,
     build_news_context_summary,
     render_analysis_packet_html,
     render_analysis_packet_markdown,
 )
+from macmarket_trader.data.providers.market_data import IndexMarketSnapshot
 from macmarket_trader.domain.models import AppUserModel
 from macmarket_trader.email_templates import render_strategy_report_html, render_strategy_report_text
 from macmarket_trader.storage.db import SessionLocal
@@ -89,9 +93,39 @@ def test_news_context_maps_polygon_fields(monkeypatch) -> None:
     assert summary.newest_article_age_minutes == 60
 
 
+def test_index_context_maps_provider_snapshots(monkeypatch) -> None:
+    monkeypatch.setattr(analysis_packets.settings, "polygon_enabled", True)
+
+    class FakeIndexService:
+        def index_snapshot(self, symbol: str) -> IndexMarketSnapshot:
+            return IndexMarketSnapshot(
+                symbol=symbol,
+                label=f"{symbol} index",
+                latest_value=5000.0 if symbol != "VIX" else 18.0,
+                previous_close=4975.0 if symbol != "VIX" else 19.0,
+                day_change=25.0 if symbol != "VIX" else -1.0,
+                day_change_pct=0.5 if symbol != "VIX" else -5.0,
+                as_of=datetime(2026, 5, 4, 14, 30, tzinfo=timezone.utc),
+                stale=False,
+                provider="polygon",
+                missing_data=[],
+            )
+
+    summary = build_index_context_summary(
+        service=FakeIndexService(),
+        now=datetime(2026, 5, 4, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert summary.mode == "polygon"
+    assert {item.symbol for item in summary.indices} == {"SPX", "NDX", "RUT", "VIX"}
+    assert summary.risk_summary == "risk_on"
+    assert not summary.missing_data
+
+
 def test_equity_analysis_packet_includes_key_fields_and_boundaries(monkeypatch) -> None:
     monkeypatch.setattr(analysis_packets, "build_news_context_summary", lambda symbol: analysis_packets.NewsContextSummary(symbol=symbol, missing_data=["recent_news"]))
     monkeypatch.setattr(analysis_packets, "build_macro_context_summary", lambda: analysis_packets.MacroContextSummary(missing_data=["fred_not_selected"]))
+    monkeypatch.setattr(analysis_packets, "build_index_context_summary", lambda: analysis_packets.IndexContextSummary(missing_data=["polygon_not_selected"]))
 
     packet = build_analysis_packet(
         symbol="GOOG",
@@ -278,6 +312,19 @@ def test_analysis_packet_markdown_html_include_context_and_unavailable_fields() 
             symbol="SPY",
             headlines=[analysis_packets.NewsArticleSummary(title="SPY macro desk update", publisher="Example Wire", published_utc="2026-05-03T14:00:00Z")],
         ),
+        index_context=IndexContextSummary(
+            indices=[
+                IndexContextPoint(
+                    symbol="SPX",
+                    label="S&P 500",
+                    latest_value=5050.0,
+                    previous_close=5000.0,
+                    day_change=50.0,
+                    day_change_pct=1.0,
+                )
+            ],
+            risk_summary="risk_on",
+        ),
     )
 
     markdown = render_analysis_packet_markdown(packet)
@@ -285,7 +332,9 @@ def test_analysis_packet_markdown_html_include_context_and_unavailable_fields() 
     combined = markdown + html
 
     assert "Macro Context" in combined
+    assert "Index Context" in combined
     assert "News Context" in combined
+    assert "SPX" in combined
     assert "10Y Treasury yield" in combined
     assert "SPY macro desk update" in combined
     assert "IV 0.22" in combined

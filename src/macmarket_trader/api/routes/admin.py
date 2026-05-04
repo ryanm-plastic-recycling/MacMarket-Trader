@@ -18,6 +18,7 @@ from macmarket_trader.analysis_packets import (
     PaperLifecycleSummary,
     analysis_packet_to_safe_dict,
     build_analysis_packet,
+    build_index_context_summary,
     build_macro_context_summary,
     build_news_context_summary,
     build_provider_context_summary,
@@ -714,6 +715,7 @@ def dashboard(user=Depends(require_approved_user)):
     latest_snapshot = market_data_service.latest_snapshot(symbol="AAPL", timeframe="1D")
     risk_calendar = risk_calendar_service.assess(symbol="SPY", timeframe="1D")
     macro_context = build_macro_context_summary()
+    index_context = build_index_context_summary(service=market_data_service)
 
     # Operational audit events — combine email logs, approval events, and schedule runs
     email_events = [
@@ -758,6 +760,7 @@ def dashboard(user=Depends(require_approved_user)):
         "market_regime": "event-driven / deterministic-eval",
         "risk_calendar": risk_calendar.model_dump(mode="json"),
         "macro_context": macro_context.model_dump(mode="json"),
+        "index_context": index_context.model_dump(mode="json"),
         "provider_health": provider_health,
         "latest_market_snapshot": {
             "symbol": latest_snapshot.symbol,
@@ -852,6 +855,7 @@ def _analysis_packet_for_payload(
         session_policy=session_policy,
         macro_context=macro_context,
         news_context=build_news_context_summary(symbol),
+        index_context=build_index_context_summary(service=market_data_service),
         provider_context=build_provider_context_summary(
             market_data_source=market_data_source,
             fallback_mode=fallback_mode,
@@ -1107,6 +1111,7 @@ def recommendation_opportunity_intelligence(
     return recommendation_service.generate_opportunity_intelligence(
         candidates=candidates,
         better_elsewhere=better_elsewhere,
+        index_context=build_index_context_summary(service=market_data_service).model_dump(mode="json"),
     )
 
 
@@ -5229,6 +5234,7 @@ def analysis_setup(
         session_policy=session_metadata.get("session_policy"),
         macro_context=build_macro_context_summary(),
         news_context=build_news_context_summary(symbol),
+        index_context=build_index_context_summary(service=market_data_service),
         provider_context=build_provider_context_summary(
             market_data_source=source,
             fallback_mode=fallback_mode,
@@ -5986,7 +5992,7 @@ def _readiness_status(*, config_state: str, probe_state: str) -> str:
         return "ok"
     if probe_state == "warn":
         return "warn"
-    if probe_state in {"failed", "degraded", "failed_not_entitled", "failed_underlying_index_data"}:
+    if probe_state in {"failed", "degraded", "failed_not_entitled", "failed_underlying_index_data", "failed_no_index_value"}:
         return "degraded"
     if config_state == "disabled":
         return "disabled"
@@ -6205,6 +6211,66 @@ def _news_readiness() -> dict[str, object]:
         "operational_impact": (
             "Use this to verify provider-backed news context readiness before deeper provider expansion. "
             "Recommendation, replay, and orders remain paper-only."
+        ),
+    }
+
+
+def _indices_data_readiness() -> dict[str, object]:
+    mode = "polygon" if settings.polygon_enabled else "disabled"
+    configured = bool(settings.polygon_enabled and settings.polygon_api_key.strip() and settings.polygon_base_url.strip())
+    config_state = _config_state(enabled=settings.polygon_enabled, configured=configured)
+    probe_state = "skipped" if not settings.polygon_enabled else "unavailable"
+    probe_payload: dict[str, object] = {}
+    if configured:
+        health_fn = getattr(market_data_service, "indices_data_health", None)
+        if callable(health_fn):
+            try:
+                probe_payload = dict(health_fn() or {})
+                probe_state = str(probe_payload.get("probe_state") or probe_payload.get("probe_status") or "unavailable")
+            except Exception as exc:
+                probe_state = "failed"
+                probe_payload = {"details": _sanitize_provider_error(exc)}
+        else:
+            probe_state = "unavailable"
+
+    entitlement_status = str(probe_payload.get("entitlement_status") or "unknown")
+    entitlement_blocked = entitlement_status == "not_entitled" or probe_state == "failed_not_entitled"
+    if entitlement_blocked:
+        details = "Index data entitlement required for SPX/NDX/RUT/VIX snapshot values."
+    elif probe_state == "failed_no_index_value":
+        details = "Indices snapshot probe did not return usable index values."
+    else:
+        details = str(
+            probe_payload.get("details")
+            or (
+                "Indices data readiness requires Polygon/Massive index snapshots for SPX, NDX, RUT, and VIX."
+                if settings.polygon_enabled
+                else "Indices data readiness is disabled because Polygon/Massive market data is not selected."
+            )
+        )
+    details = _sanitize_provider_error(details)
+    samples = probe_payload.get("samples") if isinstance(probe_payload.get("samples"), list) else []
+    return {
+        "provider": "indices_data",
+        "mode": mode,
+        "status": _readiness_status(config_state=config_state, probe_state=probe_state),
+        "details": details,
+        "config_state": config_state,
+        "probe_state": probe_state,
+        "configured": configured,
+        "selected_provider": "polygon" if settings.polygon_enabled else "none",
+        "probe_status": probe_state,
+        "readiness_scope": "index_context_research_only",
+        "sample_symbol": probe_payload.get("sample_symbol") or "SPX",
+        "value_available": probe_payload.get("value_available"),
+        "index_samples": samples,
+        "latency_ms": probe_payload.get("latency_ms"),
+        "last_success_at": probe_payload.get("last_success_at"),
+        "entitlement_state": "not_entitled" if entitlement_blocked else None,
+        "entitlement_status": "not_entitled" if entitlement_blocked else entitlement_status,
+        "operational_impact": (
+            "Indices snapshots support dashboard context, SPX option underlying values, Opportunity Intelligence context, "
+            "and validation evidence only. This does not enable live trading, broker routing, automatic exits, rolls, or adjustments."
         ),
     }
 
@@ -6490,6 +6556,7 @@ def provider_health(
             _alpaca_paper_readiness(),
             _fred_readiness(),
             _news_readiness(),
+            _indices_data_readiness(),
             _options_data_readiness(),
             _index_options_data_readiness(),
             _llm_readiness(probe=probe_llm),

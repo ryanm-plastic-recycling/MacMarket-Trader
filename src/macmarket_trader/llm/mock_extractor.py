@@ -119,6 +119,7 @@ class MockLLMClient(LLMClient):
         *,
         candidates: list[OpportunityCandidateSummary],
         better_elsewhere: list[BetterElsewhereCandidate],
+        index_context: dict[str, object] | None = None,
     ) -> OpportunityComparisonMemo:
         ordered = sorted(
             candidates,
@@ -132,6 +133,10 @@ class MockLLMClient(LLMClient):
         memo = self.generate_market_context_memo(candidates=candidates)
         if better_elsewhere:
             memo = f"{memo} {self.generate_better_elsewhere_memo(candidates=candidates, better_elsewhere=better_elsewhere)}"
+        if index_context:
+            risk_summary = index_context.get("risk_summary") if isinstance(index_context, dict) else None
+            if risk_summary:
+                memo = f"{memo} Index context: {risk_summary}; deterministic gates remain unchanged."
         comparison_rows = [
             {
                 "candidate_id": candidate.recommendation_id,

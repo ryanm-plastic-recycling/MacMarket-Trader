@@ -2,6 +2,21 @@
 
 Last updated: 2026-05-04
 
+## 2026-05-04 Update - Indices Starter Validation Integration
+Provider Health now includes an `indices_data` readiness probe for
+SPX/NDX/RUT/VIX snapshot values alongside the existing `index_options_data`
+SPX option probe. Index snapshots use the Polygon/Massive indices snapshot
+endpoint and report entitlement, missing-value, stale, latency, and sanitized
+error state without implying execution readiness.
+
+An `IndexContextSummary` now feeds the dashboard Index Context card,
+Analysis Packets, Opportunity Intelligence read-only provenance, and model
+validation evidence. SPX option readiness continues to use listed contracts
+only, raw `SPX` for reference contracts, `I:SPX` for option snapshots, and the
+same snap-distance plus fresh-mark paper-open guardrails. No SPY/QQQ
+substitution, live trading, broker routing, automatic exits, rolls, or
+adjustments were added.
+
 ## 2026-05-04 Update - Options Research Readiness Split
 Options research payloads now separate listed-contract structure readiness,
 Expected Range research readiness, and paper-open pricing readiness. Valid

@@ -110,6 +110,28 @@ export type NewsContextSummary = {
   warnings?: string[];
 };
 
+export type IndexContextPoint = {
+  symbol: string;
+  label: string;
+  latest_value?: number | null;
+  previous_close?: number | null;
+  day_change?: number | null;
+  day_change_pct?: number | null;
+  as_of?: string | null;
+  stale?: boolean;
+  provider?: string | null;
+  missing_data?: string[];
+};
+
+export type IndexContextSummary = {
+  provider?: string | null;
+  mode?: string | null;
+  indices?: IndexContextPoint[];
+  risk_summary?: string | null;
+  missing_data?: string[];
+  warnings?: string[];
+};
+
 export type AnalysisPacket = {
   packet_id?: string;
   symbol: string;
@@ -127,6 +149,7 @@ export type AnalysisPacket = {
   warnings?: string[];
   macro_context?: MacroContextSummary | null;
   news_context?: NewsContextSummary | null;
+  index_context?: IndexContextSummary | null;
   provider_context?: Record<string, unknown> | null;
   risk_calendar?: Record<string, unknown> | null;
   paper_lifecycle?: Record<string, unknown> | null;

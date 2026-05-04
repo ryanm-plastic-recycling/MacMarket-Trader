@@ -277,15 +277,18 @@ class OpenAICompatibleLLMClient(LLMClient):
         *,
         candidates: list[OpportunityCandidateSummary],
         better_elsewhere: list[BetterElsewhereCandidate],
+        index_context: dict[str, object] | None = None,
     ) -> OpportunityComparisonMemo:
         payload = self._complete_json(
             task="compare_candidates",
             user_payload={
                 "candidates": [candidate.model_dump(mode="json") for candidate in candidates],
                 "better_elsewhere": [candidate.model_dump(mode="json") for candidate in better_elsewhere],
+                "index_context": index_context or {},
                 "guardrail": (
                     "Use only supplied candidate ids and symbols. Do not create candidates, "
-                    "trade levels, approvals, sizing, or orders."
+                    "trade levels, approvals, sizing, risk-gate states, or orders. "
+                    "Index context is read-only market backdrop."
                 ),
             },
         )

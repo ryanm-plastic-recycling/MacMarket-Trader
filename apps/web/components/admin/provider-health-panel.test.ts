@@ -69,6 +69,12 @@ describe("provider health readiness copy", () => {
     expect(source).toContain("candidate attempts");
     expect(source).toContain("sample symbol");
     expect(source).toContain("sample series");
+    expect(source).toContain("indices_data");
+    expect(source).toContain("indices data");
+    expect(source).toContain("No index value");
+    expect(source).toContain("index_samples");
+    expect(source).toContain("index samples");
+    expect(source).toContain("index value available");
     expect(source).toContain("credentials present");
     expect(source).toContain("paper routing enabled");
     expect(source).toContain("paper account status");

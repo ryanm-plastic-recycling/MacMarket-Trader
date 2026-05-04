@@ -28,6 +28,20 @@ type ProviderHealth = {
     feed?: string;
     sample_symbol?: string;
     sample_series?: string | null;
+    value_available?: boolean | null;
+    index_samples?: Array<{
+      symbol?: string | null;
+      label?: string | null;
+      latest_value?: number | null;
+      previous_close?: number | null;
+      day_change?: number | null;
+      day_change_pct?: number | null;
+      as_of?: string | null;
+      stale?: boolean | null;
+      provider?: string | null;
+      value_available?: boolean | null;
+      missing_data?: string[];
+    }>;
     sample_underlying?: string | null;
     sample_option_symbol?: string | null;
     sample_selection_method?: string | null;
@@ -119,6 +133,7 @@ export function ProviderHealthPanel() {
   const alpacaPaper = data?.providers.find((p) => p.provider === "alpaca_paper");
   const fred = data?.providers.find((p) => p.provider === "fred");
   const news = data?.providers.find((p) => p.provider === "news");
+  const indicesData = data?.providers.find((p) => p.provider === "indices_data");
   const optionsData = data?.providers.find((p) => p.provider === "options_data");
   const indexOptionsData = data?.providers.find((p) => p.provider === "index_options_data");
   const llm = data?.providers.find((p) => p.provider === "llm");
@@ -202,6 +217,8 @@ export function ProviderHealthPanel() {
         return "Not entitled";
       case "failed_underlying_index_data":
         return "Underlying index unavailable";
+      case "failed_no_index_value":
+        return "No index value";
       case "failed":
         return "Probe failed";
       default:
@@ -217,6 +234,7 @@ export function ProviderHealthPanel() {
       case "degraded":
       case "failed_not_entitled":
       case "failed_underlying_index_data":
+      case "failed_no_index_value":
       case "failed":
         return "warn";
       default:
@@ -227,6 +245,12 @@ export function ProviderHealthPanel() {
   function providerDetailCopy(provider: ProviderHealth["providers"][number]): string {
     if (provider.provider === "options_data" && provider.entitlement_state === "not_entitled") {
       return "Options data is configured, but the provider plan is not entitled to option snapshot marks. Options marks remain unavailable; no fake option P&L is shown.";
+    }
+    if (provider.provider === "indices_data" && provider.entitlement_state === "not_entitled") {
+      return "Index data is configured, but the provider plan is not entitled to SPX/NDX/RUT/VIX snapshot values. Index Context remains unavailable; no ETF fallback is used.";
+    }
+    if (provider.provider === "indices_data" && provider.probe_state === "failed_no_index_value") {
+      return "Indices data probe reached the provider, but no usable index values were returned. Dashboard Index Context stays marked unavailable.";
     }
     if (provider.provider === "index_options_data" && provider.entitlement_state === "not_entitled") {
       return "Index options data is configured, but SPX/index option chain or snapshot access requires additional provider entitlement. SPX research remains unavailable or blocked; no SPY fallback is used.";
@@ -280,6 +304,7 @@ export function ProviderHealthPanel() {
           {alpacaPaper ? <StatusBadge tone={configTone(alpacaPaper.config_state)}>alpaca paper: {formatConfigLabel(alpacaPaper.config_state)} / {formatProbeLabel(alpacaPaper.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {fred ? <StatusBadge tone="neutral">fred: {formatConfigLabel(fred.config_state)} / {formatProbeLabel(fred.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {news ? <StatusBadge tone="neutral">news: {formatConfigLabel(news.config_state)} / {formatProbeLabel(news.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
+          {indicesData ? <StatusBadge tone={probeTone(indicesData.probe_state)}>indices data: {formatConfigLabel(indicesData.config_state)} / {formatProbeLabel(indicesData.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {optionsData ? <StatusBadge tone={probeTone(optionsData.probe_state)}>options data: {formatConfigLabel(optionsData.config_state)} / {formatProbeLabel(optionsData.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {indexOptionsData ? <StatusBadge tone={probeTone(indexOptionsData.probe_state)}>index options: {formatConfigLabel(indexOptionsData.config_state)} / {formatProbeLabel(indexOptionsData.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
           {llm ? <StatusBadge tone={statusTone(llm.status)}>LLM provider: {llm.mode} / {formatStatusLabel(llm.status)} / {formatProbeLabel(llm.probe_state) ?? "Probe unknown"}</StatusBadge> : null}
@@ -375,6 +400,21 @@ export function ProviderHealthPanel() {
                 {p.feed ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>feed: </span>{p.feed}</div> : null}
                 {p.sample_symbol ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample symbol: </span>{p.sample_symbol}</div> : null}
                 {p.sample_series ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample series: </span>{p.sample_series}</div> : null}
+                {p.value_available !== undefined ? (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <span style={muted}>index value available: </span>{p.value_available ? "yes" : "no"}
+                  </div>
+                ) : null}
+                {p.index_samples?.length ? (
+                  <div style={{ fontSize: "0.78rem", display: "grid", gap: 2, marginTop: 4 }}>
+                    <div style={muted}>index samples:</div>
+                    {p.index_samples.slice(0, 5).map((sample) => (
+                      <div key={sample.symbol ?? sample.label ?? "index"} style={{ color: "#c9d7e5" }}>
+                        {(sample.symbol ?? "index")} | {sample.latest_value ?? "unavailable"} | change {sample.day_change_pct ?? "-"}%{sample.stale ? " | stale" : ""}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {p.sample_underlying ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample underlying: </span>{p.sample_underlying}</div> : null}
                 {p.sample_option_symbol ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample option: </span>{p.sample_option_symbol}</div> : null}
                 {p.sample_selection_method ? <div style={{ fontSize: "0.8rem" }}><span style={muted}>sample method: </span>{p.sample_selection_method}</div> : null}

@@ -125,6 +125,8 @@ function AnalysisContextPanels({ packet, optionStructure }: { packet?: AnalysisP
   const macroMissing = packet?.macro_context?.missing_data ?? [];
   const headlines = packet?.news_context?.headlines ?? [];
   const newsMissing = packet?.news_context?.missing_data ?? [];
+  const indexPoints = packet?.index_context?.indices ?? [];
+  const indexMissing = packet?.index_context?.missing_data ?? [];
   const optionLegs = optionStructure?.legs ?? [];
   return (
     <div className="op-grid-2">
@@ -163,6 +165,30 @@ function AnalysisContextPanels({ packet, optionStructure }: { packet?: AnalysisP
         ) : (
           <div style={{ color: "var(--op-muted, #7a8999)" }}>
             Not available from provider{newsMissing.length > 0 ? `: ${newsMissing.join(", ")}` : ""}
+          </div>
+        )}
+      </Card>
+      <Card title="Index Context">
+        {indexPoints.length > 0 ? (
+          <div style={{ display: "grid", gap: 6 }}>
+            {indexPoints.slice(0, 5).map((point) => (
+              <div key={point.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span>{point.symbol} ({point.label})</span>
+                <span style={{ color: "var(--op-muted, #7a8999)" }}>
+                  {formatResearchValue(point.latest_value, "Not available from provider")}
+                  {" | "}
+                  {formatResearchValue(point.day_change_pct, "-")}%
+                  {point.stale ? " | stale" : ""}
+                </span>
+              </div>
+            ))}
+            {packet?.index_context?.risk_summary ? (
+              <div style={{ color: "var(--op-muted, #7a8999)" }}>Backdrop: {packet.index_context.risk_summary}</div>
+            ) : null}
+          </div>
+        ) : (
+          <div style={{ color: "var(--op-muted, #7a8999)" }}>
+            Not available from provider{indexMissing.length > 0 ? `: ${indexMissing.join(", ")}` : ""}
           </div>
         )}
       </Card>

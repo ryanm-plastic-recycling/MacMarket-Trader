@@ -30,6 +30,13 @@ class DataNotEntitledError(Exception):
 
 # Polygon uses the I: prefix for index tickers.
 INDEX_SYMBOLS = {"SPX", "NDX", "RUT", "VIX", "DJI", "COMP", "OEX"}
+INDEX_LABELS = {
+    "SPX": "S&P 500",
+    "NDX": "Nasdaq 100",
+    "RUT": "Russell 2000",
+    "VIX": "Cboe Volatility Index",
+    "DJI": "Dow Jones Industrial Average",
+}
 POLYGON_AGGREGATE_MAX_LIMIT = 50_000
 US_EQUITY_TIMEZONE = ZoneInfo("America/New_York")
 RTH_SOURCE_TIMEFRAME = "30M"
@@ -313,6 +320,20 @@ class MarketSnapshot:
     fallback_mode: bool
 
 
+@dataclass(frozen=True)
+class IndexMarketSnapshot:
+    symbol: str
+    label: str
+    latest_value: float | None
+    previous_close: float | None
+    day_change: float | None
+    day_change_pct: float | None
+    as_of: datetime | None
+    stale: bool
+    provider: str
+    missing_data: list[str]
+
+
 @dataclass
 class MarketProviderHealth:
     provider: str
@@ -442,6 +463,9 @@ class MarketDataProvider:
     def fetch_latest_snapshot(self, symbol: str, timeframe: str) -> MarketSnapshot:
         raise NotImplementedError
 
+    def fetch_index_snapshot(self, symbol: str) -> IndexMarketSnapshot:
+        raise NotImplementedError
+
     def fetch_option_contract_snapshot(self, underlying_symbol: str, option_symbol: str) -> OptionContractSnapshot:
         raise NotImplementedError
 
@@ -545,6 +569,21 @@ class DeterministicFallbackMarketDataProvider(MarketDataProvider):
             volume=bar.volume,
             source="fallback",
             fallback_mode=True,
+        )
+
+    def fetch_index_snapshot(self, symbol: str) -> IndexMarketSnapshot:
+        normalized = symbol.upper().strip()
+        return IndexMarketSnapshot(
+            symbol=normalized,
+            label=normalized,
+            latest_value=None,
+            previous_close=None,
+            day_change=None,
+            day_change_pct=None,
+            as_of=None,
+            stale=True,
+            provider=self.name,
+            missing_data=["provider_index_snapshot_not_supported"],
         )
 
     def health_check(self, sample_symbol: str) -> MarketProviderHealth:
@@ -835,7 +874,101 @@ class PolygonMarketDataProvider(MarketDataProvider):
     def fetch_historical_bars(self, symbol: str, timeframe: str, limit: int) -> list[Bar]:
         return self.get_historical_bars(symbol=symbol, timeframe=timeframe, limit=limit)
 
+    def fetch_index_snapshot(self, symbol: str) -> IndexMarketSnapshot:
+        normalized = option_reference_underlying_ticker(symbol)
+        ticker_param = normalize_polygon_ticker(normalized)
+        payload = self._request_json(
+            "/v3/snapshot/indices",
+            {"ticker": ticker_param, "limit": "1"},
+        )
+        raw_results = payload.get("results")
+        if isinstance(raw_results, dict):
+            results = [raw_results]
+        else:
+            results = [item for item in list(raw_results or []) if isinstance(item, dict)]
+        result = next(
+            (
+                item
+                for item in results
+                if str(item.get("ticker") or "").upper() in {ticker_param.upper(), normalized.upper()}
+            ),
+            results[0] if results else None,
+        )
+        if not isinstance(result, dict):
+            raise SymbolNotFoundError(f"No index snapshot returned for {normalized}")
+        if result.get("error") or result.get("message"):
+            message = str(result.get("error") or result.get("message"))
+            if _is_entitlement_error_text(message):
+                raise DataNotEntitledError(_redact_provider_text(message))
+            raise ProviderUnavailableError(_redact_provider_text(message))
+
+        session = result.get("session") if isinstance(result.get("session"), dict) else {}
+        latest_value = _positive_float(result.get("value") or session.get("value") or session.get("price") or session.get("close"))
+        previous_close = _positive_float(
+            session.get("previous_close")
+            or session.get("prev_close")
+            or session.get("prior_close")
+            or session.get("close")
+        )
+        day_change = _finite_float(
+            session.get("change")
+            or session.get("day_change")
+            or session.get("regular_trading_change")
+        )
+        day_change_pct = _finite_float(
+            session.get("change_percent")
+            or session.get("change_percentage")
+            or session.get("day_change_percent")
+            or session.get("regular_trading_change_percent")
+        )
+        if day_change is None and latest_value is not None and previous_close is not None:
+            day_change = latest_value - previous_close
+        if day_change_pct is None and day_change is not None and previous_close is not None and previous_close > 0:
+            day_change_pct = (day_change / previous_close) * 100
+        as_of = _timestamp_from_provider_object(result, "last_updated", "timestamp", "t")
+        missing_data: list[str] = []
+        if latest_value is None:
+            missing_data.append("index_latest_value")
+        if previous_close is None:
+            missing_data.append("index_previous_close")
+        if day_change is None:
+            missing_data.append("index_day_change")
+        if day_change_pct is None:
+            missing_data.append("index_day_change_pct")
+        if as_of is None:
+            missing_data.append("index_as_of")
+        return IndexMarketSnapshot(
+            symbol=normalized,
+            label=str(result.get("name") or INDEX_LABELS.get(normalized) or normalized),
+            latest_value=latest_value,
+            previous_close=previous_close,
+            day_change=round(day_change, 4) if day_change is not None else None,
+            day_change_pct=round(day_change_pct, 4) if day_change_pct is not None else None,
+            as_of=as_of,
+            stale=_is_stale(as_of) if as_of is not None else True,
+            provider="polygon",
+            missing_data=missing_data,
+        )
+
     def get_latest_snapshot(self, symbol: str, timeframe: str = "1D") -> MarketSnapshot:
+        normalized = option_reference_underlying_ticker(symbol)
+        if normalized in INDEX_SYMBOLS:
+            index_snapshot = self.fetch_index_snapshot(normalized)
+            if index_snapshot.latest_value is None:
+                raise SymbolNotFoundError(f"No index value returned for {normalized}")
+            value = float(index_snapshot.latest_value)
+            return MarketSnapshot(
+                symbol=normalized,
+                timeframe=timeframe,
+                as_of=index_snapshot.as_of or datetime.now(tz=UTC),
+                open=index_snapshot.previous_close or value,
+                high=value,
+                low=value,
+                close=value,
+                volume=0,
+                source="polygon",
+                fallback_mode=False,
+            )
         ticker_param = normalize_polygon_ticker(symbol)
         payload = self._request_json(
             f"/v2/snapshot/locale/us/markets/stocks/tickers/{ticker_param}",
@@ -1334,6 +1467,124 @@ class MarketDataService:
 
         self._latest_cache.set(cache_key, snapshot, settings.market_data_latest_cache_ttl_seconds)
         return snapshot
+
+    def index_snapshot(self, symbol: str) -> IndexMarketSnapshot:
+        normalized = option_reference_underlying_ticker(symbol)
+        cache_key = f"index_snapshot::{normalized}"
+        cached = self._latest_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        if not isinstance(self._provider, PolygonMarketDataProvider) or not self._provider.is_configured():
+            snapshot = IndexMarketSnapshot(
+                symbol=normalized,
+                label=INDEX_LABELS.get(normalized, normalized),
+                latest_value=None,
+                previous_close=None,
+                day_change=None,
+                day_change_pct=None,
+                as_of=None,
+                stale=True,
+                provider=self._provider.name,
+                missing_data=["provider_index_snapshot_missing_config"],
+            )
+        else:
+            snapshot = self._provider.fetch_index_snapshot(normalized)
+        self._latest_cache.set(cache_key, snapshot, settings.market_data_latest_cache_ttl_seconds)
+        return snapshot
+
+    def indices_data_health(self, sample_symbols: tuple[str, ...] = ("SPX", "NDX", "RUT", "VIX")) -> dict[str, object]:
+        symbols = tuple(option_reference_underlying_ticker(symbol) for symbol in sample_symbols if str(symbol).strip())
+        cached = self._options_health_cache.get("indices_health::" + ",".join(symbols))
+        if cached is not None:
+            return cached
+
+        if not settings.polygon_enabled:
+            result: dict[str, object] = {
+                "probe_state": "skipped",
+                "probe_status": "skipped",
+                "details": "Indices data readiness is disabled because Polygon/Massive market data is not selected.",
+                "samples": [],
+                "entitlement_status": "unknown",
+                "latency_ms": None,
+            }
+            self._options_health_cache.set("indices_health::" + ",".join(symbols), result, settings.market_data_latest_cache_ttl_seconds)
+            return result
+        if not isinstance(self._provider, PolygonMarketDataProvider) or not self._provider.is_configured():
+            result = {
+                "probe_state": "unavailable",
+                "probe_status": "unavailable",
+                "details": "Indices data readiness requires Polygon/Massive API key and base URL configuration.",
+                "samples": [],
+                "entitlement_status": "unknown",
+                "latency_ms": None,
+            }
+            self._options_health_cache.set("indices_health::" + ",".join(symbols), result, settings.market_data_latest_cache_ttl_seconds)
+            return result
+
+        started = monotonic()
+        samples: list[dict[str, object]] = []
+        errors: list[str] = []
+        entitlement_errors = 0
+        for symbol in symbols:
+            try:
+                snapshot = self.index_snapshot(symbol)
+            except DataNotEntitledError as exc:
+                entitlement_errors += 1
+                errors.append(f"{symbol}: {_redact_provider_text(exc)}")
+                samples.append({"symbol": symbol, "value_available": False, "missing_data": ["not_entitled"]})
+                continue
+            except (ProviderUnavailableError, SymbolNotFoundError, HTTPError, URLError, TimeoutError, ValueError, KeyError, OSError) as exc:
+                errors.append(f"{symbol}: {_redact_provider_text(exc)}")
+                samples.append({"symbol": symbol, "value_available": False, "missing_data": ["index_snapshot_unavailable"]})
+                continue
+            samples.append(
+                {
+                    "symbol": snapshot.symbol,
+                    "label": snapshot.label,
+                    "latest_value": snapshot.latest_value,
+                    "previous_close": snapshot.previous_close,
+                    "day_change": snapshot.day_change,
+                    "day_change_pct": snapshot.day_change_pct,
+                    "as_of": snapshot.as_of.isoformat() if snapshot.as_of else None,
+                    "stale": snapshot.stale,
+                    "provider": snapshot.provider,
+                    "value_available": snapshot.latest_value is not None,
+                    "missing_data": snapshot.missing_data,
+                }
+            )
+
+        elapsed = round((monotonic() - started) * 1000, 2)
+        available = [sample for sample in samples if sample.get("value_available") is True]
+        if available and len(available) == len(symbols):
+            probe_state = "ok"
+            details = "Indices snapshot probe succeeded for SPX, NDX, RUT, and VIX."
+            entitlement_status = "entitled"
+        elif available:
+            probe_state = "degraded"
+            details = "Indices snapshot probe returned partial index values; missing symbols are reported explicitly."
+            entitlement_status = "unknown"
+        elif entitlement_errors:
+            probe_state = "failed_not_entitled"
+            details = "Indices snapshot probe is not entitled for requested index values."
+            entitlement_status = "not_entitled"
+        else:
+            probe_state = "failed_no_index_value"
+            details = "Indices snapshot probe did not return usable index values."
+            entitlement_status = "unknown"
+        result = {
+            "probe_state": probe_state,
+            "probe_status": probe_state,
+            "details": _redact_provider_text(details),
+            "samples": samples,
+            "sample_symbol": available[0]["symbol"] if available else (symbols[0] if symbols else None),
+            "value_available": bool(available),
+            "entitlement_status": entitlement_status,
+            "errors": [_redact_provider_text(error) for error in errors][:4],
+            "latency_ms": elapsed,
+            "last_success_at": self._provider._last_success_at.isoformat() if self._provider._last_success_at else None,
+        }
+        self._options_health_cache.set("indices_health::" + ",".join(symbols), result, settings.market_data_latest_cache_ttl_seconds)
+        return result
 
     def options_chain_preview(self, symbol: str, limit: int = 50) -> dict[str, Any] | None:
         """Returns options chain preview dict if provider is Polygon; None otherwise."""

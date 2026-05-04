@@ -8,7 +8,7 @@ import { Card, EmptyState, ErrorState, InlineFeedback, PageHeader, StatusBadge }
 import { GUIDED_ENTRY_PATH, GUIDED_FLOW_LABEL } from "@/lib/guided-workflow";
 import { fetchWorkflowApi } from "@/lib/api-client";
 import { WorkflowBanner } from "@/components/workflow-banner";
-import { formatResearchValue, type MacroContextSummary } from "@/lib/recommendations";
+import { formatResearchValue, type IndexContextSummary, type MacroContextSummary } from "@/lib/recommendations";
 
 type Recommendation = { id: number; symbol: string; created_at: string; payload: any };
 type AuditEvent = { event_type: string; timestamp: string | null; detail: string; status: string };
@@ -32,6 +32,7 @@ type DashboardPayload = {
   provider_health: { summary: string; auth: string; email: string; market_data: string; configured_provider: string; effective_read_mode: string; workflow_execution_mode: string; failure_reason?: string };
   risk_calendar?: RiskCalendarDecision;
   macro_context?: MacroContextSummary;
+  index_context?: IndexContextSummary;
   latest_market_snapshot?: { symbol: string; as_of: string; close: number; source: string; fallback_mode: boolean };
   active_recommendations: Recommendation[];
   recent_replay_runs: Array<{ id: number; symbol: string; recommendation_count: number; approved_count: number; created_at: string }>;
@@ -86,6 +87,8 @@ export default function Page() {
   const riskDecision = data?.risk_calendar?.decision;
   const macroSeries = data?.macro_context?.series ?? [];
   const macroMissing = data?.macro_context?.missing_data ?? [];
+  const indexPoints = data?.index_context?.indices ?? [];
+  const indexMissing = data?.index_context?.missing_data ?? [];
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
@@ -198,6 +201,35 @@ export default function Page() {
             Not available from provider{macroMissing.length ? `: ${macroMissing.join(", ")}` : ""}
           </div>
         )}
+      </Card>
+
+      <Card title="Index Context">
+        {indexPoints.length > 0 ? (
+          <div className="op-grid-4">
+            {indexPoints.slice(0, 4).map((point) => (
+              <div key={point.symbol}>
+                <strong>{point.symbol}</strong>
+                <div style={{ color: "#9fb0c3", marginTop: 4 }}>{point.label}</div>
+                <div style={{ marginTop: 4 }}>
+                  {formatResearchValue(point.latest_value, "Not available from provider")}
+                </div>
+                <div style={{ color: "#9fb0c3", marginTop: 4 }}>
+                  {formatResearchValue(point.day_change, "-")} / {formatResearchValue(point.day_change_pct, "-")}%
+                  {point.stale ? " | stale" : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: "#9fb0c3" }}>
+            Not available from provider{indexMissing.length ? `: ${indexMissing.join(", ")}` : ""}
+          </div>
+        )}
+        {data?.index_context?.risk_summary ? (
+          <div style={{ marginTop: 8, color: "#c7d2df" }}>
+            Deterministic market backdrop: {data.index_context.risk_summary}
+          </div>
+        ) : null}
       </Card>
 
       <div className="op-grid-2">

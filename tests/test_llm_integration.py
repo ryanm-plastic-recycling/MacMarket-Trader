@@ -83,6 +83,7 @@ class MalformedLLMClient(LLMClient):
         *,
         candidates: list[OpportunityCandidateSummary],
         better_elsewhere: list[BetterElsewhereCandidate],
+        index_context: dict[str, object] | None = None,
     ):
         return {
             "best_deterministic_candidate_id": "rec_not_supplied",
@@ -157,6 +158,7 @@ class SuccessfulOpenAILLMClient(LLMClient):
         *,
         candidates: list[OpportunityCandidateSummary],
         better_elsewhere: list[BetterElsewhereCandidate],
+        index_context: dict[str, object] | None = None,
     ) -> OpportunityComparisonMemo:
         best = candidates[0]
         return OpportunityComparisonMemo(
@@ -788,6 +790,44 @@ def test_service_refreshes_configured_provider_for_opportunity_intelligence(monk
     assert memo.provenance.provider == "openai"
     assert memo.provenance.fallback_used is False
     assert memo.best_deterministic_symbol == "AAPL"
+
+
+def test_opportunity_intelligence_carries_index_context_without_changing_deterministic_fields(monkeypatch) -> None:
+    monkeypatch.setattr("macmarket_trader.service.settings.llm_enabled", False)
+    service = RecommendationService(persist_audit=False)
+    candidate = OpportunityCandidateSummary(
+        recommendation_id="queue:SPY:event:1D:1",
+        symbol="SPY",
+        side="long",
+        timeframe="1D",
+        approved=True,
+        status="top_candidate",
+        deterministic_score=82,
+        confidence=0.72,
+        expected_rr=2.1,
+        current_recommendation_rank=1,
+    )
+    index_context = {
+        "risk_summary": "risk_on",
+        "indices": [{"symbol": "SPX", "latest_value": 5050.0, "day_change_pct": 0.5}],
+    }
+
+    memo = service.generate_opportunity_intelligence(candidates=[candidate], index_context=index_context)
+
+    assert memo.provenance is not None
+    assert memo.provenance.index_context == index_context
+    assert memo.candidates[0].approved is True
+    assert set(memo.deterministic_engine_owns) == {
+        "approved",
+        "side",
+        "entry",
+        "invalidation",
+        "targets",
+        "shares",
+        "sizing",
+        "order_status",
+        "paper_position_status",
+    }
 
 
 def test_malformed_llm_output_falls_back_to_deterministic_mock_explanation(monkeypatch) -> None:

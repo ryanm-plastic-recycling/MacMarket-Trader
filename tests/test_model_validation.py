@@ -138,6 +138,14 @@ def _create_validation_db(path: Path, *, include_daily_bars: bool = True) -> Non
                 ("SPY", "2026-01-06T00:00:00Z", 105.0),
                 ("QQQ", "2026-01-01T00:00:00Z", 200.0),
                 ("QQQ", "2026-01-06T00:00:00Z", 190.0),
+                ("SPX", "2026-01-01T00:00:00Z", 5000.0),
+                ("SPX", "2026-01-06T00:00:00Z", 5100.0),
+                ("NDX", "2026-01-01T00:00:00Z", 18000.0),
+                ("NDX", "2026-01-06T00:00:00Z", 18100.0),
+                ("RUT", "2026-01-01T00:00:00Z", 2100.0),
+                ("RUT", "2026-01-06T00:00:00Z", 2080.0),
+                ("VIX", "2026-01-01T00:00:00Z", 18.0),
+                ("VIX", "2026-01-06T00:00:00Z", 16.0),
             ]
             for idx, (symbol, date, close) in enumerate(bars, start=1):
                 conn.execute(
@@ -158,6 +166,8 @@ def test_model_validation_generates_json_and_markdown(tmp_path: Path) -> None:
     assert Path(report["evidence_markdown"]).exists()
     assert report["paper_only"] is True
     assert report["live_trading_performance"] is False
+    assert "SPX" in report["baseline_comparison"]["index_benchmarks"]
+    assert "VIX" in report["baseline_comparison"]["volatility_context"]
 
 
 def test_model_validation_redacts_secrets_from_report(tmp_path: Path) -> None:

@@ -311,6 +311,7 @@ class RecommendationService:
         *,
         candidates: list[OpportunityCandidateSummary],
         better_elsewhere: list[BetterElsewhereCandidate] | None = None,
+        index_context: dict[str, object] | None = None,
     ) -> OpportunityComparisonMemo:
         supplied_better_elsewhere = better_elsewhere or []
         validation_errors: list[str] = []
@@ -327,6 +328,7 @@ class RecommendationService:
             raw_memo = llm_client.compare_candidates(
                 candidates=candidates,
                 better_elsewhere=supplied_better_elsewhere,
+                index_context=index_context,
             )
             memo = OpportunityComparisonMemo.model_validate(raw_memo)
             self._validate_opportunity_memo(
@@ -343,6 +345,7 @@ class RecommendationService:
             memo = fallback_client.compare_candidates(
                 candidates=candidates,
                 better_elsewhere=supplied_better_elsewhere,
+                index_context=index_context,
             )
             fallback_used = True
 
@@ -366,6 +369,7 @@ class RecommendationService:
                 }
             ),
             better_elsewhere_source="deterministic_scan" if supplied_better_elsewhere else "omitted",
+            index_context=index_context,
         )
         return OpportunityComparisonMemo.model_validate(
             memo.model_copy(

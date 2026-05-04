@@ -14,6 +14,7 @@ from macmarket_trader.data.providers.market_data import (
     DataNotEntitledError,
     DeterministicFallbackMarketDataProvider,
     INDEX_SYMBOLS,
+    IndexMarketSnapshot,
     MarketDataService,
     MarketProviderHealth,
     MarketSnapshot,
@@ -1157,6 +1158,91 @@ def test_provider_health_reports_options_data_probe_ok(monkeypatch) -> None:
     assert "does not enable live trading" in str(entry["operational_impact"])
 
 
+def test_provider_health_reports_indices_data_probe_ok(monkeypatch) -> None:
+    class StubMarketDataService:
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data",
+                mode="polygon",
+                status="ok",
+                details="Polygon snapshot probe succeeded.",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+        def indices_data_health(self) -> dict[str, object]:
+            return {
+                "probe_state": "ok",
+                "probe_status": "ok",
+                "details": "Indices snapshot probe succeeded for SPX, NDX, RUT, and VIX.",
+                "sample_symbol": "SPX",
+                "value_available": True,
+                "entitlement_status": "entitled",
+                "samples": [
+                    {"symbol": "SPX", "latest_value": 5050.0, "day_change_pct": 0.4, "value_available": True},
+                    {"symbol": "NDX", "latest_value": 18000.0, "day_change_pct": 0.6, "value_available": True},
+                ],
+                "latency_ms": 12.4,
+            }
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    entry = admin_routes._indices_data_readiness()
+
+    assert entry["provider"] == "indices_data"
+    assert entry["status"] == "ok"
+    assert entry["probe_state"] == "ok"
+    assert entry["sample_symbol"] == "SPX"
+    assert entry["value_available"] is True
+    assert entry["index_samples"][0]["symbol"] == "SPX"
+    assert entry["entitlement_status"] == "entitled"
+    assert "Opportunity Intelligence context" in str(entry["operational_impact"])
+    assert "does not enable live trading" in str(entry["operational_impact"])
+
+
+def test_provider_health_indices_not_entitled_is_sanitized(monkeypatch) -> None:
+    secret = "polygon-secret-index-value"
+
+    class StubMarketDataService:
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(
+                provider="market_data",
+                mode="polygon",
+                status="ok",
+                details="Polygon snapshot probe succeeded.",
+                configured=True,
+                feed="stocks",
+                sample_symbol=sample_symbol,
+            )
+
+        def indices_data_health(self) -> dict[str, object]:
+            return {
+                "probe_state": "failed_not_entitled",
+                "probe_status": "failed_not_entitled",
+                "details": f"Not entitled to index data apiKey={secret}",
+                "sample_symbol": "SPX",
+                "samples": [],
+                "entitlement_status": "not_entitled",
+            }
+
+    monkeypatch.setattr(admin_routes, "market_data_service", StubMarketDataService())
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", secret)
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+
+    entry = admin_routes._indices_data_readiness()
+
+    assert entry["status"] == "degraded"
+    assert entry["probe_state"] == "failed_not_entitled"
+    assert entry["entitlement_state"] == "not_entitled"
+    assert entry["details"] == "Index data entitlement required for SPX/NDX/RUT/VIX snapshot values."
+    assert secret not in str(entry)
+
+
 def test_provider_health_options_data_probe_failure_sanitizes_error(monkeypatch) -> None:
     secret = "polygon-secret-health"
 
@@ -1388,23 +1474,59 @@ def test_polygon_snapshot_uses_normalized_ticker(monkeypatch) -> None:
     monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
     provider = PolygonMarketDataProvider()
 
-    captured_paths: list[str] = []
+    captured: list[tuple[str, dict[str, str]]] = []
 
     def fake_request_json(path: str, query: dict[str, str]) -> dict[str, object]:
-        captured_paths.append(path)
+        captured.append((path, query))
         return {
-            "ticker": {
-                "day": {"o": 5200.0, "h": 5210.0, "l": 5190.0, "c": 5205.0, "v": 500_000, "t": 1775174340000},
-                "prevDay": {"c": 5195.0},
-                "lastTrade": {"p": 5206.0, "t": 1775174345000},
-            }
+            "results": [
+                {
+                    "ticker": "I:VIX",
+                    "name": "Cboe Volatility Index",
+                    "value": 18.25,
+                    "last_updated": 1775174345000000000,
+                    "session": {"previous_close": 19.0, "change": -0.75, "change_percent": -3.9474},
+                }
+            ]
         }
 
     monkeypatch.setattr(provider, "_request_json", fake_request_json)
     snapshot = provider.fetch_latest_snapshot(symbol="VIX", timeframe="1D")
 
     assert snapshot.symbol == "VIX"
-    assert any("I:VIX" in p for p in captured_paths), f"Expected I:VIX in path, got: {captured_paths}"
+    assert snapshot.close == 18.25
+    assert captured == [("/v3/snapshot/indices", {"ticker": "I:VIX", "limit": "1"})]
+
+
+def test_indices_data_health_reports_values_and_no_execution_boundary(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    service = MarketDataService()
+
+    def fake_index_snapshot(symbol: str):
+        return IndexMarketSnapshot(
+            symbol=symbol,
+            label=f"{symbol} index",
+            latest_value=5000.0,
+            previous_close=4975.0,
+            day_change=25.0,
+            day_change_pct=0.5025,
+            as_of=datetime(2026, 5, 4, 14, 30, tzinfo=UTC),
+            stale=False,
+            provider="polygon",
+            missing_data=[],
+        )
+
+    monkeypatch.setattr(service, "index_snapshot", fake_index_snapshot)
+
+    health = service.indices_data_health(sample_symbols=("SPX", "NDX", "RUT", "VIX"))
+
+    assert health["probe_state"] == "ok"
+    assert health["entitlement_status"] == "entitled"
+    assert health["value_available"] is True
+    assert len(health["samples"]) == 4
+    assert "live trading" not in str(health).lower()
 
 
 def test_symbol_not_found_raised_when_polygon_returns_empty_results(monkeypatch) -> None:

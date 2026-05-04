@@ -81,6 +81,29 @@ class NewsContextSummary(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class IndexContextPoint(BaseModel):
+    symbol: str
+    label: str
+    latest_value: float | None = None
+    previous_close: float | None = None
+    day_change: float | None = None
+    day_change_pct: float | None = None
+    as_of: str | None = None
+    stale: bool = False
+    provider: str = "polygon"
+    missing_data: list[str] = Field(default_factory=list)
+
+
+class IndexContextSummary(BaseModel):
+    provider: str = "polygon"
+    mode: str = "disabled"
+    generated_at: datetime = Field(default_factory=utc_now)
+    indices: list[IndexContextPoint] = Field(default_factory=list)
+    risk_summary: str | None = None
+    missing_data: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ProviderContextSummary(BaseModel):
     market_data_source: str | None = None
     market_data_fallback_mode: bool = False
@@ -207,6 +230,7 @@ class AnalysisPacket(BaseModel):
     provider_context: ProviderContextSummary | None = None
     macro_context: MacroContextSummary | None = None
     news_context: NewsContextSummary | None = None
+    index_context: IndexContextSummary | None = None
     risk_calendar: RiskCalendarSummary | None = None
     llm_explanation: LlmExplanationSummary | None = None
     paper_lifecycle: PaperLifecycleSummary | None = None
@@ -342,6 +366,32 @@ def _packet_news_lines(packet: dict[str, Any], *, limit: int = 5) -> list[str]:
     return lines
 
 
+def _packet_index_lines(packet: dict[str, Any], *, limit: int = 5) -> list[str]:
+    index_context = packet.get("index_context") if isinstance(packet.get("index_context"), dict) else {}
+    indices = index_context.get("indices") if isinstance(index_context.get("indices"), list) else []
+    lines: list[str] = []
+    for item in indices[:limit]:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip()
+        label = str(item.get("label") or symbol).strip()
+        if not symbol:
+            continue
+        stale = " | stale" if item.get("stale") else ""
+        lines.append(
+            f"{symbol} ({label}): {_format_packet_value(item.get('latest_value'))} "
+            f"| change {_format_packet_value(item.get('day_change'))} / {_format_packet_value(item.get('day_change_pct'))}%"
+            f"{stale}"
+        )
+    missing = index_context.get("missing_data") if isinstance(index_context.get("missing_data"), list) else []
+    if not lines and missing:
+        lines.append("Index context unavailable: " + ", ".join(_format_packet_value(item) for item in missing[:4]))
+    risk_summary = str(index_context.get("risk_summary") or "").strip()
+    if risk_summary:
+        lines.append(f"Deterministic risk-on/risk-off summary: {redact_analysis_packet_text(risk_summary)}")
+    return lines
+
+
 def _packet_option_leg_line(leg: dict[str, Any]) -> str:
     label = _format_packet_value(leg.get("role") or leg.get("label") or "leg")
     side = _format_packet_value(leg.get("side") or leg.get("action"), "")
@@ -465,6 +515,9 @@ def render_analysis_packet_markdown(packet: AnalysisPacket | dict[str, Any]) -> 
         [
             "## Macro Context",
             _markdown_list(_packet_macro_lines(safe)),
+            "",
+            "## Index Context",
+            _markdown_list(_packet_index_lines(safe)),
             "",
             "## News Context",
             _markdown_list(_packet_news_lines(safe)),
@@ -669,6 +722,95 @@ def build_news_context_summary(symbol: str, *, limit: int = 5, now: datetime | N
     return summary
 
 
+INDEX_CONTEXT_SYMBOLS: tuple[tuple[str, str], ...] = (
+    ("SPX", "S&P 500"),
+    ("NDX", "Nasdaq 100"),
+    ("RUT", "Russell 2000"),
+    ("VIX", "Cboe Volatility Index"),
+)
+
+
+def _index_risk_summary(points: list[IndexContextPoint]) -> str | None:
+    values = {point.symbol: point.day_change_pct for point in points if point.day_change_pct is not None}
+    if not values:
+        return None
+    equity_changes = [value for symbol, value in values.items() if symbol in {"SPX", "NDX", "RUT"}]
+    vix_change = values.get("VIX")
+    if equity_changes and sum(equity_changes) / len(equity_changes) > 0.25 and (vix_change is None or vix_change <= 0):
+        return "risk_on"
+    if equity_changes and sum(equity_changes) / len(equity_changes) < -0.25 and (vix_change is None or vix_change >= 0):
+        return "risk_off"
+    return "mixed"
+
+
+def build_index_context_summary(
+    *,
+    service: Any | None = None,
+    now: datetime | None = None,
+) -> IndexContextSummary:
+    current = now or utc_now()
+    mode = "polygon" if settings.polygon_enabled else "disabled"
+    summary = IndexContextSummary(mode=mode, generated_at=current)
+    if mode != "polygon":
+        summary.missing_data.append("polygon_not_selected")
+        summary.warnings.append("Index context unavailable because Polygon/Massive market data is not selected.")
+        return summary
+
+    try:
+        market_service = service
+        if market_service is None:
+            from macmarket_trader.data.providers.registry import build_market_data_service
+
+            market_service = build_market_data_service()
+        fetch_snapshot = getattr(market_service, "index_snapshot", None)
+        if not callable(fetch_snapshot):
+            summary.missing_data.append("index_snapshot_service")
+            summary.warnings.append("Index context unavailable: market data service does not expose index snapshots.")
+            return summary
+        for symbol, label in INDEX_CONTEXT_SYMBOLS:
+            try:
+                snapshot = fetch_snapshot(symbol)
+            except Exception as exc:  # noqa: BLE001
+                summary.indices.append(
+                    IndexContextPoint(
+                        symbol=symbol,
+                        label=label,
+                        stale=True,
+                        missing_data=["index_snapshot_unavailable"],
+                    )
+                )
+                summary.warnings.append(f"{symbol} index context unavailable: {_redacted_error(exc)}")
+                continue
+            point = IndexContextPoint(
+                symbol=str(getattr(snapshot, "symbol", symbol) or symbol),
+                label=str(getattr(snapshot, "label", label) or label),
+                latest_value=_safe_float(getattr(snapshot, "latest_value", None)),
+                previous_close=_safe_float(getattr(snapshot, "previous_close", None)),
+                day_change=_safe_float(getattr(snapshot, "day_change", None)),
+                day_change_pct=_safe_float(getattr(snapshot, "day_change_pct", None)),
+                as_of=getattr(snapshot, "as_of", None).isoformat() if getattr(snapshot, "as_of", None) else None,
+                stale=bool(getattr(snapshot, "stale", False)),
+                provider=str(getattr(snapshot, "provider", "polygon") or "polygon"),
+                missing_data=[str(item) for item in (getattr(snapshot, "missing_data", None) or []) if str(item).strip()],
+            )
+            if point.latest_value is None:
+                point.missing_data.append("index_latest_value")
+            summary.indices.append(point)
+    except Exception as exc:  # noqa: BLE001
+        summary.missing_data.append("index_context_provider")
+        summary.warnings.append(f"Index context unavailable: {_redacted_error(exc)}")
+        return summary
+
+    for point in summary.indices:
+        for item in point.missing_data:
+            summary.missing_data.append(f"{point.symbol}:{item}")
+    summary.missing_data = sorted(set(summary.missing_data))
+    summary.risk_summary = _index_risk_summary(summary.indices)
+    if not summary.indices:
+        summary.missing_data.append("index_context")
+    return summary
+
+
 def build_provider_context_summary(
     *,
     market_data_source: str | None,
@@ -845,6 +987,7 @@ def build_analysis_packet(
     session_policy: str | None = None,
     macro_context: MacroContextSummary | None = None,
     news_context: NewsContextSummary | None = None,
+    index_context: IndexContextSummary | None = None,
     provider_context: ProviderContextSummary | None = None,
     risk_calendar: dict[str, Any] | None = None,
     paper_lifecycle: PaperLifecycleSummary | None = None,
@@ -855,6 +998,8 @@ def build_analysis_packet(
         macro_context = build_macro_context_summary()
     if news_context is None:
         news_context = build_news_context_summary(symbol)
+    if index_context is None:
+        index_context = build_index_context_summary()
     if provider_context is None:
         provider_context = build_provider_context_summary(
             market_data_source=market_data_source,
@@ -875,6 +1020,8 @@ def build_analysis_packet(
         missing.extend(f"macro:{item}" for item in macro_context.missing_data)
     if news_context.missing_data:
         missing.extend(f"news:{item}" for item in news_context.missing_data)
+    if index_context.missing_data:
+        missing.extend(f"index:{item}" for item in index_context.missing_data)
     if options and options.missing_data:
         missing.extend(f"options:{item}" for item in options.missing_data)
     return AnalysisPacket(
@@ -885,7 +1032,7 @@ def build_analysis_packet(
         source=market_data_source,
         session_policy=session_policy,
         missing_data=sorted(set(missing)),
-        warnings=sorted(set([*macro_context.warnings, *news_context.warnings])),
+        warnings=sorted(set([*macro_context.warnings, *news_context.warnings, *index_context.warnings])),
         provenance={
             "schema": "analysis_packet.v1",
             "generated_from": "backend_deterministic_context",
@@ -895,6 +1042,7 @@ def build_analysis_packet(
         provider_context=provider_context,
         macro_context=macro_context,
         news_context=news_context,
+        index_context=index_context,
         risk_calendar=risk_calendar_summary_from_payload(risk_calendar),
         llm_explanation=_llm_summary_from_payload(source_payload),
         paper_lifecycle=paper_lifecycle,

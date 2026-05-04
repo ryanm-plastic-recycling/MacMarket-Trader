@@ -16,6 +16,8 @@ from typing import Any
 DEFAULT_EVIDENCE_DIR = Path(".tmp") / "evidence"
 DEFAULT_DATABASE = Path("macmarket_trader.db")
 BASELINE_SYMBOLS = ("SPY", "QQQ")
+INDEX_BENCHMARK_SYMBOLS = ("SPX", "NDX", "RUT")
+VOLATILITY_CONTEXT_SYMBOLS = ("VIX",)
 SECRET_PATTERNS = [
     re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}\b"),
     re.compile(r"\bsk_(?:test|live)_[A-Za-z0-9]{12,}\b"),
@@ -328,16 +330,19 @@ def build_attribution(
 
 
 def fetch_baseline_rows(conn: sqlite3.Connection, symbol: str) -> list[dict[str, Any]]:
+    normalized = symbol.upper()
+    candidates = (normalized, f"I:{normalized}") if normalized in {"SPX", "NDX", "RUT", "VIX", "DJI"} else (normalized,)
+    placeholders = ",".join("?" for _ in candidates)
     return [
         dict(row)
         for row in conn.execute(
-            """
+            f"""
             SELECT symbol, bar_date, close
             FROM daily_bars
-            WHERE UPPER(symbol) = ?
+            WHERE UPPER(symbol) IN ({placeholders})
             ORDER BY bar_date ASC
             """,
-            (symbol.upper(),),
+            candidates,
         ).fetchall()
     ]
 
@@ -355,19 +360,22 @@ def analyze_baseline(
             "missing_data": ["daily_bars table not available; SPY/QQQ baseline not computed."],
         }
     baselines: dict[str, dict[str, Any]] = {}
-    for symbol in BASELINE_SYMBOLS:
+    index_benchmarks: dict[str, dict[str, Any]] = {}
+    volatility_context: dict[str, dict[str, Any]] = {}
+
+    def _compute(symbol: str, bucket: dict[str, dict[str, Any]]) -> None:
         rows = fetch_baseline_rows(conn, symbol)
         if len(rows) < 2:
             missing.append(f"{symbol} has fewer than two daily bars.")
-            continue
+            return
         first = rows[0]
         last = rows[-1]
         first_close = safe_float(first.get("close"))
         last_close = safe_float(last.get("close"))
         if first_close is None or last_close is None or first_close <= 0:
             missing.append(f"{symbol} baseline bars have invalid close values.")
-            continue
-        baselines[symbol] = {
+            return
+        bucket[symbol] = {
             "start_date": first.get("bar_date"),
             "end_date": last.get("bar_date"),
             "start_close": first_close,
@@ -375,11 +383,23 @@ def analyze_baseline(
             "return_pct": round(((last_close - first_close) / first_close) * 100, 6),
             "bar_count": len(rows),
         }
+
+    for symbol in BASELINE_SYMBOLS:
+        _compute(symbol, baselines)
+    for symbol in INDEX_BENCHMARK_SYMBOLS:
+        _compute(symbol, index_benchmarks)
+    for symbol in VOLATILITY_CONTEXT_SYMBOLS:
+        _compute(symbol, volatility_context)
     return {
-        "status": "available" if baselines else "missing_data",
+        "status": "available" if baselines or index_benchmarks else "missing_data",
         "comparison_basis": "baseline close-to-close return; paper results remain paper-only and are not live performance",
+        "tradeable_proxy_baselines": ["SPY", "QQQ"],
+        "index_benchmark_symbols": ["SPX", "NDX", "RUT"],
+        "volatility_context_symbols": ["VIX"],
         "paper_trade_return_pct": trade_summary.get("paper_trade_return_pct"),
         "baselines": baselines,
+        "index_benchmarks": index_benchmarks,
+        "volatility_context": volatility_context,
         "missing_data": missing,
     }
 
@@ -507,6 +527,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Max drawdown: `{trades['max_drawdown']}`",
         f"- Baseline comparison status: `{baseline['status']}`",
         f"- LLM used for metrics: `{report['llm_used_for_metrics']}`",
+        "",
+        "## Benchmark Context",
+        "",
+        "- Tradeable proxy baselines: `SPY`, `QQQ`",
+        "- Index benchmarks when data exists: `SPX`, `NDX`, `RUT`",
+        "- Volatility context when data exists: `VIX`",
         "",
         "## Attribution Sections",
         "",

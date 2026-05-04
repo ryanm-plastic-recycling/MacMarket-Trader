@@ -68,6 +68,7 @@ class LLMClient(ABC):
         *,
         candidates: list[OpportunityCandidateSummary],
         better_elsewhere: list[BetterElsewhereCandidate],
+        index_context: dict[str, object] | None = None,
     ) -> OpportunityComparisonMemo:
         """Compare backend-supplied deterministic candidates without changing trade fields."""
 

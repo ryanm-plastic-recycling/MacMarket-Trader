@@ -85,6 +85,8 @@ function AnalysisPacketContext({ packet }: { packet?: AnalysisPacket | null }) {
   const macroMissing = packet?.macro_context?.missing_data ?? [];
   const headlines = packet?.news_context?.headlines ?? [];
   const newsMissing = packet?.news_context?.missing_data ?? [];
+  const indexPoints = packet?.index_context?.indices ?? [];
+  const indexMissing = packet?.index_context?.missing_data ?? [];
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <div style={{ display: "grid", gap: 6 }}>
@@ -109,6 +111,21 @@ function AnalysisPacketContext({ packet }: { packet?: AnalysisPacket | null }) {
             </div>
           </div>
         )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider{newsMissing.length ? `: ${newsMissing.join(", ")}` : ""}</div>}
+      </div>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: 1, color: "var(--op-muted, #7a8999)" }}>Index Context</div>
+        {indexPoints.length > 0 ? indexPoints.slice(0, 5).map((point) => (
+          <div key={point.symbol} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <span>{point.symbol} ({point.label})</span>
+            <span style={{ color: "var(--op-muted, #7a8999)" }}>
+              {formatResearchValue(point.latest_value, "Not available from provider")} | {formatResearchValue(point.day_change_pct, "-")}%
+              {point.stale ? " | stale" : ""}
+            </span>
+          </div>
+        )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider{indexMissing.length ? `: ${indexMissing.join(", ")}` : ""}</div>}
+        {packet?.index_context?.risk_summary ? (
+          <div style={{ color: "var(--op-muted, #7a8999)" }}>Backdrop: {packet.index_context.risk_summary}</div>
+        ) : null}
       </div>
     </div>
   );

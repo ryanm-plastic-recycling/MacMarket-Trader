@@ -755,6 +755,7 @@ describe("OptionsResearchPreview", () => {
 
     expect(html).toContain("Preview Analysis Packet");
     expect(html).toContain("Macro Context");
+    expect(html).toContain("Index Context");
     expect(html).toContain("News Context");
     expect(html).toContain("10Y Treasury yield");
     expect(html).toContain("SPY macro desk update");

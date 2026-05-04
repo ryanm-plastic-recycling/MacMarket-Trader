@@ -498,6 +498,7 @@ class OpportunityIntelligenceProvenance(BaseModel):
     candidate_ids: list[str] = Field(default_factory=list)
     scanned_symbols: list[str] = Field(default_factory=list)
     better_elsewhere_source: Literal["deterministic_scan", "omitted"] = "omitted"
+    index_context: dict[str, object] | None = None
 
 
 class OpportunityComparisonMemo(BaseModel):

@@ -313,6 +313,7 @@ function OptionsAnalysisPacketPreview({
 }) {
   if (!packet) return null;
   const macroSeries = packet.macro_context?.series ?? [];
+  const indexPoints = packet.index_context?.indices ?? [];
   const headlines = packet.news_context?.headlines ?? [];
   const options = packet.options ?? null;
   const legs = options?.legs ?? [];
@@ -344,6 +345,17 @@ function OptionsAnalysisPacketPreview({
               <div style={{ color: "var(--op-muted, #7a8999)", fontSize: "0.82rem" }}>
                 {[item.publisher, item.published_utc?.slice(0, 10), item.sentiment].filter(Boolean).join(" · ")}
               </div>
+            </div>
+          )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider</div>}
+        </div>
+        <div>
+          <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4 }}>Index Context</div>
+          {indexPoints.length > 0 ? indexPoints.slice(0, 4).map((point) => (
+            <div key={point.symbol}>
+              {point.symbol}: {formatResearchValue(point.latest_value, "Not available from provider")}
+              {" | "}
+              {formatResearchValue(point.day_change_pct, "-")}%
+              {point.stale ? " | stale" : ""}
             </div>
           )) : <div style={{ color: "var(--op-muted, #7a8999)" }}>Not available from provider</div>}
         </div>
