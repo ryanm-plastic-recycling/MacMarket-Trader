@@ -36,6 +36,24 @@ def _quote_snapshot(option_symbol: str, mark: float) -> OptionContractSnapshot:
     )
 
 
+def _prior_close_snapshot(option_symbol: str, mark: float) -> OptionContractSnapshot:
+    return OptionContractSnapshot(
+        option_symbol=option_symbol,
+        underlying_symbol="AAPL",
+        provider="polygon",
+        endpoint="/v3/snapshot/options/AAPL/{option}",
+        mark_price=mark,
+        mark_method="prior_close_fallback",
+        as_of=datetime(2026, 5, 2, 20, 0, tzinfo=timezone.utc),
+        stale=True,
+        bid=None,
+        ask=None,
+        latest_trade_price=None,
+        prior_close=mark,
+        missing_fields=["fresh_option_mark"],
+    )
+
+
 def _seed_and_approve_user() -> None:
     client.get('/user/me', headers={'Authorization': 'Bearer user-token'})
     with SessionLocal() as session:
@@ -239,11 +257,97 @@ def test_analysis_setup_snaps_options_research_legs_to_provider_contracts(monkey
     structure = resp.json()["option_structure"]
     assert structure["contract_resolution_status"] == "resolved"
     assert structure["paper_persistence_allowed"] is True
+    assert structure["structure_readiness"] == "ready"
+    assert structure["paper_open_readiness"] == "ready"
+    assert structure["expected_range_readiness"] == "ready"
+    assert resp.json()["paper_open_readiness"] == "ready"
     assert structure["contract_resolution_summary"] == "Selected listed contracts from provider chain."
     assert structure["fresh_provider_pricing_available"] is True
     assert structure["opening_price_source"] == "quote_mid"
     assert all(leg["option_symbol"].startswith("O:AAPL260516") for leg in structure["legs"])
     assert all(leg["target_strike"] != leg["strike"] for leg in structure["legs"])
+
+
+def test_analysis_setup_separates_prior_close_context_from_paper_open_readiness(monkeypatch) -> None:
+    monkeypatch.setattr(admin_routes, "utc_now", lambda: datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(settings, "polygon_enabled", True)
+    monkeypatch.setattr(settings, "polygon_api_key", "polygon-key")
+    monkeypatch.setattr(settings, "polygon_base_url", "https://api.polygon.io")
+    expiration = date(2026, 5, 16)
+
+    def _row(right: str, strike: float) -> dict[str, object]:
+        suffix = "C" if right == "call" else "P"
+        return {
+            "ticker": f"O:AAPL260516{suffix}{int(strike * 1000):08d}",
+            "contract_type": right,
+            "strike_price": strike,
+            "expiration_date": expiration.isoformat(),
+            "open_interest": 100,
+        }
+
+    class PriorCloseOnlyOptionsService:
+        def historical_bars(self, symbol: str, timeframe: str, limit: int):
+            return DeterministicFallbackMarketDataProvider().fetch_historical_bars(symbol, timeframe, limit), "polygon", False
+
+        def latest_snapshot(self, symbol: str, timeframe: str):
+            return DeterministicFallbackMarketDataProvider().fetch_latest_snapshot(symbol, timeframe)
+
+        def options_chain_preview(self, symbol: str, limit: int = 50):
+            return {
+                "underlying": symbol,
+                "expiry": expiration.isoformat(),
+                "calls": [{"ticker": "O:AAPL260516C00140000", "strike": 140.0, "expiry": expiration.isoformat()}],
+                "puts": [{"ticker": "O:AAPL260516P00125000", "strike": 125.0, "expiry": expiration.isoformat()}],
+                "source": "test",
+            }
+
+        def option_contracts(self, *, underlying_symbol: str, expiration, option_type: str | None = None, strike_gte=None, strike_lte=None, limit: int = 1000):
+            del underlying_symbol, option_type, strike_gte, strike_lte, limit
+            assert expiration == date(2026, 5, 16)
+            return [
+                _row("put", 120.0),
+                _row("put", 125.0),
+                _row("put", 130.0),
+                _row("call", 135.0),
+                _row("call", 140.0),
+                _row("call", 145.0),
+            ]
+
+        def option_contract_snapshot(self, *, underlying_symbol: str, option_symbol: str):
+            del underlying_symbol
+            return _prior_close_snapshot(option_symbol, 0.75)
+
+        def provider_health(self, sample_symbol: str = "AAPL") -> MarketProviderHealth:
+            return MarketProviderHealth(provider="market_data", mode="polygon", status="ok", details="stub", configured=True, feed="stocks", sample_symbol=sample_symbol)
+
+    monkeypatch.setattr(admin_routes, "market_data_service", PriorCloseOnlyOptionsService())
+    _seed_and_approve_user()
+
+    resp = client.get(
+        "/user/analysis/setup",
+        params={"req_symbol": "AAPL", "market_mode": "options", "strategy": "Iron Condor"},
+        headers={"Authorization": "Bearer user-token"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    structure = payload["option_structure"]
+    assert structure["contract_resolution_status"] == "resolved"
+    assert structure["structure_validation_status"] == "valid"
+    assert structure["structure_readiness"] == "ready"
+    assert structure["fresh_provider_pricing_available"] is False
+    assert structure["opening_price_source"] == "prior_close_fallback"
+    assert structure["paper_persistence_allowed"] is False
+    assert structure["paper_open_readiness"] == "blocked"
+    assert structure["paper_open_readiness_reason"] == "fresh_option_mark_required_for_paper_open"
+    assert structure["expected_range_readiness"] == "warning"
+    assert payload["structure_readiness"] == "ready"
+    assert payload["paper_open_readiness"] == "blocked"
+    assert payload["expected_range_readiness"] == "warning"
+    assert payload["expected_range"]["status"] == "computed"
+    assert payload["expected_range"]["lower_bound"] < payload["expected_range"]["upper_bound"]
+    assert structure["max_profit"] is not None
+    assert structure["max_loss"] is not None
 
 
 def test_analysis_setup_blocks_iron_condor_when_provider_chain_missing_puts(monkeypatch) -> None:
@@ -293,6 +397,9 @@ def test_analysis_setup_blocks_iron_condor_when_provider_chain_missing_puts(monk
     assert structure["paper_persistence_allowed"] is False
     assert structure["contract_resolution_status"] == "unresolved"
     assert structure["contract_resolution_summary"] == "Cannot build iron condor: provider returned incomplete chain; puts missing."
+    assert structure["structure_readiness"] == "blocked"
+    assert structure["paper_open_readiness"] == "blocked"
+    assert structure["expected_range_readiness"] == "blocked"
     assert structure["max_profit"] is None
     assert structure["max_loss"] is None
     assert structure["breakeven_low"] is None
@@ -375,6 +482,9 @@ def test_analysis_setup_blocks_iron_condor_when_listed_contracts_are_far_from_ta
     assert structure["paper_persistence_allowed"] is False
     assert structure["contract_resolution_status"] == "unresolved"
     assert "Unable to resolve listed contract near target strike" in structure["contract_resolution_summary"]
+    assert structure["structure_readiness"] == "blocked"
+    assert structure["paper_open_readiness"] == "blocked"
+    assert structure["expected_range_readiness"] == "blocked"
     assert "snap" in structure["contract_resolution_summary"]
     assert "exceeds allowed threshold" in structure["contract_resolution_summary"]
     assert structure["max_profit"] is None
@@ -509,6 +619,9 @@ def test_analysis_setup_selects_distinct_ordered_listed_iron_condor_contracts(mo
     assert structure["contract_resolution_status"] == "resolved"
     assert structure["structure_validation_status"] == "valid"
     assert structure["paper_persistence_allowed"] is True
+    assert structure["structure_readiness"] == "ready"
+    assert structure["paper_open_readiness"] == "ready"
+    assert structure["expected_range_readiness"] == "ready"
     assert strikes == sorted(strikes)
     assert len(set(strikes)) == 4
     assert all(leg["option_symbol"].startswith("O:AAPL260516") for leg in structure["legs"])
@@ -707,6 +820,62 @@ def test_expected_range_schema_serialization_contract() -> None:
     assert payload['status'] == 'computed'
 
 
+def test_options_readiness_blocks_expected_range_when_iv_missing() -> None:
+    as_of = datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc)
+    option_structure = {
+        "type": "iron_condor",
+        "contract_resolution_status": "resolved",
+        "structure_validation_status": "valid",
+        "paper_persistence_allowed": True,
+        "fresh_provider_pricing_available": True,
+        "opening_price_source": "quote_mid",
+        "dte": 13,
+        "legs": [],
+    }
+    payload: dict[str, object] = {}
+    expected_range = admin_routes._build_options_expected_range(
+        latest_close=100.0,
+        iv_snapshot=None,
+        dte=13,
+        as_of=as_of,
+    )
+    admin_routes._apply_options_research_readiness(payload, option_structure, expected_range)
+
+    assert expected_range.status == "blocked"
+    assert expected_range.reason == "missing_iv_snapshot"
+    assert option_structure["structure_readiness"] == "ready"
+    assert option_structure["paper_open_readiness"] == "ready"
+    assert option_structure["expected_range_readiness"] == "blocked"
+    assert payload["expected_range_readiness"] == "blocked"
+
+
+def test_options_expected_range_blocks_missing_dte_before_computing() -> None:
+    as_of = datetime(2026, 5, 3, 14, 0, tzinfo=timezone.utc)
+    option_structure = {
+        "type": "iron_condor",
+        "contract_resolution_status": "resolved",
+        "structure_validation_status": "valid",
+        "paper_persistence_allowed": True,
+        "fresh_provider_pricing_available": True,
+        "opening_price_source": "quote_mid",
+        "dte": None,
+        "legs": [],
+    }
+    payload: dict[str, object] = {}
+    expected_range = admin_routes._options_expected_range_for_structure(
+        payload,
+        option_structure=option_structure,
+        latest_close=100.0,
+        iv_snapshot=0.24,
+        as_of=as_of,
+    )
+
+    assert expected_range["status"] == "blocked"
+    assert expected_range["reason"] == "missing_dte"
+    assert option_structure["expected_range_readiness"] == "blocked"
+    assert payload["expected_range_readiness"] == "blocked"
+
+
 def test_analysis_setup_expected_range_blocked_reason_for_low_iv() -> None:
     _seed_and_approve_user()
     resp = client.get(
@@ -718,6 +887,8 @@ def test_analysis_setup_expected_range_blocked_reason_for_low_iv() -> None:
     payload = resp.json()
     assert payload['expected_range']['status'] == 'blocked'
     assert payload['expected_range']['reason'] == 'insufficient_iv_quality'
+    assert payload['expected_range_readiness'] == 'blocked'
+    assert payload['option_structure']['expected_range_readiness'] == 'blocked'
 
 
 def test_analysis_setup_expected_range_omitted_reason_for_non_iron_condor() -> None:

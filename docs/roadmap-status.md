@@ -1,6 +1,22 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-05-03
+Last updated: 2026-05-04
+
+## 2026-05-04 Update - Options Research Readiness Split
+Options research payloads now separate listed-contract structure readiness,
+Expected Range research readiness, and paper-open pricing readiness. Valid
+listed-contract structures can remain `structure_readiness=ready` and render
+Expected Range research context even when sampled option snapshots only provide
+stale `prior_close_fallback` marks. In that state, Expected Range is labeled as
+stale research context while `paper_open_readiness=blocked` keeps the fresh
+`quote_mid` or `last_trade` requirement intact for persisted paper option
+opens.
+
+The Analysis and options preview UI now shows separate Structure, Expected
+Range, and Paper Open states instead of presenting one broad "ready" workbench
+label. No option marks are fabricated, Options Position Review continues to
+avoid stale prior-close P&L, and no live trading, broker routing, automatic
+exits, rolls, or adjustments were added.
 
 ## 2026-05-03 Update - SPX Index-Options Probe Diagnostics
 `index_options_data` Provider Health now distinguishes SPX/index option

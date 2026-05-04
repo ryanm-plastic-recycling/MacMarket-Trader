@@ -48,6 +48,7 @@ import {
   formatOptionsOpeningPriceSource,
   type OptionsPaperCloseResponse,
   type OptionsPaperOpenResponse,
+  type OptionsReadinessState,
   type OptionsReplayPreviewAvailability,
   type OptionsReplayPreviewResponse,
   type OptionsResearchSetup,
@@ -183,6 +184,33 @@ function getExpectedRangeTone(
   if (status === "computed") return "good";
   if (status === "blocked" || status === "omitted") return "warn";
   return "neutral";
+}
+
+function normalizeReadiness(value: unknown): OptionsReadinessState {
+  if (value === "ready" || value === "blocked" || value === "warning" || value === "unavailable") {
+    return value;
+  }
+  return "unavailable";
+}
+
+function getReadinessTone(value: OptionsReadinessState): "good" | "warn" | "neutral" {
+  if (value === "ready") return "good";
+  if (value === "blocked" || value === "warning") return "warn";
+  return "neutral";
+}
+
+function getExpectedRangeReadinessLabel(value: OptionsReadinessState, status: string | null | undefined): string {
+  if (value === "ready") return status === "computed" ? "Computed" : "Ready";
+  if (value === "warning") return "Stale context";
+  if (value === "blocked") return "Blocked";
+  return "Unavailable";
+}
+
+function getPaperOpenReadinessLabel(value: OptionsReadinessState): string {
+  if (value === "ready") return "Ready";
+  if (value === "blocked") return "Blocked fresh marks required";
+  if (value === "warning") return "Warning";
+  return "Unavailable";
 }
 
 function getPaperLifecycleLabel(
@@ -530,9 +558,48 @@ export function OptionsStructureRiskSummary({
   const expectedRangeStatus = setup.expected_range
     ? formatOptionsReplayToken(setup.expected_range.status)
     : "Unavailable";
+  const structureReadiness = normalizeReadiness(structure?.structure_readiness ?? setup.structure_readiness);
+  const expectedRangeReadiness = normalizeReadiness(structure?.expected_range_readiness ?? setup.expected_range_readiness);
+  const paperOpenReadiness = normalizeReadiness(structure?.paper_open_readiness ?? setup.paper_open_readiness);
+  const structureReadinessSummary =
+    structure?.structure_readiness_summary ?? setup.structure_readiness_summary ?? (
+      structureReadiness === "ready"
+        ? "Listed contracts resolved."
+        : structureReadiness === "blocked"
+          ? structure?.structure_validation_summary ?? structure?.contract_resolution_summary ?? "Contract selection or payoff validation blocked this structure."
+          : "Options structure unavailable."
+    );
+  const expectedRangeReadinessSummary =
+    structure?.expected_range_readiness_summary ?? setup.expected_range_readiness_summary ?? (
+      expectedRangeReadiness === "warning"
+        ? "Expected range uses stale/prior-close IV context."
+        : expectedRangeReadiness === "ready"
+          ? "Expected range computed from available IV, DTE, and underlying context."
+          : expectedRangeReadiness === "blocked"
+            ? getExpectedRangeReasonText(setup.expected_range) ?? "Expected range missing required context."
+            : "Expected range context unavailable."
+    );
+  const paperOpenReadinessSummary =
+    structure?.paper_open_readiness_summary ?? setup.paper_open_readiness_summary ?? (
+      paperOpenReadiness === "ready"
+        ? "Fresh quote/trade marks available; paper open checks can proceed."
+        : "Fresh quote/trade marks unavailable; paper open is blocked."
+    );
+  const workbenchReadinessSummary =
+    structure?.workbench_readiness_summary ?? setup.workbench_readiness_summary ?? (
+      structureReadiness === "ready" && paperOpenReadiness === "blocked"
+        ? "Research ready / paper open blocked."
+        : structureReadiness === "ready" && paperOpenReadiness === "ready"
+          ? "Research ready / paper open ready."
+          : structureReadiness === "blocked"
+            ? "Research blocked."
+            : "Research unavailable."
+    );
   const expectedRangeReason = getExpectedRangeReasonText(setup.expected_range);
   const expectedRangeDetail = setup.expected_range
-    ? expectedRangeReason
+    ? expectedRangeReadiness === "warning"
+      ? `${expectedRangeReadinessSummary} ${formatExpectedMoveSummary(setup.expected_range, formatOptionsExpectedRangeHorizon(setup.expected_range, structure))}`
+      : expectedRangeReason
       ? `Reason: ${expectedRangeReason}`
       : formatExpectedMoveSummary(setup.expected_range, formatOptionsExpectedRangeHorizon(setup.expected_range, structure))
     : "Expected range context unavailable for this setup.";
@@ -574,6 +641,15 @@ export function OptionsStructureRiskSummary({
     <Card title="Structure risk">
       <div className="op-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
         <StatusBadge tone="neutral">Research preview — read-only</StatusBadge>
+        <StatusBadge tone={getReadinessTone(structureReadiness)}>
+          Structure: {formatOptionsReplayToken(structureReadiness)}
+        </StatusBadge>
+        <StatusBadge tone={getReadinessTone(expectedRangeReadiness)}>
+          Expected Range: {getExpectedRangeReadinessLabel(expectedRangeReadiness, setup.expected_range?.status)}
+        </StatusBadge>
+        <StatusBadge tone={getReadinessTone(paperOpenReadiness)}>
+          Paper Open: {getPaperOpenReadinessLabel(paperOpenReadiness)}
+        </StatusBadge>
         <StatusBadge tone={replayPreview ? getReplayStatusTone(replayPreview.status) : "neutral"}>
           Replay payoff preview — non-persisted
         </StatusBadge>
@@ -599,6 +675,9 @@ export function OptionsStructureRiskSummary({
         Replay payoff preview stays read-only and non-persisted. The paper lifecycle only reflects the current in-memory
         position opened from this page.
       </div>
+      <div style={{ color: paperOpenReadiness === "blocked" ? "var(--op-warn, #f2a03f)" : "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
+        Workbench state: {workbenchReadinessSummary}
+      </div>
       {structure?.contract_resolution_status ? (
         <div style={{ color: structure.paper_persistence_allowed === false ? "var(--op-warn, #f2a03f)" : "var(--op-muted, #7a8999)", lineHeight: 1.55, marginBottom: 12 }}>
           {structure.contract_resolution_status === "resolved"
@@ -615,6 +694,23 @@ export function OptionsStructureRiskSummary({
           marginBottom: 12,
         }}
       >
+        <RiskMetricCard
+          label="Structure readiness"
+          value={formatOptionsReplayToken(structureReadiness)}
+          detail={structureReadinessSummary}
+        />
+        <RiskMetricCard
+          label="Expected Range readiness"
+          term="expected_range"
+          value={getExpectedRangeReadinessLabel(expectedRangeReadiness, setup.expected_range?.status)}
+          detail={expectedRangeReadinessSummary}
+        />
+        <RiskMetricCard
+          label="Paper Open readiness"
+          term="paper_lifecycle"
+          value={getPaperOpenReadinessLabel(paperOpenReadiness)}
+          detail={paperOpenReadinessSummary}
+        />
         <RiskMetricCard
           label="Structure"
           value={formatOptionsReplayToken(structure?.type)}
@@ -687,6 +783,8 @@ export function OptionsStructureRiskSummary({
         maxProfit={maxProfit}
         maxLoss={maxLoss}
         workflowSource={setup.workflow_source}
+        readiness={expectedRangeReadiness}
+        readinessSummary={expectedRangeReadinessSummary}
       />
 
       <div

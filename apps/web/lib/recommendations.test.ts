@@ -736,8 +736,8 @@ describe("research preview helpers", () => {
     expect(availability.reason).toContain("Unable to resolve listed contracts");
   });
 
-  it("blocks paper open when fresh provider marks are unavailable", () => {
-    const availability = getOptionsPaperOpenAvailability({
+  it("keeps replay research available but blocks paper open when fresh provider marks are unavailable", () => {
+    const setup = {
       symbol: "AAPL",
       market_mode: "options",
       workflow_source: "polygon",
@@ -746,8 +746,8 @@ describe("research preview helpers", () => {
         type: "iron_condor",
         expiration: "2026-05-16",
         contract_resolution_status: "resolved",
-        structure_validation_status: "invalid",
-        structure_validation_summary: "fresh_option_mark_required_for_paper_open",
+        structure_validation_status: "valid",
+        paper_open_readiness_reason: "fresh_option_mark_required_for_paper_open",
         paper_persistence_allowed: false,
         opening_price_source: "prior_close_fallback",
         fresh_provider_pricing_available: false,
@@ -758,10 +758,13 @@ describe("research preview helpers", () => {
           { action: "buy", right: "call", strike: 300, premium: 0.2, option_symbol: "O:AAPL260516C00300000" },
         ],
       },
-    });
+    };
+    const availability = getOptionsPaperOpenAvailability(setup);
+    const replayAvailability = getOptionsReplayPreviewAvailability(setup);
 
     expect(availability.request).toBeNull();
     expect(availability.reason).toBe("fresh_option_mark_required_for_paper_open");
+    expect(replayAvailability.request).not.toBeNull();
   });
 
   it("posts paper option close requests through the same-origin helper", async () => {

@@ -26,6 +26,10 @@ describe("analysis options provider/source/as-of copy", () => {
     expect(source).toContain("getOptionsResearchDisplayDte(optionStructure, expectedRange)");
     expect(source).toContain("formatOptionsExpectedRangeHorizon(expectedRange, optionStructure)");
     expect(source).toContain("formatExpectedMoveSummary(expectedRange, expectedRangeHorizon)");
+    expect(source).toContain("Structure readiness");
+    expect(source).toContain("Expected Range readiness");
+    expect(source).toContain("Paper Open readiness");
+    expect(source).toContain("formatPaperOpenReadiness(paperOpenReadiness)");
     expect(source).toContain("function AnalysisContextPanels");
     expect(source).toContain('Card title="Macro Context"');
     expect(source).toContain('Card title="News Context"');

@@ -15,6 +15,8 @@ type ExpectedRangeVisualizationProps = {
   maxProfit?: number | null;
   maxLoss?: number | null;
   workflowSource?: string | null;
+  readiness?: "ready" | "blocked" | "warning" | "unavailable" | string | null;
+  readinessSummary?: string | null;
 };
 
 type Marker = {
@@ -122,6 +124,8 @@ export function ExpectedRangeVisualization({
   maxProfit,
   maxLoss,
   workflowSource,
+  readiness,
+  readinessSummary,
 }: ExpectedRangeVisualizationProps) {
   const lowerRaw = finiteNumber(expectedRange?.lower_bound);
   const upperRaw = finiteNumber(expectedRange?.upper_bound);
@@ -317,6 +321,12 @@ export function ExpectedRangeVisualization({
       {expectedRange.provenance_notes ? (
         <div style={{ marginTop: 8, color: "var(--op-muted, #7a8999)", lineHeight: 1.5, fontSize: "0.8rem" }}>
           {expectedRange.provenance_notes}
+        </div>
+      ) : null}
+
+      {readiness === "warning" ? (
+        <div style={{ marginTop: 8, color: "var(--op-warn, #f2a03f)", lineHeight: 1.5, fontSize: "0.8rem" }}>
+          {readinessSummary ?? "Stale research context. Expected range uses stale/prior-close IV context."}
         </div>
       ) : null}
 

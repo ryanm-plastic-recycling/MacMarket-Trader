@@ -34,6 +34,7 @@ import {
   getOptionsResearchDisplayDte,
   isReadOnlyResearchMode,
   type AnalysisPacket,
+  type OptionsReadinessState,
   type OptionsResearchStructure,
 } from "@/lib/recommendations";
 
@@ -60,6 +61,13 @@ type SetupPayload = {
   filters: string[];
   timeframe?: string;
   option_structure?: OptionsResearchStructure;
+  structure_readiness?: OptionsReadinessState | string | null;
+  structure_readiness_summary?: string | null;
+  expected_range_readiness?: OptionsReadinessState | string | null;
+  expected_range_readiness_summary?: string | null;
+  paper_open_readiness?: OptionsReadinessState | string | null;
+  paper_open_readiness_summary?: string | null;
+  workbench_readiness_summary?: string | null;
   expected_range?: {
     method?: string | null;
     reference_price_type?: string | null;
@@ -87,6 +95,30 @@ type SetupPayload = {
 
 const STORAGE_KEY = "macmarket-indicators-analysis";
 const PROVIDER_BLOCKED_HINT = "Configured provider unavailable. Workflows are blocked from silently falling back. For local demo testing only, set WORKFLOW_DEMO_FALLBACK=true and restart backend.";
+
+function normalizeOptionsReadiness(value: unknown): OptionsReadinessState {
+  if (value === "ready" || value === "blocked" || value === "warning" || value === "unavailable") {
+    return value;
+  }
+  return "unavailable";
+}
+
+function formatOptionsReadiness(value: OptionsReadinessState): string {
+  if (value === "warning") return "Warning";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatExpectedRangeReadiness(value: OptionsReadinessState, status?: string | null): string {
+  if (value === "ready") return status === "computed" ? "Computed" : "Ready";
+  if (value === "warning") return "Stale context";
+  if (value === "blocked") return "Blocked";
+  return "Unavailable";
+}
+
+function formatPaperOpenReadiness(value: OptionsReadinessState): string {
+  if (value === "blocked") return "Blocked fresh marks required";
+  return formatOptionsReadiness(value);
+}
 
 function AnalysisContextPanels({ packet, optionStructure }: { packet?: AnalysisPacket | null; optionStructure?: OptionsResearchStructure | null }) {
   const macroSeries = packet?.macro_context?.series ?? [];
@@ -394,6 +426,16 @@ export default function Page() {
       (value): value is number => typeof value === "number" && Number.isFinite(value),
     )
     : [];
+  const structureReadiness = normalizeOptionsReadiness(optionStructure?.structure_readiness ?? setup?.structure_readiness);
+  const expectedRangeReadiness = normalizeOptionsReadiness(optionStructure?.expected_range_readiness ?? setup?.expected_range_readiness);
+  const paperOpenReadiness = normalizeOptionsReadiness(optionStructure?.paper_open_readiness ?? setup?.paper_open_readiness);
+  const structureReadinessSummary = optionStructure?.structure_readiness_summary ?? setup?.structure_readiness_summary ?? null;
+  const expectedRangeReadinessSummary = optionStructure?.expected_range_readiness_summary ?? setup?.expected_range_readiness_summary ?? null;
+  const paperOpenReadinessSummary = optionStructure?.paper_open_readiness_summary ?? setup?.paper_open_readiness_summary ?? null;
+  const optionsWorkbenchState =
+    optionStructure?.workbench_readiness_summary
+    ?? setup?.workbench_readiness_summary
+    ?? null;
 
   return <section className="op-stack">
     <PageHeader title="Trade Setup" subtitle="Primary setup workstation before Recommendations, Replay, and paper Orders." actions={<StatusBadge tone="neutral">{source}</StatusBadge>} />
@@ -471,7 +513,7 @@ export default function Page() {
 
     <div className="op-grid-2">
       <Card title="Strategy rationale">
-        <div><strong>Workbench state:</strong> {workbenchState.replaceAll("_", " ")}</div>
+        <div><strong>Workbench state:</strong> {appliedMarketMode === "options" && optionsWorkbenchState ? optionsWorkbenchState : workbenchState.replaceAll("_", " ")}</div>
         <div><strong>Active/inactive:</strong> {setup?.active ? "active" : "inactive"} — {setup?.active_reason ?? "loading"}</div>
         <div><strong>Selected strategy:</strong> {appliedStrategy}</div>
         <div><strong>Symbol / mode / timeframe:</strong> {appliedSymbol} / {appliedMarketMode} / {appliedTimeframe}</div>
@@ -480,6 +522,9 @@ export default function Page() {
         <div><strong>Summary:</strong> {setupSummary ?? "loading"}</div>
         {appliedMarketMode === "options" && optionStructure ? (
           <div>
+            <div><strong>Structure readiness:</strong> {formatOptionsReadiness(structureReadiness)}{structureReadinessSummary ? ` — ${structureReadinessSummary}` : ""}</div>
+            <div><strong>Expected Range readiness:</strong> {formatExpectedRangeReadiness(expectedRangeReadiness, expectedRange?.status)}{expectedRangeReadinessSummary ? ` — ${expectedRangeReadinessSummary}` : ""}</div>
+            <div><strong>Paper Open readiness:</strong> {formatPaperOpenReadiness(paperOpenReadiness)}{paperOpenReadinessSummary ? ` — ${paperOpenReadinessSummary}` : ""}</div>
             <div><strong>Structure:</strong> {formatResearchValue(optionStructure.type)}</div>
             <div><strong>Legs:</strong> {getOptionsLegDisplayLines(optionStructure).join(" | ")}</div>
             <div><strong>{optionPremiumLabel}:</strong> {formatResearchValue(optionPremiumValue)}</div>
@@ -532,6 +577,8 @@ export default function Page() {
                   maxProfit={optionStructure?.max_profit ?? null}
                   maxLoss={optionStructure?.max_loss ?? null}
                   workflowSource={setup?.workflow_source ?? source}
+                  readiness={expectedRangeReadiness}
+                  readinessSummary={expectedRangeReadinessSummary}
                 />
               </div>
             ) : null}
@@ -551,6 +598,8 @@ export default function Page() {
                   maxProfit={optionStructure?.max_profit ?? null}
                   maxLoss={optionStructure?.max_loss ?? null}
                   workflowSource={setup?.workflow_source ?? source}
+                  readiness={expectedRangeReadiness}
+                  readinessSummary={expectedRangeReadinessSummary}
                 />
               </div>
             ) : null}

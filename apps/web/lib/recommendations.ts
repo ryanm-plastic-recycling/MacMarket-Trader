@@ -199,6 +199,8 @@ export type OptionsResearchLeg = {
   missing_data?: string[] | null;
 };
 
+export type OptionsReadinessState = "ready" | "blocked" | "warning" | "unavailable";
+
 export type OptionsResearchStructure = {
   type?: string | null;
   expiration?: string | null;
@@ -236,6 +238,14 @@ export type OptionsResearchStructure = {
   structure_validation_summary?: string | null;
   structure_validation_warnings?: string[] | null;
   paper_persistence_allowed?: boolean | null;
+  structure_readiness?: OptionsReadinessState | string | null;
+  structure_readiness_summary?: string | null;
+  expected_range_readiness?: OptionsReadinessState | string | null;
+  expected_range_readiness_summary?: string | null;
+  paper_open_readiness?: OptionsReadinessState | string | null;
+  paper_open_readiness_summary?: string | null;
+  paper_open_readiness_reason?: string | null;
+  workbench_readiness_summary?: string | null;
 };
 
 export type OptionsExpectedRange = {
@@ -280,6 +290,13 @@ export type OptionsResearchSetup = {
   expected_range?: OptionsExpectedRange | null;
   options_chain_preview?: OptionsChainPreview | null;
   analysis_packet?: AnalysisPacket | null;
+  structure_readiness?: OptionsReadinessState | string | null;
+  structure_readiness_summary?: string | null;
+  expected_range_readiness?: OptionsReadinessState | string | null;
+  expected_range_readiness_summary?: string | null;
+  paper_open_readiness?: OptionsReadinessState | string | null;
+  paper_open_readiness_summary?: string | null;
+  workbench_readiness_summary?: string | null;
 };
 
 export type OptionsReplayPreviewStructureType =
@@ -870,17 +887,10 @@ function extractOptionsStructureBreakevens(structure: OptionsResearchStructure |
   return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 }
 
-function getOptionsStructureBlockedReason(structure: OptionsResearchStructure | null | undefined): string | null {
+function getOptionsResearchStructureBlockedReason(structure: OptionsResearchStructure | null | undefined): string | null {
   if (!structure) return null;
-  if (structure.fresh_provider_pricing_available === false) {
-    return (
-      structure.structure_validation_summary
-      ?? "Fresh quote_mid or last_trade option marks are required before paper lifecycle actions."
-    );
-  }
   if (
-    structure.paper_persistence_allowed === false
-    || structure.contract_resolution_status === "unresolved"
+    structure.contract_resolution_status === "unresolved"
     || structure.contract_resolution_status === "invalid"
     || structure.structure_validation_status === "invalid"
   ) {
@@ -888,6 +898,24 @@ function getOptionsStructureBlockedReason(structure: OptionsResearchStructure | 
       structure.structure_validation_summary
       ?? structure.contract_resolution_summary
       ?? "Contract selection incomplete; options research preview and paper lifecycle actions stay blocked."
+    );
+  }
+  return null;
+}
+
+function getOptionsPaperOpenBlockedReason(structure: OptionsResearchStructure | null | undefined): string | null {
+  const structuralReason = getOptionsResearchStructureBlockedReason(structure);
+  if (structuralReason) return structuralReason;
+  if (!structure) return null;
+  if (
+    structure.paper_persistence_allowed === false
+    || structure.fresh_provider_pricing_available === false
+    || structure.opening_price_source === "prior_close_fallback"
+  ) {
+    return (
+      structure.paper_open_readiness_reason
+      ?? structure.paper_open_readiness_summary
+      ?? "Fresh quote_mid or last_trade option marks are required before paper lifecycle actions."
     );
   }
   return null;
@@ -909,7 +937,7 @@ export function getOptionsReplayPreviewAvailability(
   if (!structure.legs || structure.legs.length === 0) {
     return { request: null, reason: "Replay payoff preview requires visible option legs." };
   }
-  const blockedReason = getOptionsStructureBlockedReason(structure);
+  const blockedReason = getOptionsResearchStructureBlockedReason(structure);
   if (blockedReason) {
     return { request: null, reason: blockedReason };
   }
@@ -991,7 +1019,7 @@ export function getOptionsPaperOpenAvailability(
   if (!expiration) {
     return { request: null, reason: "Paper option open requires a visible expiration for every leg." };
   }
-  const blockedReason = getOptionsStructureBlockedReason(structure);
+  const blockedReason = getOptionsPaperOpenBlockedReason(structure);
   if (blockedReason) {
     return { request: null, reason: blockedReason };
   }
@@ -1375,6 +1403,9 @@ export function getOptionsResearchDataQualityWarnings(
     }
     for (const item of structure.structure_validation_warnings ?? []) {
       if (typeof item === "string" && item.trim()) warnings.add(item.trim());
+    }
+    if (structure.expected_range_readiness === "warning") {
+      warnings.add(structure.expected_range_readiness_summary ?? "Expected Range uses stale/prior-close IV context.");
     }
   }
 

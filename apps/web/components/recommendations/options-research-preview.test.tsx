@@ -599,6 +599,90 @@ describe("OptionsResearchPreview", () => {
     expect(html).not.toContain("-$312.00");
   });
 
+  it("shows separate readiness states when stale option context can still support expected range research", () => {
+    const setup: OptionsResearchSetup = {
+      symbol: "SPY",
+      market_mode: "options",
+      workflow_source: "polygon",
+      strategy: "Iron Condor",
+      structure_readiness: "ready",
+      expected_range_readiness: "warning",
+      expected_range_readiness_summary: "Expected range uses stale/prior-close IV context.",
+      paper_open_readiness: "blocked",
+      paper_open_readiness_summary: "Fresh quote/trade marks unavailable; paper open is blocked.",
+      workbench_readiness_summary: "Research ready / paper open blocked.",
+      option_structure: {
+        type: "iron_condor",
+        expiration: "2026-05-16",
+        dte: 13,
+        net_credit: 1.8,
+        max_profit: 180,
+        max_loss: 320,
+        breakeven_low: 265.7,
+        breakeven_high: 294.3,
+        contract_resolution_status: "resolved",
+        contract_resolution_summary: "Selected listed contracts from provider chain.",
+        structure_validation_status: "valid",
+        structure_readiness: "ready",
+        structure_readiness_summary: "Listed contracts resolved.",
+        expected_range_readiness: "warning",
+        expected_range_readiness_summary: "Expected range uses stale/prior-close IV context.",
+        paper_open_readiness: "blocked",
+        paper_open_readiness_reason: "fresh_option_mark_required_for_paper_open",
+        paper_open_readiness_summary: "Fresh quote/trade marks unavailable; paper open is blocked.",
+        paper_persistence_allowed: false,
+        opening_price_source: "prior_close_fallback",
+        fresh_provider_pricing_available: false,
+        provider_mark_status: "stale",
+        legs: [
+          { action: "buy", right: "put", strike: 260, label: "lower long put", option_symbol: "O:SPY260516P00260000", mark_method: "prior_close_fallback", stale: true, premium: 0.2 },
+          { action: "sell", right: "put", strike: 267.5, label: "short put", option_symbol: "O:SPY260516P00267500", mark_method: "prior_close_fallback", stale: true, premium: 0.9 },
+          { action: "sell", right: "call", strike: 292.5, label: "short call", option_symbol: "O:SPY260516C00292500", mark_method: "prior_close_fallback", stale: true, premium: 0.9 },
+          { action: "buy", right: "call", strike: 300, label: "higher long call", option_symbol: "O:SPY260516C00300000", mark_method: "prior_close_fallback", stale: true, premium: 0.2 },
+        ],
+      },
+      expected_range: {
+        status: "computed",
+        method: "iv_1sigma",
+        reference_price_type: "underlying_last",
+        absolute_move: 12.4,
+        lower_bound: 267.6,
+        upper_bound: 292.4,
+        horizon_value: 13,
+        horizon_unit: "calendar_days",
+        snapshot_timestamp: "2026-05-03T14:00:00Z",
+        provenance_notes: "Research preview only. Computed from IV 1-sigma method; not execution support.",
+      },
+      options_chain_preview: null,
+    };
+
+    expect(getOptionsReplayPreviewAvailability(setup).request).not.toBeNull();
+    expect(getOptionsPaperOpenAvailability(setup).request).toBeNull();
+
+    const html = renderToStaticMarkup(
+      <OptionsResearchPreview
+        setup={setup}
+        loading={false}
+        error={null}
+        chartPayload={null}
+        chartStorageKey="test-options-preview-stale-context"
+        chartSourceLabel="polygon"
+        chartBlockedByFallback={false}
+      />,
+    );
+
+    expect(html).toContain("Workbench state: Research ready / paper open blocked.");
+    expect(html).toContain("Structure: Ready");
+    expect(html).toContain("Expected Range: Stale context");
+    expect(html).toContain("Paper Open: Blocked fresh marks required");
+    expect(html).toContain("Expected range uses stale/prior-close IV context.");
+    expect(html).toContain("Expected Range visualization");
+    expect(html).toContain("$267.60");
+    expect(html).toContain("disabled");
+    expect(html).not.toContain("Live trading");
+    expect(html).not.toContain("Broker execution");
+  });
+
   it("renders Analysis Packet preview with macro, news, IV, OI, Greeks, and missing fields", () => {
     const html = renderToStaticMarkup(
       <OptionsResearchPreview

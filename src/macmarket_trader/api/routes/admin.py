@@ -2837,18 +2837,17 @@ def _mark_option_structure_pricing_blocked(
         else "unavailable"
     )
     option_structure["paper_persistence_allowed"] = False
-    option_structure["structure_validation_status"] = "invalid"
-    option_structure["structure_validation_summary"] = reason
+    option_structure["paper_open_readiness"] = "blocked"
+    option_structure["paper_open_readiness_summary"] = (
+        "Fresh quote/trade marks unavailable; paper open is blocked."
+        if reason == "fresh_option_mark_required_for_paper_open"
+        else reason
+    )
+    option_structure["paper_open_readiness_reason"] = reason
     option_structure["structure_validation_warnings"] = warning_values
     option_structure["contract_resolution_warnings"] = sorted(
         set([str(item) for item in (option_structure.get("contract_resolution_warnings") or []) if str(item).strip()] + warning_values)
     )
-    option_structure["max_profit"] = None
-    option_structure["max_loss"] = None
-    option_structure["breakeven_low"] = None
-    option_structure["breakeven_high"] = None
-    option_structure["net_credit"] = None
-    option_structure["net_debit"] = None
     return option_structure
 
 
@@ -3295,12 +3294,147 @@ def _validate_research_option_structure(option_structure: dict[str, object], *, 
     return option_structure
 
 
-def _option_structure_blocks_ready(option_structure: dict[str, object]) -> bool:
+def _option_structure_blocks_research(option_structure: dict[str, object]) -> bool:
     return (
-        option_structure.get("paper_persistence_allowed") is False
-        or option_structure.get("contract_resolution_status") in {"unresolved", "invalid"}
+        option_structure.get("contract_resolution_status") in {"unresolved", "invalid"}
         or option_structure.get("structure_validation_status") == "invalid"
     )
+
+
+def _option_structure_blocks_ready(option_structure: dict[str, object]) -> bool:
+    return option_structure.get("paper_persistence_allowed") is False or _option_structure_blocks_research(option_structure)
+
+
+def _option_structure_expected_range_stale_context(option_structure: dict[str, object]) -> bool:
+    opening_source = str(option_structure.get("opening_price_source") or "").strip().lower()
+    provider_status = str(option_structure.get("provider_mark_status") or "").strip().lower()
+    if opening_source == "prior_close_fallback" or provider_status == "stale":
+        return True
+    for leg in option_structure.get("legs", []) or []:
+        if not isinstance(leg, dict):
+            continue
+        mark_method = str(leg.get("mark_method") or "").strip().lower()
+        if mark_method == "prior_close_fallback" or bool(leg.get("stale")):
+            return True
+    return False
+
+
+def _options_readiness_summary(value: str, *, kind: str, reason: str | None = None) -> str:
+    if kind == "structure":
+        if value == "ready":
+            return "Listed contracts resolved."
+        if value == "blocked":
+            return reason or "Contract selection or payoff validation blocked this structure."
+        return "Options structure unavailable."
+    if kind == "expected_range":
+        if value == "ready":
+            return "Expected range computed from available IV, DTE, and underlying context."
+        if value == "warning":
+            return "Expected range uses stale/prior-close IV context."
+        if value == "blocked":
+            return reason or "Expected range missing required underlying, IV, DTE, or valid structure context."
+        return "Expected range context unavailable."
+    if kind == "paper_open":
+        if value == "ready":
+            return "Fresh quote/trade marks available; paper open checks can proceed."
+        if value == "blocked":
+            return reason or "Fresh quote/trade marks unavailable; paper open is blocked."
+        return "Paper-open readiness unavailable."
+    return reason or value
+
+
+def _apply_options_research_readiness(
+    payload: dict[str, object],
+    option_structure: dict[str, object] | None,
+    expected_range: ExpectedRange | None,
+) -> None:
+    if option_structure is None:
+        payload["structure_readiness"] = "unavailable"
+        payload["expected_range_readiness"] = "unavailable"
+        payload["paper_open_readiness"] = "unavailable"
+        return
+
+    structure_reason = str(
+        option_structure.get("structure_validation_summary")
+        or option_structure.get("contract_resolution_summary")
+        or ""
+    ).strip() or None
+    if _option_structure_blocks_research(option_structure):
+        structure_readiness = "blocked"
+    elif option_structure.get("contract_resolution_status") == "unavailable":
+        structure_readiness = "unavailable"
+    else:
+        structure_readiness = "ready"
+
+    option_structure["structure_readiness"] = structure_readiness
+    option_structure["structure_readiness_summary"] = _options_readiness_summary(
+        structure_readiness,
+        kind="structure",
+        reason=structure_reason,
+    )
+
+    if _option_structure_blocks_research(option_structure):
+        paper_open_readiness = "blocked"
+        paper_reason = structure_reason or "listed_option_contract_resolution_required"
+    elif (
+        option_structure.get("paper_persistence_allowed") is True
+        and option_structure.get("fresh_provider_pricing_available") is True
+        and str(option_structure.get("opening_price_source") or "").strip().lower() in _FRESH_OPTION_OPENING_MARK_METHODS
+    ):
+        paper_open_readiness = "ready"
+        paper_reason = None
+    else:
+        paper_open_readiness = "blocked"
+        paper_reason = str(option_structure.get("paper_open_readiness_reason") or "fresh_option_mark_required_for_paper_open")
+    option_structure["paper_open_readiness"] = paper_open_readiness
+    paper_summary_reason = (
+        None
+        if paper_open_readiness == "ready"
+        else paper_reason
+        if _option_structure_blocks_research(option_structure)
+        else "Fresh quote/trade marks unavailable; paper open is blocked."
+    )
+    option_structure["paper_open_readiness_summary"] = _options_readiness_summary(
+        paper_open_readiness,
+        kind="paper_open",
+        reason=paper_summary_reason,
+    )
+    if paper_reason:
+        option_structure["paper_open_readiness_reason"] = paper_reason
+
+    expected_reason = str(getattr(expected_range, "reason", None) or "").strip() or None
+    if expected_range is None:
+        expected_range_readiness = "unavailable"
+    elif expected_range.status == "computed":
+        expected_range_readiness = "warning" if _option_structure_expected_range_stale_context(option_structure) else "ready"
+    elif expected_range.status == "blocked":
+        expected_range_readiness = "blocked"
+    else:
+        expected_range_readiness = "unavailable"
+    option_structure["expected_range_readiness"] = expected_range_readiness
+    option_structure["expected_range_readiness_summary"] = _options_readiness_summary(
+        expected_range_readiness,
+        kind="expected_range",
+        reason=expected_reason,
+    )
+
+    if structure_readiness == "ready" and paper_open_readiness == "blocked":
+        workbench_summary = "Research ready / paper open blocked."
+    elif structure_readiness == "ready" and paper_open_readiness == "ready":
+        workbench_summary = "Research ready / paper open ready."
+    elif structure_readiness == "blocked":
+        workbench_summary = "Research blocked."
+    else:
+        workbench_summary = "Research unavailable."
+    option_structure["workbench_readiness_summary"] = workbench_summary
+
+    payload["structure_readiness"] = structure_readiness
+    payload["structure_readiness_summary"] = option_structure["structure_readiness_summary"]
+    payload["expected_range_readiness"] = expected_range_readiness
+    payload["expected_range_readiness_summary"] = option_structure["expected_range_readiness_summary"]
+    payload["paper_open_readiness"] = paper_open_readiness
+    payload["paper_open_readiness_summary"] = option_structure["paper_open_readiness_summary"]
+    payload["workbench_readiness_summary"] = workbench_summary
 
 
 def _paper_option_contract_error(option_structure: dict[str, object]) -> str:
@@ -3328,6 +3462,39 @@ def _blocked_options_expected_range(*, option_structure: dict[str, object], as_o
         snapshot_timestamp=as_of,
         provenance_notes="Expected Range visualization is blocked until the options structure resolves to a valid listed-contract setup.",
     )
+
+
+def _options_expected_range_for_structure(
+    payload: dict[str, object],
+    *,
+    option_structure: dict[str, object],
+    latest_close: float,
+    iv_snapshot: float | None,
+    as_of: datetime,
+) -> dict[str, object]:
+    dte = _finite_int(option_structure.get("dte"))
+    expected_range = (
+        _blocked_options_expected_range(option_structure=option_structure, as_of=as_of)
+        if _option_structure_blocks_research(option_structure)
+        else ExpectedRange(
+            status="blocked",
+            reason="missing_dte",
+            horizon_value=0,
+            horizon_unit="calendar_days",
+            reference_price_type="underlying_last",
+            snapshot_timestamp=as_of,
+            provenance_notes="Expected range requires a valid options calendar DTE.",
+        )
+        if dte is None or dte < 0
+        else _build_options_expected_range(
+            latest_close=latest_close,
+            iv_snapshot=iv_snapshot,
+            dte=dte,
+            as_of=as_of,
+        )
+    )
+    _apply_options_research_readiness(payload, option_structure, expected_range)
+    return expected_range.model_dump(mode="json")
 
 
 def _refresh_research_option_payoff(option_structure: dict[str, object], *, as_of: datetime) -> None:
@@ -4947,16 +5114,13 @@ def analysis_setup(
             chain_preview=payload.get("options_chain_preview"),
         )
         payload["option_structure"] = option_structure
-        payload["expected_range"] = (
-            _blocked_options_expected_range(option_structure=option_structure, as_of=analysis_as_of)
-            if _option_structure_blocks_ready(option_structure)
-            else _build_options_expected_range(
-                latest_close=latest.close,
-                iv_snapshot=iv_snapshot,
-                dte=option_structure["dte"],
-                as_of=analysis_as_of,
-            )
-        ).model_dump(mode="json")
+        payload["expected_range"] = _options_expected_range_for_structure(
+            payload,
+            option_structure=option_structure,
+            latest_close=latest.close,
+            iv_snapshot=iv_snapshot,
+            as_of=analysis_as_of,
+        )
     elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bull_call_debit_spread":
         iv_snapshot = 0.25
         expiration_context = _options_research_expiration_context(expiration="2026-05-16", as_of=analysis_as_of)
@@ -4987,16 +5151,13 @@ def analysis_setup(
             chain_preview=payload.get("options_chain_preview"),
         )
         payload["option_structure"] = option_structure
-        payload["expected_range"] = (
-            _blocked_options_expected_range(option_structure=option_structure, as_of=analysis_as_of)
-            if _option_structure_blocks_ready(option_structure)
-            else _build_options_expected_range(
-                latest_close=latest.close,
-                iv_snapshot=iv_snapshot,
-                dte=option_structure["dte"],
-                as_of=analysis_as_of,
-            )
-        ).model_dump(mode="json")
+        payload["expected_range"] = _options_expected_range_for_structure(
+            payload,
+            option_structure=option_structure,
+            latest_close=latest.close,
+            iv_snapshot=iv_snapshot,
+            as_of=analysis_as_of,
+        )
     elif market_mode == MarketMode.OPTIONS and strategy_entry.strategy_id == "bear_put_debit_spread":
         iv_snapshot = 0.25
         expiration_context = _options_research_expiration_context(expiration="2026-05-16", as_of=analysis_as_of)
@@ -5027,16 +5188,13 @@ def analysis_setup(
             chain_preview=payload.get("options_chain_preview"),
         )
         payload["option_structure"] = option_structure
-        payload["expected_range"] = (
-            _blocked_options_expected_range(option_structure=option_structure, as_of=analysis_as_of)
-            if _option_structure_blocks_ready(option_structure)
-            else _build_options_expected_range(
-                latest_close=latest.close,
-                iv_snapshot=iv_snapshot,
-                dte=option_structure["dte"],
-                as_of=analysis_as_of,
-            )
-        ).model_dump(mode="json")
+        payload["expected_range"] = _options_expected_range_for_structure(
+            payload,
+            option_structure=option_structure,
+            latest_close=latest.close,
+            iv_snapshot=iv_snapshot,
+            as_of=analysis_as_of,
+        )
     elif market_mode == MarketMode.OPTIONS:
         # Covered Call requires inventory modeling — expected range omitted pending that data
         payload["expected_range"] = ExpectedRange(
