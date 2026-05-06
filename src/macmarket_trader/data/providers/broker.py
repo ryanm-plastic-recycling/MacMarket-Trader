@@ -37,6 +37,17 @@ class AlpacaBrokerProvider(BrokerProvider):
             return json.loads(response.read().decode("utf-8"))
 
     def place_paper_order(self, symbol: str, side: str, shares: int, limit_price: float) -> dict[str, object]:
+        # Defense-in-depth: refuse before opening an HTTP connection. The
+        # registry factory normally blocks construction of this provider when
+        # LIVE_TRADING_ALLOWED is false, but a direct instantiation (tests,
+        # scripts, future call sites) must also refuse so no external order
+        # request is ever attempted while the product boundary is closed.
+        if not settings.live_trading_allowed:
+            raise RuntimeError(
+                "Broker routing is disabled by product boundary: "
+                "AlpacaBrokerProvider.place_paper_order refused because "
+                "LIVE_TRADING_ALLOWED=false. No HTTP request was sent."
+            )
         payload = self._post_json(
             "/v2/orders",
             {

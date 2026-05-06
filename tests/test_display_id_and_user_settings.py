@@ -115,6 +115,118 @@ def test_display_id_unique_per_recommendation() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Track A — display_id collision suffix (same user/symbol/strategy/minute)
+# ---------------------------------------------------------------------------
+
+def test_display_id_same_minute_gets_unique_suffix(monkeypatch) -> None:
+    """Two recommendations created for the same user/symbol/strategy in the
+    same minute would otherwise produce the same human-readable display_id.
+    The repository applies a deterministic `-2`, `-3`, ... suffix so the
+    operator-facing label stays unique. The canonical recommendation_id
+    (rec_<hex>) is already unique and is the FK everywhere — this only
+    affects the label."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+    from uuid import uuid4
+
+    from macmarket_trader.domain.enums import Direction, EventSourceType, RegimeType, SetupType
+    from macmarket_trader.domain.schemas import (
+        CatalystMetadata,
+        ConstraintCheck,
+        ConstraintReport,
+        EntryMetadata,
+        EvidenceBundle,
+        InvalidationMetadata,
+        NewsEvent,
+        QualityMetadata,
+        RegimeContext,
+        SizingMetadata,
+        TargetsMetadata,
+        TechnicalContext,
+        TimeStopMetadata,
+        TradeRecommendation,
+    )
+    from macmarket_trader.domain import time as domain_time
+    from macmarket_trader.storage.db import SessionLocal
+    from macmarket_trader.storage.repositories import RecommendationRepository
+
+    user_id = _seed_approved_user(token="user-token", external_id="clerk_user")
+
+    # Freeze the clock so all create() calls land in the same minute.
+    # repositories.create() does `from macmarket_trader.domain.time import utc_now`
+    # at call time, so patching the canonical source is what counts.
+    frozen = _dt(2026, 5, 5, 14, 30, 0, tzinfo=_tz.utc)
+    monkeypatch.setattr(domain_time, "utc_now", lambda: frozen)
+
+    repo = RecommendationRepository(session_factory=SessionLocal)
+
+    def _build() -> TradeRecommendation:
+        return TradeRecommendation(
+            recommendation_id=f"rec_{uuid4().hex[:12]}",
+            symbol="AAPL",
+            side=Direction.LONG,
+            thesis="display_id collision suffix test",
+            event=NewsEvent(
+                symbol="AAPL",
+                source_type=EventSourceType.NEWS,
+                source_timestamp=frozen,
+                headline="t",
+                summary="t",
+                sentiment_score=0.5,
+            ),
+            catalyst=CatalystMetadata(type="news", novelty="high", source_quality="primary", event_timestamp=frozen),
+            regime_context=RegimeContext(
+                market_regime=RegimeType.RISK_ON_TREND,
+                volatility_regime="moderate",
+                breadth_state="supportive",
+            ),
+            technical_context=TechnicalContext(
+                prior_day_high=102.0,
+                prior_day_low=96.0,
+                recent_20d_high=112.0,
+                recent_20d_low=88.0,
+                atr14=3.0,
+                event_day_range=4.0,
+                rel_volume=1.2,
+            ),
+            entry=EntryMetadata(setup_type=SetupType.EVENT_CONTINUATION, zone_low=100.0, zone_high=100.5, trigger_text="t"),
+            invalidation=InvalidationMetadata(price=96.0, reason="below"),
+            targets=TargetsMetadata(target_1=106.0, target_2=112.0, trailing_rule="trail"),
+            time_stop=TimeStopMetadata(max_holding_days=3, reason="half-life"),
+            sizing=SizingMetadata(risk_dollars=100.0, stop_distance=4.0, shares=10),
+            quality=QualityMetadata(expected_rr=2.0, confidence=0.7, risk_score=0.4),
+            approved=True,
+            constraints=ConstraintReport(
+                checks=[ConstraintCheck(name="test", passed=True, details="synthetic")],
+                risk_based_share_cap=10,
+                notional_share_cap=10,
+                final_share_count=10,
+            ),
+            evidence=EvidenceBundle(
+                event_id="evt_display_id_collision",
+                source_type=EventSourceType.NEWS,
+                source_timestamp=frozen,
+                regime_version="test",
+                setup_engine_version="test",
+                risk_engine_version="test",
+                explanatory_notes=["synthetic"],
+            ),
+        )
+
+    row1 = repo.create(_build(), app_user_id=user_id, strategy="Event Continuation")
+    row2 = repo.create(_build(), app_user_id=user_id, strategy="Event Continuation")
+    row3 = repo.create(_build(), app_user_id=user_id, strategy="Event Continuation")
+
+    assert row1.display_id == "AAPL-EVCONT-20260505-1430"
+    assert row2.display_id == "AAPL-EVCONT-20260505-1430-2"
+    assert row3.display_id == "AAPL-EVCONT-20260505-1430-3"
+
+    # Canonical IDs remain distinct regardless of label suffixing.
+    assert row1.recommendation_id != row2.recommendation_id
+    assert row2.recommendation_id != row3.recommendation_id
+
+
+# ---------------------------------------------------------------------------
 # Track A — Legacy rec without display_id falls back in API response
 # ---------------------------------------------------------------------------
 

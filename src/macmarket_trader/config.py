@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     # broker provider config
     broker_provider: str = "mock"
     alpaca_paper_base_url: str = "https://paper-api.alpaca.markets"
+    # Hard product boundary: even with BROKER_PROVIDER=alpaca configured, no
+    # broker order routing (paper or live) executes unless this is explicitly
+    # set true at runtime. Default false means a misconfigured BROKER_PROVIDER
+    # cannot silently start sending orders to a brokerage.
+    live_trading_allowed: bool = False
 
     # deterministic recommendation quality gates
     min_expected_rr: float = 1.4

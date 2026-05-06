@@ -1,6 +1,6 @@
 # Private Alpha Operator Runbook (Phase 5/6)
 
-Last updated: 2026-04-16
+Last updated: 2026-05-05
 
 This runbook is for internal operators validating the **Phase 5/6 product center**:
 
@@ -785,3 +785,143 @@ This section is **documentation only**. The flags above remain `false` in
 `.env.example` and in the live `.env`. No code under `src/macmarket_trader/` was
 modified to enable MFA — the existing backend MFA enforcement logic already honours
 the env flags when they are flipped.
+
+## 14) Index-aware Market Risk Calendar — operator interpretation
+
+The Market Risk Calendar verdict (`clear` / `caution` / `restricted` /
+`no_trade`) appears on Dashboard, Analysis Packet, Recommendations detail,
+and scheduled-report email output. Since 2026-05-04 it also folds in
+provider-backed index context (VIX, SPX, NDX, RUT).
+
+How to read the verdict:
+
+- **`clear`** — no macro/earnings/volatility/index flags. Workflow runs
+  normally. Index context, if present, is benign or neutral.
+- **`caution`** — at least one signal is elevated. Common causes:
+  approaching macro release (e.g., FOMC, CPI, NFP), VIX above
+  `VIX_CAUTION_LEVEL`, SPX gap beyond `SPX_GAP_CAUTION_PCT`, NDX or RUT
+  underperformance vs SPX, or stale/missing index bars within
+  `INDEX_DATA_STALE_MINUTES`. The workflow keeps running but operator
+  should size smaller and review setups individually.
+- **`restricted`** — high-impact event window (`MACRO_EVENT_BLOCK_BEFORE_MINUTES`
+  / `_AFTER_MINUTES`), VIX above `VIX_RESTRICTED_LEVEL`, SPX downside beyond
+  `SPX_GAP_RESTRICTED_PCT`, or stacked caution signals. Consider sitting out.
+- **`no_trade`** — earnings window for the symbol or explicit block from a
+  flagged macro event. The risk engine refuses to approve new setups for
+  affected symbols. **Missing index data alone never produces `no_trade`** —
+  data absence is `caution` only.
+
+Rules of thumb:
+
+- The risk calendar **gates** the deterministic risk engine. It is not the
+  decision-maker; the engine still has final approval.
+- LLMs receive index context as **explanation-only provenance** and never get
+  decision authority over the verdict.
+- If the verdict surprises you, check Provider Health for index data freshness
+  and look at the listed `index_risk_reasons` — they tell you which signals
+  fired.
+
+## 15) Indices and provider-health failure modes
+
+Provider Health surfaces three sub-systems for index context: SPX, NDX/RUT
+bars, and VIX. Each can be `ok`, `degraded` (stale-but-present), or `unavailable`.
+
+Common failure modes and operator action:
+
+| Symptom | Likely cause | Operator action |
+|---|---|---|
+| Risk verdict shows `caution` with reason `index_data_stale` | Provider feed lag exceeded `INDEX_DATA_STALE_MINUTES` | Refresh Provider Health; if still stale, treat the day as caution and document |
+| Provider Health shows `polygon` `degraded` for indices | Polygon partial outage or rate limit | Workflow falls back to last good snapshot; do not invent data; consider sitting out |
+| Provider Health shows `unavailable` for VIX | Symbol routing issue or vendor outage | Risk calendar still emits a verdict from non-VIX signals; verdict will note `vix_unavailable` |
+| Index Risk reasons include `relative_weakness_*` repeatedly | Real market dispersion (NDX/RUT lagging SPX) | Not a system problem — risk engine is working as designed |
+| Recommendations show `workflow_execution_mode=blocked` | Provider probe failed and `WORKFLOW_DEMO_FALLBACK=false` | Investigate provider; do not flip `WORKFLOW_DEMO_FALLBACK=true` in production |
+
+Provider Health and Recommendations both display `as_of` timestamps; if those
+timestamps drift, that is the leading indicator before any verdict change.
+
+## 16) Options structure readiness — three separate gates
+
+Operators should never conflate the three readiness signals shown on the
+Recommendations and Analysis options surfaces. They are independent and
+must each be green before paper-opening a structure.
+
+1. **Structure readiness** — the chosen multi-leg structure (vertical,
+   condor, butterfly) has all required legs with valid contract IDs, valid
+   strikes, valid expirations, and matching underlying. Failures: missing
+   legs, mismatched expirations, stale chain snapshot.
+2. **Expected-range readiness** — the symbol's expected-range payload is
+   `computed` (method-tagged `iv_1sigma` or `atm_straddle_mid` when emitted),
+   not `blocked` or `omitted`. Expected range is **separate** from
+   breakevens and from payoff math; it is informational only and must not
+   be read as live execution support.
+3. **Paper-open readiness** — provider source is acceptable, contract
+   commissions are configured (`COMMISSION_PER_CONTRACT`), per-leg pricing
+   passed listed-contract validation, and `LIVE_TRADING_ALLOWED=false` is
+   honoured (paper-only path). The system never auto-opens; the operator
+   must click and confirm.
+
+A red signal in any one of these blocks the staged paper open even if the
+other two are green. This is intentional.
+
+## 17) Manual paper-only expiration settlement
+
+Expired open option structures can be settled manually through:
+
+```
+POST /user/options/paper-structures/{position_id}/settle-expiration
+Body: {"confirmation": "SETTLE"}
+```
+
+Hard rules:
+
+- The literal token `SETTLE` is required. Any other value (including
+  `"settle"`) returns `400` and the structure is unchanged.
+- The endpoint is current-user scoped — operators cannot settle another
+  user's structures.
+- This is **paper-only**. There is no live exercise, no live assignment,
+  no broker contact, and no automated rolling or re-opening. Full
+  automation remains deferred.
+- Settlement records realized P&L per leg using the deterministic payoff
+  math already used in the read-only payoff preview; commissions per
+  contract apply.
+
+If the structure is not yet expired, the call is rejected. Operators should
+verify the position's expiration date in the Active Position Review surface
+before issuing the request.
+
+## 18) Deployed UI smoke testing
+
+A dedicated Playwright smoke validates `https://macmarket.io` against
+Cloudflare Access. It can run two ways:
+
+- **Service-token mode** — a Cloudflare Access service token in env unlocks
+  the protected routes. Use this for headless CI.
+- **Storage-state mode** — an approved test user's Clerk storage state is
+  pre-recorded and replayed. Use this to validate post-login pages.
+
+The smoke writes screenshots and a structured JSON manifest under
+`scripts/`-managed evidence directories. It is **read-only** in product
+terms: no orders are placed, no positions opened, no schedules created.
+Treat the output as evidence (date-stamped artifacts), not as a routing
+path.
+
+Run only when you have a valid token / storage state. Without one, the
+smoke fails fast rather than guessing — this is intentional.
+
+## 19) Hard product boundary — broker / live routing
+
+`BROKER_PROVIDER=mock` and `LIVE_TRADING_ALLOWED=false` are the production
+defaults and **must not be flipped** outside of an explicit future
+execution phase. Both flags must change together.
+
+- `LIVE_TRADING_ALLOWED=false` makes `build_broker_provider()` raise
+  `LiveTradingDisabledError` for any non-mock `BROKER_PROVIDER`.
+- `AlpacaBrokerProvider.place_paper_order` also raises before opening an
+  HTTP connection (defense-in-depth).
+- The mock broker keeps working with the default flags — that is the
+  sanctioned current path.
+
+If you see `LiveTradingDisabledError` in logs, it means the env was
+misconfigured (either `BROKER_PROVIDER` set to something other than `mock`
+without flipping `LIVE_TRADING_ALLOWED=true`, or a typo in `BROKER_PROVIDER`).
+Investigate the env, do not patch the refusal.

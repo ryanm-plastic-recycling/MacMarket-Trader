@@ -1,6 +1,51 @@
 # MacMarket-Trader Product Roadmap Status (Private Alpha)
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
+
+## 2026-05-05 Update - Audit-driven doc + safety corrections
+
+Closes the highest-priority findings from
+`docs/audit/roadmap-reality-2026-05-05.md`. No strategy math, ranking,
+market-data behavior, or options-structure behavior changed.
+
+- **Stale test counts replaced.** Current measured counts: pytest **469**
+  collected, vitest **243**, Playwright **32**. Prior `2026-04-30: 271 / 199 /
+  31` counts were stale.
+- **Phantom CLI removed from operator docs.** `python -m macmarket_trader.cli
+  poll-alpaca-fills` does not exist; references have been removed. A
+  fill-polling CLI will land with a future explicit execution phase.
+- **`save_alternative` is not a gap.** The backend action is implemented and
+  covered by `tests/test_recommendations_user_queue.py::test_user_ranked_queue_candidate_can_be_saved_as_alternative`;
+  it was incorrectly listed in Open Items and has been removed.
+- **Expiration-settlement wording clarified.** The manual paper-only
+  `POST /user/options/paper-structures/{position_id}/settle-expiration`
+  endpoint is live and requires explicit `SETTLE` confirmation. Full settlement
+  automation, live exercise/assignment, and broker behavior remain deferred.
+- **Schema source-of-truth note.** `apply_schema_updates()` handles **nullable
+  runtime drift only**. New tables, non-nullable columns, indexes, and
+  structural schema changes still require an Alembic migration.
+- **Hard live-routing refusal added (code).** A new `LIVE_TRADING_ALLOWED`
+  config flag (default `false`) is the product boundary. With the flag false,
+  `build_broker_provider()` raises `LiveTradingDisabledError` for any non-mock
+  `BROKER_PROVIDER`, and `AlpacaBrokerProvider.place_paper_order` also raises
+  before opening an HTTP connection (defense-in-depth). `BROKER_PROVIDER=mock`
+  continues to route normally. Tests in `tests/test_phase4_providers.py` cover
+  the refusal paths and assert that no external request is attempted.
+- **`display_id` collision suffix added (code).** Two recommendations created
+  for the same user/symbol/strategy in the same minute now produce
+  deterministic `-2`, `-3`, ... suffixes on the human-readable label. The
+  canonical `recommendation_id` (`rec_<hex>`) is unchanged and remains the
+  unique key everywhere.
+- **Phase 11 / 11B / 12 framing.** These exist as scaffolding and foundation
+  phases only — directory structure, templates, and dry-run scripts. They are
+  **not** signed compliance evidence, **not** certified audit readiness, and
+  **not** buyer-grade diligence packages. Their job is to be a place to land
+  future signed evidence; they should not be cited as evidence themselves.
+- **Live-trading / broker-routing boundaries remain explicit.** No live
+  trading, no broker routing of any kind today, no automated exits, rolls, or
+  adjustments. Options remain paper-only.
+
+## 2026-05-04 Update - Index-Aware Market Risk Calendar
 
 ## 2026-05-04 Update - Index-Aware Market Risk Calendar
 Market Risk Calendar assessments now consume provider-backed Index Context
@@ -1464,7 +1509,9 @@ Medium-risk:
 
 High-risk:
 
-- expiration settlement mode
+- expiration settlement automation (a manual paper-only `settle-expiration`
+  endpoint exists today and requires explicit `SETTLE` confirmation; full
+  automation, live exercise/assignment, and broker behavior remain deferred)
 - assignment/exercise automation
 - partial fills for multi-leg option structures
 - options replay persistence into replay runs
@@ -1888,12 +1935,8 @@ First implementation slice:
   enrollment (Clerk paid feature; admin enrollment via Clerk dashboard works)
 - `MacMarket-Strategy-Reports` scheduled task may be redundant with
   `MacMarket-StrategyScheduler` — operator should verify and delete if duplicate
-- `display_id` collision possible if two recs created for same symbol+strategy
-  within the same minute — needs suffix handling
 - npm audit: vitest/vite/esbuild moderate-severity dev-server vulns
   (GHSA-67mh-4wv8-2f99) — dev-only, deferred until vitest 4 migration
-- `save_alternative` backend action variant not yet implemented (UI button
-  exists, disabled)
 - `atm_straddle_mid` expected-range method contract-allowed but not yet emitted
   by preview logic
 - Brand logo CDN — currently using `apps/web/public/brand/` static; consider

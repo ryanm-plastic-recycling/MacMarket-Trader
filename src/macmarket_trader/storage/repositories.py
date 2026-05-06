@@ -102,6 +102,55 @@ def make_display_id(*, symbol: str, strategy: str | None, created_at: datetime) 
     return f"{sym}-{abbrev}-{ts.strftime('%Y%m%d')}-{ts.strftime('%H%M')}"
 
 
+def _resolve_display_id_collision(
+    session: Session,
+    base_display_id: str,
+    *,
+    app_user_id: int | None,
+) -> str:
+    """Return a display_id that is unique within the user's recommendations.
+
+    The base format already includes minute resolution (HHMM). On the rare
+    same-user/same-symbol/same-strategy/same-minute collision, append a
+    short numeric suffix (`-2`, `-3`, ...) so the operator-facing label
+    stays unique. The canonical `recommendation_id` (rec_<hex>) is the FK
+    everywhere; this only affects the human-readable label.
+
+    Scope is per-user: two different users can each have an unsuffixed
+    label. NULL `app_user_id` rows (legacy/system) are deduped globally.
+    Cap the suffix at 99 to keep the column inside its 64-char width and
+    to surface real bugs rather than spinning forever.
+    """
+
+    stmt = select(RecommendationModel.display_id).where(
+        RecommendationModel.display_id == base_display_id
+    )
+    if app_user_id is not None:
+        stmt = stmt.where(RecommendationModel.app_user_id == app_user_id)
+    else:
+        stmt = stmt.where(RecommendationModel.app_user_id.is_(None))
+    if session.execute(stmt).first() is None:
+        return base_display_id
+
+    for suffix in range(2, 100):
+        candidate = f"{base_display_id}-{suffix}"
+        stmt = select(RecommendationModel.display_id).where(
+            RecommendationModel.display_id == candidate
+        )
+        if app_user_id is not None:
+            stmt = stmt.where(RecommendationModel.app_user_id == app_user_id)
+        else:
+            stmt = stmt.where(RecommendationModel.app_user_id.is_(None))
+        if session.execute(stmt).first() is None:
+            return candidate
+
+    # Fallback: more than 98 collisions in one minute is a bug, not a label
+    # problem. Append a millisecond stamp so the row can still insert.
+    from macmarket_trader.domain.time import utc_now
+
+    return f"{base_display_id}-{utc_now().strftime('%f')}"
+
+
 def display_id_or_fallback(row_display_id: str | None, recommendation_id: str) -> str:
     """Pick the human-readable label for API responses. Legacy rows without
     display_id (created before the column was added) fall back to a short
@@ -218,12 +267,15 @@ class RecommendationRepository:
                 if isinstance(raw_setup, str):
                     derived_strategy = raw_setup
         created_at_for_id = utc_now()
-        display_id = make_display_id(
+        base_display_id = make_display_id(
             symbol=recommendation.symbol,
             strategy=derived_strategy,
             created_at=created_at_for_id,
         )
         with self.session_factory() as session:
+            display_id = _resolve_display_id_collision(
+                session, base_display_id, app_user_id=app_user_id
+            )
             row = RecommendationModel(
                 recommendation_id=recommendation.recommendation_id,
                 app_user_id=app_user_id,
@@ -249,11 +301,18 @@ class RecommendationRepository:
             ).scalar_one_or_none()
             if row is None:
                 return
-            row.display_id = make_display_id(
+            base_display_id = make_display_id(
                 symbol=row.symbol,
                 strategy=strategy,
                 created_at=row.created_at,
             )
+            # Apply the same collision suffix policy used at create() so a
+            # late strategy rename does not produce a duplicate label within
+            # the same user/minute/symbol/strategy bucket.
+            if base_display_id != row.display_id:
+                row.display_id = _resolve_display_id_collision(
+                    session, base_display_id, app_user_id=row.app_user_id
+                )
             session.commit()
 
     def list_recent(self, limit: int = 200, *, app_user_id: int | None = None) -> list[RecommendationModel]:

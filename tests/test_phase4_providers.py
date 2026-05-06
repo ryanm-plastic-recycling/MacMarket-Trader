@@ -13,7 +13,7 @@ from macmarket_trader.data.providers.broker import AlpacaBrokerProvider
 from macmarket_trader.data.providers.macro_calendar import FredMacroCalendarProvider
 from macmarket_trader.data.providers.mock import MockBrokerProvider, MockMacroCalendarProvider, MockNewsProvider
 from macmarket_trader.data.providers.news import PolygonNewsProvider
-from macmarket_trader.data.providers.registry import build_broker_provider, build_macro_calendar_provider, build_news_provider
+from macmarket_trader.data.providers.registry import LiveTradingDisabledError, build_broker_provider, build_macro_calendar_provider, build_news_provider
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +285,7 @@ def test_alpaca_broker_order_payload(monkeypatch) -> None:
     monkeypatch.setattr(settings, "alpaca_api_key_id", "key")
     monkeypatch.setattr(settings, "alpaca_api_secret_key", "secret")
     monkeypatch.setattr(settings, "alpaca_paper_base_url", "https://paper-api.alpaca.markets")
+    monkeypatch.setattr(settings, "live_trading_allowed", True)
     provider = AlpacaBrokerProvider()
     captured_body: dict = {}
 
@@ -323,6 +324,7 @@ def test_alpaca_broker_order_payload(monkeypatch) -> None:
 def test_alpaca_broker_symbol_uppercased(monkeypatch) -> None:
     monkeypatch.setattr(settings, "alpaca_api_key_id", "key")
     monkeypatch.setattr(settings, "alpaca_api_secret_key", "secret")
+    monkeypatch.setattr(settings, "live_trading_allowed", True)
     provider = AlpacaBrokerProvider()
     captured_body: dict = {}
 
@@ -339,6 +341,7 @@ def test_alpaca_broker_symbol_uppercased(monkeypatch) -> None:
 def test_alpaca_broker_limit_price_rounded(monkeypatch) -> None:
     monkeypatch.setattr(settings, "alpaca_api_key_id", "key")
     monkeypatch.setattr(settings, "alpaca_api_secret_key", "secret")
+    monkeypatch.setattr(settings, "live_trading_allowed", True)
     provider = AlpacaBrokerProvider()
     captured_body: dict = {}
 
@@ -394,9 +397,64 @@ def test_build_broker_provider_alpaca(monkeypatch) -> None:
     monkeypatch.setattr(settings, "broker_provider", "alpaca")
     monkeypatch.setattr(settings, "alpaca_api_key_id", "key")
     monkeypatch.setattr(settings, "alpaca_api_secret_key", "secret")
+    monkeypatch.setattr(settings, "live_trading_allowed", True)
     assert isinstance(build_broker_provider(), AlpacaBrokerProvider)
 
 
-def test_build_broker_provider_unknown_falls_back_to_mock(monkeypatch) -> None:
+def test_build_broker_provider_default_refuses_alpaca_without_flag(monkeypatch) -> None:
+    """Default config (LIVE_TRADING_ALLOWED=false) must refuse non-mock broker
+    routing before any provider is constructed. This is the primary product
+    boundary preventing a misconfigured BROKER_PROVIDER from silently routing."""
+
+    monkeypatch.setattr(settings, "broker_provider", "alpaca")
+    monkeypatch.setattr(settings, "live_trading_allowed", False)
+    with pytest.raises(LiveTradingDisabledError) as excinfo:
+        build_broker_provider()
+    assert "LIVE_TRADING_ALLOWED" in str(excinfo.value)
+
+
+def test_build_broker_provider_unknown_value_refuses(monkeypatch) -> None:
+    """Any non-mock BROKER_PROVIDER value (including typos / unknown modes)
+    must refuse routing while LIVE_TRADING_ALLOWED is false, instead of
+    silently downgrading to mock."""
+
     monkeypatch.setattr(settings, "broker_provider", "unknown")
-    assert isinstance(build_broker_provider(), MockBrokerProvider)
+    monkeypatch.setattr(settings, "live_trading_allowed", False)
+    with pytest.raises(LiveTradingDisabledError):
+        build_broker_provider()
+
+
+def test_alpaca_provider_place_order_refuses_without_live_flag(monkeypatch) -> None:
+    """Defense-in-depth: even if AlpacaBrokerProvider is constructed directly
+    (bypassing the factory), place_paper_order must refuse and must NOT issue
+    any HTTP POST while LIVE_TRADING_ALLOWED=false."""
+
+    monkeypatch.setattr(settings, "alpaca_api_key_id", "key")
+    monkeypatch.setattr(settings, "alpaca_api_secret_key", "secret")
+    monkeypatch.setattr(settings, "live_trading_allowed", False)
+
+    provider = AlpacaBrokerProvider()
+    posted: list[tuple[str, dict]] = []
+
+    def fake_post(path: str, body: dict) -> dict:
+        posted.append((path, body))
+        return {}
+
+    monkeypatch.setattr(provider, "_post_json", fake_post)
+    with pytest.raises(RuntimeError) as excinfo:
+        provider.place_paper_order("AAPL", "buy", 1, 100.0)
+    assert "LIVE_TRADING_ALLOWED" in str(excinfo.value)
+    assert posted == []  # no external HTTP request was attempted
+
+
+def test_mock_broker_still_routes_when_live_flag_false(monkeypatch) -> None:
+    """Mock broker is the sanctioned current production path and must keep
+    working with LIVE_TRADING_ALLOWED=false (the default)."""
+
+    monkeypatch.setattr(settings, "broker_provider", "mock")
+    monkeypatch.setattr(settings, "live_trading_allowed", False)
+    provider = build_broker_provider()
+    assert isinstance(provider, MockBrokerProvider)
+    result = provider.place_paper_order("NVDA", "buy", 1, 900.0)
+    assert result["status"] == "accepted"
+    assert result["provider"] == "mock"

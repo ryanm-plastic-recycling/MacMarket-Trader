@@ -53,8 +53,24 @@ def build_macro_calendar_provider() -> MacroCalendarProvider:
     return MockMacroCalendarProvider()
 
 
+class LiveTradingDisabledError(RuntimeError):
+    """Raised when a non-mock broker route is attempted while live/broker
+    routing is disabled by product boundary (`LIVE_TRADING_ALLOWED=false`)."""
+
+
 def build_broker_provider() -> BrokerProvider:
     mode = settings.broker_provider.strip().lower()
+    if mode != "mock" and not settings.live_trading_allowed:
+        # Product boundary: live and broker-paper routing remain disabled by
+        # default. Operators must explicitly set LIVE_TRADING_ALLOWED=true to
+        # opt in. This refusal happens before any broker provider object is
+        # constructed, so no external HTTP request is attempted.
+        raise LiveTradingDisabledError(
+            f"Broker routing is disabled by product boundary: "
+            f"BROKER_PROVIDER={settings.broker_provider!r} requires "
+            f"LIVE_TRADING_ALLOWED=true. Live and broker-paper order routing "
+            f"are both refused while this flag is false."
+        )
     if mode == "alpaca":
         return AlpacaBrokerProvider()
     return MockBrokerProvider()

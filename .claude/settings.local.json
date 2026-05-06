@@ -17,7 +17,16 @@
       "Bash(python -m pytest --collect-only -q)",
       "Bash(python -m pytest tests/test_auth_approval_api.py::test_unauthenticated_access_denied --tb=long -p no:warnings -v)",
       "Bash(python -m pytest --tb=long -p no:warnings -q)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(python -c \"from macmarket_trader.storage.db import apply_schema_updates; import inspect; src = inspect.getsource\\(apply_schema_updates\\); print\\(src[:3000]\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "PowerShell(gh auth status)",
+      "Bash(npx vitest *)",
+      "Bash(npx playwright *)",
+      "Bash(python -m pytest tests/test_phase4_providers.py tests/test_display_id_and_user_settings.py -q --tb=short)"
     ]
   }
 }

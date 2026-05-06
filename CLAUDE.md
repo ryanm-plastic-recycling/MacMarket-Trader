@@ -128,10 +128,11 @@ python -m macmarket_trader.cli seed-demo-data
 
 # Run due scheduled reports (also wired to MacMarket-StrategyScheduler task)
 python -m macmarket_trader.cli run-due-strategy-schedules
-
-# Poll Alpaca paper fills (future execution phase — not yet active)
-python -m macmarket_trader.cli poll-alpaca-fills
 ```
+
+(A future execution phase will add a fill-polling CLI for Alpaca paper.
+None exists today — `python -m macmarket_trader.cli` lists only the
+currently-implemented commands.)
 
 ---
 
@@ -167,9 +168,10 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 - Promote endpoint (`/user/recommendations/queue/promote`) accepts `action` field (`make_active` / `save_alternative`) — stored in `ranking_provenance` and returned in response.
 - `display_id` format: `{SYMBOL}-{STRATEGY_ABBREV}-{YYYYMMDD}-{HHMM}`. Generated at recommendation creation. Falls back to `display_id_or_fallback()` for legacy rows (returns `Rec #shortid`). Canonical `recommendation_id` (`rec_<hex>`) stays the unique key — `display_id` is a label only, never used as FK.
 - `console_url` in `config.py` is a `@property` that mirrors `app_base_url`. Do not add a separate `CONSOLE_URL` env var.
-- `apply_schema_updates()` handles all new columns automatically on startup. No manual Alembic migrations needed for nullable columns.
 - Identity reconciliation: `upsert_from_auth` matches by Clerk sub, then by email, then by `invited::email` prefix. Preserves `approval_status` and `app_role` through merge.
-- `BROKER_PROVIDER=mock` is the current production setting. Do not change to `alpaca` without a later explicit execution phase.
+- `BROKER_PROVIDER=mock` is the current production setting. Do not change to `alpaca` without a later explicit execution phase. A second flag, `LIVE_TRADING_ALLOWED=false` (default), is the hard product boundary: even with `BROKER_PROVIDER=alpaca`, `build_broker_provider()` and `AlpacaBrokerProvider.place_paper_order` both raise before any HTTP request, so a misconfigured env cannot silently route to a brokerage. Both flags must flip together (and only as part of a future explicit execution phase).
+- `apply_schema_updates()` handles **nullable runtime drift only** (new nullable columns added by application code). New tables, non-nullable columns, indexes, and structural schema changes still require an Alembic migration. Treat the startup shim as additive convenience, not a substitute for migrations.
+- `display_id` collisions for the same user/symbol/strategy/minute are now resolved by appending a deterministic numeric suffix (`-2`, `-3`, ...) at create() and update_display_id_strategy(); the canonical `recommendation_id` (`rec_<hex>`) remains the unique key everywhere.
 - Sticky `thead th` pattern: inline styles `position: "sticky", top: 0, zIndex: 1, background: "var(--card-bg)", borderBottom: "1px solid var(--table-border)"`.
 - `op-error` block style: `border: 1px dashed #7c4040; background: #2a1717`.
 
@@ -179,7 +181,9 @@ In guided mode: "Make active" auto-advances to `/replay-runs`, "Run replay now" 
 
 **CURRENT STATE: Phases 0–9 complete for the current private-alpha/options parity scope. Private alpha live at https://macmarket.io. 3 alpha users. Phase 10 is now the safe planning/polish track for remaining deferred options/provider/crypto work; 10A1 is complete for Analysis Expected Range visualization reuse, 10B1 is complete for Orders durable paper-options display/readability polish, 10C1 through 10C5 are complete for the current explainable metric glossary/tooltips scope, and 10W1 through 10W8D are complete for symbol/watchlist design, current comma-entry cleanup, schema/read-model planning, additive schema/migration, backend repository/resolver foundation, current watchlist table UI polish, bulk symbol duplicate-handling polish, recommendation/schedule universe-selection design, the read-only resolved-universe preview API, Recommendations universe selector preview/apply UI, Schedule universe static-snapshot selector preview/apply UI, and selector closure audit/docs/test alignment; live/broker execution is not active.**
 
-Tests (2026-04-30): pytest 271 collected; targeted 10W8D backend validation passed. vitest 199, Playwright 31, tsc clean from latest 10W8D frontend validation.
+Tests (2026-05-05, audit-fixes pass): pytest **469** collected; vitest **243**; Playwright **32**; tsc clean. Earlier `2026-04-30: 271 / 199 / 31` counts in prior status notes were stale.
+
+Phase 11 (compliance & evidence scaffolding), Phase 11B (release-gate evidence tooling), and Phase 12 (acquisition-readiness foundation) exist as **scaffolding/foundation phases only** — directory structure, templates, and dry-run scripts. They are **not** signed compliance evidence, not certified audit readiness, and not buyer-grade diligence packages. Treat them as a place to land future signed evidence rather than as evidence themselves.
 
 Phase 10C2 is complete for compact Recommendations score/risk-label help using
 the existing glossary and `MetricLabel` foundation. Broader Analysis, Replay,
@@ -269,13 +273,13 @@ Phase 6 + Pass 4 ships the full Analyze → Recommendation → Replay → Paper 
 Phase 10 organizes remaining deferred items before risky implementation. Planned subphases: `10A` options UX/operator polish, `10B` durable Orders parity polish, `10C` options replay/history design checkpoint, `10D` expiration-settlement design checkpoint, `10E` provider-depth/readiness planning, `10F` crypto architecture planning only, and `10G` closure. `10A1` is complete for frontend-only Analysis Expected Range visualization using existing payload fields and the existing reusable component; `10B1` is complete for frontend-only Orders durable paper-options display/readability polish using existing lifecycle fields only; `10C1` through `10C5` are complete for the current in-context explainable metric glossary/tooltips scope; `10W1` is complete for the docs-only symbol discovery/watchlist design checkpoint, `10W2` is complete for frontend-only current comma-entry symbol workflow cleanup, `10W3` is complete for docs-only schema/read-model planning, `10W4` is complete for the additive schema/migration foundation, `10W5` is complete for internal repository/read-model and resolver helpers, `10W6` is complete for current watchlist table UI polish using existing JSON behavior, `10W7` is complete for current bulk symbol merge/duplicate polish, `10W8` is complete as a docs-only recommendation/schedule universe-selection checkpoint, `10W8A` is complete for the backend read-only resolved-universe preview API, `10W8B` is complete for the Recommendations universe selector preview/apply UI, `10W8C` is complete for the Schedule universe static-snapshot selector preview/apply UI, and `10W8D` is complete for the selector closure audit. Broader `10A`/`10B`, optional glossary/reference-page work, provider search implementation, normalized production UI, tags/groups, dynamic watchlist refresh, closure, and replay/history design work remain open.
 
 ### Later execution phase — Alpaca paper integration (NOT ACTIVE)
-Wire `BROKER_PROVIDER=alpaca` only after a later explicit execution phase. Keys are configured in deployed `.env`, and scaffold exists in `src/macmarket_trader/execution/`, but real brokerage routing/execution remains disabled. Fill polling via CLI `poll-alpaca-fills` is not active.
+Wire `BROKER_PROVIDER=alpaca` only after a later explicit execution phase. Keys can be configured in deployed `.env`, and broker scaffolding exists in `src/macmarket_trader/data/providers/broker.py`, but real brokerage routing/execution is **hard-refused** today: `LIVE_TRADING_ALLOWED=false` (the default) makes `build_broker_provider()` raise `LiveTradingDisabledError` for any non-mock `BROKER_PROVIDER`, and `AlpacaBrokerProvider.place_paper_order` also raises before opening an HTTP connection as defense-in-depth. A fill-polling CLI does not exist yet and is not invoked anywhere.
 
 ### Phase 7 — Brokerage fees + commission modeling
 Closed for the current equity paper-readiness scope. `gross_pnl` / `net_pnl`, per-trade equity commission, per-contract options commission settings, and current fee display guardrails are documented in `docs/roadmap-status.md`.
 
 ### Phase 8 — Options research → paper parity
-Closed for the current scoped paper-first options capability: research preview, read-only/non-persisted payoff preview, supported defined-risk paper open/manual-close lifecycle, contract-commission net P&L, and Recommendations operator risk UX. Expiration settlement, assignment/exercise automation, persisted options recommendations, and live routing remain deferred.
+Closed for the current scoped paper-first options capability: research preview, read-only/non-persisted payoff preview, supported defined-risk paper open/manual-close lifecycle, contract-commission net P&L, Recommendations operator risk UX, and a manual paper-only `settle-expiration` endpoint that requires explicit `SETTLE` confirmation. Automated expiration settlement, assignment/exercise automation, persisted options recommendations, and live routing remain deferred.
 
 ### Phase 9 — Options operator parity and data-quality hardening
 Closed for the current scope: durable paper-options Orders visibility, provider/source/as-of parity across the current options surfaces, and the Recommendations Expected Range visualization. Analysis visualization later landed in `10A1`; richer replay placement, provider-depth probes, and live routing remain future work only if explicitly reopened.
@@ -286,9 +290,8 @@ Phase 10F may plan crypto architecture only. Crypto implementation, crypto paper
 ### Known gaps (no phase assigned)
 - `/account` page does not render Clerk `<UserProfile>` for MFA enrollment (Clerk MFA requires paid plan — deferred)
 - `MacMarket-Strategy-Reports` scheduled task may be redundant with `MacMarket-StrategyScheduler` — verify and delete if duplicate
-- `display_id` collision if two recs created for same symbol+strategy within same minute — needs suffix handling
 - npm vitest/vite/esbuild moderate vulns (dev-server only, not production) — deferred until vitest 4 migration
-- `save_alternative` backend action variant not yet implemented (UI button exists, disabled)
 - `atm_straddle_mid` expected-range method not yet emitted
-- Options remain paper-first only: no live routing, expiration settlement, assignment/exercise automation, naked shorts, persisted options recommendations, or options replay persistence into equity replay flows
+- Options remain paper-first only: no live routing, no broker routing of any kind (refused by `LIVE_TRADING_ALLOWED=false`), no automated expiration settlement (a manual paper-only `settle-expiration` endpoint exists and requires explicit `SETTLE` confirmation), no assignment/exercise automation, no naked shorts, no persisted options recommendations, no options replay persistence into equity replay flows
 - Invite reconciliation: manually patched for current alpha users; `upsert_from_auth` handles it going forward but verify with next new-user signup
+- Compliance / Phase 11–12 evidence is scaffolding only — not signed, not certified, not buyer-grade diligence material yet
