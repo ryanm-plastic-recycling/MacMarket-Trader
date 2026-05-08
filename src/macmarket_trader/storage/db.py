@@ -33,9 +33,25 @@ def init_db(target_engine: Engine | None = None) -> None:
 def apply_schema_updates(target_engine: Engine | None = None) -> list[str]:
     """Add any columns that exist in the ORM models but are missing from the DB.
 
-    Safe to call on both fresh and existing databases — it is a no-op when the
-    schema is already current.  Returns a list of '<table>.<column>' strings
-    for every column that was added.
+    Source of truth.  Alembic (``alembic/versions/*``) is the canonical
+    schema source of truth for MacMarket-Trader: new tables, non-nullable
+    columns, indexes, foreign keys, and structural changes must land in a
+    formal migration.  This function is a *compatibility shim* only — it
+    closes the gap between an ORM model that has already been updated and
+    a live database that has not yet had the corresponding Alembic
+    revision applied.  It exists so local dev, tests, and the deployed
+    SQLite mirror keep working when an ORM addition is committed before
+    its migration is.
+
+    Anything added here should be backfilled by a follow-up Alembic
+    migration so the migration ledger faithfully describes the runtime
+    schema.  See ``alembic/versions/20260508_0011_paper_lifecycle_columns_and_indexes.py``
+    for an example of that backfill pattern (idempotent column / index
+    creation guarded by inspector checks).
+
+    Safe to call on both fresh and existing databases — it is a no-op
+    when the schema is already current.  Returns a list of
+    ``'<table>.<column>'`` strings for every column that was added.
     """
     from sqlalchemy import inspect, text  # local to avoid circular import at module level
 

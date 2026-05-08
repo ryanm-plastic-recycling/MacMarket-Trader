@@ -22,6 +22,68 @@ MacMarket-Trader is a deterministic, event-driven research and paper-execution p
 - SQLite allowed for unit tests.
 - Alembic migration scaffolding included.
 
+## Schema source-of-truth and runtime safety boundaries
+
+These are constitutional notes, not implementation detail. They pin
+down where reviewers should look first.
+
+### Alembic is the schema source of truth
+
+- `alembic/versions/*` is the canonical schema source of truth for new
+  tables, non-nullable columns, indexes, foreign keys, and structural
+  changes. Any schema-shape claim about MacMarket-Trader must be
+  reconcilable against the migration ledger.
+- The most recent backfill — `20260508_0011_paper_lifecycle_columns_and_indexes`
+  — illustrates the expected pattern: idempotent column / index
+  creation guarded by SQLAlchemy inspector checks, with a downgrade
+  that preserves any data created by earlier revisions.
+
+### `apply_schema_updates()` is a compatibility shim only
+
+- `src/macmarket_trader/storage/db.py::apply_schema_updates()` adds
+  any *nullable* ORM columns that are missing from a live database via
+  raw `ALTER TABLE ADD COLUMN`. It exists so local dev, tests, and the
+  deployed SQLite mirror keep working when an ORM addition is
+  committed before its Alembic revision is.
+- It is **not** a substitute for Alembic. New tables, non-nullable
+  columns, indexes, and structural changes still require a formal
+  migration. Anything `apply_schema_updates()` patches at runtime
+  should be backfilled by a follow-up Alembic revision.
+
+### `LIVE_TRADING_ALLOWED` in-code refusal
+
+- The `LIVE_TRADING_ALLOWED` config flag (`src/macmarket_trader/config.py`,
+  default `False`) is the in-process kill switch for any non-mock
+  broker routing.
+- `data/providers/registry.py::build_broker_provider()` raises
+  `LiveTradingDisabledError` whenever `BROKER_PROVIDER != "mock"` and
+  the flag is false — *before* any provider object is constructed.
+- `data/providers/broker.py::AlpacaBrokerProvider.place_paper_order()`
+  applies the same refusal as defense-in-depth, so even direct
+  instantiation cannot reach an HTTP request while the flag is false.
+- `tests/test_phase4_providers.py` exercises factory refusal,
+  unknown-provider refusal, defense-in-depth refusal asserting no
+  HTTP was attempted, and the mock-still-routes regression case.
+- Together with `BROKER_PROVIDER=mock` as the production setting,
+  this is a two-flag boundary that must be flipped together (and only
+  as part of a future explicit execution phase) to enable any broker
+  routing at all.
+
+### `paper_option_*` lifecycle tables are paper-only
+
+- `paper_option_orders`, `paper_option_order_legs`,
+  `paper_option_positions`, `paper_option_position_legs`,
+  `paper_option_trades`, and `paper_option_trade_legs` (created by
+  `20260429_0007_options_paper_lifecycle_schema`, extended by
+  `20260503_0010_option_contract_selection_metadata`) hold the
+  current paper-first options lifecycle.
+- These tables are not connected to a brokerage. Open / manual close /
+  manual `settle-expiration` (`SETTLE` confirmation required) are all
+  research / paper-only audit records. There is no live routing,
+  assignment automation, exercise automation, naked-short support,
+  persisted options recommendations, or options replay persistence
+  into equity replay flows.
+
 ## Core tables
 
 - ingest/normalization: `raw_ingest_events`, `normalized_events`, `event_entities`, `daily_bars`, `macro_calendar_events`

@@ -1,5 +1,25 @@
 # Control Matrix
 
+> **Status: scaffolding / internal evidence only.**
+>
+> This control matrix is an *internal* engineering self-attestation,
+> not a signed audit report. The "implemented / partial / planned"
+> values below are claims about what code, tests, and docs the
+> repository contains; they are not third-party-attested controls.
+>
+> This matrix is **not**:
+>
+> - A SOC 2, ISO 27001, NIST CSF, or PCI-DSS attestation.
+> - An external auditor's signed control review.
+> - A counsel-reviewed regulatory or securities-law opinion.
+> - Buyer-grade diligence material with named owners (the "owner
+>   placeholder" column is a placeholder, not an assigned owner) and
+>   dated reviews.
+>
+> Treat the table as an internal map of where future signed evidence
+> will need to land, not as evidence that any control has been
+> independently verified.
+
 Status values: `implemented`, `partial`, `planned`.
 
 | control_id | area | control statement | current implementation/evidence | evidence location | owner placeholder | frequency | status | gap/next action |

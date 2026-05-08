@@ -1,8 +1,27 @@
 # Acquisition Readiness
 
-This page describes evidence a technical buyer, bank partner, or external
-auditor may request. It is a readiness index, not a representation of
-certification.
+> **Status: scaffolding / internal evidence index only.**
+>
+> Everything below is a list of *internal scaffolding and templates*
+> the project has produced so that signed external evidence has a
+> place to land later. None of it is signed audit evidence, certified
+> readiness, or acquirer-grade diligence material.
+>
+> Specifically, this document is **not**:
+>
+> - SOC 2, ISO, NIST CSF, or any other formally certified attestation.
+> - A counsel-reviewed regulatory or securities-law opinion.
+> - A signed model-validation report from an independent reviewer.
+> - A buyer-grade diligence package with named owners, dated reviews,
+>   restored-from-backup drill artifacts, signed access reviews,
+>   signed vendor reviews, or third-party penetration-test results.
+> - A representation that any control listed below has been audited
+>   by an external party.
+>
+> This page describes evidence a technical buyer, bank partner, or
+> external auditor may eventually request, and the internal scaffolding
+> the project has staged toward that future ask. Treat it as a readiness
+> index, not a representation of certification.
 
 ## Ready Or Started
 

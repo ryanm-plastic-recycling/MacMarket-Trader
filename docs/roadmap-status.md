@@ -8,9 +8,14 @@ Closes the highest-priority findings from
 `docs/audit/roadmap-reality-2026-05-05.md`. No strategy math, ranking,
 market-data behavior, or options-structure behavior changed.
 
-- **Stale test counts replaced.** Current measured counts: pytest **469**
-  collected, vitest **243**, Playwright **32**. Prior `2026-04-30: 271 / 199 /
-  31` counts were stale.
+- **Stale test counts replaced.** 2026-05-05 audit-fixes observation:
+  pytest **469** collected, vitest **243**, Playwright **32**.
+  2026-05-07 follow-up audit observation
+  (`docs/audit/roadmap-reality-2026-05-07.md`, `python -m pytest
+  --collect-only -q`): pytest **473** collected, vitest **243**,
+  Playwright **32**. Counts are point-in-time observations, not
+  invariants — they move as new tests land. Prior `2026-04-30:
+  271 / 199 / 31` counts were stale.
 - **Phantom CLI removed from operator docs.** `python -m macmarket_trader.cli
   poll-alpaca-fills` does not exist; references have been removed. A
   fill-polling CLI will land with a future explicit execution phase.
